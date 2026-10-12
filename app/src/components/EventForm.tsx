@@ -442,7 +442,7 @@ export function EventForm({ visible, onClose, onCreated, userId, hostName, isMod
               <Slot id="time" layouts={layouts} error={errFor('time')}>
                 <DateTimeField
                   label="Zaman *"
-                  help="Etkinlik başladıktan 3 saat sonra kapanır ve listeden kalkar. Katılımcılardan biri kodu girdiyse etkinliği kendin kaldıramazsın; açıklamalı bir kapatma talebi gönderirsin."
+                  help="Etkinlik başladıktan 3 saat sonra (Konser & Festival 2 saat sonra) kapanır ve listeden kalkar. Katılımcılardan biri kodu girdiyse etkinliği kendin kaldıramazsın; açıklamalı bir kapatma talebi gönderirsin."
                   compact
                   invalid={invalid === 'time'}
                   value={startsAt}

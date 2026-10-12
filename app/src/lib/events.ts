@@ -145,7 +145,8 @@ const EVENT_TEXT: Record<string, string> = {
   not_registered: 'Kodu girebilmek için önce etkinliğe katılmış olmalısın.',
   host_cannot_checkin: 'Etkinliği açan kişi kendi kodunu giremez; kodu katılımcılara sen verirsin.',
   checkin_not_open: 'Kod girişi etkinlik başlamadan 5 dakika önce açılır. O zaman tekrar dene.',
-  checkin_closed: 'Bu etkinlik kapandı: etkinlikler başladıktan 3 saat sonra kapanır.',
+  checkin_closed:
+    'Kod girişi kapandı. Konser & Festival etkinliklerinde kod girişi başlangıçtan 45 dakika sonra, diğer etkinliklerde başlangıçtan 3 saat sonra (ya da düzenleyen etkinliği bitirince) kapanır.',
   close_request_required:
     'Etkinliğe kodla katılan kişiler var, bu yüzden etkinliği kendin kaldıramazsın. Moderatöre açıklamalı bir kapatma talebi gönder.',
   close_request_not_needed: 'Kodla katılan olmadığı için talebe gerek yok, etkinliği doğrudan kaldırabilirsin.',
@@ -381,6 +382,17 @@ export function cleanEventCode(text: string): string {
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, '')
     .slice(0, 6);
+}
+
+/**
+ * Etkinliğin görseli haritada gösterilir mi? Yalnızca Konser & Festival ve 41. Kat Özel etkinliklerde, görsel
+ * moderatör onayındayken değil. (Etkinlikler sekmesindeki görsel bundan etkilenmez.)
+ */
+export function showsImageOnMap(
+  e: Pick<EventItem, 'category' | 'is_official' | 'image_path' | 'image_status'>,
+): boolean {
+  if (!e.image_path || e.image_status === 'pending') return false;
+  return e.category === 'konser_festival' || e.is_official;
 }
 
 /** Haritada bir petekteki etkinlikleri bulmak için anahtar */

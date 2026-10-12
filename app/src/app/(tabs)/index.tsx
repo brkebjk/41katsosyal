@@ -46,7 +46,7 @@ import { GAMES } from '@/lib/gameCatalog';
 import { useAuth } from '@/lib/auth';
 import { cellName, loadCellNames, onCellNamesChanged } from '@/lib/cellNames';
 import { confirmAction, notify } from '@/lib/dialog';
-import { eventCellMarks, listEvents, type EventItem } from '@/lib/events';
+import { eventCellMarks, listEvents, showsImageOnMap, type EventItem } from '@/lib/events';
 import { districtOf, hexDistance, isLand, type Cell } from '@/lib/hex';
 import { locateMyCell, myCellNow, nearCell, useMyCell } from '@/lib/myCell';
 import { formatWhen } from '@/lib/labels';
@@ -425,12 +425,11 @@ function MapScreen({ resetKey }: { resetKey: number }) {
     return { label: 'Sakin', color: '#8EA2C8' };
   }, [density, events, rooms, treasures, nowTick]);
   const marks = useMemo(() => eventCellMarks(shownEvents), [shownEvents]);
-  // Görselli öne çıkan etkinlikler: Konser & Festival, 41. Kat Özel ve İşbirliği etiketli olanlar peteğin üstünde kart görsel
+  // Görselli öne çıkan etkinlikler: yalnızca Konser & Festival ve 41. Kat Özel etkinlikler peteğin üstünde kart görsel
   const imageMarks = useMemo(() => {
     const by = new Map<string, { q: number; r: number; uris: string[]; ids: string[] }>();
     for (const e of shownEvents) {
-      if (e.cell_q === null || e.cell_r === null || !e.image_path || e.image_status === 'pending') continue;
-      if (!(e.category === 'konser_festival' || e.is_official || e.tag === 'tanitim_isbirligi')) continue;
+      if (e.cell_q === null || e.cell_r === null || !showsImageOnMap(e)) continue;
       const uri = eventImageUrl(e.image_path);
       if (!uri) continue;
       const k = `${e.cell_q},${e.cell_r}`;
@@ -1125,7 +1124,7 @@ function EventsHere({ events, compact = false }: { events: EventItem[]; compact?
           testID="map-event-row"
           style={({ pressed }) => [styles.eventRow, pressed && styles.eventRowPressed]}
         >
-          {e.image_path && e.image_status !== 'pending' ? (
+          {showsImageOnMap(e) ? (
             <Image
               source={{ uri: eventImageUrl(e.image_path) ?? undefined }}
               contentFit="cover"

@@ -42,7 +42,7 @@ export function eventInfoContent(r: PointRules): InfoContent {
       {
         icon: 'time',
         lead: `${r.eventDurationHours} saatte kapanır.`,
-        text: `Etkinlik başladıktan ${r.eventDurationHours} saat sonra kapanır ve listeden kalkar. Kod girişi başlangıçtan 5 dakika önce açılır, etkinlikle birlikte kapanır.`,
+        text: `Etkinlik başladıktan ${r.eventDurationHours} saat sonra kapanır ve listeden kalkar. Kod girişi başlangıçtan 5 dakika önce açılır, etkinlikle birlikte kapanır. Konser & Festival etkinlikleri başladıktan 2 saat sonra listeden kalkar; kod girişi başlangıçtan 45 dakika sonra kapanır.`,
       },
       {
         icon: 'shield-checkmark',

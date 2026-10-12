@@ -137,7 +137,7 @@ export function quizInfo(rules: PointRules, enabled: boolean): InfoContent {
       {
         icon: 'phone-portrait',
         lead: 'Yan Yana.',
-        text: 'Tek telefonda 2 kişi: ekran ikiye bölünür, üst yarı karşıdaki oyuncu için ters döner. 10 soru, her biri 15 sn. Can harcamaz, puan vermez; günde 10 oyun.',
+        text: 'Tek telefonda 2 kişi: ekran ikiye bölünür, üst yarı karşıdaki oyuncu için ters döner. 3 raunt × 3 soru (toplam 9 soru), her biri 15 sn. Can harcamaz, puan vermez; günde 10 oyun.',
       },
       {
         icon: 'globe',
@@ -273,7 +273,7 @@ export const HOW_TO_PLAY: Record<string, InfoItem[]> = {
     {
       icon: 'heart',
       lead: 'Canlar.',
-      text: 'En çok 5 can; her oyun 1 can harcar, her 30 dakikada 1 can dolar. Günde en çok 20 oyun.',
+      text: 'En çok 5 can; her oyun 1 can harcar, her 30 dakikada 1 can dolar. Günde en çok 25 oyun.',
     },
     {
       icon: 'person',

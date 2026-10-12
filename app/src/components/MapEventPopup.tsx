@@ -11,7 +11,7 @@ import { cellName } from '@/lib/cellNames';
 import { confirmAction, notify } from '@/lib/dialog';
 import { ageText, categoryInfo } from '@/lib/eventCategories';
 import { eventImageUrl } from '@/lib/eventImage';
-import { attendeeCount, registerForEvent, type EventItem } from '@/lib/events';
+import { attendeeCount, registerForEvent, showsImageOnMap, type EventItem } from '@/lib/events';
 import { formatWhen } from '@/lib/labels';
 import { syncEventReminders } from '@/lib/localNotify';
 import { confirmMeetupSafety } from '@/lib/safety';
@@ -90,7 +90,7 @@ export function MapEventPopup({
         const info = categoryInfo(ev.category);
         const count = attendeeCount(ev);
         const full = count >= ev.capacity;
-        const uri = ev.image_path && ev.image_status !== 'pending' ? eventImageUrl(ev.image_path) : null;
+        const uri = showsImageOnMap(ev) ? eventImageUrl(ev.image_path) : null;
         return (
           <View key={ev.id} style={styles.card} testID="map-event-card">
             {uri ? (

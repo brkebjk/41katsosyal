@@ -1,5 +1,6 @@
 // Üstten kayan bildirim: uygulama açıkken yeni bir bildirim ya da duyuru gelince ekranın üstünde birkaç saniye
-// görünür, telefon kısa titrer. Sunucuya yarım dakikada bir “yeni bir şey var mı?” diye sorulur.
+// görünür, telefon kısa titrer. Yeni bildirim anlık bağlantıyla (liveNotify) hemen haber verilir; bağlantı yoksa
+// sunucuya birkaç saniyede bir “yeni bir şey var mı?” diye sorulur.
 
 import { useSyncExternalStore } from 'react';
 import { Platform, Vibration } from 'react-native';
@@ -61,6 +62,8 @@ type Row = Omit<ToastItem, 'more'>;
 let since: string | null = null;
 const seen = new Set<string>();
 let polling = false;
+/** Okuma sürerken yeni bir haber geldiyse, okuma bitince bir kez daha bakılır (bildirim kaçmasın) */
+let again = false;
 
 /** Uygulama açılırken: son 10 dakikada gelmiş, okunmamış bildirimler de bir kez gösterilir. */
 export function resetToastClock(): void {
@@ -71,8 +74,12 @@ export function resetToastClock(): void {
 
 /** Yeni bildirim var mı? Varsa en yenisi üstte gösterilir (diğerleri “+N” olarak yazılır). */
 export async function pollToasts(): Promise<void> {
-  if (polling) return;
+  if (polling) {
+    again = true;
+    return;
+  }
   polling = true;
+  again = false;
   try {
     if (!since) resetToastClock();
     // 5 saniyelik pay: geç kaydedilen bir bildirim kaçmasın (aynısı “seen” ile ikinci kez gösterilmez)
@@ -97,5 +104,9 @@ export async function pollToasts(): Promise<void> {
     void refreshNotices();
   } finally {
     polling = false;
+    if (again) {
+      again = false;
+      void pollToasts();
+    }
   }
 }

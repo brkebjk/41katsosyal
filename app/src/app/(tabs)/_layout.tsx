@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { NoticeDot } from '@/components/NoticeDot';
 import { useAuth } from '@/lib/auth';
+import { isLiveNotifyOn, startLiveNotify } from '@/lib/liveNotify';
 import { clearEventReminders, syncEventReminders } from '@/lib/localNotify';
 import { refreshNotices, resetNotices, useNotices } from '@/lib/notices';
 import { tabFocused } from '@/lib/tabReset';
@@ -16,6 +17,14 @@ import { colors, fonts } from '@/theme';
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 type DotKey = 'profile' | 'events' | 'map';
+
+/** Anlık bildirim bağlantısı yokken sunucuya “yeni bildirim var mı?” diye sorma aralığı */
+const TOAST_POLL_MS = 8_000;
+/** Anlık bağlantı açıkken yalnızca güvenlik için (kaçan bir şey olmasın diye) sorma aralığı */
+const TOAST_LIVE_FALLBACK_MS = 60_000;
+/** Bildirim noktalarının (sayaçların) okunma aralığı; anlık bağlantı açık olan üyede daha seyrek */
+const NOTICE_POLL_MS = 60_000;
+const NOTICE_LIVE_POLL_MS = 180_000;
 
 /** Sekme ikonunun sağ üstündeki kırmızı nokta: o sekmede yapılacak bir şey varsa görünür. */
 function useTabDot(key: DotKey): boolean {
@@ -58,6 +67,7 @@ export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const { profile } = useAuth();
   const isModerator = profile?.role === 'admin';
+  const userId = profile?.id ?? null;
 
   // Moderatör: petek adı adayları saatte bir hesaplanır (sunucu da saatte bir kez çalıştırır); yeniler bildirim olur
   useEffect(() => {
@@ -68,41 +78,62 @@ export default function TabsLayout() {
     return () => clearInterval(t);
   }, [isModerator]);
 
-  // Bildirim sayıları (arkadaşlık isteği, kod girişi açık etkinlik, moderatör işleri): açılışta, uygulamaya dönünce
-  // ve dakikada bir okunur
+  // Bildirim sayıları (arkadaşlık isteği, kod girişi açık etkinlik, moderatör işleri): açılışta, uygulamaya dönünce,
+  // yeni bildirim gelince (anlık) ve dakikada bir okunur. Anlık bağlantısı açık üyede 3 dakikada bir okunması yeter;
+  // moderatörün iş sayaçları (şikayet, onay…) bildirimle gelmediği için onda dakikada bir okunur.
   useEffect(() => {
     void refreshNotices();
-    const timer = setInterval(() => void refreshNotices(), 60_000);
+    let last = Date.now();
+    const timer = setInterval(() => {
+      const every = isLiveNotifyOn() && !isModerator ? NOTICE_LIVE_POLL_MS : NOTICE_POLL_MS;
+      if (Date.now() - last < every - 1000) return;
+      last = Date.now();
+      void refreshNotices();
+    }, NOTICE_POLL_MS);
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void refreshNotices();
+      if (state === 'active') {
+        last = Date.now();
+        void refreshNotices();
+      }
     });
     return () => {
       clearInterval(timer);
       sub.remove();
       resetNotices();
     };
-  }, []);
+  }, [isModerator]);
 
-  // Üstten kayan bildirim: 8 saniyede bir (oyun davetleri hemen ulaşsın) ve uygulamaya dönünce yeni bildirim var mı diye bakılır.
-  // Etkinlik hatırlatmaları açılışta ve uygulamaya dönünce sunucudaki ön kayıtlarla eşitlenir.
+  // Üstten kayan bildirim: sunucu yeni bir bildirim ya da duyuru yazınca anlık bağlantı hemen haber verir (oyun davetleri
+  // anında ulaşır). Bağlantı açıkken güvenlik için dakikada bir, bağlantı kurulamazsa 8 saniyede bir ve uygulamaya
+  // dönünce yeni bildirim var mı diye bakılır. Etkinlik hatırlatmaları açılışta ve uygulamaya dönünce eşitlenir.
   useEffect(() => {
     resetToastClock();
-    void pollToasts();
+    let lastPoll = Date.now();
+    const poll = () => {
+      lastPoll = Date.now();
+      void pollToasts();
+    };
+    poll();
     void syncEventReminders();
-    const timer = setInterval(() => void pollToasts(), 8_000);
+    const stopLive = userId ? startLiveNotify(userId, poll) : () => {};
+    const timer = setInterval(() => {
+      if (isLiveNotifyOn() && Date.now() - lastPoll < TOAST_LIVE_FALLBACK_MS - 1000) return;
+      poll();
+    }, TOAST_POLL_MS);
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
-        void pollToasts();
+        poll();
         void syncEventReminders();
       }
     });
     return () => {
       clearInterval(timer);
       sub.remove();
+      stopLive();
       resetToastClock();
       void clearEventReminders();
     };
-  }, []);
+  }, [userId]);
 
   // Yazı tipi satır yüksekliği büyük olduğu için çubuğa sabit ve yeterli bir yükseklik veriyoruz.
   const bottom = Math.max(insets.bottom, 8);
