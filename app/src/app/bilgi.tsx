@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router, Stack, useFocusEffect } from 'expo-router';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -28,6 +28,7 @@ import { Popup } from '@/components/Popup';
 import { JokerPreview, jokerLook, LivesBar, PlayButton, PointGoal } from '@/components/QuizBits';
 import { SideBySideView } from '@/components/SideBySideView';
 import { SoloMarathonView } from '@/components/SoloMarathonView';
+import { TextField } from '@/components/TextField';
 import { useAuth } from '@/lib/auth';
 import { confirmAction, notify } from '@/lib/dialog';
 import { quizInfo } from '@/lib/gameInfo';
@@ -45,6 +46,7 @@ import {
   quietCell,
   quizPing,
   sideLeave,
+  sideStart,
   soloLeave,
   startSolo,
   type QuizLobby,
@@ -58,7 +60,7 @@ import { DEFAULT_RULES, getPointRules, type PointRules } from '@/lib/ranking';
 import { initSounds, onSoundChange, playSound, releaseSounds, setSoundOn, soundOn } from '@/lib/sounds';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
-type ViewMode = 'lobby' | 'soloIntro' | 'searching' | 'match' | 'solo' | 'side';
+type ViewMode = 'lobby' | 'searching' | 'match' | 'solo' | 'side';
 const nowMs = () => Date.now();
 /** Uzaktan'da sandıktan çıkabilen jokerler (Bomba ve takas kaldırıldı) */
 const ARENA_JOKERS: CardKind[] = ['roulette', 'shield', 'fifty', 'thief', 'freeze'];
@@ -82,6 +84,11 @@ type Live = { live: boolean; kind: 'arena' | 'solo' | 'side' | null; phase: Aren
  */
 export default function QuizScreen() {
   const { profile } = useAuth();
+  // Oyunlar → Oda Oluştur → Bilgi Yarışması: ekran açılınca doğrudan özel Uzaktan odası kurulur (can / günlük hak
+  // yoksa kurulmaz, nedeni söylenir). Sunucu da aynı kontrolleri yapar.
+  const { create } = useLocalSearchParams<{ create?: string }>();
+  const [wantCreate] = useState(() => create === '1');
+  const createRef = useRef<(l: QuizLobby) => void>(() => {});
   const [view, setView] = useState<ViewMode>('lobby');
   const [lobby, setLobby] = useState<QuizLobby | null>(null);
   const [offset, setOffset] = useState(0);
@@ -93,6 +100,8 @@ export default function QuizScreen() {
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState(false);
   const [remoteOpen, setRemoteOpen] = useState(false);
+  const [soloOpen, setSoloOpen] = useState(false);
+  const [sideOpen, setSideOpen] = useState(false);
   const [pointsOpen, setPointsOpen] = useState(false);
   /** “Şu an oyunda” (Bilgi Yarışması ekranındakiler dahil), 20 sn'de bir yenilenir */
   const [onlineNow, setOnlineNow] = useState<number | null>(null);
@@ -142,6 +151,8 @@ export default function QuizScreen() {
         matchRef.current = l.live_match;
         setMatchId(l.live_match);
         setView('match');
+      } else if (wantCreate) {
+        createRef.current(l);
       }
     });
     void getPointRules().then((r) => {
@@ -150,7 +161,7 @@ export default function QuizScreen() {
     return () => {
       alive = false;
     };
-  }, [loadLobby]);
+  }, [loadLobby, wantCreate]);
 
   // Ekran kapanırken: aramadaysan kuyruktan çıkılır; Uzaktan maçtaysan maçtan çıkılır (başladıysa kaybedilir)
   useEffect(
@@ -230,10 +241,6 @@ export default function QuizScreen() {
 
   /** Geri / çarpı: oyun sürüyorsa önce sorulur */
   const requestBack = useCallback(async () => {
-    if (view === 'soloIntro') {
-      setView('lobby');
-      return;
-    }
     if (view === 'side') {
       if (sideRef.current && liveRef.current.live && liveRef.current.kind === 'side') {
         const ok = await confirmAction(
@@ -333,7 +340,8 @@ export default function QuizScreen() {
   );
 
   // iPhone'da kaydırarak geri (ve başka her türlü ekrandan çıkış): bir moddayken Bilgi Yarışması ekranı kapanmaz;
-  // Solo başlatma / Yan Yana kurulum ekranından ana Bilgi Yarışması ekranına dönülür. Oyun sürerken yalnızca X çalışır.
+  // ana Bilgi Yarışması ekranına dönülür. Oyun sürerken yalnızca X çalışır. (Solo, Uzaktan ve Yan Yana pencereleri
+  // geri tuşu, kaydırarak geri ya da çarpı ile kapanır.)
   usePreventRemove(view !== 'lobby', () => {
     const l = liveRef.current;
     if (
@@ -346,7 +354,8 @@ export default function QuizScreen() {
   });
 
   /** Can / günlük sınır yoksa oyunu başlatmadan açıklama gösterir */
-  function blocked(): boolean {
+  function blocked(l: QuizLobby | null = lobby): boolean {
+    const lobby = l;
     if (!lobby) return false;
     if (lobby.questions < MIN_QUESTIONS) {
       void notify('Sorular hazırlanıyor', 'Yeterli soru yok. Moderatör sorular eklediğinde oynayabilirsin.', {
@@ -376,8 +385,8 @@ export default function QuizScreen() {
     setView('searching');
   }
 
-  async function createRoom() {
-    if (busy || blocked()) return;
+  async function createRoom(l?: QuizLobby) {
+    if (busy || blocked(l ?? lobby)) return;
     setBusy(true);
     const res = await arenaCreateRoom(null, await quietCell());
     setBusy(false);
@@ -388,6 +397,11 @@ export default function QuizScreen() {
     setMatchId(res.data.match_id);
     setView('match');
   }
+
+  // Açılışta kendiliğinden oda kurmak için en güncel createRoom (ilk yükleme bitince çağrılır)
+  useEffect(() => {
+    createRef.current = (l) => void createRoom(l);
+  });
 
   async function joinRoom(code: string): Promise<string | null> {
     if (busy) return null;
@@ -403,10 +417,18 @@ export default function QuizScreen() {
     return null;
   }
 
-  /** Solo Maraton ön ekranı (kurallar + Başla). Can, Başla'ya basınca harcanır. */
+  /** Solo Maraton penceresi (kurallar + Başla). Can, Başla'ya basınca harcanır. */
   function openSoloIntro() {
     if (busy || blocked()) return;
-    setView('soloIntro');
+    setSoloOpen(true);
+  }
+
+  /** Yan Yana penceresinden oyun başladı: oyun ekranına geçilir */
+  function onSideStarted(id: string) {
+    setSideOpen(false);
+    sideRef.current = id;
+    setSideId(id);
+    setView('side');
   }
 
   async function startMarathon() {
@@ -436,11 +458,9 @@ export default function QuizScreen() {
 
   return (
     <View style={styles.root}>
-      {/* Kaydırarak geri: ana ekranda Oyunlar'a, Solo başlatma ve Yan Yana kurulumunda Bilgi Yarışması ana ekranına döner.
+      {/* Kaydırarak geri: ana ekranda Oyunlar'a, Yan Yana kurulumunda Bilgi Yarışması ana ekranına döner.
           Oyun sürerken kapalı (yalnızca X ile çıkılır). */}
-      <Stack.Screen
-        options={{ gestureEnabled: view === 'lobby' || view === 'soloIntro' || (view === 'side' && !sideId) }}
-      />
+      <Stack.Screen options={{ gestureEnabled: view === 'lobby' || (view === 'side' && !sideId) }} />
       <LinearGradient
         colors={['rgba(124, 140, 255, 0.35)', 'rgba(124, 140, 255, 0.06)', 'rgba(7, 22, 34, 0)']}
         locations={[0, 0.45, 1]}
@@ -511,8 +531,6 @@ export default function QuizScreen() {
                 void loadLobby();
               }}
             />
-          ) : view === 'soloIntro' ? (
-            <SoloIntro lobby={lobby} busy={busy} onBack={() => setView('lobby')} onStart={() => void startMarathon()} />
           ) : view === 'searching' && search ? (
             <Searching
               seconds={Math.max(0, Math.floor((now - search.since) / 1000))}
@@ -545,7 +563,7 @@ export default function QuizScreen() {
                   <Ionicons
                     name={sound ? 'volume-high' : 'volume-mute'}
                     size={18}
-                    color={sound ? colors.primary : colors.textMuted}
+                    color={sound ? colors.highlight : colors.textMuted}
                   />
                 </Pressable>
                 <Pressable
@@ -554,7 +572,7 @@ export default function QuizScreen() {
                   accessibilityLabel="Nasıl oynanır"
                   style={({ pressed }) => [styles.howBtn, pressed && styles.pressed]}
                 >
-                  <Ionicons name="help-circle" size={16} color={colors.primary} />
+                  <Ionicons name="help-circle" size={16} color={colors.highlight} />
                   <Text style={styles.howText}>Nasıl oynanır?</Text>
                 </Pressable>
               </View>
@@ -636,9 +654,7 @@ export default function QuizScreen() {
                   disabled={!canPlay || busy}
                   onPress={() => {
                     if (lobby && lobby.questions < MIN_QUESTIONS) return void blocked();
-                    sideRef.current = null;
-                    setSideId(null);
-                    setView('side');
+                    setSideOpen(true);
                   }}
                   testID="quiz-side"
                 />
@@ -713,6 +729,26 @@ export default function QuizScreen() {
         items={info_.items}
       />
       {pointsOpen ? <PointsPopup lobby={lobby} onClose={() => setPointsOpen(false)} /> : null}
+      {soloOpen ? (
+        <SoloMenu
+          lobby={lobby}
+          busy={busy}
+          onClose={() => setSoloOpen(false)}
+          onStart={() => {
+            setSoloOpen(false);
+            void startMarathon();
+          }}
+        />
+      ) : null}
+      {sideOpen ? (
+        <SideMenu
+          defaultName={profile?.alias ?? ''}
+          todayCount={lobby?.side_today ?? 0}
+          dailyLimit={lobby?.side_daily ?? 10}
+          onClose={() => setSideOpen(false)}
+          onStarted={onSideStarted}
+        />
+      ) : null}
       {remoteOpen ? (
         <RemoteMenu
           busy={busy}
@@ -881,7 +917,7 @@ function RemoteMenu({
         <PlayButton
           label="Rastgele eşleş"
           iconOnly
-          size={140}
+          size={112}
           disabled={busy}
           onPress={onRandom}
           testID="quiz-random"
@@ -893,6 +929,7 @@ function RemoteMenu({
 
       <JokerPreview
         title="Sandıktan çıkan jokerler"
+        size="xxs"
         items={ARENA_JOKERS.map((k) => ({
           key: k,
           look: cardLook(k),
@@ -901,17 +938,24 @@ function RemoteMenu({
         }))}
       />
 
-      <PointsTable
-        title="Kazanana puan"
-        rows={[
-          ['2 kişilik maç', `+${fmtPts(points[0])}`],
-          ['3 kişilik maç', `+${fmtPts(points[1])}`],
-          ['4 kişilik maç', `+${fmtPts(points[2])}`],
-          ['5 kişilik maç', `+${fmtPts(points[3])}`],
-          ['Kaybeden', '0 (puan düşmez)'],
-          ['Özel oda, aynı kişilerle', `günde en çok ${groupDaily}`],
-        ]}
-      />
+      {/* Kazanana puan: kaydırmadan görünsün diye 4 kutu yan yana */}
+      <View style={styles.ptable}>
+        <Text style={styles.ptableTitle}>Kazanana puan</Text>
+        <View style={styles.pgrid}>
+          {[2, 3, 4, 5].map((n, i) => (
+            <View key={n} style={[styles.pcell, i > 0 && styles.pcellLine]}>
+              <Text style={styles.pcellKey}>{`${n} kişi`}</Text>
+              <Text style={styles.pcellVal}>{`+${fmtPts(points[i])}`}</Text>
+            </View>
+          ))}
+        </View>
+        <Text style={styles.pfoot}>
+          {'Kaybeden: '}
+          <Text style={styles.pfootStrong}>0 (puan düşmez)</Text>
+          {' · Özel oda, aynı kişilerle: '}
+          <Text style={styles.pfootStrong}>{`günde en çok ${groupDaily}`}</Text>
+        </Text>
+      </View>
     </Popup>
   );
 }
@@ -986,17 +1030,17 @@ function PointsPopup({ lobby, onClose }: { lobby: QuizLobby | null; onClose: () 
   );
 }
 
-/** Solo Maraton ön ekranı: kurallar, basamak puanları, jokerler, Başla. Başla'ya basınca 3'ten geri sayılır;
- * bu sırada büyük kırmızı Vazgeç ile çıkılabilir (can, geri sayım bitince harcanır). */
-function SoloIntro({
+/** Solo Maraton penceresi: kurallar, basamak puanları, jokerler, Başla. Başla'ya basınca 3'ten geri sayılır;
+ * bu sırada büyük kırmızı Vazgeç ile çıkılabilir (can, geri sayım bitince harcanır). Pencere kapanırsa da vazgeçilmiş olur. */
+function SoloMenu({
   lobby,
   busy,
-  onBack,
+  onClose,
   onStart,
 }: {
   lobby: QuizLobby | null;
   busy: boolean;
-  onBack: () => void;
+  onClose: () => void;
   onStart: () => void;
 }) {
   const [count, setCount] = useState<number | null>(null);
@@ -1021,33 +1065,33 @@ function SoloIntro({
 
   if (count !== null) {
     return (
-      <View style={styles.countRoot} testID="solo-countdown">
-        <Text style={styles.countLabel}>Solo Maraton başlıyor</Text>
-        <Animated.Text style={[styles.countNum, { transform: [{ scale: pop }] }]}>{count}</Animated.Text>
-        <Pressable
-          onPress={() => setCount(null)}
-          accessibilityRole="button"
-          testID="solo-countdown-cancel"
-          style={({ pressed }) => [styles.cancelBtn, styles.countCancel, pressed && styles.pressed]}
-        >
-          <Ionicons name="close-circle" size={26} color="#FFFFFF" />
-          <Text style={styles.cancelText}>Vazgeç</Text>
-        </Pressable>
-        <Text style={styles.countHint}>Vazgeçersen can harcanmaz.</Text>
-      </View>
+      <Popup title="Solo Maraton" icon="trophy" onClose={onClose} testID="solo-menu">
+        <View style={styles.countRoot} testID="solo-countdown">
+          <Text style={styles.countLabel}>Solo Maraton başlıyor</Text>
+          <Animated.Text style={[styles.countNum, { transform: [{ scale: pop }] }]}>{count}</Animated.Text>
+          <Pressable
+            onPress={() => setCount(null)}
+            accessibilityRole="button"
+            testID="solo-countdown-cancel"
+            style={({ pressed }) => [styles.cancelBtn, styles.countCancel, pressed && styles.pressed]}
+          >
+            <Ionicons name="close-circle" size={26} color="#FFFFFF" />
+            <Text style={styles.cancelText}>Vazgeç</Text>
+          </Pressable>
+          <Text style={styles.countHint}>Vazgeçersen can harcanmaz.</Text>
+        </View>
+      </Popup>
     );
   }
 
-  // Her şey tek ekrana sığar (kaydırma yok); oynat düğmesi en üstte, başlık kartının içinde
   return (
-    <View style={styles.introRoot}>
-      <View style={styles.header}>
-        <Pressable onPress={onBack} hitSlop={10} accessibilityRole="button" style={styles.back}>
-          <Ionicons name="chevron-back" size={20} color={colors.primary} />
-          <Text style={styles.backText}>Geri</Text>
-        </Pressable>
-        <Text style={styles.introLives}>{`${lobby?.lives ?? 0}/${lobby?.max_lives ?? 5} can`}</Text>
-      </View>
+    <Popup
+      title="Solo Maraton"
+      subtitle="12 soru · kolaydan zora · ilk yanlışta biter · 1 can"
+      icon="trophy"
+      onClose={onClose}
+      testID="solo-menu"
+    >
       <LinearGradient
         colors={['#9B7BFF', '#4B2FB8']}
         start={{ x: 0, y: 0 }}
@@ -1057,7 +1101,7 @@ function SoloIntro({
         <PlayButton
           label="Solo Maratonu başlat"
           iconOnly
-          size={112}
+          size={100}
           disabled={busy}
           onPress={() => {
             playSound('start');
@@ -1065,8 +1109,7 @@ function SoloIntro({
           }}
           testID="solo-start"
         />
-        <Text style={styles.introTitle}>Solo Maraton</Text>
-        <Text style={styles.introSub}>12 soru · kolaydan zora · ilk yanlışta biter · 1 can</Text>
+        <Text style={styles.introLives}>{`${lobby?.lives ?? 0}/${lobby?.max_lives ?? 5} can`}</Text>
       </LinearGradient>
       <View style={styles.introCard}>
         <IntroLine icon="speedometer" text="İlk soru 20 sn; her soruda 1 sn kısalır (en az 9 sn)." />
@@ -1090,9 +1133,81 @@ function SoloIntro({
       </View>
       <JokerPreview
         title="Sandıktan çıkabilecek jokerler"
+        size="xxs"
         items={SOLO_JOKERS.map((k) => ({ key: k, look: jokerLook(k), desc: JOKER_INFO[k].desc }))}
       />
-    </View>
+    </Popup>
+  );
+}
+
+/** Yan Yana penceresi: iki oyuncunun adı ve Başla. Oyun başlayınca Yan Yana oyun ekranı açılır. */
+function SideMenu({
+  defaultName,
+  todayCount,
+  dailyLimit,
+  onClose,
+  onStarted,
+}: {
+  defaultName: string;
+  todayCount: number;
+  dailyLimit: number;
+  onClose: () => void;
+  onStarted: (id: string) => void;
+}) {
+  const [name1, setName1] = useState(defaultName);
+  const [name2, setName2] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const left = Math.max(0, dailyLimit - todayCount);
+
+  async function start() {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    const res = await sideStart(name1, name2);
+    setBusy(false);
+    if (res.error || !res.data) return setErr(res.error ?? 'Oyun başlatılamadı.');
+    playSound('start');
+    onStarted(res.data);
+  }
+
+  return (
+    <Popup
+      title="Yan Yana"
+      subtitle="Tek telefonda 2 kişi · 3 raunt × 3 soru · puan vermez, can harcamaz"
+      icon="phone-portrait"
+      onClose={onClose}
+      testID="side-menu"
+    >
+      <View style={styles.sideStart}>
+        <PlayButton
+          label="BAŞLA"
+          size={104}
+          disabled={busy || left < 1}
+          onPress={() => void start()}
+          testID="side-start"
+          colors={['#5EA8FF', '#1E40AF']}
+        />
+      </View>
+      <Text style={styles.sideText}>
+        Telefonu ikinizin ortasına koyun. Ekran ikiye bölünür; üst yarı karşıda oturan için ters döner. Her raunt başında
+        kategori seçin. Şıkların yeri ve rengi ikinizde farklıdır.
+      </Text>
+      <View style={styles.sideNames}>
+        <View style={styles.flex}>
+          <TextField label="Alttaki oyuncu" value={name1} onChangeText={setName1} maxLength={14} placeholder="1. Oyuncu" />
+        </View>
+        <View style={styles.flex}>
+          <TextField label="Üstteki oyuncu" value={name2} onChangeText={setName2} maxLength={14} placeholder="2. Oyuncu" />
+        </View>
+      </View>
+      <Text style={styles.sideNote}>
+        {'Bugün '}
+        <Text style={styles.sideNoteStrong}>{`${todayCount}/${dailyLimit}`}</Text>
+        {' Yan Yana oyunu'}
+      </Text>
+      {err ? <Text style={styles.err}>{err}</Text> : null}
+    </Popup>
   );
 }
 
@@ -1295,7 +1410,7 @@ const styles = StyleSheet.create({
   },
   rankLinkTitle: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },
   rankLinkSub: { color: colors.textMuted, fontSize: 12 },
-  countRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.lg, padding: spacing.lg },
+  countRoot: { alignItems: 'center', justifyContent: 'center', gap: spacing.lg, paddingVertical: spacing.lg },
   countLabel: { color: colors.textMuted, fontFamily: fonts.extra, fontSize: fontSizes.md },
   countNum: { color: colors.primary, fontFamily: fonts.black, fontSize: 140, lineHeight: 160 },
   countCancel: { alignSelf: 'stretch' },
@@ -1503,13 +1618,13 @@ const styles = StyleSheet.create({
   medal: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   medalText: { color: '#1A1200', fontFamily: fonts.black, fontSize: 12 },
   introRoot: { flex: 1, padding: spacing.lg, paddingTop: spacing.md, gap: spacing.md },
-  introLives: { color: '#FF4D6D', fontFamily: fonts.extra, fontSize: fontSizes.sm },
-  introHero: { alignItems: 'center', gap: 4, padding: spacing.md, borderRadius: radii.lg, overflow: 'hidden' },
+  introLives: { color: '#FFFFFF', fontFamily: fonts.extra, fontSize: fontSizes.sm },
+  introHero: { alignItems: 'center', gap: 6, padding: spacing.md, borderRadius: radii.lg, overflow: 'hidden' },
   introTitle: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: fontSizes.xl, marginTop: 4 },
   introSub: { color: 'rgba(255,255,255,0.9)', fontFamily: fonts.semi, fontSize: fontSizes.sm },
-  introCard: { gap: 10, padding: spacing.md, borderRadius: radii.lg, backgroundColor: colors.surface },
+  introCard: { gap: 8, padding: spacing.md, borderRadius: radii.lg, backgroundColor: colors.surfaceAlt },
   introLine: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
-  introLineText: { flex: 1, color: colors.text, fontSize: 14, lineHeight: 19 },
+  introLineText: { flex: 1, color: colors.text, fontSize: 13, lineHeight: 18 },
   milestones: { flexDirection: 'row', gap: spacing.sm },
   milestone: {
     flex: 1,
@@ -1517,12 +1632,12 @@ const styles = StyleSheet.create({
     gap: 2,
     paddingVertical: spacing.sm,
     borderRadius: radii.md,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: 'rgba(34, 211, 197, 0.4)',
+    borderColor: 'rgba(255, 200, 61, 0.45)',
   },
   milestoneAt: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },
-  milestonePts: { color: colors.primary, fontFamily: fonts.black, fontSize: fontSizes.lg },
+  milestonePts: { color: colors.highlight, fontFamily: fonts.black, fontSize: fontSizes.lg },
   startBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1604,7 +1719,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   createText: { color: colors.text, fontFamily: fonts.semi, fontSize: 12 },
-  playWrap: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.md },
+  playWrap: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs },
   playBtn: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1636,6 +1751,26 @@ const styles = StyleSheet.create({
   prow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 8 },
   prowAlt: { backgroundColor: 'rgba(255,255,255,0.03)' },
   pkey: { flex: 1, color: colors.text, fontSize: fontSizes.sm },
-  pval: { color: colors.primary, fontFamily: fonts.black, fontSize: fontSizes.sm, textAlign: 'right' },
+  pval: { color: colors.highlight, fontFamily: fonts.black, fontSize: fontSizes.sm, textAlign: 'right' },
   ptableNote: { color: colors.textMuted, fontSize: 12, lineHeight: 17 },
+  pgrid: { flexDirection: 'row' },
+  pcell: { flex: 1, alignItems: 'center', paddingVertical: 8, gap: 2 },
+  pcellLine: { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.border },
+  pcellKey: { color: colors.textMuted, fontFamily: fonts.semi, fontSize: 12 },
+  pcellVal: { color: colors.highlight, fontFamily: fonts.black, fontSize: fontSizes.md },
+  pfoot: {
+    color: colors.textMuted,
+    fontSize: 11.5,
+    lineHeight: 16,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  pfootStrong: { color: colors.text, fontFamily: fonts.extra },
+  sideStart: { alignItems: 'center', paddingVertical: spacing.xs },
+  sideText: { color: colors.textMuted, fontSize: 13, lineHeight: 19, textAlign: 'center' },
+  sideNames: { flexDirection: 'row', gap: spacing.sm },
+  sideNote: { color: colors.textMuted, fontSize: fontSizes.sm, textAlign: 'center' },
+  sideNoteStrong: { color: colors.highlight, fontFamily: fonts.extra },
 });

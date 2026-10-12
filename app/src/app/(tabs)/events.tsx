@@ -438,20 +438,9 @@ function EventsScreen() {
         ) : undefined
       }
       floatingFooter
-      // Katılım Doğrula / Oluştur: Oyunlar ekranındaki gibi içeriğin üstünde yüzer (arkasında zemin yok)
+      // Oluştur (solda) / Katılım Doğrula (sağda): Oyunlar ekranındaki gibi içeriğin üstünde yüzer (arkasında zemin yok)
       footer={
         <View style={styles.topButtons}>
-          <GameActionButton
-            label="Katılım Doğrula"
-            sub="Ön kayıt yaptığın etkinlikler"
-            icon="enter"
-            colors={['#2BC4B4', '#147A8C']}
-            edge="#0E5560"
-            art={gameButtonImages.join}
-            onPress={() => setJoinListOpen(true)}
-            testID="events-join"
-            compact
-          />
           <GameActionButton
             label="Oluştur"
             sub={limitReached ? 'Bu ayki hakkın bitti' : 'Etkinliğini aç'}
@@ -465,6 +454,17 @@ function EventsScreen() {
               setFormOpen(true);
             }}
             testID="events-create"
+            compact
+          />
+          <GameActionButton
+            label="Katılım Doğrula"
+            sub="Ön kayıt yaptığın etkinlikler"
+            icon="enter"
+            colors={['#2BC4B4', '#147A8C']}
+            edge="#0E5560"
+            art={gameButtonImages.join}
+            onPress={() => setJoinListOpen(true)}
+            testID="events-join"
             compact
           />
         </View>
@@ -526,7 +526,7 @@ function EventsScreen() {
         testID="event-points-link"
         style={({ pressed }) => [styles.pointsPill, pressed && styles.pressed]}
       >
-        <Ionicons name="help-circle" size={16} color={colors.primary} />
+        <Ionicons name="help-circle" size={16} color={colors.highlight} />
         <Text style={styles.pointsPillText}>Etkinlik puanları nasıl çalışır?</Text>
       </Pressable>
       {/* Keşfet (tüm etkinlikler) ve Ekip arayanlar (ekip arayanı olan etkinlikler) */}
@@ -536,30 +536,40 @@ function EventsScreen() {
           accessibilityRole="button"
           accessibilityLabel="Keşfet: tüm etkinlikler"
           testID="events-discover"
-          style={({ pressed }) => [styles.discover, category === 'all' && styles.discoverOn, pressed && styles.pressed]}
+          accessibilityState={{ selected: category === 'all' }}
+          style={({ pressed }) => [
+            styles.discover,
+            styles.discoverExplore,
+            category === 'all' && styles.discoverOn,
+            pressed && styles.pressed,
+          ]}
         >
-          <Ionicons name="compass" size={20} color={category === 'all' ? colors.primaryText : colors.primary} />
-          <Text style={[styles.discoverText, category === 'all' && styles.discoverTextOn]}>Keşfet</Text>
-          <Text style={[styles.discoverCount, category === 'all' && styles.discoverTextOn]}>{events.length}</Text>
+          <Ionicons name="compass" size={20} color={colors.primaryText} />
+          <Text style={styles.discoverText}>Keşfet</Text>
+          <View style={styles.discoverBadge}>
+            <Text style={styles.discoverCount}>{events.length}</Text>
+          </View>
         </Pressable>
         <Pressable
           onPress={() => setCategory((c) => (c === 'team' ? null : 'team'))}
           accessibilityRole="button"
           accessibilityLabel="Ekip arayanların olduğu etkinlikler"
           testID="events-team"
+          accessibilityState={{ selected: category === 'team' }}
           style={({ pressed }) => [
             styles.discover,
+            styles.discoverTeam,
             category === 'team' && styles.discoverOn,
             pressed && styles.pressed,
           ]}
         >
-          <Ionicons name="people" size={20} color={category === 'team' ? colors.primaryText : colors.primary} />
-          <Text style={[styles.discoverText, category === 'team' && styles.discoverTextOn]} numberOfLines={1}>
+          <Ionicons name="people" size={20} color={colors.primaryText} />
+          <Text style={styles.discoverText} numberOfLines={1}>
             Ekip Bul
           </Text>
-          <Text style={[styles.discoverCount, category === 'team' && styles.discoverTextOn]}>
-            {events.filter((e) => (e.team_seekers ?? 0) > 0).length}
-          </Text>
+          <View style={styles.discoverBadge}>
+            <Text style={styles.discoverCount}>{events.filter((e) => (e.team_seekers ?? 0) > 0).length}</Text>
+          </View>
         </Pressable>
       </View>
 
@@ -1437,9 +1447,10 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: 'rgba(255, 200, 61, 0.55)',
+    backgroundColor: 'rgba(255, 200, 61, 0.08)',
   },
-  pointsPillText: { color: colors.textMuted, fontFamily: fonts.semi, fontSize: fontSizes.xs },
+  pointsPillText: { color: colors.highlight, fontFamily: fonts.semi, fontSize: fontSizes.xs },
   cornerTag: {
     position: 'absolute',
     top: 0,
@@ -1497,14 +1508,28 @@ const styles = StyleSheet.create({
     minHeight: 48,
     paddingHorizontal: spacing.md,
     borderRadius: radii.lg,
-    borderWidth: 1.5,
-    borderColor: colors.primary,
-    backgroundColor: colors.surface,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 5,
   },
-  discoverOn: { backgroundColor: colors.primary },
-  discoverText: { flex: 1, color: colors.primary, fontFamily: fonts.extra, fontSize: fontSizes.md },
-  discoverTextOn: { color: colors.primaryText },
-  discoverCount: { color: colors.textMuted, fontFamily: fonts.semi, fontSize: fontSizes.sm },
+  // Dolu, tema renginde düğmeler; seçiliyken beyaz çerçeve
+  discoverExplore: { backgroundColor: colors.primary },
+  discoverTeam: { backgroundColor: colors.accent },
+  discoverOn: { borderColor: '#FFFFFF' },
+  discoverText: { flex: 1, color: colors.primaryText, fontFamily: fonts.extra, fontSize: fontSizes.md },
+  discoverBadge: {
+    minWidth: 26,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radii.pill,
+    backgroundColor: 'rgba(4, 33, 31, 0.22)',
+    alignItems: 'center',
+  },
+  discoverCount: { color: colors.primaryText, fontFamily: fonts.extra, fontSize: fontSizes.sm },
   myBtn: {
     flexDirection: 'row',
     alignItems: 'center',

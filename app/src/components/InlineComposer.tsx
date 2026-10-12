@@ -247,7 +247,7 @@ export function InlineComposer({
               {busy ? (
                 <ActivityIndicator color={colors.primaryText} />
               ) : (
-                <Ionicons name="arrow-forward" size={20} color={colors.primaryText} />
+                <Ionicons name="send" size={22} color={colors.primaryText} />
               )}
             </Pressable>
           </View>
@@ -309,7 +309,8 @@ const styles = StyleSheet.create({
   },
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, pointerEvents: 'box-none' },
   main: { flex: 1, gap: 4, pointerEvents: 'box-none' },
-  inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, pointerEvents: 'box-none' },
+  // Gönder düğmesi yazı kutusuyla aynı boydadır: kutu uzadıkça düğme de uzar
+  inputRow: { flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm, pointerEvents: 'box-none' },
   anon: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -335,40 +336,58 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, pointerEvents: 'box-none' },
   side: { gap: 6 },
   chainOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  // Yazı kutusu ve yanındaki düğmeler: belirgin çerçeve ve gölge (akışın üstünde ayırt edilsin)
   plus: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: 'rgba(15, 35, 51, 0.92)',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1.5,
+    borderColor: 'rgba(34, 211, 197, 0.55)',
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.55,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 8,
   },
   // Yazdıkça kendiliğinden uzar (en çok ~10 satır); daha uzunsa kutunun içinde kayar
   input: {
     flex: 1,
-    minHeight: 40,
+    minHeight: 48,
     maxHeight: 220,
     color: colors.text,
     fontSize: fontSizes.md,
     lineHeight: 20,
     paddingHorizontal: spacing.md,
-    paddingTop: 10,
-    paddingBottom: 10,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingTop: 13,
+    paddingBottom: 13,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderColor: 'rgba(34, 211, 197, 0.55)',
     backgroundColor: colors.surface,
     textAlignVertical: 'top',
+    shadowColor: '#000',
+    shadowOpacity: 0.55,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 8,
   },
   send: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 56,
+    minHeight: 48,
+    borderRadius: 22,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    shadowColor: '#000',
+    shadowOpacity: 0.55,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 8,
   },
   sendOff: { opacity: 0.4 },
   pressed: { opacity: 0.8 },

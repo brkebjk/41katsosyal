@@ -1,41 +1,55 @@
-# Görev Test Rehberi – Paket: Güvenlik ve Düzeltmeler 1
+# Görev Test Rehberi – Paket: Görseller ve Arayüz 2
 
-> Önce: Supabase > SQL Editor'e yeni `supabase/schema.sql` dosyasının tamamını yapıştır ve **Run**'a bas.
-> Sonra bilgisayarında `app` klasöründe `npm install` çalıştır ve Expo Go ile uygulamayı aç.
+> Önce: Supabase > SQL Editor'e yeni `supabase/schema.sql` dosyasının tamamını yapıştır ve **Run**'a bas (akış süzgeci için gerekli).
+> Sonra bilgisayarında `app` klasöründe `npx expo start -c` çalıştır ve Expo Go ile uygulamayı aç.
+> Not: Uygulama simgesi ve açılış ekranı Expo Go'da görünmez; mağaza sürümünde görünür.
 
-## 1. Seviye adları
-1. Profil sekmesini aç. Puanının yanında seviye adın görünür.
-2. Yeni adlar şunlar olmalı: **Yeni Komşu → Mahalle Dostu → Sokak Kâşifi → Meydan Müdavimi → Şehrin Yıldızı**.
-3. Oyun sekmesinden Sıralama'yı aç; isimlerin altındaki seviye adları da yeni adlarla görünmeli.
+## 1. Görseller
+1. Etkinlikler sekmesini aç. 10 kategori kutusunun hepsinde yeni fotoğraflar görünmeli.
+2. Akış sekmesinin üstünde ve giriş ekranında yeni "41" logosu görünmeli (arka planı şeffaf olmalı).
+3. Profil > "Hesabı Yükselt" kutusunda ve Abonelik ekranında yeni yıldızlı rozet görünmeli.
 
-## 2. Haritadaki etkinlik görselleri
-1. Konser & Festival kategorisinde, görselli bir etkinlik aç (ya da var olanı kullan). Görsel moderatör onayı bekliyorken haritada **görünmemeli**.
-2. Moderatör hesabıyla Moderatör paneli > Onaylar'dan görseli onayla. Haritada etkinliğin peteğinin üstünde görsel kartı **görünmeli**.
-3. "Sosyal" gibi başka bir kategoride görselli bir etkinlik aç ve görselini onayla. Haritada (petek kartında ve peteğe dokununca açılan listede) **görsel görünmemeli**. Etkinlikler sekmesinde ise görünmeye devam etmeli.
-4. Moderatörün açtığı 41. Kat Özel etkinliğin görseli haritada görünmeli.
+## 2. Profil
+1. En alttaki **Çıkış yap** düğmesi kırmızı dolu ve beyaz yazılı olmalı.
+2. Gerçek adın, puanın ve başarım sayısı (yalnızca sayı) **sarı** olmalı. "Hesabım" başlığı da sarı olmalı.
+3. **Başarımlar** artık büyük, renkli bir kutu olmalı (kupa simgesi, ilerleme çubuğu).
+4. Puan alanına dokun: puan halkası, seviyen ve 5 seviye basamağı olan sabit bir pencere açılmalı (kaydırma olmamalı).
+5. **Arkadaşlarım**'a dokun: ayrı sayfa değil, alttan açılan bir pencere gelmeli. Aşağı sürükleyince kapanmalı.
+6. "Hesabım"ı aç, sonra Başarımlar'a girip geri dön: Hesabım **açık kalmalı**. Başka bir sekmeye geçip geri gelince kapanmalı.
 
-## 3. Bilgi metinleri
-1. Oyun > Bilgi Yarışması'nın bilgi (i) penceresinde "Günde en çok **25** oyun" yazmalı.
-2. Aynı pencerede Yan Yana için "**3 raunt × 3 soru (toplam 9 soru)**" yazmalı.
-3. Bilgi Yarışması'nda Puan penceresinde "Günde en çok oyun: 25" görünmeli.
-4. Etkinlik aç formunda Zaman alanının açıklamasında "Konser & Festival 2 saat sonra" ibaresi olmalı.
-5. Etkinlikler sekmesindeki bilgi penceresinde Konser & Festival için "kod girişi başlangıçtan 45 dakika sonra kapanır" yazmalı.
-6. Kod girişi süresi geçmiş bir etkinliğe kod girmeye çalışınca çıkan uyarı, Konser (45 dakika) ve diğer etkinlikler (3 saat) için doğru bilgiyi vermeli.
+## 3. Bilgi Yarışması
+1. Oyunlar > Bilgi Yarışması'nı aç. "Nasıl oynanır?" ve ses düğmesi sarı olmalı.
+2. Ortadaki büyük **OYNA**'ya dokun: Uzaktan'daki gibi bir pencere açılmalı (oynat düğmesi, kurallar, jokerler).
+3. **Yan Yana**'ya dokun: iki oyuncu adı ve BAŞLA olan bir pencere açılmalı. BAŞLA'ya basınca oyun ekranı açılmalı.
+4. Bu pencereleri üç yoldan kapatmayı dene: sağ üstteki çarpı, telefonun geri tuşu/hareketi ve ekranın sol kenarından sağa kaydırma.
+5. **Uzaktan**'ı aç: 5 joker kartı tek sırada yan yana durmalı; puan tablosu dahil her şey kaydırmadan görünmeli.
 
-## 4. Anlık bildirim (sunucu yükü azaltıldı)
-1. İki telefonla (ya da iki hesapla) giriş yap; ikisi de uygulama açıkta dursun.
-2. Birinci hesaptan ikinciye arkadaşlık isteği gönder. İkinci telefonda üstten kayan bildirim **1–2 saniye içinde** çıkmalı.
-3. Birinci hesapla yan yana oyun odası aç ve ikinci hesabı (oyun davetleri açıksa) davet et. Davet bildirimi anında gelmeli.
-4. Moderatör hesabından bir duyuru gönder; diğer telefonda anında görünmeli.
+## 4. Oyunlar sekmesi
+1. "Oyun davetlerini al" yazısı ve zarf simgesi sarı olmalı.
+2. "Oda kuralları" ve "Oyun puanı nasıl hesaplanır?" kutuları sarı çerçeveli olmalı.
+3. **Oda Oluştur** > **Bilgi Yarışması**'nı seç: doğrudan Uzaktan özel oda açılmalı (oda kodu görünür).
+4. Canın 0 iken ya da günlük oyun sınırın dolmuşken aynısını dene: oda açılmamalı, nedenini söyleyen bir uyarı çıkmalı.
 
-## 5. Hukuki metinler
-1. Profil > Uygulama bölümünden (ya da kayıt ekranındaki bağlantılardan) **Kullanıcı sözleşmesi**, **Açık rıza metni** ve **KVKK aydınlatma metni**'ni aç.
-2. Bölüm başlıkları sarı renkte, maddeler mor nokta ile görünmeli.
-3. Köşeli parantezli alanları ([VERİ SORUMLUSUNUN ADI] gibi) avukatla birlikte doldurman gerekiyor: Supabase > Table Editor > `app_settings` tablosunda `legal_terms`, `legal_consent` ve `legal_kvkk` satırları.
+## 5. Akış
+1. Yazı kutusu ve yanındaki düğmeler belirgin çerçeveli ve gölgeli olmalı. Gönder düğmesi yazı kutusuyla aynı boyda olmalı; çok satır yazınca o da uzamalı.
+2. Üstte süzgeç düğmesinin yanında **Arkadaşlarım** düğmesi olmalı; dokununca arkadaşlar penceresi açılmalı. Kurallar simgesi sarı olmalı.
+3. Şunları ayrı ayrı gönderi olarak paylaşmayı dene; hepsi **"paylaşılamaz"** hatası vermeli:
+   - Kendi arkadaş kodun (Arkadaşlarım penceresinde yazıyor), küçük harfle ya da `K X M P T A` gibi aralıklı yazılmış hâli
+   - Açık bir oyun odasının ya da Bilgi Yarışması özel odasının kodu
+   - `0532 123 45 67` gibi bir telefon numarası, `ali@ornek.com`, `www.ornek.com`, `insta: kullaniciadi`
+4. Aynı hatayı yorum yazarken de görmelisin.
+5. Ağır bir küfür yaz (ör. "siktir"): gönderide `*****` olarak görünmeli. "amk", "aq", "mal" olduğu gibi kalmalı. "Canım sıkıldım", "eksik", "götür" gibi kelimeler bozulmamalı.
 
-## 6. Her telefondan 1 hesap (Android)
-Bu kural mağaza sürümünde tam olarak çalışır; Expo Go'da da test edilebilir:
-1. Android telefonda bir hesap aç, çıkış yap.
-2. Expo Go'nun verilerini sil ya da Expo Go'yu kaldırıp yeniden kur, sonra yeni bir hesap açmayı dene.
-3. "Bu telefondan daha önce bir hesap açılmış" uyarısı çıkmalı.
-Not: Bu telefonda daha önce eski yöntemle hesap açtıysan, yeni yöntemle bir kez daha hesap açılabilir. Bu yalnızca bir kez olur. Deneme için kuralı geçici olarak kapatmak istersen `app_settings` tablosundaki `signup_one_per_device` değerini `false` yap; yayından önce `true`'ya geri almayı unutma.
+## 6. Etkinlikler
+1. Altta **Oluştur** solda, **Katılım Doğrula** sağda olmalı.
+2. "Etkinlik puanları nasıl çalışır?" sarı olmalı.
+3. **Keşfet** (turkuaz) ve **Ekip Bul** (lavanta) dolu renkli düğmeler olmalı; seçilince beyaz çerçeve almalı.
+
+## 7. Konum izni
+1. Telefonun ayarlarından Expo Go'nun konum iznini kapat (ya da "her seferinde sor" yap).
+2. Konum isteyen bir şey yap (ör. haritada "Konumum" ya da gönderiye konum ekleme). "Konumunu 1 kez isteyeceğim" penceresinde sarı **"Gerektiğinde konum iznini otomatik ver"** anahtarı olmalı.
+3. Anahtarı aç: telefonun izin penceresi çıkmalı. İzin verince pencere kapanmalı ve işlem devam etmeli.
+4. Aynı işlemi tekrarla: bu pencere bir daha çıkmamalı.
+
+## 8. Sekme başlıkları
+Etkinlikler, Oyunlar ve Profil sekmelerinde üstteki başlığın arkasında turkuaz-mor bir ışık, solunda sarı ince bir çizgi olmalı. Üçünde de aynı görünmeli.

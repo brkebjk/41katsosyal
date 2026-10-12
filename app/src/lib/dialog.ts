@@ -22,9 +22,20 @@ export type DialogButton<T> = {
   style?: 'primary' | 'danger' | 'ghost';
 };
 
+/**
+ * Pencerede, düğmelerin üstünde açılıp kapanan bir anahtar. Açılınca `onEnable` çalışır: bir değer döndürürse pencere
+ * o değerle kapanır; `undefined` dönerse pencere açık kalır, anahtar kapalı konuma döner ve varsa `failText` görünür.
+ */
+export type DialogToggle = {
+  label: string;
+  onEnable: () => Promise<unknown>;
+  failText?: string;
+};
+
 export type DialogOptions<T> = {
   title: string;
   message?: string;
+  toggle?: DialogToggle;
   /** Kırmızı, belirgin uyarı satırı (ör. “Gerçek adın görünür”). Mesajın altında çerçeveli kutuda çıkar. */
   warning?: string;
   icon?: IconName;
@@ -38,6 +49,7 @@ export type DialogRequest = {
   id: number;
   title: string;
   message?: string;
+  toggle?: DialogToggle;
   warning?: string;
   icon: IconName;
   tone: DialogTone;
@@ -91,6 +103,7 @@ export function showDialog<T>(options: DialogOptions<T>): Promise<T> {
       id: nextId++,
       title: options.title,
       message: options.message,
+      toggle: options.toggle,
       warning: options.warning,
       icon: options.icon ?? DEFAULT_ICONS[tone],
       tone,

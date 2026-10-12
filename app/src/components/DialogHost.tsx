@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useId, useState, useSyncExternalStore } from 'react';
-import { Animated, BackHandler, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, BackHandler, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
 import {
   closeDialog,
@@ -38,6 +38,30 @@ export function DialogHost() {
 function DialogView({ request }: { request: DialogRequest }) {
   const tone = TONES[request.tone];
   const [fade] = useState(() => new Animated.Value(0));
+  const [toggleOn, setToggleOn] = useState(false);
+  const [toggleBusy, setToggleBusy] = useState(false);
+  const [toggleFailed, setToggleFailed] = useState(false);
+
+  async function onToggle(next: boolean) {
+    const t = request.toggle;
+    if (!t || !next || toggleBusy) return;
+    setToggleOn(true);
+    setToggleBusy(true);
+    setToggleFailed(false);
+    let value: unknown;
+    try {
+      value = await t.onEnable();
+    } catch {
+      value = undefined;
+    }
+    setToggleBusy(false);
+    if (value === undefined) {
+      setToggleOn(false);
+      setToggleFailed(true);
+      return;
+    }
+    closeDialog(request.id, value);
+  }
 
   useEffect(() => {
     const native = Platform.OS !== 'web';
@@ -81,6 +105,24 @@ function DialogView({ request }: { request: DialogRequest }) {
               </View>
             ) : null}
           </ScrollView>
+        ) : null}
+        {request.toggle ? (
+          <View style={styles.toggleBox}>
+            <View style={styles.toggleRow}>
+              <Text style={styles.toggleLabel}>{request.toggle.label}</Text>
+              <Switch
+                value={toggleOn}
+                onValueChange={(v) => void onToggle(v)}
+                disabled={toggleBusy}
+                trackColor={{ true: colors.primary, false: colors.border }}
+                accessibilityLabel={request.toggle.label}
+                testID="dialog-toggle"
+              />
+            </View>
+            {toggleFailed && request.toggle.failText ? (
+              <Text style={styles.toggleFail}>{request.toggle.failText}</Text>
+            ) : null}
+          </View>
         ) : null}
         <View style={styles.buttons}>
           {request.buttons.map((b) => (
@@ -136,6 +178,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(5, 7, 14, 0.78)',
   },
   scroll: { alignSelf: 'stretch', flexGrow: 0, flexShrink: 1 },
+  toggleBox: {
+    alignSelf: 'stretch',
+    gap: 6,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 200, 61, 0.45)',
+    backgroundColor: 'rgba(255, 200, 61, 0.07)',
+  },
+  toggleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  toggleLabel: { flex: 1, color: colors.highlight, fontFamily: fonts.extra, fontSize: fontSizes.sm, lineHeight: 19 },
+  toggleFail: { color: colors.textMuted, fontSize: 12, lineHeight: 17 },
   scrollContent: { gap: spacing.md },
   card: {
     width: '100%',

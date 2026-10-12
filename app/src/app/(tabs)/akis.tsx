@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { FeedRulesPopup } from '@/components/FeedRulesPopup';
+import { FriendsSheet } from '@/components/FriendsSheet';
 import { ContentActions, type ContentResult, type ContentTarget } from '@/components/ContentActions';
 import { ImageSlot } from '@/components/ImageSlot';
 import { PostCard } from '@/components/PostCard';
@@ -36,6 +37,7 @@ import { districtOf, isLand, type Cell } from '@/lib/hex';
 import { imageAspect } from '@/lib/images';
 import { locateMyCell, myCellNow, nearCell, useMyCell } from '@/lib/myCell';
 import { isFuture, isSubscriptionActive } from '@/lib/labels';
+import { useNotices } from '@/lib/notices';
 import { isBackendReady } from '@/lib/supabase';
 import { useTabResetKey } from '@/lib/tabReset';
 import { brand, colors, fonts, fontSizes, radii, spacing } from '@/theme';
@@ -92,6 +94,8 @@ function FeedScreen() {
   /** Huni: süzgeç penceresi; sağdaki düğme: topluluk kuralları */
   const [filterOpen, setFilterOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [friendsOpen, setFriendsOpen] = useState(false);
+  const notices = useNotices();
   // Petek akışı: yakınımdaki petekler (bulunduğum + yanındaki 6) ya da bunlardan biri
   const [near, setNear] = useState(false);
   const [cellFilter, setCellFilter] = useState<Cell | null>(null);
@@ -434,7 +438,31 @@ function FeedScreen() {
           ) : (
             <View style={styles.hdrSpacer} />
           )}
-          {profile && !isSponsor ? <View style={styles.hdrSpacer} /> : null}
+          {profile && !isSponsor ? (
+            <Pressable
+              onPress={() => setFriendsOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel={
+                notices.friendRequests > 0
+                  ? `Arkadaşlarım, ${notices.friendRequests} yeni arkadaşlık isteği`
+                  : 'Arkadaşlarım'
+              }
+              hitSlop={6}
+              testID="feed-friends-open"
+              style={({ pressed }) => [
+                styles.hdrBtn,
+                notices.friendRequests > 0 && styles.hdrBtnOn,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Ionicons name={notices.friendRequests > 0 ? 'people' : 'people-outline'} size={19} color={colors.primary} />
+              {notices.friendRequests > 0 ? (
+                <View style={styles.dmBadge}>
+                  <Text style={styles.dmBadgeText}>{notices.friendRequests > 9 ? '9+' : notices.friendRequests}</Text>
+                </View>
+              ) : null}
+            </Pressable>
+          ) : null}
           <View style={styles.hdrLogo}>
             <ImageSlot name="logo" style={{ height: 58, aspectRatio: imageAspect.logo }} />
           </View>
@@ -464,9 +492,9 @@ function FeedScreen() {
             accessibilityLabel="Topluluk ve yazışma kuralları"
             hitSlop={6}
             testID="feed-rules-open"
-            style={({ pressed }) => [styles.hdrBtn, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.hdrBtn, styles.hdrBtnRules, pressed && styles.pressed]}
           >
-            <Ionicons name="document-text-outline" size={19} color={colors.primary} />
+            <Ionicons name="document-text-outline" size={19} color={colors.highlight} />
           </Pressable>
         </View>
       }
@@ -542,6 +570,7 @@ function FeedScreen() {
               onUnread={setDmUnread}
             />
           ) : null}
+          {friendsOpen ? <FriendsSheet onClose={() => setFriendsOpen(false)} /> : null}
         </>
       }
     >
@@ -899,6 +928,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 35, 51, 0.9)',
   },
   hdrBtnOn: { borderColor: colors.primary },
+  hdrBtnRules: { borderColor: 'rgba(255, 200, 61, 0.6)' },
   hdrSpacer: { width: 40, height: 40 },
   dmBadge: {
     position: 'absolute',

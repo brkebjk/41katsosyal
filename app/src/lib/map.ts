@@ -15,6 +15,7 @@
 //    ve her konum isteğinden önce harita için de sayılacağı yazılı olarak bildirilir. Yer eklemeyen / “Şimdi değil” diyen
 //    üyenin hiçbir verisi haritaya işlenmez.
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 
 import { showDialog } from '@/lib/dialog';
@@ -149,13 +150,47 @@ const NOTICE: Record<LocationPurpose, { message: string; cancel: string }> = {
   },
 };
 
+/**
+ * “Gerektiğinde konum iznini otomatik ver” seçeneği (bu telefonda saklanır). Açıksa “1 kez isteyeceğim” uyarısı bir
+ * daha gösterilmez; konum gerektiğinde izin yoksa telefonun izin penceresi doğrudan açılır.
+ */
+const AUTO_KEY = 'kat41_auto_location';
+
+async function autoLocationOn(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(AUTO_KEY)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Uyarıdaki anahtar açılınca: telefonun izin penceresi açılır; izin verilirse seçenek kaydedilir ve devam edilir. */
+async function enableAutoLocation(): Promise<true | undefined> {
+  try {
+    let perm = await Location.getForegroundPermissionsAsync();
+    if (!perm.granted) perm = await Location.requestForegroundPermissionsAsync();
+    if (!perm.granted) return undefined;
+    await AsyncStorage.setItem(AUTO_KEY, '1').catch(() => {});
+    return true;
+  } catch {
+    return undefined;
+  }
+}
+
 /** “Konumunu 1 kez isteyeceğim” uyarısı. Konum izni yokken, konum isteğinden hemen önce gösterilir. */
 export async function showOneTimeNotice(purpose: LocationPurpose): Promise<boolean> {
   const n = NOTICE[purpose];
+  // Otomatik izin seçildiyse uyarı gösterilmez
+  if (await autoLocationOn()) return true;
   return showDialog<boolean>({
     title: 'Konumunu 1 kez isteyeceğim',
     message: n.message,
     icon: 'location',
+    toggle: {
+      label: 'Gerektiğinde konum iznini otomatik ver',
+      onEnable: enableAutoLocation,
+      failText: 'İzin verilmedi. Telefonunun Ayarlar > Uygulamalar bölümünden konum iznini açabilirsin.',
+    },
     buttons: [
       { label: 'Devam', value: true, style: 'primary' },
       { label: n.cancel, value: false, style: 'ghost' },

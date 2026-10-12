@@ -110,6 +110,8 @@ const FEED_TEXT: Record<string, string> = {
   invalid_cell: 'Bu petek geçersiz.',
   thread_full: 'Bu zincir dolu (en çok 5 parça).',
   links_not_allowed: 'Bağlantı (link), web adresi ve e-posta paylaşılamaz. Lütfen yalnızca yazı yaz.',
+  contact_not_allowed:
+    'Akışta bağlantı (link), e-posta, telefon numarası, sosyal medya hesabı ya da kod (oda, arkadaş, etkinlik, mekân, hazine kodu) paylaşılamaz. Lütfen bunları çıkarıp tekrar dene.',
   invalid_thread: 'Zincire eklenen parçaya yer ya da cevap eklenemez.',
   profile_not_found: 'Bu rumuzun profili açılamıyor (hafta bitmiş ya da gönderi kaldırılmış olabilir).',
 };

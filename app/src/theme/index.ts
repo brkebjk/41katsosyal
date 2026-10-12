@@ -14,6 +14,7 @@ export const colors = {
   danger: '#FF5470',
   alert: '#FF3B3B', // net kırmızı: uyarı yazıları ve bildirim noktaları (gerçek ad uyarısı, kırmızı nokta)
   success: '#34D399',
+  highlight: '#FFC83D', // sarı: dikkat çekmesi gereken önemli yazılar ve simgeler (puan, göstergeler, kurallar)
   // Harita katman renkleri: harita okunurluğu için palet değişiminde bilerek aynı bırakıldı
   event: '#35D6C3', // turkuaz: haritada etkinlik olan bölgeler
   game: '#A98BFF', // açık mor: haritada açık oyun odası olan bölgeler

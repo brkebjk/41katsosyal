@@ -2390,6 +2390,109 @@ returns boolean language sql immutable set search_path = public as $$
   select coalesce(p_text, '') ~* '(https?\s*:\s*/\s*/|www\s*[.,]|(^|[^a-z0-9])(t\.me|wa\.me|bit\.ly|tinyurl|discord\.gg)|[a-z0-9-]{2,}\s*(\.|\(\s*dot\s*\)|\[\s*dot\s*\]|\s+nokta\s+|\s+dot\s+)\s*(com|net|org|info|biz|io|tr|ly|gg|app|xyz|site|online|link|shop|store|tv|club|dev|live|page|ru)([^a-z0-9]|$)|[a-z0-9._%+-]+\s*@\s*[a-z0-9-]+\s*\.\s*[a-z]{2,})';
 $$;
 
+-- Akışta paylaşılamayan iletişim bilgisi: bağlantı / e-posta (yukarıdaki _has_link), e-posta servis adı, sosyal medya
+-- hesabı ("insta: kullaniciadi") ve telefon numarası (en az 10 rakam; boşluk, tire, parantezle ayrılmış olabilir).
+create or replace function public._has_contact_info(p_text text)
+returns boolean language plpgsql immutable set search_path = public as $$
+declare
+  t text := coalesce(p_text, '');
+  m text[];
+begin
+  if public._has_link(t) then return true; end if;
+  if t ~* '(^|[^a-z])(gmail|hotmail|outlook|yahoo|icloud|yandex|protonmail)([^a-z]|$)' then return true; end if;
+  if t ~* '(^|[^a-z])(instagram|insta|ig|snapchat|snap|telegram|tg|whatsapp|watsap|wp|tiktok|discord|twitter|facebook|fb)\s*(:|=|hesab[ıi]m?\s*:?)\s*@?[a-z0-9._]{3,}' then
+    return true;
+  end if;
+  for m in select regexp_matches(t, '\+?[0-9][0-9 ()-]{8,}[0-9]', 'g') loop
+    if char_length(regexp_replace(m[1], '[^0-9]', '', 'g')) >= 10 then return true; end if;
+  end loop;
+  return false;
+end $$;
+
+-- Akışta paylaşılamayan kodlar: şu an geçerli oyun odası, Bilgi Yarışması özel oda, arkadaş, etkinlik, mekân (sponsor)
+-- ve hazine kodları. Yalnızca gerçekten geçerli bir kodla birebir eşleşince true döner; sıradan kelimeler etkilenmez.
+-- Adaylar: 5–6 karakterlik harf/rakam kelimeleri ve harf harf ayrılarak yazılmışlar ("A B C 2 3", "A-B-C-2-3").
+-- Kod tablolarını okuduğu için yetkili çalışır; kimse doğrudan çağıramaz (yalnızca gönderi / yorum yazarken).
+-- Gönderi ve yorumda dakikalık yazma sınırından SONRA çağrılır: böylece kod tahmin etmek için kullanılamaz.
+create or replace function public._has_shared_code(p_text text)
+returns boolean language plpgsql stable security definer set search_path = public as $$
+declare
+  t text := coalesce(p_text, '');
+  w constant text := 'A-Za-z0-9çÇğĞıİöÖşŞüÜâÂîÎûÛ';
+  v_tokens text[];
+  v_key text;
+begin
+  select coalesce(array_agg(distinct x), '{}') into v_tokens from (
+    select upper(m[1]) as x
+      from regexp_matches(t, '(?<![' || w || '])([A-Za-z0-9]{5,6})(?![' || w || '])', 'g') m
+    union all
+    select upper(regexp_replace(m[1], '[^A-Za-z0-9]', '', 'g'))
+      from regexp_matches(t, '(?<![' || w || '])((?:[A-Za-z0-9][ .\-_/*]{1,2}){4,5}[A-Za-z0-9])(?![' || w || '])', 'g') m
+  ) s where char_length(x) between 5 and 6;
+  if cardinality(v_tokens) > 0 and (
+       exists (select 1 from public.room_codes rc join public.game_rooms r on r.id = rc.room_id
+                where rc.code = any (v_tokens) and r.status in ('lobby', 'playing'))
+    or exists (select 1 from public.quiz_matches q where q.room_code = any (v_tokens) and q.status = 'playing')
+    or exists (select 1 from public.profiles p where p.friend_code = any (v_tokens))
+    or exists (select 1 from public.event_codes ec join public.events e on e.id = ec.event_id
+                where ec.code = any (v_tokens) and not e.is_cancelled and e.starts_at > now() - interval '2 days')
+    or exists (select 1 from public.sponsor_codes sc
+                where sc.code = any (v_tokens) and sc.redeemed_at is null and sc.expires_at > now())
+  ) then
+    return true;
+  end if;
+  -- Hazine kodu: 3 kelime, sırasıyla geçiyorsa (büyük/küçük harf ve Türkçe karakter farkı gözetilmez)
+  v_key := ' ' || public._treasure_key(t) || ' ';
+  if exists (select 1 from public.treasures tr
+              where tr.found_at is null and tr.removed_at is null and tr.expires_at > now()
+                and position(' ' || tr.code_key || ' ' in v_key) > 0) then
+    return true;
+  end if;
+  return false;
+end $$;
+
+-- Küfür süzgeci için bir kelimeyi düzenli ifadeye çevirir: büyük/küçük harf, Türkçe/İngilizce harf (ş→s, ç→c, ğ→g,
+-- ö→o, ü→u, ı↔i) ve sık kullanılan rakam/simge yerine geçmeleri (a→4/@, e→3, i→1/!, o→0, s→5/$) aynı sayılır.
+-- Büyük yazılan Ş / Ç / Ğ "yalnızca Türkçe harf" demektir (ör. sıkış ≠ sikiş, sıktığım ≠ siktiğim).
+create or replace function public._pf_rx(p_word text)
+returns text language plpgsql immutable as $$
+declare
+  c text;
+  v_out text := '';
+begin
+  foreach c in array regexp_split_to_array(p_word, '') loop
+    v_out := v_out || case c
+      when 'a' then '[aA4@âÂ]' when 'e' then '[eE3]' when 'i' then '[iİI1!]' when 'ı' then '[ıIiİ1]'
+      when 'o' then '[oO0]' when 'ö' then '[öÖoO0]' when 'u' then '[uU]' when 'ü' then '[üÜuU]'
+      when 's' then '[sS5$]' when 'ş' then '[şŞsS5$]' when 'c' then '[cC]' when 'ç' then '[çÇcC]'
+      when 'g' then '[gG]' when 'ğ' then '[ğĞgG]'
+      when 'Ş' then '[şŞ]' when 'Ç' then '[çÇ]' when 'Ğ' then '[ğĞ]'
+      else '[' || c || upper(c) || ']' end;
+  end loop;
+  return v_out;
+end $$;
+
+-- Ağır küfür ve hakaretler ***** olarak yazılır (hafif olanlar, ör. amk, aq, mal, dokunulmaz). Kelimenin başı listedeki
+-- köklerden biriyle başlıyorsa kelimenin tamamı gizlenir. Kökler, sıradan kelimelerle karışmayacak biçimde seçildi
+-- (ör. "sıkıntı", "sıkıldım", "eksik", "sikke", "götür" etkilenmez).
+create or replace function public._mask_profanity(p_text text)
+returns text language plpgsql immutable set search_path = public as $$
+declare
+  w constant text := 'A-Za-z0-9çÇğĞıİöÖşŞüÜâÂîÎûÛ';
+  v text := coalesce(p_text, '');
+  s text;
+begin
+  foreach s in array array[
+    'orospu', 'orosbu', 'oruspu', 'piÇ', 'pezeven', 'kahpe', 'yarra', 'yarak', 'dalyara', 'dalyarra',
+    'siktir', 'hassiktir', 'hasiktir', 'siker', 'sikey', 'sikiyim', 'sikim', 'sikik', 'sikiŞ', 'siktiĞ',
+    'sikicem', 'sikecem', 'sikeceğ', 'sikmek', 'amına', 'amını', 'amcı', 'götveren', 'götoş', 'götlek',
+    'ibne', 'puşt', 'kaltak', 'fahişe', 'yavşak', 'gavat', 'kancık', 'şerefsiz', 'sürtük'
+  ] loop
+    v := regexp_replace(v, '(^|[^' || w || '])' || public._pf_rx(s) || '[' || w || ']*', '\1*****', 'g');
+  end loop;
+  return v;
+end $$;
+
 drop function if exists public.create_post(text);
 drop function if exists public.create_post(text, text);
 drop function if exists public.create_post(text, text, uuid);
@@ -2419,7 +2522,7 @@ declare
 begin
   v := public._require_writer('post_requires_premium');
   if char_length(v_body) not between 1 and 500 then raise exception 'invalid_body'; end if;
-  if public._has_link(v_body) then raise exception 'links_not_allowed'; end if;
+  if public._has_contact_info(v_body) then raise exception 'contact_not_allowed'; end if;
   if p_thread_of is not null then
     if p_reply_to is not null or p_place_id is not null then raise exception 'invalid_thread'; end if;
     select * into v_root from public.posts where id = p_thread_of for update;
@@ -2463,6 +2566,10 @@ begin
        where pa.author_id = v.id and p.created_at > now() - interval '1 minute') >= 5 then
     raise exception 'rate_limited';
   end if;
+  -- Kod paylaşımı (oda, arkadaş, etkinlik, mekân, hazine) yazma sınırından sonra bakılır (kod tahmini yapılamasın)
+  if public._has_shared_code(v_body) then raise exception 'contact_not_allowed'; end if;
+  -- Ağır küfürler ***** olarak kaydedilir
+  v_body := left(public._mask_profanity(v_body), 500);
   -- Sponsor hesap gerçek adıyla yazar (rumuz yerine); bu bayrak yazıldığı anki durumu saklar
   insert into public.posts (alias, avatar_index, body, place_id, place_name, place_label, place_district, by_sponsor,
                             reply_to, cell_q, cell_r, thread_root, thread_no)
@@ -2517,7 +2624,7 @@ declare
 begin
   v := public._require_writer(null); -- yorum yazmak herkese açık (susturulmamış olmak yeter)
   if char_length(v_body) not between 1 and 300 then raise exception 'invalid_body'; end if;
-  if public._has_link(v_body) then raise exception 'links_not_allowed'; end if;
+  if public._has_contact_info(v_body) then raise exception 'contact_not_allowed'; end if;
   if not exists (select 1 from public.posts where id = p_post_id and not is_hidden and thread_root is null
                   and public._post_live(created_at, event_id)) then
     raise exception 'post_not_found';
@@ -2527,6 +2634,8 @@ begin
        where ca.author_id = v.id and c.created_at > now() - interval '1 minute') >= 10 then
     raise exception 'rate_limited';
   end if;
+  if public._has_shared_code(v_body) then raise exception 'contact_not_allowed'; end if;
+  v_body := left(public._mask_profanity(v_body), 300);
   insert into public.comments (post_id, alias, avatar_index, body, by_sponsor)
   values (p_post_id, case when v.role::text = 'sponsor' then v.full_name when v.role = 'admin' then 'Kat Görevlisi'
                           else v.alias end, v.avatar_index, v_body,

@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
   item: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
   itemIcon: { marginTop: 2 },
   itemText: { flex: 1, color: colors.textMuted, fontSize: 13, lineHeight: 19 },
-  lead: { color: colors.text, fontFamily: fonts.extra },
+  lead: { color: colors.highlight, fontFamily: fonts.extra },
   note: { color: colors.textMuted, fontSize: 12, lineHeight: 18 },
   link: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingVertical: 4 },
   linkPressed: { opacity: 0.6 },

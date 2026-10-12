@@ -61,7 +61,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   place: { color: colors.textMuted, fontSize: 11 },
-  points: { color: colors.primary, fontFamily: fonts.black, fontSize: 16 },
+  points: { color: colors.highlight, fontFamily: fonts.black, fontSize: 16 },
   ladder: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   step: {
     flexGrow: 1,
@@ -74,5 +74,5 @@ const styles = StyleSheet.create({
   },
   stepOn: { borderColor: colors.primary, backgroundColor: 'rgba(34, 211, 197, 0.1)' },
   stepPlayers: { color: colors.textMuted, fontSize: 11 },
-  stepPoints: { color: colors.text, fontFamily: fonts.extra, fontSize: 14 },
+  stepPoints: { color: colors.highlight, fontFamily: fonts.extra, fontSize: 14 },
 });

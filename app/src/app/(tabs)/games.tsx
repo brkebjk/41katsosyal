@@ -163,7 +163,8 @@ function GamesScreen() {
   function onPickCreate(key: GameKey) {
     setPickOpen(false);
     if (key === 'quiz') {
-      router.push('/bilgi');
+      // Bilgi Yarışması'nda Uzaktan özel oda kurulur (can ya da günlük hak yoksa kurulmaz)
+      router.push({ pathname: '/bilgi', params: { create: '1' } });
       return;
     }
     if (!enabled[key]) {
@@ -314,7 +315,7 @@ function GamesScreen() {
       <View style={styles.halfRow}>
         <View style={[styles.inviteRow, styles.half]} testID="games-invite-toggle">
           <View style={styles.inviteHead}>
-            <Ionicons name="mail-unread-outline" size={20} color={colors.primary} />
+            <Ionicons name="mail-unread-outline" size={20} color={colors.highlight} />
             <Switch
               value={invites}
               onValueChange={(v) => void toggleInvites(v)}
@@ -362,7 +363,7 @@ function GamesScreen() {
           testID="info-rooms"
           style={({ pressed }) => [styles.infoBox, pressed && styles.tilePressed]}
         >
-          <Ionicons name="key-outline" size={16} color={colors.primary} />
+          <Ionicons name="key-outline" size={16} color={colors.highlight} />
           <Text style={styles.infoBoxText} numberOfLines={2}>
             Oda kuralları
           </Text>
@@ -373,7 +374,7 @@ function GamesScreen() {
           testID="info-points"
           style={({ pressed }) => [styles.infoBox, pressed && styles.tilePressed]}
         >
-          <Ionicons name="calculator-outline" size={16} color={colors.primary} />
+          <Ionicons name="calculator-outline" size={16} color={colors.highlight} />
           <Text style={styles.infoBoxText} numberOfLines={2}>
             Oyun puanı nasıl hesaplanır?
           </Text>
@@ -690,7 +691,7 @@ const styles = StyleSheet.create({
   },
   inviteText: { flex: 1, gap: 2 },
   inviteTitle: {
-    color: colors.text,
+    color: colors.highlight,
     fontFamily: fonts.semi,
     fontSize: fontSizes.sm,
   },
@@ -707,9 +708,9 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: spacing.sm + 2,
     borderRadius: radii.md,
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255, 200, 61, 0.07)',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: 'rgba(255, 200, 61, 0.45)',
   },
   infoBoxText: {
     flex: 1,

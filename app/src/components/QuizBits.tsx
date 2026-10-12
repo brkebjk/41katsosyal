@@ -104,6 +104,7 @@ export type CardLook = {
 };
 
 const CARD_SIZES = {
+  xxs: { w: 54, h: 74, icon: 16, circle: 28, label: 9.5, short: 7.5 },
   xs: { w: 66, h: 88, icon: 20, circle: 34, label: 10.5, short: 9 },
   sm: { w: 86, h: 116, icon: 26, circle: 44, label: 12, short: 10.5 },
   md: { w: 104, h: 142, icon: 32, circle: 56, label: 14, short: 11.5 },
@@ -435,6 +436,7 @@ const styles = StyleSheet.create({
   previewWrap: { gap: 6 },
   previewTitle: { color: colors.textMuted, fontSize: 12, fontFamily: fonts.semi },
   previewRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
+  previewRowTight: { gap: 5 },
   previewBig: { alignItems: 'center', gap: spacing.md },
   previewDesc: { color: colors.text, fontSize: fontSizes.md, lineHeight: 23, textAlign: 'center' },
   pressed: { opacity: 0.85, transform: [{ scale: 0.97 }] },
@@ -621,21 +623,24 @@ const styles = StyleSheet.create({
 export function JokerPreview({
   title = 'Jokerler',
   items,
+  size = 'xs',
 }: {
   title?: string;
   items: { key: string; look: CardLook; desc: string; tag?: string }[];
+  /** Kart boyutu: 'xxs' ile 5 kart dar ekranda da tek sıraya sığar */
+  size?: 'xxs' | 'xs';
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const cur = items.find((i) => i.key === open) ?? null;
   return (
     <View style={styles.previewWrap}>
       <Text style={styles.previewTitle}>{`${title} · ne işe yaradığını görmek için dokun`}</Text>
-      <View style={styles.previewRow}>
+      <View style={[styles.previewRow, size === 'xxs' && styles.previewRowTight]}>
         {items.map((i) => (
           <JokerCard
             key={i.key}
             look={i.look}
-            size="xs"
+            size={size}
             onPress={() => setOpen(i.key)}
             testID={`joker-preview-${i.key}`}
           />

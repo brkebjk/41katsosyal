@@ -86,9 +86,26 @@ export function Screen({
                 <View style={styles.titleCol}>
                   {header ?? (
                     <>
-                      <Text style={styles.title} accessibilityRole="header">
-                        {title}
-                      </Text>
+                      {onBack ? (
+                        <Text style={styles.title} accessibilityRole="header">
+                          {title}
+                        </Text>
+                      ) : (
+                        // Sekme başlıkları (Etkinlikler, Oyunlar, Profil…): arkasında renkli ışık, solda sarı çizgi
+                        <View style={styles.titleWrap}>
+                          <LinearGradient
+                            colors={['rgba(34, 211, 197, 0.30)', 'rgba(124, 140, 255, 0.16)', 'rgba(124, 140, 255, 0)']}
+                            locations={[0, 0.6, 1]}
+                            start={{ x: 0, y: 0.5 }}
+                            end={{ x: 1, y: 0.5 }}
+                            style={styles.titleGlow}
+                          />
+                          <View style={styles.titleBar} />
+                          <Text style={[styles.title, styles.titleLit]} accessibilityRole="header">
+                            {title}
+                          </Text>
+                        </View>
+                      )}
                       {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
                     </>
                   )}
@@ -134,6 +151,32 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: fonts.extra,
     fontSize: fontSizes.xl - 2,
+  },
+  titleWrap: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingLeft: spacing.md + 2,
+    paddingRight: spacing.xxl,
+    marginLeft: -4,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  titleGlow: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  titleBar: {
+    position: 'absolute',
+    left: 0,
+    top: 8,
+    bottom: 8,
+    width: 4,
+    borderRadius: 2,
+    backgroundColor: colors.highlight,
+  },
+  titleLit: {
+    textShadowColor: 'rgba(34, 211, 197, 0.7)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
   },
   subtitle: { color: colors.textMuted, fontSize: fontSizes.sm },
   back: {

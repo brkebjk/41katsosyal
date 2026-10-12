@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Avatar } from '@/components/Avatar';
 import { DeleteAccountSheet } from '@/components/DeleteAccountSheet';
+import { FriendsSheet } from '@/components/FriendsSheet';
 import { HexGauge } from '@/components/HexGauge';
 import { InfoModal } from '@/components/InfoModal';
 import { LeaderApplySheet } from '@/components/LeaderApplySheet';
@@ -14,6 +15,7 @@ import { NotificationSettingsSheet } from '@/components/NotificationSettingsShee
 import { ImageSlot } from '@/components/ImageSlot';
 import { NoticeBanner } from '@/components/NoticeBanner';
 import { ListRow, Meter, Panel } from '@/components/Panel';
+import { PointsProgressModal } from '@/components/PointsProgressModal';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { RealNameNotice } from '@/components/RealNameNotice';
 import { RecoveryPhraseSetup } from '@/components/RecoveryPhraseSetup';
@@ -91,10 +93,12 @@ function ProfileScreen() {
   const [aliasShown, setAliasShown] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [open, setOpen] = useState<'account' | 'app' | 'custom' | null>(null);
-  const [overlay, setOverlay] = useState<'delete' | 'recovery' | 'leader' | 'notify' | 'threads' | null>(null);
+  const [overlay, setOverlay] = useState<'delete' | 'recovery' | 'leader' | 'notify' | 'threads' | 'friends' | null>(
+    null,
+  );
   const [codeOpen, setCodeOpen] = useState(false);
   const [quotaInfoOpen, setQuotaInfoOpen] = useState(false);
-  const [resetKey, setResetKey] = useState(0);
+  const [pointsOpen, setPointsOpen] = useState(false);
   const notices = useNotices();
 
   // Seviye listesi ve hak sayıları bir kez okunur
@@ -143,17 +147,8 @@ function ProfileScreen() {
       void getMyTitles().then((t) => {
         if (!t.error) setTitles(t.data);
       });
-      // Başka sekmeye geçilince profil ilk haline döner: açılır bölümler ve pencereler kapanır, sayfa başa sarılır
-      return () => {
-        setOpen(null);
-        setOverlay(null);
-        setCodeOpen(false);
-        setQuotaInfoOpen(false);
-        setBlocksOpen(false);
-        setEditing(false);
-        setMessage(null);
-        setResetKey((k) => k + 1);
-      };
+      // Profil yalnızca BAŞKA bir sekmeye geçilince ilk haline döner (bkz. ProfileScreenTab). Profilden bir ekrana
+      // gidip (ör. Başarımlar) geri dönünce açık bölümler olduğu gibi kalır.
     }, [refreshProfile, refreshAccount, refreshQuota]),
   );
 
@@ -270,6 +265,15 @@ function ProfileScreen() {
       <NotificationSettingsSheet onClose={() => setOverlay(null)} />
     ) : overlay === 'threads' ? (
       <MyThreadsSheet onClose={() => setOverlay(null)} />
+    ) : overlay === 'friends' ? (
+      <FriendsSheet
+        onClose={() => {
+          setOverlay(null);
+          void listFriendships().then((f) => {
+            if (!f.error) setFriends(f.data);
+          });
+        }}
+      />
     ) : overlay === 'delete' ? (
       <DeleteAccountSheet onClose={() => setOverlay(null)} />
     ) : overlay === 'recovery' ? (
@@ -290,7 +294,7 @@ function ProfileScreen() {
       <Screen title="Profil" overlay={sheet}>
         <SponsorProfile fullName={profile.full_name} />
         <Panel>
-          <ListRow icon="log-out-outline" title="Çıkış yap" onPress={onSignOut} />
+          <ListRow icon="log-out-outline" title="Çıkış yap" onPress={() => void onSignOut()} />
           <ListRow icon="trash-outline" tone="danger" title="Hesabımı sil" onPress={() => setOverlay('delete')} />
         </Panel>
       </Screen>
@@ -298,7 +302,7 @@ function ProfileScreen() {
   }
 
   return (
-    <Screen key={resetKey} title="Profil" overlay={sheet}>
+    <Screen title="Profil" overlay={sheet}>
       {/* Seni bekleyen işler: dokununca ilgili ekrana gider */}
       {notices.friendRequests > 0 ? (
         <NoticeBanner
@@ -311,7 +315,7 @@ function ProfileScreen() {
           text="Kabul edersen birbirinizin gerçek adını görürsünüz. Kabul etmek zorunda değilsin."
           count={notices.friendRequests}
           action="İstekleri gör ve yanıtla"
-          onPress={() => router.push('/arkadaslar')}
+          onPress={() => setOverlay('friends')}
           testID="banner-friend-requests"
         />
       ) : null}
@@ -457,7 +461,13 @@ function ProfileScreen() {
           </View>
         ) : null}
 
-        <View style={styles.level}>
+        <Pressable
+          onPress={() => setPointsOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`${fmtPts(points)} puan. Puanını ve ilerlemeni gör`}
+          testID="profile-points"
+          style={({ pressed }) => [styles.level, pressed && styles.pressed]}
+        >
           <View style={styles.levelTop}>
             <Text style={styles.points}>{fmtPts(points)}</Text>
             <Text style={styles.pointsLabel}>puan</Text>
@@ -466,8 +476,9 @@ function ProfileScreen() {
                 · Seviye {current.level} {current.name}
               </Text>
             ) : null}
+            <Ionicons name="stats-chart" size={15} color={colors.highlight} style={styles.levelIcon} />
           </View>
-          <Meter value={progress} />
+          <Meter value={progress} color={colors.highlight} />
           <Text style={styles.levelHint}>
             {next
               ? `${next.name} seviyesine ${fmtPts(next.min_points - points)} puan kaldı`
@@ -475,23 +486,38 @@ function ProfileScreen() {
                 ? 'En yüksek seviyedesin'
                 : ''}
           </Text>
-        </View>
+        </Pressable>
 
         {/* Başarımlar: toplam ilerleme */}
         <Pressable
           onPress={() => router.push('/basarimlar')}
           accessibilityRole="button"
           accessibilityLabel="Başarımlarım"
-          style={({ pressed }) => [styles.achieve, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.achieveWrap, pressed && styles.pressed]}
           testID="profile-achievements"
         >
-          <View style={styles.levelTop}>
-            <Ionicons name="ribbon" size={16} color={colors.primary} />
-            <Text style={styles.achieveTitle}>Başarımlar</Text>
-            <Text style={styles.achieveCount}>{earned === null ? '…' : `${earned}/${TOTAL_ACHIEVEMENTS}`}</Text>
-            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-          </View>
-          <Meter value={earned === null ? 0 : earned / TOTAL_ACHIEVEMENTS} color={colors.accent} />
+          <LinearGradient
+            colors={['rgba(124, 140, 255, 0.28)', 'rgba(34, 211, 197, 0.14)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.achieve}
+          >
+            <View style={styles.achieveIcon}>
+              <Ionicons name="trophy" size={22} color={colors.highlight} />
+            </View>
+            <View style={styles.achieveBody}>
+              <View style={styles.levelTop}>
+                <Text style={styles.achieveTitle}>Başarımlar</Text>
+                <Text style={styles.achieveCount}>
+                  <Text style={styles.achieveCountNum}>{earned === null ? '…' : String(earned)}</Text>
+                  {`/${TOTAL_ACHIEVEMENTS}`}
+                </Text>
+              </View>
+              <Meter value={earned === null ? 0 : earned / TOTAL_ACHIEVEMENTS} color={colors.accent} />
+              <Text style={styles.achieveSub}>Oyna, katıl, kazan: rozetlerini ve balonlarını gör</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.text} />
+          </LinearGradient>
         </Pressable>
       </View>
 
@@ -548,7 +574,7 @@ function ProfileScreen() {
               : 'Arkadaşlar birbirinin gerçek adını görür'
           }
           value={friends ? (friends.incoming.length > 0 ? 'Yanıtla' : String(friends.friends.length)) : undefined}
-          onPress={() => router.push('/arkadaslar')}
+          onPress={() => setOverlay('friends')}
         />
         {isModerator ? (
           <ListRow
@@ -590,6 +616,7 @@ function ProfileScreen() {
       <Section
         icon="person-circle"
         title="Hesabım"
+        highlight
         subtitle="Bildirimler, izinler, ad değişikliği, kurtarma kelimeleri, engellenenler, hesap silme"
         open={open === 'account'}
         onToggle={() => setOpen((o) => (o === 'account' ? null : 'account'))}
@@ -738,9 +765,16 @@ function ProfileScreen() {
         testID="profile-signout"
         style={({ pressed }) => [styles.signOut, pressed && styles.pressed]}
       >
-        <Ionicons name="log-out-outline" size={18} color={colors.danger} />
+        <Ionicons name="log-out-outline" size={18} color="#FFFFFF" />
         <Text style={styles.signOutText}>Çıkış yap</Text>
       </Pressable>
+
+      <PointsProgressModal
+        visible={pointsOpen}
+        onClose={() => setPointsOpen(false)}
+        points={points}
+        levels={levels}
+      />
 
       <SponsorCodeModal
         visible={codeOpen}
@@ -776,10 +810,13 @@ function Section({
   open,
   onToggle,
   children,
+  highlight = false,
 }: {
   icon: IconName;
   title: string;
   subtitle: string;
+  /** Başlık sarı yazılır (dikkat çekmesi gereken bölüm) */
+  highlight?: boolean;
   open: boolean;
   onToggle: () => void;
   children: ReactNode;
@@ -793,10 +830,10 @@ function Section({
         style={({ pressed }) => [styles.sectionHead, open && styles.sectionHeadOpen, pressed && styles.pressed]}
       >
         <View style={styles.sectionIcon}>
-          <Ionicons name={icon} size={18} color={colors.primary} />
+          <Ionicons name={icon} size={18} color={highlight ? colors.highlight : colors.primary} />
         </View>
         <View style={styles.sectionText}>
-          <Text style={styles.sectionTitle}>{title}</Text>
+          <Text style={[styles.sectionTitle, highlight && styles.sectionTitleHighlight]}>{title}</Text>
           {!open ? <Text style={styles.sectionSub}>{subtitle}</Text> : null}
         </View>
         <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
@@ -837,10 +874,9 @@ const styles = StyleSheet.create({
     minHeight: 46,
     marginTop: spacing.lg,
     borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 90, 90, 0.45)',
+    backgroundColor: '#E5303F',
   },
-  signOutText: { color: colors.danger, fontFamily: fonts.semi, fontSize: fontSizes.sm },
+  signOutText: { color: '#FFFFFF', fontFamily: fonts.extra, fontSize: fontSizes.sm },
   ring: {
     padding: 4,
     borderRadius: 60,
@@ -849,7 +885,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   ringSubscription: { borderColor: colors.primary },
-  realName: { color: colors.text, fontFamily: fonts.black, fontSize: fontSizes.lg + 2, textAlign: 'center' },
+  realName: { color: colors.highlight, fontFamily: fonts.black, fontSize: fontSizes.lg + 2, textAlign: 'center' },
   aliasRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'center' },
   aliasLabel: { color: colors.textMuted, fontSize: 12 },
   alias: { color: colors.textMuted, fontSize: 12, fontFamily: fonts.semi, flexShrink: 1 },
@@ -885,20 +921,35 @@ const styles = StyleSheet.create({
   badge: { height: 18, aspectRatio: imageAspect.subscriptionBadge },
   level: { alignSelf: 'stretch', gap: spacing.xs, marginTop: spacing.md },
   levelTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' },
-  points: { color: colors.primary, fontFamily: fonts.black, fontSize: fontSizes.xl },
+  points: { color: colors.highlight, fontFamily: fonts.black, fontSize: fontSizes.xl },
   pointsLabel: { color: colors.textMuted, fontFamily: fonts.semi, fontSize: fontSizes.sm },
   levelName: { color: colors.text, fontFamily: fonts.semi, fontSize: fontSizes.sm, flexShrink: 1 },
   levelHint: { color: colors.textMuted, fontSize: 12 },
-  achieve: {
+  levelIcon: { marginLeft: 'auto' },
+  achieveWrap: {
     alignSelf: 'stretch',
-    gap: spacing.xs,
     marginTop: spacing.sm,
-    padding: spacing.md,
-    borderRadius: radii.md,
-    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    borderWidth: 1.5,
+    borderColor: 'rgba(124, 140, 255, 0.6)',
+    overflow: 'hidden',
   },
-  achieveTitle: { flex: 1, color: colors.text, fontFamily: fonts.semi, fontSize: fontSizes.sm },
-  achieveCount: { color: colors.accent, fontFamily: fonts.extra, fontSize: fontSizes.sm },
+  achieve: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
+  achieveIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 200, 61, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 200, 61, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  achieveBody: { flex: 1, gap: 6 },
+  achieveTitle: { flex: 1, color: colors.text, fontFamily: fonts.black, fontSize: fontSizes.md },
+  achieveCount: { color: colors.textMuted, fontFamily: fonts.extra, fontSize: fontSizes.sm },
+  achieveCountNum: { color: colors.highlight, fontFamily: fonts.black, fontSize: fontSizes.md },
+  achieveSub: { color: colors.textMuted, fontSize: 12 },
   pressed: { opacity: 0.85 },
   subscriptionLink: { borderRadius: radii.lg, overflow: 'hidden' },
   subscriptionGradient: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
@@ -928,6 +979,7 @@ const styles = StyleSheet.create({
   },
   sectionText: { flex: 1, gap: 2 },
   sectionTitle: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },
+  sectionTitleHighlight: { color: colors.highlight },
   sectionSub: { color: colors.textMuted, fontSize: 12, lineHeight: 17 },
   editBox: { gap: spacing.md, padding: spacing.lg },
   row: { flexDirection: 'row', gap: spacing.md },
