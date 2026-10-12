@@ -24,7 +24,7 @@ export type ImageSpec = {
 export const imageSpecs = {
   logo: {
     label: 'Logo',
-    size: '677x1024',
+    size: '490x813',
     transparent: true,
     usage: 'Giriş ekranı ve uygulama içi başlık',
     file: 'logo.png',
@@ -45,7 +45,7 @@ export const imageSpecs = {
   },
   subscriptionBadge: {
     label: 'Abone rozeti',
-    size: '232x512',
+    size: '434x512',
     transparent: true,
     usage: 'Abonelerin profilinde ve gönderilerinde görünen rozet',
     file: 'abone-rozeti.png',
@@ -56,10 +56,10 @@ export type ImageKey = keyof typeof imageSpecs;
 
 /** Görsellerin en/boy oranı (genişlik / yükseklik). Ekranda boyutu verirken işe yarar. */
 export const imageAspect: Record<ImageKey, number> = {
-  logo: 677 / 1024,
+  logo: 490 / 813,
   loginBackground: 944 / 1680,
   emptyFeed: 800 / 546,
-  subscriptionBadge: 232 / 512,
+  subscriptionBadge: 434 / 512,
 };
 
 export const images: Record<ImageKey, ImageSourcePropType | null> = {
@@ -146,20 +146,20 @@ export const vampireImages: Record<VampireImageKey, ImageSourcePropType> = {
 export const VAMPIRE_CARD_ASPECT = 2 / 3;
 export const VAMPIRE_SCENE_ASPECT = 3 / 2;
 
-// Etkinlik kategorisi kutularının görselleri (dikdörtgen, 1200x700 PNG önerilir).
-// Dosya eklenene kadar kutuda renkli bir yer tutucu görünür. Eklemek için dosyayı
-// `assets/images/events/<kategori_anahtarı>.png` olarak koyup ilgili satırı `require(...)` ile değiştir.
+// Etkinlik kategorisi kutularının görselleri (yatay JPG, 1200 piksel genişlik). Kutuya kırpılarak sığdırılır.
+// Bir satır `null` yapılırsa o kutuda renkli yer tutucu görünür. Değiştirmek için dosyayı
+// `assets/images/events/<kategori_anahtarı>.jpg` olarak aynı adla koymak yeterlidir.
 export const eventCategoryImages: Record<EventCategory, ImageSourcePropType | null> = {
-  konser_festival: null,
-  oyun_gecesi: null,
-  araba_motor: null,
-  sosyal: null,
-  muzik: null,
-  spor: null,
-  kultur: null,
-  atolye: null,
-  yemek: null,
-  diger: null,
+  konser_festival: require('../../assets/images/events/konser_festival.jpg'),
+  oyun_gecesi: require('../../assets/images/events/oyun_gecesi.jpg'),
+  araba_motor: require('../../assets/images/events/araba_motor.jpg'),
+  sosyal: require('../../assets/images/events/sosyal.jpg'),
+  muzik: require('../../assets/images/events/muzik.jpg'),
+  spor: require('../../assets/images/events/spor.jpg'),
+  kultur: require('../../assets/images/events/kultur.jpg'),
+  atolye: require('../../assets/images/events/atolye.jpg'),
+  yemek: require('../../assets/images/events/yemek.jpg'),
+  diger: require('../../assets/images/events/diger.jpg'),
 };
 
 // Bilgi Yarışması görselleri (isteğe bağlı). `null` iken ekranda kodla çizilen yedek görünüm kullanılır.
