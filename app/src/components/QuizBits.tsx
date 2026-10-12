@@ -151,7 +151,7 @@ export function JokerCard({
       style={({ pressed }) => [{ width: d.w }, pressed && !off && styles.pressed]}
     >
       <LinearGradient
-        colors={[`${look.color}55`, '#141A2B']}
+        colors={[`${look.color}55`, '#0F2333']}
         start={{ x: 0, y: 0 }}
         end={{ x: 0.4, y: 1 }}
         style={[
@@ -281,7 +281,7 @@ export function PointGoal({ label, value, max, icon }: { label: string; value: n
           style={[styles.goalFill, { width: `${Math.max(ratio * 100, ratio > 0 ? 4 : 0)}%` }]}
         />
         <View style={[styles.goalFlag, done && styles.goalFlagDone]}>
-          <Ionicons name={done ? 'trophy' : 'flag'} size={12} color={done ? '#0B0F1A' : colors.primary} />
+          <Ionicons name={done ? 'trophy' : 'flag'} size={12} color={done ? '#071622' : colors.primary} />
         </View>
       </View>
       <Text style={styles.goalSub}>
@@ -472,7 +472,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   lifeBoxHearts: { borderColor: 'rgba(255, 77, 109, 0.45)' },
-  lifeBoxDay: { borderColor: 'rgba(255, 176, 32, 0.45)' },
+  lifeBoxDay: { borderColor: 'rgba(34, 211, 197, 0.45)' },
   lifeBoxDone: { borderColor: colors.danger },
   boxLabel: { color: colors.textMuted, fontFamily: fonts.black, fontSize: 10, letterSpacing: 1.2 },
   hearts: { flexDirection: 'row', gap: 2, flexWrap: 'wrap' },

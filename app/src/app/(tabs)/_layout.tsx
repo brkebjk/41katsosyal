@@ -148,7 +148,7 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: colors.textMuted,
         tabBarLabelStyle: { fontFamily: fonts.semi, fontSize: 11, lineHeight: 14 },
         tabBarStyle: {
-          backgroundColor: '#0F1424',
+          backgroundColor: '#0A1D2B',
           borderTopColor: colors.border,
           borderTopWidth: StyleSheet.hairlineWidth,
           height: 58 + bottom,

@@ -120,7 +120,7 @@ const styles = StyleSheet.create({
   title: { color: colors.text, fontFamily: fonts.black, fontSize: fontSizes.md },
   muted: { color: colors.textMuted, fontSize: 13 },
   msg: { maxWidth: '85%', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
-  mine: { alignSelf: 'flex-end', backgroundColor: 'rgba(124, 92, 255, 0.28)' },
+  mine: { alignSelf: 'flex-end', backgroundColor: 'rgba(124, 140, 255, 0.28)' },
   theirs: { alignSelf: 'flex-start', backgroundColor: colors.surfaceAlt },
   name: { color: '#C4B5FD', fontSize: 11, fontFamily: fonts.semi },
   body: { color: colors.text, fontSize: fontSizes.sm, lineHeight: 19 },

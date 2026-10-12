@@ -21,7 +21,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: radii.pill,
-    backgroundColor: 'rgba(124, 92, 255, 0.2)',
+    backgroundColor: 'rgba(124, 140, 255, 0.2)',
   },
   text: { color: '#B7A8FF', fontFamily: fonts.semi, fontSize: 11 },
 });

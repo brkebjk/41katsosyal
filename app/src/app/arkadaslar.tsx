@@ -512,7 +512,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radii.pill,
-    backgroundColor: 'rgba(255, 176, 32, 0.12)',
+    backgroundColor: 'rgba(34, 211, 197, 0.12)',
   },
   shareText: { color: colors.primary, fontFamily: fonts.extra, fontSize: fontSizes.sm },
 });

@@ -122,7 +122,7 @@ export function TreasuresTab({ onNotice }: { onNotice: (n: Notice) => void }) {
 
 const styles = StyleSheet.create({
   card: { gap: 4, padding: spacing.md, borderRadius: radii.lg, borderWidth: 1.5, backgroundColor: colors.surface },
-  cardNew: { backgroundColor: 'rgba(255, 176, 32, 0.08)' },
+  cardNew: { backgroundColor: 'rgba(34, 211, 197, 0.08)' },
   head: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   title: { flex: 1, color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },
   diff: { fontFamily: fonts.semi, fontSize: fontSizes.xs },

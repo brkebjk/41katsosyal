@@ -1001,7 +1001,7 @@ const styles = StyleSheet.create({
   },
   reportHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   typeTag: {
-    backgroundColor: 'rgba(124, 92, 255, 0.18)',
+    backgroundColor: 'rgba(124, 140, 255, 0.18)',
     borderRadius: radii.pill,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,

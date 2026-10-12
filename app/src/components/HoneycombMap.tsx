@@ -56,6 +56,8 @@ export const GAME_COLOR = colors.game;
 export const VENUE_COLOR = colors.venue;
 /** 41. Kat Özel (moderatörün etkinliği ya da oyunu): altın sarısı petek ve yıldız */
 export const OFFICIAL_COLOR = '#FFC83D';
+/** Seçili petek: etkinlik (turkuaz) ve yoğunluk (pembe) katmanlarından ayrılsın diye sarı (arayüzün ana renginden bağımsız) */
+const SELECT_COLOR = '#FFB020';
 const MARKER_R = 10;
 
 const MAX_ZOOM = 36; // kapsayıcı ölçeğin katı
@@ -672,7 +674,7 @@ export function HoneycombMap({
               <Path
                 d={sel}
                 fill="rgba(255, 176, 32, 0.22)"
-                stroke={colors.primary}
+                stroke={SELECT_COLOR}
                 strokeWidth={px(2.4)}
                 strokeLinejoin="round"
               />
@@ -1054,7 +1056,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: 'rgba(20, 26, 43, 0.92)',
+    backgroundColor: 'rgba(15, 35, 51, 0.92)',
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',

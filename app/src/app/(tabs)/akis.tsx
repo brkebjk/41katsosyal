@@ -896,7 +896,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: 'rgba(20, 26, 43, 0.9)',
+    backgroundColor: 'rgba(15, 35, 51, 0.9)',
   },
   hdrBtnOn: { borderColor: colors.primary },
   hdrSpacer: { width: 40, height: 40 },

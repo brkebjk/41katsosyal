@@ -55,7 +55,7 @@ export default function PrizesScreen() {
       onBack={() => (router.canGoBack() ? router.back() : router.replace('/games'))}
       backLabel="Geri"
     >
-      <LinearGradient colors={['#3A1F7A', '#141A2B']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
+      <LinearGradient colors={['#3A1F7A', '#0F2333']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
         <Ionicons name="trophy" size={34} color="#FFC93C" />
         <Text style={styles.heroTitle}>Ayın ilk 3’ü ödül kazanır</Text>
         <Text style={styles.heroSub}>

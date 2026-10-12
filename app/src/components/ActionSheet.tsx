@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   bubbleRowLast: { borderBottomWidth: 0 },
-  bubbleRowPressed: { backgroundColor: 'rgba(255, 176, 32, 0.14)' },
+  bubbleRowPressed: { backgroundColor: 'rgba(34, 211, 197, 0.14)' },
   bubbleLabel: { flex: 1, color: colors.text, fontSize: fontSizes.sm, fontWeight: '700' },
   list: { backgroundColor: colors.surfaceAlt, borderRadius: radii.md, overflow: 'hidden' },
   row: {

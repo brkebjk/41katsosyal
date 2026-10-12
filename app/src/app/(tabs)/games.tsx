@@ -242,8 +242,8 @@ function GamesScreen() {
               label="Oda Oluştur"
               sub="Oyun seç, odanı aç"
               icon="add-circle"
-              colors={['#7C5CFF', '#D14DFF']}
-              edge="#4B2FB8"
+              colors={['#FF7A59', '#E5533D']}
+              edge="#A8361F"
               art={gameButtonImages.create}
               onPress={() => setPickOpen(true)}
               testID="games-create"
@@ -253,8 +253,8 @@ function GamesScreen() {
               label="Katıl"
               sub="Davet kodunu yaz"
               icon="enter"
-              colors={['#FFB020', '#FF7A1A']}
-              edge="#B5560C"
+              colors={['#14B8AA', '#0E8C9A']}
+              edge="#0A5F68"
               art={gameButtonImages.join}
               onPress={actions.openJoin}
               testID="games-join"
@@ -266,7 +266,7 @@ function GamesScreen() {
     >
       {/* Aylık ödül podyumu: ayın ilk 3'ü; “Ödülleri gör” sıralama ekranını açar */}
       <LinearGradient
-        colors={['#4A2590', '#1C1640', '#0F1424']}
+        colors={['#145A66', '#0F2333', '#0A1D2B']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.podCard}
@@ -739,7 +739,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     justifyContent: 'flex-end',
     borderWidth: 1,
-    borderColor: 'rgba(255, 176, 32, 0.6)',
+    borderColor: 'rgba(34, 211, 197, 0.6)',
     backgroundColor: colors.surface,
   },
   raffleMiniText: {
@@ -792,7 +792,7 @@ const styles = StyleSheet.create({
     top: spacing.md,
     right: spacing.md,
     backgroundColor: 'rgba(11, 15, 26, 0.78)',
-    borderColor: 'rgba(255, 176, 32, 0.55)',
+    borderColor: 'rgba(34, 211, 197, 0.55)',
     borderWidth: 1,
     borderRadius: radii.pill,
     paddingHorizontal: spacing.sm,

@@ -116,7 +116,7 @@ export default function SubscriptionScreen() {
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <LinearGradient
-            colors={['rgba(124, 92, 255, 0.42)', 'rgba(255, 176, 32, 0.10)', 'rgba(11, 15, 26, 0)']}
+            colors={['rgba(124, 140, 255, 0.42)', 'rgba(34, 211, 197, 0.10)', 'rgba(7, 22, 34, 0)']}
             locations={[0, 0.55, 1]}
             style={styles.glow}
           />
@@ -374,7 +374,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.xs,
   },
-  cellSubscription: { backgroundColor: 'rgba(255, 176, 32, 0.10)' },
+  cellSubscription: { backgroundColor: 'rgba(34, 211, 197, 0.10)' },
   cellSubscriptionTop: {
     paddingVertical: spacing.sm,
     borderTopLeftRadius: radii.md,

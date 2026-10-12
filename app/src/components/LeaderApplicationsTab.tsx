@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: radii.pill,
-    backgroundColor: 'rgba(124, 92, 255, 0.16)',
+    backgroundColor: 'rgba(124, 140, 255, 0.16)',
   },
   chipText: { color: colors.accent, fontSize: fontSizes.xs, fontFamily: fonts.semi },
   btnRow: { flexDirection: 'row', gap: spacing.sm },

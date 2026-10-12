@@ -235,7 +235,7 @@ function TreasureCreateModal({
                     accessibilityState={{ selected: on }}
                     style={[styles.chip, { borderColor: TREASURE_COLORS[d] }, on && { backgroundColor: TREASURE_COLORS[d] }]}
                   >
-                    <Ionicons name={DIFFICULTY_ICON[d]} size={14} color={on ? '#0B0F1A' : TREASURE_COLORS[d]} />
+                    <Ionicons name={DIFFICULTY_ICON[d]} size={14} color={on ? '#071622' : TREASURE_COLORS[d]} />
                     <Text style={[styles.chipText, on && styles.chipTextOn]}>{DIFFICULTY_LABEL[d]}</Text>
                   </Pressable>
                 );
@@ -299,6 +299,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   chipText: { color: colors.text, fontFamily: fonts.semi, fontSize: fontSizes.sm },
-  chipTextOn: { color: '#0B0F1A' },
+  chipTextOn: { color: '#071622' },
   error: { color: colors.danger, fontSize: fontSizes.sm },
 });

@@ -234,7 +234,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 6,
     borderRadius: radii.md,
-    backgroundColor: 'rgba(255, 176, 32, 0.12)',
+    backgroundColor: 'rgba(34, 211, 197, 0.12)',
   },
   prizeText: { flex: 1, color: colors.text, fontSize: 13, fontFamily: fonts.semi },
   row: {
@@ -245,7 +245,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     borderRadius: radii.sm,
   },
-  rowMe: { backgroundColor: 'rgba(124, 92, 255, 0.18)' },
+  rowMe: { backgroundColor: 'rgba(124, 140, 255, 0.18)' },
   place: { width: 24, textAlign: 'center', color: colors.textMuted, fontFamily: fonts.extra, fontSize: fontSizes.sm },
   medal: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   medalText: { color: '#1A1200', fontFamily: fonts.black, fontSize: 12 },

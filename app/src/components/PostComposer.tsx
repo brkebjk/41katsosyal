@@ -159,7 +159,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 4,
     borderRadius: radii.pill,
-    backgroundColor: 'rgba(124, 92, 255, 0.14)',
+    backgroundColor: 'rgba(124, 140, 255, 0.14)',
   },
   anonText: { color: colors.accent, fontSize: 12, fontFamily: fonts.semi },
   box: {

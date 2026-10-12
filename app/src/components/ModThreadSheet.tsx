@@ -143,7 +143,7 @@ export function ModThreadSheet({ threadId, onClose, onEnded }: Props) {
 
 const styles = StyleSheet.create({
   bubble: { maxWidth: '86%', gap: 2, padding: spacing.sm, borderRadius: radii.md },
-  mine: { alignSelf: 'flex-end', backgroundColor: 'rgba(124, 92, 255, 0.22)' },
+  mine: { alignSelf: 'flex-end', backgroundColor: 'rgba(124, 140, 255, 0.22)' },
   theirs: { alignSelf: 'flex-start', backgroundColor: colors.surfaceAlt },
   who: { color: colors.textMuted, fontSize: 11, fontFamily: fonts.semi },
   body: { color: colors.text, fontSize: fontSizes.sm, lineHeight: 19 },

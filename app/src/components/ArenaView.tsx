@@ -1649,7 +1649,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F4F6FB',
     zIndex: 10,
   },
-  sayText: { color: '#0B0F1A', fontSize: 14, lineHeight: 17, fontFamily: fonts.extra, textAlign: 'center' },
+  sayText: { color: '#071622', fontSize: 14, lineHeight: 17, fontFamily: fonts.extra, textAlign: 'center' },
   sayTail: {
     position: 'absolute',
     bottom: -7,
@@ -1931,7 +1931,7 @@ const styles = StyleSheet.create({
   },
   offerText: { flex: 1, color: colors.text, fontSize: fontSizes.sm, fontFamily: fonts.extra },
   offerYes: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: radii.pill, backgroundColor: colors.success },
-  offerYesText: { color: '#0B0F1A', fontFamily: fonts.black, fontSize: 12 },
+  offerYesText: { color: '#071622', fontFamily: fonts.black, fontSize: 12 },
   offerNo: {
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -1979,7 +1979,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     borderRadius: radii.sm,
   },
-  standMe: { backgroundColor: 'rgba(124, 92, 255, 0.18)' },
+  standMe: { backgroundColor: 'rgba(124, 140, 255, 0.18)' },
   standPlace: {
     width: 20,
     textAlign: 'center',
@@ -1997,7 +1997,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: 'rgba(255, 176, 32, 0.4)',
+    borderColor: 'rgba(34, 211, 197, 0.4)',
   },
   monthHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   monthTitle: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.sm },
@@ -2078,7 +2078,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: 'rgba(255, 106, 26, 0.45)',
   },
-  cbFull: { borderColor: '#FFB020', backgroundColor: 'rgba(255, 176, 32, 0.14)' },
+  cbFull: { borderColor: '#FFB020', backgroundColor: 'rgba(34, 211, 197, 0.14)' },
   cbHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   cbLabel: { color: colors.text, fontFamily: fonts.black, fontSize: 12, letterSpacing: 1 },
   cbValue: { color: '#FF8A3D', fontFamily: fonts.black, fontSize: fontSizes.md, fontVariant: ['tabular-nums'] },
@@ -2144,7 +2144,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     backgroundColor: colors.surface,
   },
-  revealMe: { backgroundColor: 'rgba(124, 92, 255, 0.18)' },
+  revealMe: { backgroundColor: 'rgba(124, 140, 255, 0.18)' },
   revealName: { maxWidth: 70, color: colors.text, fontSize: 12, fontFamily: fonts.semi },
   revealPts: { color: colors.textMuted, fontFamily: fonts.black, fontSize: 12 },
 });

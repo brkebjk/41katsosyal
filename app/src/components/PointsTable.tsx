@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
-  stepOn: { borderColor: colors.primary, backgroundColor: 'rgba(255, 176, 32, 0.1)' },
+  stepOn: { borderColor: colors.primary, backgroundColor: 'rgba(34, 211, 197, 0.1)' },
   stepPlayers: { color: colors.textMuted, fontSize: 11 },
   stepPoints: { color: colors.text, fontFamily: fonts.extra, fontSize: 14 },
 });

@@ -18,7 +18,7 @@ export const GAMES: Record<GameKey, GameInfo> = {
     title: 'Vampir–Köylü',
     description: 'Gizli roller, gece ve gündüz',
     icon: 'moon',
-    fallback: ['#4A2590', '#0B0F1A'],
+    fallback: ['#4A2590', '#071622'],
   },
   taboo: {
     title: 'Tabu',
@@ -30,25 +30,25 @@ export const GAMES: Record<GameKey, GameInfo> = {
     title: 'Sessiz Sinema',
     description: 'Konuşmadan anlat',
     icon: 'film',
-    fallback: ['#0F5A6E', '#0B0F1A'],
+    fallback: ['#0F5A6E', '#071622'],
   },
   find_killer: {
     title: 'Katili Bul',
     description: 'İpuçlarıyla gizemi çöz',
     icon: 'search',
-    fallback: ['#454B63', '#0B0F1A'],
+    fallback: ['#454B63', '#071622'],
   },
   quiz: {
     title: 'Bilgi Yarışması',
     description: 'Solo ya da 2–5 kişi uzaktan (HAK YEMEZ)',
     icon: 'help-circle',
-    fallback: ['#1F57B8', '#0B0F1A'],
+    fallback: ['#1F57B8', '#071622'],
   },
   treasure_hunt: {
     title: 'Hazine Avı',
     description: 'Şehirde gizli kodları bul',
     icon: 'search-circle',
-    fallback: ['#1F7A4D', '#0B0F1A'],
+    fallback: ['#1F7A4D', '#071622'],
   },
   raffle: {
     title: 'Çekiliş',

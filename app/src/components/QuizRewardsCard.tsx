@@ -104,7 +104,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: 'rgba(255, 176, 32, 0.4)',
+    borderColor: 'rgba(34, 211, 197, 0.4)',
   },
   head: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   title: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },

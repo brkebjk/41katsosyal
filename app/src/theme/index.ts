@@ -2,18 +2,19 @@
 // Uygulamanın görünümünü değiştirmek istediğimizde sadece bu dosyaya dokunmamız yeterli.
 
 export const colors = {
-  bg: '#0B0F1A', // en koyu arka plan (gece gökyüzü)
-  surface: '#141A2B', // kartlar
-  surfaceAlt: '#1C2438', // kartların içindeki ikinci katman
-  border: '#26304A',
-  text: '#F4F6FB',
-  textMuted: '#8B95AD',
-  primary: '#FFB020', // kule penceresi sarısı: ana vurgu rengi
-  primaryText: '#1A1200', // sarı butonların üstündeki yazı
-  accent: '#7C5CFF', // mor ikinci vurgu
-  danger: '#FF5C7A',
+  bg: '#071622', // en koyu arka plan (Körfez Gecesi: gece denizi laciverti)
+  surface: '#0F2333', // kartlar
+  surfaceAlt: '#163247', // kartların içindeki ikinci katman
+  border: '#22445E',
+  text: '#F2FAFF',
+  textMuted: '#92B3C7',
+  primary: '#22D3C5', // turkuaz: ana vurgu rengi (butonlar, seçili sekme)
+  primaryText: '#04211F', // turkuaz butonların üstündeki koyu yazı
+  accent: '#7C8CFF', // lavanta: ikinci vurgu
+  danger: '#FF5470',
   alert: '#FF3B3B', // net kırmızı: uyarı yazıları ve bildirim noktaları (gerçek ad uyarısı, kırmızı nokta)
   success: '#34D399',
+  // Harita katman renkleri: harita okunurluğu için palet değişiminde bilerek aynı bırakıldı
   event: '#35D6C3', // turkuaz: haritada etkinlik olan bölgeler
   game: '#A98BFF', // açık mor: haritada açık oyun odası olan bölgeler
   venue: '#FF9F6B', // mercan: sponsor (mekân) hesapları, mekân etkinlikleri ve mekân kartları

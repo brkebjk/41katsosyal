@@ -13,9 +13,9 @@ import {
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 const TONES: Record<DialogTone, { tint: string; icon: string }> = {
-  default: { tint: 'rgba(255, 176, 32, 0.14)', icon: colors.primary },
+  default: { tint: 'rgba(34, 211, 197, 0.14)', icon: colors.primary },
   danger: { tint: 'rgba(255, 92, 122, 0.15)', icon: colors.danger },
-  friend: { tint: 'rgba(124, 92, 255, 0.2)', icon: '#A593FF' },
+  friend: { tint: 'rgba(124, 140, 255, 0.2)', icon: '#A593FF' },
   success: { tint: 'rgba(52, 211, 153, 0.15)', icon: colors.success },
 };
 

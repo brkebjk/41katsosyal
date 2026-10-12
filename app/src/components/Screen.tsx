@@ -53,7 +53,7 @@ export function Screen({
     <View style={styles.root}>
       {/* Üstte hafif mor bir ışıma: akşam gökyüzü, kulenin üst katları */}
       <LinearGradient
-        colors={['rgba(124, 92, 255, 0.24)', 'rgba(124, 92, 255, 0.07)', 'rgba(11, 15, 26, 0)']}
+        colors={['rgba(124, 140, 255, 0.24)', 'rgba(124, 140, 255, 0.07)', 'rgba(7, 22, 34, 0)']}
         locations={[0, 0.5, 1]}
         style={styles.glow}
       />

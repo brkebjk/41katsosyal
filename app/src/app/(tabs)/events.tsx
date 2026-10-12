@@ -456,8 +456,8 @@ function EventsScreen() {
             label="Oluştur"
             sub={limitReached ? 'Bu ayki hakkın bitti' : 'Etkinliğini aç'}
             icon="add-circle"
-            colors={['#7C5CFF', '#D14DFF']}
-            edge="#4B2FB8"
+            colors={['#FF7A59', '#E5533D']}
+            edge="#A8361F"
             art={gameButtonImages.create}
             disabled={limitReached || quota === null}
             onPress={() => {
@@ -572,7 +572,7 @@ function EventsScreen() {
           testID="events-mine"
           style={({ pressed }) => [styles.myCard, pressed && styles.pressed]}
         >
-          <View style={[styles.myIcon, { backgroundColor: 'rgba(255, 176, 32, 0.16)' }]}>
+          <View style={[styles.myIcon, { backgroundColor: 'rgba(34, 211, 197, 0.16)' }]}>
             <Ionicons name="albums" size={18} color={colors.primary} />
           </View>
           <View style={styles.flex1}>
@@ -1450,7 +1450,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderBottomLeftRadius: 10,
   },
-  cornerTagText: { color: '#0B0F1A', fontFamily: fonts.extra, fontSize: 10 },
+  cornerTagText: { color: '#071622', fontFamily: fonts.extra, fontSize: 10 },
   concertBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1465,7 +1465,7 @@ const styles = StyleSheet.create({
   concertBtnText: { color: colors.text, fontFamily: fonts.semi, fontSize: fontSizes.xs },
   safetyBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 4 },
   safetyText: { color: colors.danger, fontFamily: fonts.semi, fontSize: fontSizes.xs },
-  tagPromo: { backgroundColor: 'rgba(124, 92, 255, 0.16)' },
+  tagPromo: { backgroundColor: 'rgba(124, 140, 255, 0.16)' },
   tagPromoText: { color: colors.accent },
   countdown: {
     flexDirection: 'row',
@@ -1488,7 +1488,7 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '45deg' }],
     alignItems: 'center',
   },
-  ribbonText: { color: '#0B0F1A', fontFamily: fonts.black, fontSize: 7, letterSpacing: 0.2 },
+  ribbonText: { color: '#071622', fontFamily: fonts.black, fontSize: 7, letterSpacing: 0.2 },
   discover: {
     flex: 1,
     flexDirection: 'row',
@@ -1539,7 +1539,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: radii.pill,
-    backgroundColor: 'rgba(255, 176, 32, 0.14)',
+    backgroundColor: 'rgba(34, 211, 197, 0.14)',
   },
   pendingText: { color: colors.primary, fontSize: fontSizes.xs, fontFamily: fonts.semi },
   shareRow: {
@@ -1677,7 +1677,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: 'rgba(255, 176, 32, 0.45)',
+    borderColor: 'rgba(34, 211, 197, 0.45)',
   },
   dateDay: { color: colors.primary, fontFamily: fonts.black, fontSize: 24, lineHeight: 28 },
   dateMonth: { color: colors.text, fontFamily: fonts.extra, fontSize: 12, letterSpacing: 0.6 },
@@ -1718,7 +1718,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 3,
     borderRadius: radii.md,
-    backgroundColor: 'rgba(124, 92, 255, 0.14)',
+    backgroundColor: 'rgba(124, 140, 255, 0.14)',
   },
   seatBadgeFull: { backgroundColor: 'rgba(255, 92, 122, 0.14)' },
   seatCount: { color: colors.text, fontFamily: fonts.black, fontSize: fontSizes.md },
@@ -1738,7 +1738,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   priceFree: { backgroundColor: 'rgba(52, 211, 153, 0.14)' },
-  pricePaid: { backgroundColor: 'rgba(255, 176, 32, 0.14)' },
+  pricePaid: { backgroundColor: 'rgba(34, 211, 197, 0.14)' },
   priceText: { fontFamily: fonts.extra, fontSize: fontSizes.sm },
   feeNote: { color: colors.textMuted, fontSize: fontSizes.xs, lineHeight: 18 },
   pressed: { opacity: 0.7 },
@@ -1851,7 +1851,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.sm,
     borderRadius: radii.md,
-    backgroundColor: 'rgba(255, 176, 32, 0.1)',
+    backgroundColor: 'rgba(34, 211, 197, 0.1)',
   },
   requestRejected: { color: colors.textMuted, fontSize: 12, lineHeight: 18 },
   requestPendingText: { flex: 1, color: colors.primary, fontSize: 12, lineHeight: 18 },

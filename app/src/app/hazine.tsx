@@ -396,7 +396,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     backgroundColor: colors.primary,
   },
-  howText: { color: '#0B0F1A', fontFamily: fonts.extra, fontSize: fontSizes.sm },
+  howText: { color: '#071622', fontFamily: fonts.extra, fontSize: fontSizes.sm },
   linkBtn: {
     flex: 1,
     flexDirection: 'row',

@@ -134,8 +134,8 @@ export default function OpenRoomsScreen() {
             label="Oda oluştur"
             sub={`Yeni ${title} odası aç`}
             icon="add-circle"
-            colors={['#7C5CFF', '#D14DFF']}
-            edge="#4B2FB8"
+            colors={['#FF7A59', '#E5533D']}
+            edge="#A8361F"
             art={gameButtonImages.create}
             onPress={() => void actions.createForGame(game)}
             testID="rooms-create"
@@ -145,8 +145,8 @@ export default function OpenRoomsScreen() {
           label="Kodla katıl"
           sub="Davet kodun varsa"
           icon="enter"
-          colors={['#FFB020', '#FF7A1A']}
-          edge="#B5560C"
+          colors={['#14B8AA', '#0E8C9A']}
+          edge="#0A5F68"
           art={gameButtonImages.join}
           onPress={actions.openJoin}
           testID="rooms-join"
@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: 'rgba(255, 176, 32, 0.4)',
+    borderColor: 'rgba(34, 211, 197, 0.4)',
   },
   pointsHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   pointsTitle: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },

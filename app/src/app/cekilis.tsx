@@ -734,7 +734,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     paddingHorizontal: 8,
     paddingVertical: 1,
-    backgroundColor: 'rgba(255, 176, 32, 0.16)',
+    backgroundColor: 'rgba(34, 211, 197, 0.16)',
   },
   hostChipText: { color: colors.primary, fontFamily: fonts.semi, fontSize: 10 },
   actions: { gap: spacing.md },

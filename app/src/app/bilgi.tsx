@@ -442,7 +442,7 @@ export default function QuizScreen() {
         options={{ gestureEnabled: view === 'lobby' || view === 'soloIntro' || (view === 'side' && !sideId) }}
       />
       <LinearGradient
-        colors={['rgba(124, 92, 255, 0.35)', 'rgba(124, 92, 255, 0.06)', 'rgba(11, 15, 26, 0)']}
+        colors={['rgba(124, 140, 255, 0.35)', 'rgba(124, 140, 255, 0.06)', 'rgba(7, 22, 34, 0)']}
         locations={[0, 0.45, 1]}
         style={styles.glow}
       />
@@ -562,7 +562,7 @@ export default function QuizScreen() {
               {/* Başlık kartı (görsel eklenince arka planda görünür) */}
               {/* Küçük başlık kartı: ad ve şu an oynayan kişi sayısı */}
               <LinearGradient
-                colors={['#3B1F8F', '#1C1640', '#0F1424']}
+                colors={['#3B1F8F', '#1C1640', '#0A1D2B']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.hero}
@@ -1291,7 +1291,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: 'rgba(255, 176, 32, 0.4)',
+    borderColor: 'rgba(34, 211, 197, 0.4)',
   },
   rankLinkTitle: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },
   rankLinkSub: { color: colors.textMuted, fontSize: 12 },
@@ -1362,7 +1362,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: 'rgba(255, 176, 32, 0.35)',
+    borderColor: 'rgba(34, 211, 197, 0.35)',
   },
   stats: { flexDirection: 'row', gap: spacing.sm },
   stat: {
@@ -1395,7 +1395,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     borderRadius: radii.sm,
   },
-  rankRowMe: { backgroundColor: 'rgba(124, 92, 255, 0.18)' },
+  rankRowMe: { backgroundColor: 'rgba(124, 140, 255, 0.18)' },
   rankPlace: {
     width: 24,
     textAlign: 'center',
@@ -1497,7 +1497,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
     borderRadius: radii.md,
-    backgroundColor: 'rgba(255, 176, 32, 0.1)',
+    backgroundColor: 'rgba(34, 211, 197, 0.1)',
   },
   prizeText: { flex: 1, color: colors.textMuted, fontSize: 11, fontFamily: fonts.semi },
   medal: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
@@ -1519,7 +1519,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: 'rgba(255, 176, 32, 0.4)',
+    borderColor: 'rgba(34, 211, 197, 0.4)',
   },
   milestoneAt: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },
   milestonePts: { color: colors.primary, fontFamily: fonts.black, fontSize: fontSizes.lg },

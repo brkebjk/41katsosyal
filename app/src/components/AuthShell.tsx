@@ -51,7 +51,7 @@ export function AuthShell({ title, subtitle, children, compact = false }: Props)
               {/* Logo, şeffaf kalıp arkadaki kule ile karışmasın diye opak bir plakanın üstünde durur */}
               <View style={[styles.plate, compact && styles.plateCompact]}>
                 <LinearGradient
-                  colors={['#1D2547', '#0B0F1A']}
+                  colors={['#1D2547', '#071622']}
                   start={{ x: 0.2, y: 0 }}
                   end={{ x: 0.8, y: 1 }}
                   style={styles.fill}
@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
     borderRadius: 30,
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 176, 32, 0.65)',
+    borderColor: 'rgba(34, 211, 197, 0.65)',
     backgroundColor: colors.bg, // opak zemin: arkadaki görsel plakanın içinden görünmez
     alignItems: 'center',
     justifyContent: 'center',
@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
     backgroundColor: 'rgba(11, 15, 26, 0.82)',
-    borderColor: 'rgba(255, 176, 32, 0.45)',
+    borderColor: 'rgba(34, 211, 197, 0.45)',
     borderWidth: 1,
     borderRadius: radii.pill,
     paddingHorizontal: spacing.lg,
@@ -158,8 +158,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    backgroundColor: 'rgba(124, 92, 255, 0.16)',
-    borderColor: 'rgba(124, 92, 255, 0.4)',
+    backgroundColor: 'rgba(124, 140, 255, 0.16)',
+    borderColor: 'rgba(124, 140, 255, 0.4)',
     borderWidth: 1,
     borderRadius: radii.pill,
     paddingHorizontal: spacing.md,
@@ -167,7 +167,7 @@ const styles = StyleSheet.create({
   },
   featureText: { color: colors.text, fontFamily: fonts.semi, fontSize: 12 },
   card: {
-    backgroundColor: 'rgba(20, 26, 43, 0.95)',
+    backgroundColor: 'rgba(15, 35, 51, 0.95)',
     borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,

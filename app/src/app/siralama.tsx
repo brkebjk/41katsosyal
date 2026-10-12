@@ -299,7 +299,7 @@ export default function LeaderboardScreen() {
             accessibilityLabel={giftOn ? 'Yarışma ve hediye kuralları' : undefined}
           >
             <LinearGradient
-              colors={['rgba(124, 92, 255, 0.35)', 'rgba(255, 176, 32, 0.18)']}
+              colors={['rgba(124, 140, 255, 0.35)', 'rgba(34, 211, 197, 0.18)']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.gift}
@@ -767,7 +767,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  rowMe: { backgroundColor: 'rgba(255, 176, 32, 0.10)' },
+  rowMe: { backgroundColor: 'rgba(34, 211, 197, 0.10)' },
   rowPlace: {
     width: 28,
     color: colors.textMuted,

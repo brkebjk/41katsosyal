@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   chipText: { color: colors.text, fontSize: 12, fontFamily: fonts.semi },
-  chipTextOn: { color: '#0B0F1A' },
+  chipTextOn: { color: '#071622' },
   card: {
     gap: 4,
     padding: spacing.md,
