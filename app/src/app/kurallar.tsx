@@ -10,9 +10,12 @@ import {
   DEFAULT_RULES,
   getPointRules,
   getRankingInfo,
+  listLevels,
   quizRuleSummary,
+  type LevelInfo,
   type PointRules,
 } from '@/lib/ranking';
+import { LEVEL_RULES, perkText } from '@/lib/levelPerks';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 type SectionData = { title: string; lines: string[] };
@@ -22,7 +25,13 @@ type SectionData = { title: string; lines: string[] };
  * resmi kurallar uygulamanın içinde, ödül verilmeden önce okunabilir olmalıdır.
  * Sayılar ve metinler sunucudaki ayarlardan gelir; hediye programı kapalıyken hediyeden söz edilmez.
  */
-function buildSections(contest: Contest, rules: PointRules, on: boolean, weekly: boolean): SectionData[] {
+function buildSections(
+  contest: Contest,
+  rules: PointRules,
+  on: boolean,
+  weekly: boolean,
+  levels: LevelInfo[],
+): SectionData[] {
   const sections: SectionData[] = [];
 
   if (on) {
@@ -37,7 +46,7 @@ function buildSections(contest: Contest, rules: PointRules, on: boolean, weekly:
 
   const free = [
     'Sıralamaya girmek ve hediye için yarışmak ücretsizdir. Herhangi bir ödeme yapman gerekmez.',
-    'Abonelik puanını ya da hediye kazanma şansını artırmaz. Aboneler daha çok etkinlik ve oyun açabilir; ancak puan için konulan üst sınırlar herkes için aynıdır.',
+    'Abonelik puanını ya da hediye kazanma şansını artırmaz. Aboneler daha çok etkinlik ve oyun açabilir; ancak puan için konulan üst sınırlar herkes için aynıdır (yalnızca Seviye 4 ödülü, Bilgi Yarışması puan sınırlarını büyütür).',
   ];
   if (!rules.paidEvents) {
     free.push('Ücretli etkinliklere katılmak ya da ücretli etkinlik açmak puan getirmez.');
@@ -74,6 +83,17 @@ function buildSections(contest: Contest, rules: PointRules, on: boolean, weekly:
       `Etkinliğine gelen katılımcılar: kişi başı +${rules.hostPerAttendee} puan (bir etkinlikte en fazla ${rules.hostAttendeeCap} kişi, ayda en fazla ${rules.hostMonthCap} puan).`,
       `Oyun oynamak: oyuna ne kadar çok kişi katılırsa puan o kadar artar. 1. sıranın puanı oyuncu sayısı × kalabalık çarpanıdır: 4 kişiden sonra her oyuncu çarpanı %10 artırır (4 kişi 4, 6 kişi 7, 8 kişi 11, 10 kişi 16, en çok ${rules.gameTopCap}); puan, oyunu kaçıncı sırada bitirdiğine göre verilir: 1. sıra hepsini alır, her sıra aşağıda biraz azalır, son sıra 1 puan alır. Puan için oyun en az ${rules.gameMinPlayers} kişiyle oynanmalıdır (günde en fazla ${rules.gameDailyCap}, ayda en fazla ${rules.gameMonthCap} oyun).`,
       `Bilgi Yarışması: uzaktan oynanır, oyun hakkını harcamaz ama her oyun 1 can harcar (en çok ${rules.quizMaxLives} can, her ${rules.quizLifeMinutes} dakikada 1 can dolar). ${quizRuleSummary(rules)} Özel odada aynı kişilerden biriyle oynanan maçlardan günde en çok 5 puan alınır. Solo / Hafta sıralamasında (haftanın toplam doğrusu, yalnızca 5+ doğrulu koşular) ilk 3 sonraki hafta 10 canla oynar; Çoklu / Ay (Uzaktan) sıralamasında ilk 3'e moderatör onayıyla 1 aylık abonelik verilir. Uzaktan maç başladıktan sonra çıkan kaybeder. Çekiliş puan getirmez.`,
+    ],
+  });
+
+  // Seviyeler ve ödülleri
+  sections.push({
+    title: 'Seviyeler ve seviye ödülleri',
+    lines: [
+      ...levels.map(
+        (l) => `Seviye ${l.level} · ${l.name} (${l.min_points.toLocaleString('tr-TR')} puan): ${perkText(l.perk)}.`,
+      ),
+      ...LEVEL_RULES,
     ],
   });
 
@@ -130,23 +150,26 @@ export default function RulesScreen() {
   const [contest, setContest] = useState<Contest>(DEFAULT_CONTEST);
   const [rules, setRules] = useState<PointRules>(DEFAULT_RULES);
   const [weekly, setWeekly] = useState(true);
+  const [levels, setLevels] = useState<LevelInfo[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async () => {
-    const [c, r, inf] = await Promise.all([getContest(), getPointRules(), getRankingInfo()]);
+    const [c, r, inf, lv] = await Promise.all([getContest(), getPointRules(), getRankingInfo(), listLevels()]);
     setContest(c);
     setRules(r);
     setWeekly(inf ? inf.weekly : true);
+    setLevels(lv);
     setLoaded(true);
   }, []);
 
   useEffect(() => {
     let active = true;
-    void Promise.all([getContest(), getPointRules(), getRankingInfo()]).then(([c, r, inf]) => {
+    void Promise.all([getContest(), getPointRules(), getRankingInfo(), listLevels()]).then(([c, r, inf, lv]) => {
       if (!active) return;
       setContest(c);
       setRules(r);
       setWeekly(inf ? inf.weekly : true);
+      setLevels(lv);
       setLoaded(true);
     });
     return () => {
@@ -155,7 +178,7 @@ export default function RulesScreen() {
   }, []);
 
   const on = contestOn(contest);
-  const sections = buildSections(contest, rules, on, weekly);
+  const sections = buildSections(contest, rules, on, weekly, levels);
 
   return (
     <Screen

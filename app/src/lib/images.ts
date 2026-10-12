@@ -24,10 +24,17 @@ export type ImageSpec = {
 export const imageSpecs = {
   logo: {
     label: 'Logo',
-    size: '490x813',
+    size: '556x865',
     transparent: true,
-    usage: 'Giriş ekranı ve uygulama içi başlık',
+    usage: 'Giriş ekranı (altında SOSYAL yazısıyla)',
     file: 'logo.png',
+  },
+  logoMark: {
+    label: 'Logo işareti',
+    size: '558x849',
+    transparent: true,
+    usage: 'Akış başlığı (yalnızca 41 ve kule, yazısız)',
+    file: 'logo-isaret.png',
   },
   loginBackground: {
     label: 'Giriş arka planı',
@@ -45,7 +52,7 @@ export const imageSpecs = {
   },
   subscriptionBadge: {
     label: 'Abone rozeti',
-    size: '434x512',
+    size: '512x512',
     transparent: true,
     usage: 'Abonelerin profilinde ve gönderilerinde görünen rozet',
     file: 'abone-rozeti.png',
@@ -56,14 +63,16 @@ export type ImageKey = keyof typeof imageSpecs;
 
 /** Görsellerin en/boy oranı (genişlik / yükseklik). Ekranda boyutu verirken işe yarar. */
 export const imageAspect: Record<ImageKey, number> = {
-  logo: 490 / 813,
+  logo: 556 / 865,
+  logoMark: 558 / 849,
   loginBackground: 944 / 1680,
   emptyFeed: 800 / 546,
-  subscriptionBadge: 434 / 512,
+  subscriptionBadge: 1,
 };
 
 export const images: Record<ImageKey, ImageSourcePropType | null> = {
   logo: require('../../assets/images/logo.png'),
+  logoMark: require('../../assets/images/logo-isaret.png'),
   loginBackground: require('../../assets/images/giris-arka-plani.jpg'),
   emptyFeed: require('../../assets/images/empty-feed.png'),
   subscriptionBadge: require('../../assets/images/abone-rozeti.png'),

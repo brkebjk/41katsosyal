@@ -464,7 +464,8 @@ function FeedScreen() {
             </Pressable>
           ) : null}
           <View style={styles.hdrLogo}>
-            <ImageSlot name="logo" style={{ height: 58, aspectRatio: imageAspect.logo }} />
+            {/* Yazısız logo (41 + kule); iki yandaki düğme sayısı eşit olduğu için tam ortada durur */}
+            <ImageSlot name="logoMark" style={{ height: 72, aspectRatio: imageAspect.logoMark }} />
           </View>
           {profile && !isSponsor ? (
             <Pressable

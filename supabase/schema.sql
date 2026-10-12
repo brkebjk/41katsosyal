@@ -103,6 +103,14 @@ create table if not exists public.levels (
   min_points int not null unique check (min_points >= 0),
   reward_package public.package_type
 );
+-- Seviye ödülü. Her seviye YALNIZCA kendi ödülünü verir (birikmez). Ödül her ay yeniden geçerlidir: oyun / etkinlik
+-- hakkı o ayın hakkına eklenir; kullanılmayan hak sonraki aya geçmez (aylık haklar ay başında zaten sıfırlanır).
+--   game_plus1 → ayda +1 oyun hakkı · event_plus1 → ayda +1 etkinlik hakkı
+--   quiz_mult → Bilgi Yarışması puanı ve puan sınırları × level_quiz_mult_pct/100 · unlimited_lives → Bilgi Yarışması'nda sınırsız can
+alter table public.levels add column if not exists perk text;
+alter table public.levels drop constraint if exists levels_perk_check;
+alter table public.levels add constraint levels_perk_check
+  check (perk is null or perk in ('game_plus1', 'event_plus1', 'quiz_mult', 'unlimited_lives'));
 
 -- Admin'in uygulamadan değiştirebileceği kurallar (kod değiştirmeden)
 create table if not exists public.app_settings (
@@ -1938,14 +1946,39 @@ returns int language sql stable security definer set search_path = public as $$
                                where r.user_id = auth.uid() and r.announcement_id = a.id)))::int;
 $$;
 
--- Üyenin aylık etkinlik hakkı: ücretsiz / premium / etkinlik lideri (hangisi büyükse)
+-- Üyenin seviyesi: TOPLAM puana göre (toplam puan sıfırlanmadığı için seviye düşmez)
+create or replace function public._user_level(p_user uuid)
+returns int language sql stable security definer set search_path = public as $$
+  select coalesce((select max(l.level) from public.levels l join public.profiles p on p.id = p_user
+                    where l.min_points <= p.points), 1);
+$$;
+
+-- Üyenin şu anki seviyesinin ödülü (yalnızca normal üyeler; moderatör ve mekân hesaplarında boş)
+create or replace function public._level_perk(p_user uuid)
+returns text language sql stable security definer set search_path = public as $$
+  select l.perk from public.levels l
+   where l.level = public._user_level(p_user)
+     and exists (select 1 from public.profiles p where p.id = p_user and p.role = 'user' and p.banned_at is null);
+$$;
+
+-- Üyenin aylık etkinlik hakkı: ücretsiz / premium / etkinlik lideri (hangisi büyükse) + seviye ödülü (+1)
 create or replace function public._event_quota(p public.profiles)
 returns int language sql stable security definer set search_path = public as $$
   select greatest(
     case when p.premium_until is not null and p.premium_until > now()
          then public.setting_int('premium_monthly_event_quota', 4)
          else public.setting_int('free_monthly_event_quota', 1) end,
-    case when p.event_leader then public.setting_int('leader_monthly_event_quota', 8) else 0 end);
+    case when p.event_leader then public.setting_int('leader_monthly_event_quota', 8) else 0 end)
+    + case when public._level_perk(p.id) = 'event_plus1' then 1 else 0 end;
+$$;
+
+-- Üyenin aylık oyun (oda açma) hakkı: ücretsiz / premium + seviye ödülü (+1). Mekân kodu hakkı ayrıca sayılır.
+create or replace function public._game_quota(p public.profiles)
+returns int language sql stable security definer set search_path = public as $$
+  select case when p.premium_until is not null and p.premium_until > now()
+              then public.setting_int('premium_monthly_game_quota', 10)
+              else public.setting_int('free_monthly_game_quota', 3) end
+         + case when public._level_perk(p.id) = 'game_plus1' then 1 else 0 end;
 $$;
 
 create or replace function public._require_user()
@@ -3267,9 +3300,8 @@ begin
     'leader_pending', exists (select 1 from public.event_leader_applications a
                                where a.user_id = v.id and a.status = 'pending'),
     'events_used', v_events_used,
-    'games_limit', case when v.role <> 'user' then null
-                        when v_premium then public.setting_int('premium_monthly_game_quota', 10)
-                        else public.setting_int('free_monthly_game_quota', 3) end,
+    'games_limit', case when v.role <> 'user' then null else public._game_quota(v) end,
+    'level_perk', public._level_perk(v.id),
     'games_used', v_games_used,
     'sponsor_credit', v_credit is not null,
     'sponsor_credit_until', v_credit_until
@@ -3757,9 +3789,7 @@ begin
      and public._user_live_room(v.id) is not null then
     raise exception 'already_in_game';
   end if;
-  v_limit := case when v.premium_until is not null and v.premium_until > now()
-                  then public.setting_int('premium_monthly_game_quota', 10)
-                  else public.setting_int('free_monthly_game_quota', 3) end;
+  v_limit := public._game_quota(v);
   if not exists (select 1 from public.game_types where key = p_game_type and enabled) then
     raise exception 'game_not_available';
   end if;
@@ -8972,12 +9002,15 @@ begin
                       where user_id = v.id and source = 'quiz_play' and created_at >= public._quiz_today()),
     'points_month', (select coalesce(sum(amount), 0) from public.point_events
                       where user_id = v.id and source = 'quiz_play' and created_at >= public._month_start()),
-    'daily_points', public.setting_int('pts_quiz_daily_points', 10),
-    'month_points', public.setting_int('pts_quiz_month_points', 125),
-    'duel_points', public.setting_int('pts_quiz_win_base', 100) / 100.0 * public._quiz_mult(2),
-    'arena_points', (select jsonb_agg(public.setting_int('pts_quiz_win_base', 100) / 100.0 * public._quiz_mult(n) order by n)
+    'daily_points', round(public.setting_int('pts_quiz_daily_points', 10) * public._quiz_level_mult(v.id), 2),
+    'month_points', round(public.setting_int('pts_quiz_month_points', 125) * public._quiz_level_mult(v.id), 2),
+    'duel_points', round(public.setting_int('pts_quiz_win_base', 100) / 100.0 * public._quiz_mult(2) * public._quiz_level_mult(v.id), 2),
+    'arena_points', (select jsonb_agg(round(public.setting_int('pts_quiz_win_base', 100) / 100.0 * public._quiz_mult(n)
+                                            * public._quiz_level_mult(v.id), 2) order by n)
                        from generate_series(2, 5) n),
-    'private_group_daily', public.setting_int('pts_quiz_private_group_daily', 5),
+    'private_group_daily', round(public.setting_int('pts_quiz_private_group_daily', 5) * public._quiz_level_mult(v.id), 2),
+    'points_mult', public._quiz_level_mult(v.id),
+    'unlimited_lives', public._quiz_unlimited_lives(v.id),
     'arena_ready_seconds', least(90, greatest(10, public.setting_int('quiz_arena_ready_seconds', 30))),
     'online', public._quiz_online_count(),
     'questions', (select count(*)::int from public.quiz_questions where is_active),
@@ -9515,6 +9548,20 @@ language sql stable security definer set search_path = public as $$
   select w.user_id, (rank() over (order by w.pts desc, w.wins desc, w.reached asc))::int, w.pts, w.wins, w.reached from w;
 $$;
 
+-- Seviye 5 ödülü: Bilgi Yarışması'nda sınırsız can (günlük oyun sınırı yine geçerlidir)
+create or replace function public._quiz_unlimited_lives(p_user uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public._level_perk(p_user) = 'unlimited_lives', false);
+$$;
+
+-- Seviye 4 ödülü: Bilgi Yarışması puan çarpanı (puan ve günlük/aylık/özel oda puan sınırları birlikte çarpılır)
+create or replace function public._quiz_level_mult(p_user uuid)
+returns numeric language sql stable security definer set search_path = public as $$
+  select case when public._level_perk(p_user) = 'quiz_mult'
+              then greatest(100, least(300, public.setting_int('level_quiz_mult_pct', 120))) / 100.0
+              else 1 end;
+$$;
+
 -- Can durumu (yazmadan hesaplar): o_lives şu anki can, o_next bir sonraki canın dolacağı an (can doluysa boş)
 create or replace function public._quiz_lives_get(p_user uuid, out o_lives int, out o_next timestamptz, out o_anchor timestamptz)
 language plpgsql stable security definer set search_path = public as $$
@@ -9524,6 +9571,11 @@ declare
   r public.quiz_lives;
   k int;
 begin
+  -- Sınırsız can: can hep dolu görünür, hiç azalmaz
+  if public._quiz_unlimited_lives(p_user) then
+    o_lives := v_max; o_next := null; o_anchor := now();
+    return;
+  end if;
   select * into r from public.quiz_lives where user_id = p_user;
   if not found or r.lives >= v_max then
     o_lives := v_max; o_next := null; o_anchor := now();
@@ -9551,6 +9603,8 @@ begin
   if public._quiz_games_today(p_user) >= greatest(1, public.setting_int('quiz_daily_games', 25)) then
     raise exception 'quiz_daily_limit';
   end if;
+  -- Sınırsız can (Seviye 5): can harcanmaz
+  if public._quiz_unlimited_lives(p_user) then return; end if;
   select * into g from public._quiz_lives_get(p_user);
   if g.o_lives < 1 then raise exception 'no_lives'; end if;
   update public.quiz_lives
@@ -9576,6 +9630,8 @@ declare
   v_day numeric;
   v_month numeric;
   v_left numeric;
+  v_mult numeric;
+  v_amount numeric;
 begin
   o_awarded := 0;
   o_note := 'ok';
@@ -9583,15 +9639,18 @@ begin
   if v_role is distinct from 'user' then o_note := 'win_nopoints'; return; end if;
   if p_amount is null or p_amount <= 0 then o_note := 'none'; return; end if;
   perform pg_advisory_xact_lock(hashtext('quiz_award:' || p_user::text));
+  -- Seviye 4 ödülü: puan ve günlük/aylık sınır birlikte çarpılır (diğerlerinde 1)
+  v_mult := public._quiz_level_mult(p_user);
+  v_amount := round(p_amount * v_mult, 2);
   select coalesce(sum(amount), 0) into v_day from public.point_events
    where user_id = p_user and source = 'quiz_play' and created_at >= public._quiz_today();
   select coalesce(sum(amount), 0) into v_month from public.point_events
    where user_id = p_user and source = 'quiz_play' and created_at >= public._month_start();
-  v_left := least(public.setting_int('pts_quiz_daily_points', 10) - v_day,
-                  public.setting_int('pts_quiz_month_points', 125) - v_month);
+  v_left := least(public.setting_int('pts_quiz_daily_points', 10) * v_mult - v_day,
+                  public.setting_int('pts_quiz_month_points', 125) * v_mult - v_month);
   if v_left <= 0 then o_note := 'cap'; return; end if;
-  o_awarded := round(least(p_amount, v_left), 2);
-  if o_awarded < p_amount then o_note := 'cap_partial'; end if;
+  o_awarded := round(least(v_amount, v_left), 2);
+  if o_awarded < v_amount then o_note := 'cap_partial'; end if;
   insert into public.point_events (user_id, amount, reason, source) values (p_user, o_awarded, p_reason, 'quiz_play');
   insert into public.game_play_log (user_id, game_type, points, won) values (p_user, 'quiz', o_awarded, true);
 end $$;
@@ -10456,7 +10515,9 @@ begin
                           where op.match_id = mm.id and op.user_id <> p.user_id
                             and op.user_id in (select x.user_id from public.quiz_match_players x
                                                 where x.match_id = m.id and x.user_id <> p.user_id));
-          v_left := public.setting_int('pts_quiz_private_group_daily', 5) - v_sum;
+          -- Sınır seviye çarpanıyla büyür; kalan, çarpılmadan önceki puan cinsinden hesaplanır (_quiz_award çarpar)
+          v_left := (public.setting_int('pts_quiz_private_group_daily', 5) * public._quiz_level_mult(p.user_id) - v_sum)
+                    / public._quiz_level_mult(p.user_id);
           if v_left <= 0 then
             v_note := 'group_cap';
             v_amt := 0;
@@ -12551,13 +12612,22 @@ end $$;
 -- 7) Başlangıç verileri (sonradan moderatör tarafından değiştirilebilir)
 -- ---------------------------------------------------------------------
 
-insert into public.levels (level, name, min_points, reward_package) values
-  (1, 'Yeni Komşu', 0, null),
-  (2, 'Mahalle Dostu', 100, null),
-  (3, 'Sokak Kâşifi', 300, null),
-  (4, 'Meydan Müdavimi', 700, null),
-  (5, 'Şehrin Yıldızı', 1500, null)
+insert into public.levels (level, name, min_points, reward_package, perk) values
+  (1, 'Yeni Komşu', 0, null, null),
+  (2, 'Mahalle Dostu', 250, null, 'game_plus1'),
+  (3, 'Sokak Kâşifi', 1200, null, 'event_plus1'),
+  (4, 'Meydan Müdavimi', 3500, null, 'quiz_mult'),
+  (5, 'Şehrin Yıldızı', 8000, null, 'unlimited_lives')
 on conflict (level) do nothing;
+-- Seviye eşikleri yükseldi (5. seviye ciddi emek istesin). Yalnızca eski varsayılan değerler değişir; moderatörün
+-- sonradan verdiği eşiğe dokunulmaz. Yeni değerlerin hiçbiri eski değerlerle çakışmaz (tekil kural bozulmaz).
+update public.levels l set min_points = x.new_min
+  from (values (2, 100, 250), (3, 300, 1200), (4, 700, 3500), (5, 1500, 8000)) as x(lvl, old_min, new_min)
+ where l.level = x.lvl and l.min_points = x.old_min;
+-- Seviye ödülleri (boşsa doldurulur; moderatörün değiştirdiğine dokunulmaz)
+update public.levels l set perk = x.perk
+  from (values (2, 'game_plus1'), (3, 'event_plus1'), (4, 'quiz_mult'), (5, 'unlimited_lives')) as x(lvl, perk)
+ where l.level = x.lvl and l.perk is null;
 -- Seviye adları şehir ve sosyallik temalı oldu (eski "Kat Görevlisi" adı moderatörün görünen adıyla karışıyordu).
 -- Yalnızca eski varsayılan adlar değişir; moderatörün sonradan verdiği bir ad varsa ona dokunulmaz.
 update public.levels l set name = x.new_name
@@ -12574,6 +12644,7 @@ insert into public.app_settings (key, value, description) values
   ('free_monthly_event_quota', '1', 'Ücretsiz üyenin ayda açabileceği etkinlik sayısı (moderatör sınırsız)'),
   ('free_monthly_game_quota', '3', 'Ücretsiz üyenin ayda başlatabileceği oyun sayısı, çekiliş hariç (moderatör sınırsız)'),
   ('premium_monthly_event_quota', '4', 'Abonenin ayda açabileceği etkinlik sayısı (moderatör sınırsız)'),
+  ('level_quiz_mult_pct', '120', 'Seviye ödülü (quiz_mult): Bilgi Yarışması puanı ve puan sınırları çarpanı, yüzde (120 = 1.2 kat)'),
   ('premium_monthly_game_quota', '10', 'Abonenin ayda başlatabileceği oyun sayısı, çekiliş hariç (moderatör sınırsız)'),
   ('room_presence_grace_seconds', '45', 'Oyun ekranından uzaklaşan (uygulamayı kapatan, arka plana alan, bağlantısı kopan) oyuncu kaç saniye sonra oyundan atılır? Oda sahibi ayrılırsa oda kapanır.'),
   ('vv_auto_reveal_seconds', '40', 'Vampir–Köylü Otomatik Oyun: roller gösterilirken en çok kaç saniye beklenir (herkes "gördüm" derse daha önce biter)'),

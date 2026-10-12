@@ -26,15 +26,20 @@ const MANAGE_URL =
     ? 'https://apps.apple.com/account/subscriptions'
     : 'https://play.google.com/store/account/subscriptions';
 
-type Row = { label: string; free: string | boolean; subscribed: string | boolean };
+type Row = {
+  label: string;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  free: string | boolean;
+  subscribed: string | boolean;
+};
 
 function buildRows(l: Limits): Row[] {
   return [
-    { label: 'Akışta gönderi, yorum ve beğeni', free: true, subscribed: true },
-    { label: 'Özel mesaj başlatma', free: 'Yalnızca cevap', subscribed: true },
-    { label: 'Etkinlik oluşturma', free: `ayda ${l.freeEvents}`, subscribed: `ayda ${l.subscriptionEvents}` },
-    { label: 'Oyun başlatma', free: `ayda ${l.freeGames}`, subscribed: `ayda ${l.subscriptionGames}` },
-    { label: '41. Kat Özel ücretli etkinlikler', free: 'Ücretli', subscribed: 'Ücretsiz' },
+    { label: 'Gönderi, yorum ve beğeni', icon: 'chatbubbles', free: true, subscribed: true },
+    { label: 'Özel mesaj başlatma', icon: 'mail', free: 'Yalnızca cevap', subscribed: true },
+    { label: 'Etkinlik oluşturma', icon: 'calendar', free: `ayda ${l.freeEvents}`, subscribed: `ayda ${l.subscriptionEvents}` },
+    { label: 'Oyun başlatma', icon: 'game-controller', free: `ayda ${l.freeGames}`, subscribed: `ayda ${l.subscriptionGames}` },
+    { label: '41. Kat Özel ücretli etkinlikler', icon: 'star', free: 'Ücretli', subscribed: 'Ücretsiz' },
   ];
 }
 
@@ -164,32 +169,56 @@ export default function SubscriptionScreen() {
           {/* Anlaşmalı işletmelerdeki ayrıcalıklar */}
           <PrimaryButton label="Ayrıcalıkları gör" variant="ghost" onPress={() => router.push('/ayricaliklar')} />
 
-          {/* Karşılaştırma */}
-          <View style={styles.table}>
-            <View style={styles.headRow}>
-              <View style={styles.labelCell} />
-              <Text style={[styles.cell, styles.headText]}>Ücretsiz</Text>
-              <View style={[styles.cell, styles.cellSubscription, styles.cellSubscriptionTop]}>
-                <Text style={[styles.headText, styles.headSubscription]}>Abone</Text>
-              </View>
-            </View>
-            {rows.map((r) => (
-              <View key={r.label} style={styles.dataRow}>
+          {/* Karşılaştırma: solda özellik, ortada ücretsiz, sağda öne çıkan abone sütunu */}
+          <LinearGradient
+            colors={['rgba(34, 211, 197, 0.55)', 'rgba(124, 140, 255, 0.45)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.tableFrame}
+          >
+            <View style={styles.table}>
+              <View style={styles.headRow}>
                 <View style={styles.labelCell}>
-                  <Text style={styles.labelText}>{r.label}</Text>
+                  <Text style={styles.tableTitle}>Neler var?</Text>
                 </View>
-                <View style={styles.cell}>
-                  <Value v={r.free} />
+                <View style={[styles.cell, styles.headCell]}>
+                  <Ionicons name="person-outline" size={16} color={colors.textMuted} />
+                  <Text style={styles.headText}>Ücretsiz</Text>
                 </View>
-                <View style={[styles.cell, styles.cellSubscription]}>
-                  <Value v={r.subscribed} subscribed />
-                </View>
+                <LinearGradient
+                  colors={['#22D3C5', '#7C8CFF']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.cell, styles.headCell, styles.headSubscriptionCell]}
+                >
+                  <ImageSlot name="subscriptionBadge" style={styles.headBadge} />
+                  <Text style={styles.headSubscription}>Abone</Text>
+                </LinearGradient>
               </View>
-            ))}
-          </View>
+              {rows.map((r, i) => (
+                <View key={r.label} style={[styles.dataRow, i % 2 === 1 && styles.dataRowAlt]}>
+                  <View style={[styles.labelCell, styles.labelRow]}>
+                    <View style={styles.rowIcon}>
+                      <Ionicons name={r.icon} size={15} color={colors.primary} />
+                    </View>
+                    <Text style={styles.labelText}>{r.label}</Text>
+                  </View>
+                  <View style={styles.cell}>
+                    <Value v={r.free} />
+                  </View>
+                  <View
+                    style={[styles.cell, styles.cellSubscription, i === rows.length - 1 && styles.cellSubscriptionLast]}
+                  >
+                    <Value v={r.subscribed} subscribed />
+                  </View>
+                </View>
+              ))}
+            </View>
+          </LinearGradient>
           <Text style={styles.footnote}>
-            Haklar her ayın başında yenilenir. Abonelik sıralamadaki puanını ve hediye kazanma şansını artırmaz. Puanla
-            abonelik kazanılmaz; seviyeler yalnızca görünüm içindir.
+            Haklar her ayın başında yenilenir; kullanılmayan haklar sonraki aya geçmez. Abonelik sıralamadaki puanını ve
+            hediye kazanma şansını artırmaz; puanla abonelik kazanılmaz. Seviye ödülleri (ör. +1 oyun hakkı) abonelikten
+            ayrıdır ve abonelere de verilir.
           </Text>
 
           {/* Satın alma */}
@@ -300,7 +329,7 @@ export default function SubscriptionScreen() {
 
 function Value({ v, subscribed = false }: { v: string | boolean; subscribed?: boolean }) {
   if (v === true)
-    return <Ionicons name="checkmark-circle" size={22} color={subscribed ? colors.primary : colors.success} />;
+    return <Ionicons name="checkmark-circle" size={24} color={subscribed ? colors.highlight : colors.success} />;
   if (v === false) return <Ionicons name="remove" size={20} color={colors.textMuted} />;
   return <Text style={[styles.valueText, subscribed && styles.valueSubscription]}>{v}</Text>;
 }
@@ -320,7 +349,7 @@ const styles = StyleSheet.create({
   },
   backText: { color: colors.primary, fontFamily: fonts.semi, fontSize: fontSizes.sm },
   hero: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm },
-  badge: { height: 170, aspectRatio: imageAspect.subscriptionBadge },
+  badge: { height: 240, aspectRatio: imageAspect.subscriptionBadge },
   title: { color: colors.text, fontFamily: fonts.black, fontSize: fontSizes.xl, textAlign: 'center' },
   lead: {
     color: colors.textMuted,
@@ -351,22 +380,30 @@ const styles = StyleSheet.create({
   specialTitle: { color: '#FFC83D', fontFamily: fonts.extra, fontSize: fontSizes.md },
   activeTitle: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },
   muted: { color: colors.textMuted, fontSize: fontSizes.sm, lineHeight: 20 },
-  table: { backgroundColor: colors.surface, borderRadius: radii.lg, overflow: 'hidden' },
-  headRow: { flexDirection: 'row', alignItems: 'stretch', paddingTop: spacing.md },
-  dataRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    borderTopColor: colors.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
+  // Renkli ince çerçeve (degrade) içinde tablo
+  tableFrame: { borderRadius: radii.lg + 2, padding: 1.5 },
+  table: { backgroundColor: colors.surface, borderRadius: radii.lg, overflow: 'hidden', paddingTop: spacing.sm },
+  tableTitle: { color: colors.text, fontFamily: fonts.black, fontSize: fontSizes.md },
+  headRow: { flexDirection: 'row', alignItems: 'stretch', paddingRight: spacing.sm },
+  dataRow: { flexDirection: 'row', alignItems: 'stretch', paddingRight: spacing.sm },
+  dataRowAlt: { backgroundColor: 'rgba(255, 255, 255, 0.025)' },
   labelCell: {
-    flex: 1.5,
+    flex: 1.6,
     justifyContent: 'center',
     paddingVertical: spacing.md,
-    paddingLeft: spacing.lg,
-    paddingRight: spacing.sm,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.xs,
   },
-  labelText: { color: colors.text, fontSize: fontSizes.sm, fontWeight: '600', lineHeight: 19 },
+  labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', gap: spacing.sm },
+  rowIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(34, 211, 197, 0.12)',
+  },
+  labelText: { flex: 1, color: colors.text, fontSize: fontSizes.sm, fontWeight: '600', lineHeight: 18 },
   cell: {
     flex: 1,
     alignItems: 'center',
@@ -374,16 +411,34 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.xs,
   },
-  cellSubscription: { backgroundColor: 'rgba(34, 211, 197, 0.10)' },
-  cellSubscriptionTop: {
-    paddingVertical: spacing.sm,
+  headCell: { gap: 4, paddingVertical: spacing.sm },
+  headSubscriptionCell: {
     borderTopLeftRadius: radii.md,
     borderTopRightRadius: radii.md,
+    shadowColor: '#22D3C5',
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
   },
-  headText: { color: colors.textMuted, fontFamily: fonts.semi, fontSize: fontSizes.xs, textAlign: 'center' },
-  headSubscription: { color: colors.primary },
-  valueText: { color: colors.text, fontSize: fontSizes.xs + 1, fontWeight: '700', textAlign: 'center' },
-  valueSubscription: { color: colors.primary },
+  headBadge: { height: 30, aspectRatio: imageAspect.subscriptionBadge },
+  // Abone sütunu: baştan sona açık turkuaz şerit, iki yanda ince çizgi
+  cellSubscription: {
+    backgroundColor: 'rgba(34, 211, 197, 0.12)',
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: 'rgba(34, 211, 197, 0.45)',
+  },
+  cellSubscriptionLast: {
+    borderBottomWidth: 1,
+    borderBottomLeftRadius: radii.md,
+    borderBottomRightRadius: radii.md,
+    marginBottom: spacing.sm,
+  },
+  headText: { color: colors.textMuted, fontFamily: fonts.extra, fontSize: fontSizes.xs, textAlign: 'center' },
+  headSubscription: { color: colors.primaryText, fontFamily: fonts.black, fontSize: fontSizes.sm, textAlign: 'center' },
+  valueText: { color: colors.textMuted, fontSize: fontSizes.xs + 1, fontWeight: '700', textAlign: 'center' },
+  valueSubscription: { color: colors.highlight, fontFamily: fonts.extra },
   footnote: { color: colors.textMuted, fontSize: 12, lineHeight: 18, textAlign: 'center' },
   buyBox: { backgroundColor: colors.surface, borderRadius: radii.lg, padding: spacing.lg, gap: spacing.md },
   buyTitle: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },

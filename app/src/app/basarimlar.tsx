@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Meter } from '@/components/Panel';
@@ -16,6 +16,10 @@ import {
   type AchStats,
   type GameProgress,
 } from '@/lib/achievements';
+import { useAuth } from '@/lib/auth';
+import { fmtPts } from '@/lib/labels';
+import { LEVEL_RULES, perkText } from '@/lib/levelPerks';
+import { listLevels, type LevelInfo } from '@/lib/ranking';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 export default function AchievementsScreen() {
@@ -23,6 +27,18 @@ export default function AchievementsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  const [levels, setLevels] = useState<LevelInfo[]>([]);
+  const { profile } = useAuth();
+
+  useEffect(() => {
+    let active = true;
+    void listLevels().then((l) => {
+      if (active) setLevels(l);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const load = useCallback(async () => {
     const res = await getPlayCounts();
@@ -54,6 +70,8 @@ export default function AchievementsScreen() {
         </View>
         <Meter value={earned / TOTAL_ACHIEVEMENTS} />
       </View>
+
+      {levels.length > 0 ? <LevelPerks levels={levels} points={profile?.points ?? 0} /> : null}
 
       <Pressable
         onPress={() => router.push('/balonlar')}
@@ -91,6 +109,44 @@ export default function AchievementsScreen() {
         </View>
       )}
     </Screen>
+  );
+}
+
+/** Seviyeler ve ödülleri: her seviyenin adının yanında sarı küçük yazıyla ödülü, altında sıfırlama kuralları */
+function LevelPerks({ levels, points }: { levels: LevelInfo[]; points: number }) {
+  const current = [...levels].reverse().find((l) => points >= l.min_points)?.level ?? levels[0].level;
+  return (
+    <View style={styles.levelCard} testID="achv-level-perks">
+      <View style={styles.levelHead}>
+        <Ionicons name="trending-up" size={18} color={colors.highlight} />
+        <Text style={styles.levelTitle}>Seviye ödülleri</Text>
+      </View>
+      {levels.map((l) => {
+        const on = l.level === current;
+        return (
+          <View key={l.level} style={[styles.levelRow, on && styles.levelRowOn]}>
+            <View style={[styles.levelDot, points >= l.min_points && styles.levelDotOn]}>
+              <Text style={[styles.levelNum, points >= l.min_points && styles.levelNumOn]}>{l.level}</Text>
+            </View>
+            <View style={styles.levelText}>
+              <Text style={styles.levelName} numberOfLines={2}>
+                {l.name}
+                <Text style={styles.levelPerk}>{`  ${perkText(l.perk)}`}</Text>
+              </Text>
+              <Text style={styles.levelPts}>{`${fmtPts(l.min_points)} puan${on ? ' · şu an buradasın' : ''}`}</Text>
+            </View>
+          </View>
+        );
+      })}
+      <View style={styles.levelRules}>
+        {LEVEL_RULES.map((r, i) => (
+          <View key={i} style={styles.levelRule}>
+            <Text style={styles.levelBullet}>•</Text>
+            <Text style={styles.levelRuleText}>{r}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -174,6 +230,50 @@ function GameCard({ p, open, onToggle }: { p: GameProgress; open: boolean; onTog
 }
 
 const styles = StyleSheet.create({
+  levelCard: {
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 200, 61, 0.35)',
+  },
+  levelHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  levelTitle: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },
+  levelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.sm,
+  },
+  levelRowOn: { backgroundColor: 'rgba(255, 200, 61, 0.1)' },
+  levelDot: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceAlt,
+  },
+  levelDotOn: { backgroundColor: colors.primary },
+  levelNum: { color: colors.textMuted, fontFamily: fonts.extra, fontSize: 12 },
+  levelNumOn: { color: colors.primaryText },
+  levelText: { flex: 1, gap: 1 },
+  levelName: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.sm },
+  levelPerk: { color: colors.highlight, fontFamily: fonts.semi, fontSize: 11 },
+  levelPts: { color: colors.textMuted, fontSize: 11 },
+  levelRules: {
+    gap: 4,
+    marginTop: spacing.xs,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  levelRule: { flexDirection: 'row', gap: 6 },
+  levelBullet: { color: colors.highlight, fontSize: 12, lineHeight: 17 },
+  levelRuleText: { flex: 1, color: colors.textMuted, fontSize: 12, lineHeight: 17 },
   summary: { gap: spacing.sm },
   summaryTop: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm },
   big: { color: colors.primary, fontFamily: fonts.black, fontSize: fontSizes.xxl },

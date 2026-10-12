@@ -78,6 +78,10 @@ export type QuizLobby = {
   lives: number;
   /** Bu hafta en çok can (geçen haftanın Solo ilk 3'ü için 10) */
   max_lives: number;
+  /** Seviye 5 ödülü: can sınırsız (sunucu güncellenmeden önce gelmeyebilir) */
+  unlimited_lives?: boolean;
+  /** Seviye 4 ödülü: puan ve puan sınırları çarpanı (yoksa 1) */
+  points_mult?: number;
   /** Geçen haftanın Solo ilk 3'ünde miyim (bu hafta 10 can) */
   champion: boolean;
   /** Geçen haftanın Solo şampiyonları */

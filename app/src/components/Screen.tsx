@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useState, type ReactNode } from 'react';
 import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Defs, Ellipse, RadialGradient, Stop } from 'react-native-svg';
 
 import { KeyboardAwareScroll } from '@/components/KeyboardAwareScroll';
 import { KeyboardLift } from '@/components/KeyboardLift';
@@ -91,15 +92,19 @@ export function Screen({
                           {title}
                         </Text>
                       ) : (
-                        // Sekme başlıkları (Etkinlikler, Oyunlar, Profil…): arkasında renkli ışık, solda sarı çizgi
+                        // Sekme başlıkları (Etkinlikler, Oyunlar, Profil…): arkasında kenarlara doğru yumuşakça kaybolan
+                        // yuvarlak bir ışık (köşesiz), solda sarı çizgi
                         <View style={styles.titleWrap}>
-                          <LinearGradient
-                            colors={['rgba(34, 211, 197, 0.30)', 'rgba(124, 140, 255, 0.16)', 'rgba(124, 140, 255, 0)']}
-                            locations={[0, 0.6, 1]}
-                            start={{ x: 0, y: 0.5 }}
-                            end={{ x: 1, y: 0.5 }}
-                            style={styles.titleGlow}
-                          />
+                          <Svg style={styles.titleGlow} viewBox="0 0 100 100" preserveAspectRatio="none">
+                            <Defs>
+                              <RadialGradient id="titleGlow" cx="42" cy="50" r="50" gradientUnits="userSpaceOnUse">
+                                <Stop offset="0" stopColor="#22D3C5" stopOpacity="0.34" />
+                                <Stop offset="0.55" stopColor="#7C8CFF" stopOpacity="0.16" />
+                                <Stop offset="1" stopColor="#7C8CFF" stopOpacity="0" />
+                              </RadialGradient>
+                            </Defs>
+                            <Ellipse cx="42" cy="50" rx="58" ry="50" fill="url(#titleGlow)" />
+                          </Svg>
                           <View style={styles.titleBar} />
                           <Text style={[styles.title, styles.titleLit]} accessibilityRole="header">
                             {title}
@@ -160,10 +165,9 @@ const styles = StyleSheet.create({
     paddingLeft: spacing.md + 2,
     paddingRight: spacing.xxl,
     marginLeft: -4,
-    borderRadius: 14,
-    overflow: 'hidden',
   },
-  titleGlow: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  // Işık yazının dışına taşar; kenarları tamamen saydam olduğu için köşe görünmez
+  titleGlow: { position: 'absolute', top: -14, left: -20, right: -30, bottom: -14, pointerEvents: 'none' },
   titleBar: {
     position: 'absolute',
     left: 0,
@@ -173,11 +177,8 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: colors.highlight,
   },
-  titleLit: {
-    textShadowColor: 'rgba(34, 211, 197, 0.7)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 12,
-  },
+  // Yazı gölgesi kullanılmaz: Android'de gölge yazı kutusunun sınırında kesilip köşeli görünüyordu
+  titleLit: { color: '#FFFFFF' },
   subtitle: { color: colors.textMuted, fontSize: fontSizes.sm },
   back: {
     flexDirection: 'row',

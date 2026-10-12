@@ -105,12 +105,19 @@ export async function listMyPointEvents(): Promise<{ data: PointEvent[]; error: 
   return { data: (data ?? []) as PointEvent[], error: null };
 }
 
-export type LevelInfo = { level: number; name: string; min_points: number };
+/** perk: seviyenin ödülü (bkz. lib/levelPerks.ts); ödülü olmayan seviyede boş */
+export type LevelInfo = { level: number; name: string; min_points: number; perk: string | null };
 
 export async function listLevels(): Promise<LevelInfo[]> {
   if (!supabase) return [];
-  const { data } = await supabase.from('levels').select('level, name, min_points').order('min_points');
-  return (data ?? []) as LevelInfo[];
+  // Tüm sütunlar istenir: sunucu güncellenmeden önce de (perk sütunu yokken) liste okunabilsin
+  const { data } = await supabase.from('levels').select('*').order('min_points');
+  return ((data ?? []) as Partial<LevelInfo>[]).map((l) => ({
+    level: Number(l.level),
+    name: String(l.name ?? ''),
+    min_points: Number(l.min_points ?? 0),
+    perk: l.perk ?? null,
+  }));
 }
 
 // ---------------------------------------------------------------------------

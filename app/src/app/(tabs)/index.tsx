@@ -893,11 +893,37 @@ function MapScreen({ resetKey }: { resetKey: number }) {
   );
 }
 
-/** Harita ekranının büyük bildirim zili: yeni bildirim varken büyüyüp küçülür. */
+/**
+ * Harita ekranının büyük bildirim zili. Bildirim yokken içi şeffaftır. Yeni bildirim varken düğme büyüyüp küçülür
+ * ve yalnızca içindeki zil simgesi sallanır (halka sallanmaz).
+ */
 function BigBell({ onPress }: { onPress: () => void }) {
   const { notifications } = useNotices();
   const unread = notifications > 0;
   const [scale] = useState(() => new Animated.Value(1));
+  const [swing] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    if (!unread) {
+      swing.setValue(0);
+      return;
+    }
+    const step = (to: number, duration: number) =>
+      Animated.timing(swing, { toValue: to, duration, easing: Easing.inOut(Easing.quad), useNativeDriver: true });
+    const loop = Animated.loop(
+      Animated.sequence([
+        step(1, 90),
+        step(-1, 160),
+        step(0.7, 140),
+        step(-0.7, 140),
+        step(0.35, 110),
+        step(0, 90),
+        Animated.delay(650),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [unread, swing]);
+  const rotate = swing.interpolate({ inputRange: [-1, 1], outputRange: ['-22deg', '22deg'] });
   useEffect(() => {
     if (!unread) {
       scale.setValue(1);
@@ -926,7 +952,9 @@ function BigBell({ onPress }: { onPress: () => void }) {
         testID="notification-bar"
         style={({ pressed }) => [styles.bigBell, unread && styles.bigBellUnread, pressed && styles.eventRowPressed]}
       >
-        <Ionicons name={unread ? 'notifications' : 'notifications-outline'} size={28} color="#FFFFFF" />
+        <Animated.View style={{ transform: [{ rotate }] }}>
+          <Ionicons name={unread ? 'notifications' : 'notifications-outline'} size={28} color="#FFFFFF" />
+        </Animated.View>
         {unread ? (
           <View style={styles.bigBellBadge}>
             <Text style={styles.bigBellBadgeText}>{notifications > 99 ? '99+' : notifications}</Text>
@@ -1337,7 +1365,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: colors.accent,
+    backgroundColor: 'transparent',
     borderWidth: 3,
     borderColor: 'rgba(255,255,255,0.85)',
     alignItems: 'center',

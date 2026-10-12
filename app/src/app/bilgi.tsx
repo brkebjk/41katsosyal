@@ -369,7 +369,7 @@ export default function QuizScreen() {
       });
       return true;
     }
-    if (lobby.lives < 1) {
+    if (lobby.lives < 1 && !lobby.unlimited_lives) {
       const left = lobby.next_life_at ? Date.parse(lobby.next_life_at) - (nowMs() + offset) : 0;
       void notify('Canın kalmadı', `Yeni can ${mmss(left)} sonra dolacak.`, { icon: 'heart-dislike' });
       return true;
@@ -611,7 +611,16 @@ export default function QuizScreen() {
                   gamesToday={lobby.games_today}
                   dailyGames={lobby.daily_games}
                   onRefill={() => void loadLobby()}
+                  unlimited={lobby.unlimited_lives === true}
                 />
+              ) : null}
+              {lobby && (lobby.points_mult ?? 1) > 1 ? (
+                <View style={styles.multNote} testID="quiz-level-mult">
+                  <Ionicons name="trending-up" size={16} color={colors.highlight} />
+                  <Text style={styles.multNoteText}>
+                    {`Seviye 4 ödülü: kazandığın puan ve puan sınırları ×${String(lobby.points_mult).replace('.', ',')}`}
+                  </Text>
+                </View>
               ) : null}
               {lobby?.champion ? (
                 <View style={styles.champBanner}>
@@ -1109,7 +1118,9 @@ function SoloMenu({
           }}
           testID="solo-start"
         />
-        <Text style={styles.introLives}>{`${lobby?.lives ?? 0}/${lobby?.max_lives ?? 5} can`}</Text>
+        <Text style={styles.introLives}>
+          {lobby?.unlimited_lives ? 'Sınırsız can' : `${lobby?.lives ?? 0}/${lobby?.max_lives ?? 5} can`}
+        </Text>
       </LinearGradient>
       <View style={styles.introCard}>
         <IntroLine icon="speedometer" text="İlk soru 20 sn; her soruda 1 sn kısalır (en az 9 sn)." />
@@ -1754,6 +1765,18 @@ const styles = StyleSheet.create({
   pval: { color: colors.highlight, fontFamily: fonts.black, fontSize: fontSizes.sm, textAlign: 'right' },
   ptableNote: { color: colors.textMuted, fontSize: 12, lineHeight: 17 },
   pgrid: { flexDirection: 'row' },
+  multNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 200, 61, 0.45)',
+    backgroundColor: 'rgba(255, 200, 61, 0.08)',
+  },
+  multNoteText: { flex: 1, color: colors.highlight, fontFamily: fonts.semi, fontSize: 12 },
   pcell: { flex: 1, alignItems: 'center', paddingVertical: 8, gap: 2 },
   pcellLine: { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.border },
   pcellKey: { color: colors.textMuted, fontFamily: fonts.semi, fontSize: 12 },

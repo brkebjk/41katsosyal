@@ -33,17 +33,18 @@ const TOP_MEDAL: Record<number, string> = {
   3: '#E39A5B',
 };
 
-/** Kutunun eğimi (derece) ve yatay kayması (piksel). Her satırda iki kutu aynı hizada kalır. */
+/** Kutunun eğimi (derece) ve yatay kayması (piksel). Kutular artık düz durur (eğim ve kayma yok). */
 type Tilt = { deg: number; dx: number };
 
+const STRAIGHT: Tilt = { deg: 0, dx: 0 };
 const TILTS: Record<GameKey, Tilt> = {
-  vampire_villager: { deg: -3, dx: -5 },
-  taboo: { deg: 2.5, dx: 6 },
-  charades: { deg: 2, dx: 3 },
-  find_killer: { deg: -2.5, dx: -3 },
-  quiz: { deg: -2, dx: -6 },
-  treasure_hunt: { deg: 2.5, dx: 5 },
-  raffle: { deg: -2.5, dx: -3 },
+  vampire_villager: STRAIGHT,
+  taboo: STRAIGHT,
+  charades: STRAIGHT,
+  find_killer: STRAIGHT,
+  quiz: STRAIGHT,
+  treasure_hunt: STRAIGHT,
+  raffle: STRAIGHT,
 };
 
 /** Sekmeden ayrılınca ekran baştan kurulur (açık pencereler kapanır, seçimler sıfırlanır) */
@@ -284,7 +285,8 @@ function GamesScreen() {
           <View style={styles.podRow}>
             {[2, 1, 3].map((place) => {
               const r = top[place - 1];
-              const h = place === 1 ? 64 : place === 2 ? 48 : 38;
+              // Podyum alçak tutulur (ekranda az yer kaplasın)
+              const h = place === 1 ? 42 : place === 2 ? 32 : 24;
               return (
                 <View key={place} style={styles.podCol}>
                   <Text style={[styles.podName, r?.is_me && styles.topMe]} numberOfLines={1}>
@@ -575,8 +577,9 @@ function GameTile({
 
 const styles = StyleSheet.create({
   podCard: {
-    gap: spacing.md,
+    gap: spacing.sm,
     padding: spacing.md,
+    paddingVertical: spacing.sm + 2,
     borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: 'rgba(255, 201, 60, 0.45)',
@@ -615,14 +618,14 @@ const styles = StyleSheet.create({
   podPlace: {
     color: 'rgba(0,0,0,0.5)',
     fontFamily: fonts.black,
-    fontSize: fontSizes.xl,
+    fontSize: fontSizes.lg,
   },
   podBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    minHeight: 44,
+    minHeight: 38,
     borderRadius: radii.pill,
     backgroundColor: '#FFC93C',
   },

@@ -360,8 +360,9 @@ function EventsScreen() {
   // Kategori kutuları: her satırda iki dikdörtgen, aynı hizada ama hafif eğik ve yatayda kaymış
   const gap = spacing.md + 2;
   const contentWidth = Math.min(width, 560) - spacing.lg * 2;
-  const tileW = Math.floor((contentWidth - gap - 12) / 2);
-  const tileH = Math.round(tileW * 0.58);
+  // Kutular eğik olmadığı için kenar payı gerekmez; biraz daha geniş ve yüksek
+  const tileW = Math.floor((contentWidth - gap) / 2);
+  const tileH = Math.round(tileW * 0.64);
   const tileRows = EVENT_CATEGORIES.reduce<(typeof EVENT_CATEGORIES)[]>((rows, c, i) => {
     if (i % 2 === 0) rows.push([c]);
     else rows[rows.length - 1].push(c);
@@ -694,7 +695,7 @@ function EventsScreen() {
               style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
             >
               <Ionicons name="chevron-back" size={20} color={colors.primary} />
-              <Text style={styles.backBtnText}>Tüm kategoriler</Text>
+              <Text style={styles.backBtnText}>Geri</Text>
             </Pressable>
             {category === 'konser_festival' ? (
               <>
@@ -1669,15 +1670,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    minHeight: 44,
-    paddingLeft: spacing.sm,
-    paddingRight: spacing.lg,
-    borderRadius: radii.md,
-    borderWidth: 1.5,
-    borderColor: colors.primary,
-    backgroundColor: colors.surface,
+    alignSelf: 'flex-start',
+    minHeight: 40,
+    marginLeft: -4,
+    paddingRight: spacing.md,
   },
-  backBtnText: { color: colors.primary, fontSize: fontSizes.sm, fontWeight: '800' },
+  backBtnText: { color: colors.primary, fontFamily: fonts.semi, fontSize: fontSizes.sm },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   tag: {
     flexDirection: 'row',

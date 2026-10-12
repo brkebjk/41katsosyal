@@ -3,6 +3,7 @@
 
 import type Ionicons from '@expo/vector-icons/Ionicons';
 
+import { LEVEL_QUIZ_MULT } from '@/lib/levelPerks';
 import { placePoints, quizPts, topPoints, quizRuleSummary, type PointRules } from '@/lib/ranking';
 
 export type InfoItem = {
@@ -107,7 +108,7 @@ export function quizInfo(rules: PointRules, enabled: boolean): InfoContent {
       {
         icon: 'heart',
         lead: `${rules.quizMaxLives} can.`,
-        text: `Her oyun 1 can harcar; her ${rules.quizLifeMinutes} dakikada 1 can dolar. Günde en çok ${rules.quizDailyGames} oyun oynanır.`,
+        text: `Her oyun 1 can harcar; her ${rules.quizLifeMinutes} dakikada 1 can dolar. Günde en çok ${rules.quizDailyGames} oyun oynanır. Seviye 5'te can sınırsızdır (günlük oyun sınırı yine geçerli).`,
       },
       {
         icon: 'person',
@@ -147,7 +148,7 @@ export function quizInfo(rules: PointRules, enabled: boolean): InfoContent {
       {
         icon: 'shield-checkmark',
         lead: 'Puan sınırı.',
-        text: `Bilgi Yarışması'ndan günde en çok ${rules.quizDailyPoints}, ayda en çok ${rules.quizMonthPoints} puan alınır. Yanlış cevap puan düşürmez.`,
+        text: `Bilgi Yarışması'ndan günde en çok ${rules.quizDailyPoints}, ayda en çok ${rules.quizMonthPoints} puan alınır. Yanlış cevap puan düşürmez. Seviye 4'te kazandığın puan ve bu sınırlar ${String(LEVEL_QUIZ_MULT).replace('.', ',')} katına çıkar.`,
       },
       {
         icon: 'exit',
@@ -188,7 +189,7 @@ export function roomRulesInfo(freeGames: number, subscriptionGames: number): Inf
       {
         icon: 'game-controller',
         lead: 'Hak.',
-        text: `Her üye ayda ${freeGames} oyun başlatabilir, aboneler ayda ${subscriptionGames}. Bilgi Yarışması ve çekiliş hakkı harcamaz.`,
+        text: `Her üye ayda ${freeGames} oyun başlatabilir, aboneler ayda ${subscriptionGames}. Seviye 2'deki üyeler bunun üstüne ayda +1 oyun hakkı alır. Bilgi Yarışması ve çekiliş hakkı harcamaz.`,
       },
       {
         icon: 'exit',
@@ -351,6 +352,11 @@ export function quotaInfo(freeGames: number, subscriptionGames: number, sponsorD
         icon: 'refresh',
         lead: 'Her ay yenilenir.',
         text: 'Kullanmadığın haklar sonraki aya aktarılmaz; ay başında hakların yeniden dolar.',
+      },
+      {
+        icon: 'trending-up',
+        lead: 'Seviye ödülü.',
+        text: 'Seviye 2’deyken her ay +1 oyun hakkı alırsın. Bu hak da biriktirilemez; o ay kullanılmazsa silinir.',
       },
       {
         icon: 'arrow-undo',

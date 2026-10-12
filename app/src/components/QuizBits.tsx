@@ -25,9 +25,12 @@ export function LivesBar({
   gamesToday,
   dailyGames,
   onRefill,
+  unlimited = false,
 }: {
   lives: number;
   max: number;
+  /** Seviye 5 ödülü: can sınırsız (kalpler yerine ∞ görünür) */
+  unlimited?: boolean;
   nextAt: string | null;
   offsetMs: number;
   gamesToday: number;
@@ -56,6 +59,16 @@ export function LivesBar({
   // İki kutu yan yana: solda canlar (dolma sayacıyla), sağda günlük oyun limiti (kalan oyun)
   return (
     <View style={styles.lives} testID="quiz-lives">
+      {unlimited ? (
+        <View style={[styles.lifeBox, styles.lifeBoxHearts]} accessibilityLabel="Sınırsız can">
+          <Text style={styles.boxLabel}>CANLARIN</Text>
+          <View style={styles.hearts}>
+            <Ionicons name="heart" size={20} color="#FF4D6D" />
+            <Text style={styles.infinity}>∞</Text>
+          </View>
+          <Text style={[styles.livesSub, styles.unlimitedSub]}>Sınırsız · Seviye 5 ödülü</Text>
+        </View>
+      ) : (
       <View style={[styles.lifeBox, styles.lifeBoxHearts]} accessibilityLabel={`${lives} / ${max} can`}>
         <Text style={styles.boxLabel}>CANLARIN</Text>
         <View style={styles.hearts}>
@@ -76,6 +89,7 @@ export function LivesBar({
               : `${lives}/${max}`}
         </Text>
       </View>
+      )}
       <View
         style={[styles.lifeBox, styles.lifeBoxDay, dayLeft === 0 && styles.lifeBoxDone]}
         accessibilityLabel={`Günlük limit: ${dayLeft} oyun kaldı`}
@@ -433,6 +447,8 @@ export function QuizChest({
 }
 
 const styles = StyleSheet.create({
+  infinity: { color: '#FF4D6D', fontFamily: fonts.black, fontSize: 22, lineHeight: 24 },
+  unlimitedSub: { color: colors.highlight },
   previewWrap: { gap: 6 },
   previewTitle: { color: colors.textMuted, fontSize: 12, fontFamily: fonts.semi },
   previewRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },

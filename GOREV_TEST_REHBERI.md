@@ -1,55 +1,41 @@
-# Görev Test Rehberi – Paket: Görseller ve Arayüz 2
+# Görev Test Rehberi – Paket: Seviye Ödülleri ve Arayüz 3
 
-> Önce: Supabase > SQL Editor'e yeni `supabase/schema.sql` dosyasının tamamını yapıştır ve **Run**'a bas (akış süzgeci için gerekli).
+> Önce: Supabase > SQL Editor'e yeni `supabase/schema.sql` dosyasının tamamını yapıştır ve **Run**'a bas (seviye ödülleri için gerekli).
 > Sonra bilgisayarında `app` klasöründe `npx expo start -c` çalıştır ve Expo Go ile uygulamayı aç.
-> Not: Uygulama simgesi ve açılış ekranı Expo Go'da görünmez; mağaza sürümünde görünür.
 
-## 1. Görseller
-1. Etkinlikler sekmesini aç. 10 kategori kutusunun hepsinde yeni fotoğraflar görünmeli.
-2. Akış sekmesinin üstünde ve giriş ekranında yeni "41" logosu görünmeli (arka planı şeffaf olmalı).
-3. Profil > "Hesabı Yükselt" kutusunda ve Abonelik ekranında yeni yıldızlı rozet görünmeli.
+## 1. Logo ve rozet
+1. Uygulamayı açarken çıkan açılış ekranındaki ve giriş ekranındaki logo tam ortada durmalı (sağ alta kaymamalı).
+2. Akış sekmesinin üstünde logo ortada, eskisinden büyük ve altında "SOSYAL" yazısı olmadan görünmeli.
+3. Profil > "Hesabı Yükselt" kutusundaki rozet tam ortalı olmalı.
 
-## 2. Profil
-1. En alttaki **Çıkış yap** düğmesi kırmızı dolu ve beyaz yazılı olmalı.
-2. Gerçek adın, puanın ve başarım sayısı (yalnızca sayı) **sarı** olmalı. "Hesabım" başlığı da sarı olmalı.
-3. **Başarımlar** artık büyük, renkli bir kutu olmalı (kupa simgesi, ilerleme çubuğu).
-4. Puan alanına dokun: puan halkası, seviyen ve 5 seviye basamağı olan sabit bir pencere açılmalı (kaydırma olmamalı).
-5. **Arkadaşlarım**'a dokun: ayrı sayfa değil, alttan açılan bir pencere gelmeli. Aşağı sürükleyince kapanmalı.
-6. "Hesabım"ı aç, sonra Başarımlar'a girip geri dön: Hesabım **açık kalmalı**. Başka bir sekmeye geçip geri gelince kapanmalı.
+## 2. Abonelik ekranı
+1. Profil > Hesabı Yükselt'e gir. Üstteki rozet eskisinden çok daha büyük olmalı.
+2. Karşılaştırma tablosu: renkli ince çerçeve, her satırda simge, sağda turkuaz-mor başlıklı ve baştan sona açık renkli **Abone** sütunu olmalı. Abone sütunundaki değerler sarı olmalı.
 
-## 3. Bilgi Yarışması
-1. Oyunlar > Bilgi Yarışması'nı aç. "Nasıl oynanır?" ve ses düğmesi sarı olmalı.
-2. Ortadaki büyük **OYNA**'ya dokun: Uzaktan'daki gibi bir pencere açılmalı (oynat düğmesi, kurallar, jokerler).
-3. **Yan Yana**'ya dokun: iki oyuncu adı ve BAŞLA olan bir pencere açılmalı. BAŞLA'ya basınca oyun ekranı açılmalı.
-4. Bu pencereleri üç yoldan kapatmayı dene: sağ üstteki çarpı, telefonun geri tuşu/hareketi ve ekranın sol kenarından sağa kaydırma.
-5. **Uzaktan**'ı aç: 5 joker kartı tek sırada yan yana durmalı; puan tablosu dahil her şey kaydırmadan görünmeli.
+## 3. Sekme başlıkları
+Etkinlikler, Oyunlar ve Profil başlıklarının arkasındaki ışık kenarlara doğru yumuşakça kaybolmalı; köşe ya da kutu kenarı görünmemeli.
 
-## 4. Oyunlar sekmesi
-1. "Oyun davetlerini al" yazısı ve zarf simgesi sarı olmalı.
-2. "Oda kuralları" ve "Oyun puanı nasıl hesaplanır?" kutuları sarı çerçeveli olmalı.
-3. **Oda Oluştur** > **Bilgi Yarışması**'nı seç: doğrudan Uzaktan özel oda açılmalı (oda kodu görünür).
-4. Canın 0 iken ya da günlük oyun sınırın dolmuşken aynısını dene: oda açılmamalı, nedenini söyleyen bir uyarı çıkmalı.
+## 4. Etkinlikler
+1. Kategori kutuları biraz daha büyük olmalı.
+2. Bir kategoriye dokun: sol üstte çerçevesiz **< Geri** yazısı çıkmalı ("Tüm kategoriler" değil).
 
-## 5. Akış
-1. Yazı kutusu ve yanındaki düğmeler belirgin çerçeveli ve gölgeli olmalı. Gönder düğmesi yazı kutusuyla aynı boyda olmalı; çok satır yazınca o da uzamalı.
-2. Üstte süzgeç düğmesinin yanında **Arkadaşlarım** düğmesi olmalı; dokununca arkadaşlar penceresi açılmalı. Kurallar simgesi sarı olmalı.
-3. Şunları ayrı ayrı gönderi olarak paylaşmayı dene; hepsi **"paylaşılamaz"** hatası vermeli:
-   - Kendi arkadaş kodun (Arkadaşlarım penceresinde yazıyor), küçük harfle ya da `K X M P T A` gibi aralıklı yazılmış hâli
-   - Açık bir oyun odasının ya da Bilgi Yarışması özel odasının kodu
-   - `0532 123 45 67` gibi bir telefon numarası, `ali@ornek.com`, `www.ornek.com`, `insta: kullaniciadi`
-4. Aynı hatayı yorum yazarken de görmelisin.
-5. Ağır bir küfür yaz (ör. "siktir"): gönderide `*****` olarak görünmeli. "amk", "aq", "mal" olduğu gibi kalmalı. "Canım sıkıldım", "eksik", "götür" gibi kelimeler bozulmamalı.
+## 5. Harita
+1. Bildirim yokken sağ üstteki zilin içi şeffaf olmalı (yalnızca beyaz halka ve zil).
+2. Bir bildirim gelince (ör. başka hesaptan arkadaşlık isteği) düğme büyüyüp küçülmeli ve **yalnızca zil simgesi** sallanmalı; halka sallanmamalı.
+3. Haritayı en çok yakınlaştır: petek adları turkuaz ve temiz görünmeli (harflerde renk bozulması olmamalı).
 
-## 6. Etkinlikler
-1. Altta **Oluştur** solda, **Katılım Doğrula** sağda olmalı.
-2. "Etkinlik puanları nasıl çalışır?" sarı olmalı.
-3. **Keşfet** (turkuaz) ve **Ekip Bul** (lavanta) dolu renkli düğmeler olmalı; seçilince beyaz çerçeve almalı.
+## 6. Oyunlar
+1. Oyun kutuları eğik değil, düz durmalı (boyutları aynı).
+2. Aylık Ödül Podyumu daha alçak olmalı.
 
-## 7. Konum izni
-1. Telefonun ayarlarından Expo Go'nun konum iznini kapat (ya da "her seferinde sor" yap).
-2. Konum isteyen bir şey yap (ör. haritada "Konumum" ya da gönderiye konum ekleme). "Konumunu 1 kez isteyeceğim" penceresinde sarı **"Gerektiğinde konum iznini otomatik ver"** anahtarı olmalı.
-3. Anahtarı aç: telefonun izin penceresi çıkmalı. İzin verince pencere kapanmalı ve işlem devam etmeli.
-4. Aynı işlemi tekrarla: bu pencere bir daha çıkmamalı.
-
-## 8. Sekme başlıkları
-Etkinlikler, Oyunlar ve Profil sekmelerinde üstteki başlığın arkasında turkuaz-mor bir ışık, solunda sarı ince bir çizgi olmalı. Üçünde de aynı görünmeli.
+## 7. Seviye ödülleri (puan ve hak sistemi)
+Yeni eşikler: Seviye 2 = 250, Seviye 3 = 1.200, Seviye 4 = 3.500, Seviye 5 = 8.000 puan.
+Denemek için Supabase > Table Editor > `profiles` tablosunda kendi satırındaki `points` değerini değiştirebilirsin (denemeden sonra geri al).
+1. **Seviye 2 (ör. 300 puan):** Oyunlar sekmesindeki oyun hakkı göstergesi 1 fazla olmalı (ücretsiz üyede 3 yerine 4).
+2. **Seviye 3 (ör. 1.300 puan):** Etkinlik hakkı 1 fazla olmalı; oyun hakkı yeniden normale dönmeli (ödüller birikmez).
+3. **Seviye 4 (ör. 4.000 puan):** Bilgi Yarışması'nda sarı "Seviye 4 ödülü: … ×1,2" notu görünmeli. "Puan sistemi" penceresinde sınırlar 12 / 150, Uzaktan penceresinde kazanana puanlar 1,5 / 1,8 / 2,1 / 2,4 olmalı.
+4. **Seviye 5 (ör. 9.000 puan):** Bilgi Yarışması'nda canlar kutusunda ∞ ve "Sınırsız" yazmalı. Solo oyna, can azalmamalı. Günlük oyun sınırı yine geçerli olmalı.
+5. Profil > **Başarımlar**: "Seviye ödülleri" kartında her seviyenin adının yanında sarı küçük yazıyla ödülü, altında sıfırlama kuralları görünmeli.
+6. Profil > puana dokun: açılan penceredeki seviye basamaklarında da ödüller sarı küçük yazıyla görünmeli.
+7. Profil > Uygulama > **Yarışma kuralları**: "Seviyeler ve seviye ödülleri" bölümü olmalı.
+8. Oyunlar > oyun hakkı göstergesi (bilgi penceresi), Oda kuralları ve Etkinlikler > etkinlik hakkı göstergesi pencerelerinde seviye ödülü ve "haklar biriktirilemez" bilgisi yazmalı.

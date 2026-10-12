@@ -15,7 +15,7 @@ export async function eventGaugeAction(quota: Quota | null, subscribed: boolean)
     await notify('Etkinlik hakkın', 'Bu hesap istediği kadar etkinlik açabilir.', { icon: 'calendar' });
     return null;
   }
-  const usage = `Bu ay ${quota.events_used}/${quota.events_limit ?? '∞'} etkinlik hakkını kullandın. Hakların her ayın başında yenilenir.`;
+  const usage = `Bu ay ${quota.events_used}/${quota.events_limit ?? '∞'} etkinlik hakkını kullandın. Hakların her ayın başında yenilenir; kullanılmayan haklar sonraki aya geçmez. Seviye 3'teki üyeler ayda +1 etkinlik hakkı alır.`;
   if (quota.is_leader) {
     await notify('Etkinlik Liderisin', usage, { icon: 'ribbon', tone: 'success' });
     return null;

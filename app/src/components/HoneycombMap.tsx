@@ -58,6 +58,8 @@ export const VENUE_COLOR = colors.venue;
 export const OFFICIAL_COLOR = '#FFC83D';
 /** Seçili petek: etkinlik (turkuaz) ve yoğunluk (pembe) katmanlarından ayrılsın diye sarı (arayüzün ana renginden bağımsız) */
 const SELECT_COLOR = '#FFB020';
+/** En yakın yakınlaşmada yazılan petek adlarının rengi (turkuaz) */
+const NAME_COLOR = '#35D6C3';
 const MARKER_R = 10;
 
 const MAX_ZOOM = 36; // kapsayıcı ölçeğin katı
@@ -826,21 +828,30 @@ export function HoneycombMap({
             const two = parts.length > 1;
             return (
               <G key={`nm-${c.q},${c.r}`}>
-                {(two ? [parts[0], parts.slice(1).join('-')] : parts).map((t, i) => (
-                  <SvgText
-                    key={i}
-                    x={x}
-                    y={y + (two ? (i === 0 ? -nameSize * 0.25 : nameSize * 0.95) : nameSize * 0.35)}
-                    fontSize={nameSize}
-                    fontFamily={fonts.extra}
-                    fill={OFFICIAL_COLOR}
-                    stroke={SEA}
-                    strokeWidth={0.6}
-                    textAnchor="middle"
-                  >
-                    {t}
-                  </SvgText>
-                ))}
+                {/* Önce koyu kontur (altta, yalnızca çizgi), sonra üstüne düz turkuaz yazı: kontur harfin rengini bozmaz */}
+                {(two ? [parts[0], parts.slice(1).join('-')] : parts).map((t, i) => {
+                  const ty = y + (two ? (i === 0 ? -nameSize * 0.25 : nameSize * 0.95) : nameSize * 0.35);
+                  return (
+                    <G key={i}>
+                      <SvgText
+                        x={x}
+                        y={ty}
+                        fontSize={nameSize}
+                        fontFamily={fonts.extra}
+                        fill="none"
+                        stroke={SEA}
+                        strokeWidth={Math.max(2, nameSize * 0.28)}
+                        strokeLinejoin="round"
+                        textAnchor="middle"
+                      >
+                        {t}
+                      </SvgText>
+                      <SvgText x={x} y={ty} fontSize={nameSize} fontFamily={fonts.extra} fill={NAME_COLOR} textAnchor="middle">
+                        {t}
+                      </SvgText>
+                    </G>
+                  );
+                })}
               </G>
             );
           })}
