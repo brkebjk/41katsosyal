@@ -8,6 +8,7 @@ import { goToDm } from '@/components/DirectMessages';
 import { openDm } from '@/lib/dm';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { Screen } from '@/components/Screen';
+import { PetekIcon } from '@/components/HexClusterIcon';
 import { notify, notifyReportSent, showDialog } from '@/lib/dialog';
 import {
   getAliasProfile,
@@ -222,7 +223,7 @@ function ProfilePost({ post, onOpen }: { post: AliasProfilePost; onOpen: () => v
         <Text style={styles.time}>{timeAgo(post.created_at)}</Text>
         {post.in_cell ? (
           <View style={styles.chip}>
-            <Ionicons name="grid" size={11} color={colors.accent} />
+            <PetekIcon size={11} color={colors.accent} />
             <Text style={styles.chipText}>Petek akışı</Text>
           </View>
         ) : null}

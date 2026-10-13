@@ -1,6 +1,9 @@
 // Profil > Hesabı doğrula: TC kimlik no, ad, soyad ve doğum yılı NVİ'nin kimlik doğrulama servisine sorulur.
 // Sorguyu uygulama değil sunucu (Edge Function `verify-identity`) yapar; TC kimlik numarası hiçbir yere kaydedilmez.
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router } from 'expo-router';
+
 import { supabase } from '@/lib/supabase';
 
 export type IdentityInput = { tc: string; firstName: string; lastName: string; birthYear: string };
@@ -80,4 +83,47 @@ export async function verifyIdentity(input: IdentityInput): Promise<{ ok: boolea
   } catch {
     return { ok: false, error: 'Sunucuya ulaşılamadı. İnternet bağlantını kontrol edip tekrar dene. (K4)' };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Doğrulama ekranına yönlendirme ve akıştaki günlük hatırlatma
+// ---------------------------------------------------------------------------
+
+let pendingVerify = false;
+
+/** Profil sekmesini açar ve “Hesabı doğrula” penceresini gösterir (her ekrandan çağrılabilir). */
+export function openIdentityVerify(): void {
+  pendingVerify = true;
+  router.navigate('/profile');
+}
+
+/** Profil ekranı açılınca: doğrulama penceresi istenmiş mi? (bir kez okunur) */
+export function takeIdentityVerifyRequest(): boolean {
+  const v = pendingVerify;
+  pendingVerify = false;
+  return v;
+}
+
+const REMIND_KEY = (userId: string) => `kat41.verifyReminder.${userId}`;
+/** Türkiye saatiyle bugünün tarihi (YYYY-AA-GG) */
+const todayTr = () => new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 10);
+
+/**
+ * Akış ekranına girince doğrulama hatırlatması gösterilsin mi? “Bir daha gösterme” seçilmediyse günde bir kez (o günün
+ * ilk akış ziyaretinde) evet döner ve bugünü işaretler.
+ */
+export async function takeVerifyReminder(userId: string): Promise<boolean> {
+  try {
+    const saved = await AsyncStorage.getItem(REMIND_KEY(userId));
+    if (saved === 'never' || saved === todayTr()) return false;
+    await AsyncStorage.setItem(REMIND_KEY(userId), todayTr());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** “Bunu bir daha gösterme” */
+export async function muteVerifyReminder(userId: string): Promise<void> {
+  await AsyncStorage.setItem(REMIND_KEY(userId), 'never').catch(() => {});
 }

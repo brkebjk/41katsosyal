@@ -59,6 +59,7 @@ function buildSections(
       lines: [
         '18 yaşını doldurmuş, hesabı yasaklanmamış her üye katılabilir.',
         'Moderatörler ve uygulama ekibi sıralamaya girmez, hediye alamaz.',
+        'Hesabını doğrulamamış (sarı tiki olmayan) üyeler sıralamada yer alır ama hediye ya da sıralama ödülü alamaz; ödül sıradaki doğrulanmış üyeye geçer. Hesabını Profil sekmesinden doğrulayabilirsin.',
       ],
     });
     sections.push({
@@ -82,7 +83,7 @@ function buildSections(
       `Etkinliğe katılıp kodu yazmak: kalabalık etkinlik daha çok puan getirir (${attendTiersText(rules)}); 41. Kat Özel etkinliklerde her basamağa +${rules.eventAttendOfficialBonus} puan eklenir. Etkinlik kalabalıklaştıkça daha önce puan alanlara da aradaki fark yazılır. Katılabileceğin etkinlik sayısında sınır yoktur; ancak puan, etkinlikte en az ${rules.eventMinAttendees} kişinin katılımı kodla ve bölge bilgisiyle doğrulanınca eklenir.`,
       `Etkinliğine gelen katılımcılar: kişi başı +${rules.hostPerAttendee} puan (bir etkinlikte en fazla ${rules.hostAttendeeCap} kişi, ayda en fazla ${rules.hostMonthCap} puan).`,
       `Oyun oynamak: oyuna ne kadar çok kişi katılırsa puan o kadar artar. 1. sıranın puanı oyuncu sayısı × kalabalık çarpanıdır: 4 kişiden sonra her oyuncu çarpanı %10 artırır (4 kişi 4, 6 kişi 7, 8 kişi 11, 10 kişi 16, en çok ${rules.gameTopCap}); puan, oyunu kaçıncı sırada bitirdiğine göre verilir: 1. sıra hepsini alır, her sıra aşağıda biraz azalır, son sıra 1 puan alır. Puan için oyun en az ${rules.gameMinPlayers} kişiyle oynanmalıdır (günde en fazla ${rules.gameDailyCap}, ayda en fazla ${rules.gameMonthCap} oyun).`,
-      `Bilgi Yarışması: uzaktan oynanır, oyun hakkını harcamaz ama her oyun 1 can harcar (en çok ${rules.quizMaxLives} can, her ${rules.quizLifeMinutes} dakikada 1 can dolar). ${quizRuleSummary(rules)} Özel odada aynı kişilerden biriyle oynanan maçlardan günde en çok 5 puan alınır. Solo / Hafta sıralamasında (haftanın toplam doğrusu, yalnızca 5+ doğrulu koşular) ilk 3 sonraki hafta 10 canla oynar; Çoklu / Ay (Uzaktan) sıralamasında ilk 3'e moderatör onayıyla 1 aylık abonelik verilir. Uzaktan maç başladıktan sonra çıkan kaybeder. Çekiliş puan getirmez.`,
+      `Bilgi Yarışması: uzaktan oynanır, oyun hakkını harcamaz ama her oyun 1 can harcar (en çok ${rules.quizMaxLives} can, her ${rules.quizLifeMinutes} dakikada 1 can dolar). ${quizRuleSummary(rules)} Özel odada aynı kişilerden biriyle oynanan maçlardan günde en çok 5 puan alınır. Solo / Hafta sıralamasında (haftanın toplam doğrusu, yalnızca 5+ doğrulu koşular) ilk 3 sonraki hafta 10 canla oynar; Çoklu / Ay (Uzaktan) sıralamasında ilk 3'e moderatör onayıyla 1 aylık abonelik verilir. Bu ödülleri yalnızca hesabını doğrulamış üyeler alır. Uzaktan maç başladıktan sonra çıkan kaybeder. Çekiliş puan getirmez.`,
     ],
   });
 

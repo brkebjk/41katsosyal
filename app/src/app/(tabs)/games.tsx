@@ -13,6 +13,7 @@ import { InfoModal } from '@/components/InfoModal';
 import { Popup } from '@/components/Popup';
 import { Screen } from '@/components/Screen';
 import { SponsorCodeModal } from '@/components/SponsorCodeModal';
+import { VerifyPrizeNote } from '@/components/VerifyPrizeNote';
 import { useRoomActions } from '@/components/useRoomActions';
 import { useAuth } from '@/lib/auth';
 import { getQuota, type Quota } from '@/lib/events';
@@ -302,6 +303,7 @@ function GamesScreen() {
             })}
           </View>
         )}
+        <VerifyPrizeNote onDark />
         <Pressable
           onPress={() => router.push('/siralama')}
           accessibilityRole="button"

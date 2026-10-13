@@ -1,10 +1,10 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
 import { Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Svg, { G, Polygon, Text as SvgText } from 'react-native-svg';
 
 import { LAND_FILL, LAND_STROKE, SEA } from '@/components/HoneycombMap';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { CloseX } from '@/components/CloseX';
+import { PetekIcon } from '@/components/HexClusterIcon';
 import { cellName } from '@/lib/cellNames';
 import { isLand, type Cell } from '@/lib/hex';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
@@ -58,7 +58,7 @@ export function MiniHexPicker({
         <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Kapat" />
         <View style={styles.card} testID="mini-hex-picker">
           <View style={styles.head}>
-            <Ionicons name="grid" size={18} color={colors.primary} />
+            <PetekIcon size={18} color={colors.primary} />
             <Text style={styles.title}>Hangi peteğin akışı?</Text>
             <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Kapat">
               <CloseX size={16} />

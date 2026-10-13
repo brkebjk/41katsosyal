@@ -34,7 +34,7 @@ export function QuizRewardsCard({ onNotice }: { onNotice: (n: Notice) => void })
   async function grant(w: OnlineWinner) {
     const ok = await confirmAction(
       'Abonelik ödülü',
-      `${w.alias} (${w.full_name}) geçen ayın Çoklu / Ay sıralamasında ${w.place}. oldu (${fmtPts(w.points)} puan, ${w.wins} galibiyet). 1 aylık abonelik verilsin mi?`,
+      `${w.alias} (${w.full_name}) geçen ayın Çoklu / Ay sıralamasında doğrulanmış üyeler arasında ${w.place}. oldu (${fmtPts(w.points)} puan, ${w.wins} galibiyet). 1 aylık abonelik verilsin mi?`,
       'Ver',
     );
     if (!ok) return;
@@ -60,6 +60,9 @@ export function QuizRewardsCard({ onNotice }: { onNotice: (n: Notice) => void })
           Bu ay (önizleme)
         </Text>
       </View>
+      <Text style={styles.sub}>
+        Yalnızca hesabını doğrulamış üyeler listelenir; doğrulamayanlar atlanır, ödül sıradaki doğrulanmış üyeye geçer.
+      </Text>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {rows === null ? (
         <Text style={styles.muted}>Yükleniyor…</Text>

@@ -1033,7 +1033,7 @@ function PointsPopup({ lobby, onClose }: { lobby: QuizLobby | null; onClose: () 
       />
       <Text style={styles.ptableNote}>
         Solo / Hafta sıralamasında haftanın bütün doğruları toplanır; yalnızca en az 5 doğrulu (puan getiren) koşular
-        sayılır. Bilgi Yarışması puanları genel puanına eklenir ama petek sıralamasına sayılmaz.
+        sayılır. Bilgi Yarışması puanları genel puanına eklenir ama petek sıralamasına sayılmaz. Sıralama ödüllerini yalnızca hesabını doğrulamış üyeler alır; doğrulamayanın ödülü sıradaki doğrulanmış üyeye geçer.
       </Text>
     </Popup>
   );

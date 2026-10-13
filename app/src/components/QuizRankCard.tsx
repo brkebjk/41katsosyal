@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Avatar } from '@/components/Avatar';
 import { Meter } from '@/components/Panel';
+import { VerifyPrizeNote } from '@/components/VerifyPrizeNote';
 import { fmtPts } from '@/lib/labels';
 import { onlineLeaderboard, soloLeaderboard, type OnlineRankRow, type SoloRankRow } from '@/lib/quiz';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
@@ -139,6 +140,7 @@ export function QuizRankCard({ championLives = 10 }: { championLives?: number })
               : 'Ödül: ayın ilk 3’üne 1 aylık abonelik (moderatör onayıyla)'}
           </Text>
         </View>
+        <VerifyPrizeNote />
         {tab === 'solo' ? (
           solo === null ? (
             <Text style={styles.muted}>Yükleniyor…</Text>

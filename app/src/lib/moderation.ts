@@ -17,10 +17,29 @@ export type Member = {
   banned_at: string | null;
   ban_reason: string | null;
   created_at: string;
+  /** Uygulamadan gelen son "buradayım" sinyali (yalnızca üye listesinde gelir) */
+  last_seen_at?: string | null;
 };
 
 const MEMBER_COLUMNS =
-  'id, full_name, alias, avatar_index, role, points, premium_until, muted_until, banned_at, ban_reason, created_at';
+  'id, full_name, alias, avatar_index, role, points, premium_until, muted_until, banned_at, ban_reason, created_at, last_seen_at';
+
+/** Son 10 dakikada uygulamadan sinyal gelen üye çevrimiçi sayılır */
+export const ONLINE_MS = 10 * 60_000;
+
+export function isMemberOnline(m: Member): boolean {
+  return Boolean(m.last_seen_at && Date.now() - Date.parse(m.last_seen_at) < ONLINE_MS);
+}
+
+/** Şu an çevrimiçi üye sayısı (yalnızca moderatör okuyabilir) */
+export async function countOnlineMembers(): Promise<number | null> {
+  if (!supabase) return null;
+  const { count, error } = await supabase
+    .from('profiles')
+    .select('id', { count: 'exact', head: true })
+    .gt('last_seen_at', new Date(Date.now() - ONLINE_MS).toISOString());
+  return error ? null : (count ?? 0);
+}
 
 const MOD_TEXT: Record<string, string> = {
   premium_required: 'Bu işlem için abonelik gerekiyor.',
@@ -90,7 +109,7 @@ export function cleanSearch(text: string): string {
     .slice(0, 40);
 }
 
-export type MemberFilter = 'all' | 'subscribed' | 'muted' | 'banned';
+export type MemberFilter = 'all' | 'online' | 'subscribed' | 'muted' | 'banned';
 
 /**
  * Üye ara (ad ya da rumuz). Boş arama son kayıt olanları getirir.
@@ -105,10 +124,13 @@ export async function searchMembers(
   let req = supabase.from('profiles').select(MEMBER_COLUMNS);
   if (q) req = req.or(`full_name.ilike.%${q}%,alias.ilike.%${q}%`);
   const nowIso = new Date().toISOString();
+  if (filter === 'online') req = req.gt('last_seen_at', new Date(Date.now() - ONLINE_MS).toISOString());
   if (filter === 'subscribed') req = req.gt('premium_until', nowIso);
   if (filter === 'muted') req = req.gt('muted_until', nowIso);
   if (filter === 'banned') req = req.not('banned_at', 'is', null);
-  const { data, error } = await req.order('created_at', { ascending: false }).limit(40);
+  const { data, error } = await req
+    .order(filter === 'online' ? 'last_seen_at' : 'created_at', { ascending: false })
+    .limit(filter === 'online' ? 200 : 40);
   if (error) return { data: [], error: 'Üyeler okunamadı. Biraz sonra tekrar dene.' };
   return { data: (data ?? []) as Member[], error: null };
 }

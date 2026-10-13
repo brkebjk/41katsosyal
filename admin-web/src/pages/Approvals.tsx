@@ -54,6 +54,8 @@ export function ApprovalsPage({ onNotice }: { onNotice: (n: Notice) => void }) {
     const sb = supabase;
     void run(async () => {
       const { error } = await sb.rpc('admin_review_photo', { p_user: p.user_id, p_path: p.photo_path, p_approve: approve });
+      // Reddedilen resim sunucuda saklanmaz
+      if (!error && !approve) await sb.storage.from('profile-photos').remove([p.photo_path]);
       return { error: error ? 'İşlem yapılamadı; resim değişmiş ya da kendiliğinden onaylanmış olabilir.' : null };
     }, approve ? 'Profil resmi onaylandı.' : 'Profil resmi reddedildi.');
   }

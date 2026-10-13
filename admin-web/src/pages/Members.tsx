@@ -31,12 +31,18 @@ type Row = {
   identity_verified_at: string | null;
   photo_path: string | null;
   photo_status: string | null;
+  last_seen_at: string | null;
 };
 
 const COLUMNS =
-  'id, full_name, admin_real_name, alias, role, points, premium_until, muted_until, banned_at, ban_reason, created_at, identity_verified_at, photo_path, photo_status';
+  'id, full_name, admin_real_name, alias, role, points, premium_until, muted_until, banned_at, ban_reason, created_at, identity_verified_at, photo_path, photo_status, last_seen_at';
 
-type Filter = 'all' | 'verified' | 'subscribed' | 'muted' | 'banned' | 'staff';
+type Filter = 'all' | 'online' | 'verified' | 'subscribed' | 'muted' | 'banned' | 'staff';
+
+/** Son 10 dakikada uygulamadan sinyal gelen üye çevrimiçi sayılır */
+const ONLINE_MS = 10 * 60_000;
+const REFRESH_MS = 10 * 60_000;
+const isOnline = (r: Row) => Boolean(r.last_seen_at && Date.now() - Date.parse(r.last_seen_at) < ONLINE_MS);
 
 const ROLE: Record<Row['role'], string> = { user: 'Üye', admin: 'Moderatör', sponsor: 'Mekân hesabı' };
 const PACKAGES: { value: PackageType; label: string }[] = [
@@ -64,6 +70,8 @@ export function MembersPage({
   const [filter, setFilter] = useState<Filter>('all');
   const [rows, setRows] = useState<Row[] | null>(null);
   const [selected, setSelected] = useState<Row | null>(null);
+  const [online, setOnline] = useState<number | null>(null);
+  const [checkedAt, setCheckedAt] = useState<string | null>(null);
 
   const search = useCallback(async () => {
     if (!supabase) return;
@@ -71,20 +79,35 @@ export function MembersPage({
     let req = supabase.from('profiles').select(COLUMNS);
     if (q) req = req.or(`full_name.ilike.%${q}%,alias.ilike.%${q}%,admin_real_name.ilike.%${q}%`);
     const now = new Date().toISOString();
+    if (filter === 'online') req = req.gt('last_seen_at', new Date(Date.now() - ONLINE_MS).toISOString());
     if (filter === 'verified') req = req.not('identity_verified_at', 'is', null);
     if (filter === 'subscribed') req = req.gt('premium_until', now);
     if (filter === 'muted') req = req.gt('muted_until', now);
     if (filter === 'banned') req = req.not('banned_at', 'is', null);
     if (filter === 'staff') req = req.in('role', ['admin', 'sponsor']);
-    const { data, error } = await req.order('created_at', { ascending: false }).limit(100);
+    const { data, error } = await req
+      .order(filter === 'online' ? 'last_seen_at' : 'created_at', { ascending: false })
+      .limit(filter === 'online' ? 500 : 100);
     if (error) onNotice({ text: 'Üyeler okunamadı.', error: true });
     setRows((data as Row[]) ?? []);
+    // Toplam çevrimiçi (yalnızca sayı)
+    const { count } = await supabase
+      .from('profiles')
+      .select('id', { count: 'exact', head: true })
+      .gt('last_seen_at', new Date(Date.now() - ONLINE_MS).toISOString());
+    setOnline(count ?? 0);
+    setCheckedAt(new Date().toISOString());
   }, [query, filter, onNotice]);
 
   useEffect(() => {
     void search();
     // yalnızca filtre değişince; arama kutusu "Ara" ile çalışır
   }, [filter]);
+  // 10 dakikada bir kendiliğinden yenilenir (çevrimiçi / çevrimdışı noktaları güncellensin)
+  useEffect(() => {
+    const t = setInterval(() => void search(), REFRESH_MS);
+    return () => clearInterval(t);
+  }, [search]);
 
   const refresh = useCallback(async (id: string) => {
     if (!supabase) return;
@@ -103,6 +126,15 @@ export function MembersPage({
   return (
     <section>
       <h2>Üyeler</h2>
+      <div className="online-bar">
+        <span className="dot-on" /> Şu an çevrimiçi: <strong>{online ?? '…'}</strong>
+        <span className="muted small">
+          {checkedAt ? ` · son kontrol ${when(checkedAt)} · 10 dakikada bir yenilenir` : ''}
+        </span>
+        <button className="link" onClick={() => void search()}>
+          Şimdi yenile
+        </button>
+      </div>
       <form
         className="searchbar"
         onSubmit={(e) => {
@@ -120,6 +152,7 @@ export function MembersPage({
         onChange={setFilter}
         options={[
           { value: 'all', label: 'Hepsi' },
+          { value: 'online', label: 'Çevrimiçi' },
           { value: 'verified', label: 'Doğrulanmış' },
           { value: 'subscribed', label: 'Abone' },
           { value: 'muted', label: 'Susturulmuş' },
@@ -141,6 +174,7 @@ export function MembersPage({
                 onClick={() => setSelected(r)}
               >
                 <span className="member-name">
+                  <span className={isOnline(r) ? 'dot-on' : 'dot-off'} title={isOnline(r) ? 'Çevrimiçi' : 'Çevrimdışı'} />
                   {nameOf(r)}
                   {r.identity_verified_at ? <span className="tick" title="Doğrulanmış hesap">✔</span> : null}
                   {r.role === 'admin' ? <span className="shield" title="Moderatör">⛨</span> : null}
@@ -198,6 +232,12 @@ function MemberDetail({ m, onNotice, onChanged }: { m: Row; onNotice: (n: Notice
     const sb = supabase;
     await run(async () => {
       const { error } = await sb.rpc('admin_revoke_identity', { p_user: m.id, p_note: note || null });
+      // Profil resmi kalktı: üyenin resim dosyaları da sunucudan silinir
+      if (!error) {
+        const { data: files } = await sb.storage.from('profile-photos').list(m.id, { limit: 100 });
+        const paths = (files ?? []).map((f) => `${m.id}/${f.name}`);
+        if (paths.length) await sb.storage.from('profile-photos').remove(paths);
+      }
       return { error: error ? 'Doğrulama kaldırılamadı.' : null };
     }, 'Hesap doğrulaması kaldırıldı.');
   }
@@ -218,6 +258,10 @@ function MemberDetail({ m, onNotice, onChanged }: { m: Row; onNotice: (n: Notice
       </div>
 
       <dl className="facts">
+        <dt>Son görülme</dt>
+        <dd>
+          {isOnline(m) ? 'Şu an çevrimiçi' : m.last_seen_at ? when(m.last_seen_at) : 'Henüz sinyal yok'}
+        </dd>
         <dt>Hesap doğrulama</dt>
         <dd>{m.identity_verified_at ? `Doğrulandı (${when(m.identity_verified_at)})` : 'Doğrulanmadı'}</dd>
         <dt>Profil resmi</dt>

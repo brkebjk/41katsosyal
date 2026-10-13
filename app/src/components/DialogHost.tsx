@@ -41,6 +41,7 @@ function DialogView({ request }: { request: DialogRequest }) {
   const [toggleOn, setToggleOn] = useState(false);
   const [toggleBusy, setToggleBusy] = useState(false);
   const [toggleFailed, setToggleFailed] = useState(false);
+  const [checkOn, setCheckOn] = useState(false);
 
   async function onToggle(next: boolean) {
     const t = request.toggle;
@@ -124,6 +125,21 @@ function DialogView({ request }: { request: DialogRequest }) {
             ) : null}
           </View>
         ) : null}
+        {request.check ? (
+          <View style={[styles.toggleRow, styles.checkRow]}>
+            <Text style={styles.checkLabel}>{request.check.label}</Text>
+            <Switch
+              value={checkOn}
+              onValueChange={(v) => {
+                setCheckOn(v);
+                request.check?.onChange(v);
+              }}
+              trackColor={{ true: colors.primary, false: colors.border }}
+              accessibilityLabel={request.check.label}
+              testID="dialog-check"
+            />
+          </View>
+        ) : null}
         <View style={styles.buttons}>
           {request.buttons.map((b) => (
             <Pressable
@@ -189,6 +205,8 @@ const styles = StyleSheet.create({
   },
   toggleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   toggleLabel: { flex: 1, color: colors.highlight, fontFamily: fonts.extra, fontSize: fontSizes.sm, lineHeight: 19 },
+  checkRow: { alignSelf: 'stretch', paddingHorizontal: spacing.xs },
+  checkLabel: { flex: 1, color: colors.textMuted, fontFamily: fonts.semi, fontSize: fontSizes.sm },
   toggleFail: { color: colors.textMuted, fontSize: 12, lineHeight: 17 },
   scrollContent: { gap: spacing.md },
   card: {

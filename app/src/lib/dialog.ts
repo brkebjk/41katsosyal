@@ -32,10 +32,17 @@ export type DialogToggle = {
   failText?: string;
 };
 
+/** Pencereyi kapatmayan basit bir açma/kapama anahtarı (ör. “Bunu bir daha gösterme”). Her değişimde `onChange` çalışır. */
+export type DialogCheck = {
+  label: string;
+  onChange: (on: boolean) => void;
+};
+
 export type DialogOptions<T> = {
   title: string;
   message?: string;
   toggle?: DialogToggle;
+  check?: DialogCheck;
   /** Kırmızı, belirgin uyarı satırı (ör. “Gerçek adın görünür”). Mesajın altında çerçeveli kutuda çıkar. */
   warning?: string;
   icon?: IconName;
@@ -50,6 +57,7 @@ export type DialogRequest = {
   title: string;
   message?: string;
   toggle?: DialogToggle;
+  check?: DialogCheck;
   warning?: string;
   icon: IconName;
   tone: DialogTone;
@@ -104,6 +112,7 @@ export function showDialog<T>(options: DialogOptions<T>): Promise<T> {
       title: options.title,
       message: options.message,
       toggle: options.toggle,
+      check: options.check,
       warning: options.warning,
       icon: options.icon ?? DEFAULT_ICONS[tone],
       tone,

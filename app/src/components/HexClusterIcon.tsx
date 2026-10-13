@@ -47,3 +47,47 @@ export function HexClusterIcon({ size, color, focused }: { size: number; color: 
     </Svg>
   );
 }
+
+/**
+ * Petek simgesi (üç petek): uygulamada "petek" anlatan her yerde kare ızgara simgesi yerine kullanılır.
+ * `outline` verilirse yalnızca çizgi, verilmezse dolu.
+ */
+export function PetekIcon({ size, color, outline = false }: { size: number; color: ColorValue; outline?: boolean }) {
+  const r = size / 3.5;
+  const w = r * SQ3;
+  const c = size / 2;
+  const cells = [
+    [c, c - 0.75 * r],
+    [c - w / 2, c + 0.75 * r],
+    [c + w / 2, c + 0.75 * r],
+  ];
+  return (
+    <Svg width={size} height={size}>
+      {cells.map(([x, y], i) => (
+        <Polygon
+          key={i}
+          points={hex(x, y, r * 0.88)}
+          fill={outline ? 'none' : color}
+          stroke={color}
+          strokeWidth={outline ? Math.max(1, size / 14) : 0}
+          strokeLinejoin="round"
+        />
+      ))}
+    </Svg>
+  );
+}
+
+/** Ionicons "grid" adlı simge yerine petek simgesi kullanılsın mı? (petek anlatan yerler) */
+export function isPetekIconName(name: string | undefined): boolean {
+  return name === 'grid' || name === 'grid-outline';
+}
+
+/** Tek petek (renk açıklamasında peteğin rengini göstermek için) */
+export function HexSwatch({ size, color, stroke }: { size: number; color: ColorValue; stroke?: ColorValue }) {
+  const c = size / 2;
+  return (
+    <Svg width={size} height={size}>
+      <Polygon points={hex(c, c, size / 2 - 0.5)} fill={color} stroke={stroke ?? 'none'} strokeWidth={stroke ? 1 : 0} />
+    </Svg>
+  );
+}

@@ -2078,6 +2078,8 @@ alter table public.profiles add column if not exists photo_status text;
 alter table public.profiles add column if not exists photo_updated_at timestamptz;
 -- Kontrol süresi: yüklenen resim bu anda kendiliğinden onaylanır (yüklemeden 10–30 dakika sonra, rastgele)
 alter table public.profiles add column if not exists photo_auto_at timestamptz;
+-- Son profil resmi değişikliği: resim haftada bir değiştirilebilir (moderatör reddederse sıfırlanır)
+alter table public.profiles add column if not exists photo_changed_at timestamptz;
 alter table public.profiles drop constraint if exists profiles_photo_status_check;
 alter table public.profiles add constraint profiles_photo_status_check
   check (photo_status is null or photo_status in ('pending', 'approved', 'rejected'));
@@ -9740,11 +9742,16 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 -- Bir haftanın Solo ilk 3'ü (eşitlikte aynı sıra). Ödül: sonraki hafta en çok 10 can.
+-- Ödülü yalnızca hesabını doğrulamış üyeler alır: doğrulanmamışlar atlanır, ödül sıradaki doğrulanmış üyeye geçer.
 create or replace function public._quiz_solo_champions(p_from timestamptz, p_to timestamptz)
 returns table (user_id uuid, place int, alias text, avatar int, correct int, total_ms int)
 language sql stable security definer set search_path = public as $$
-  select r.user_id, r.place, r.alias, r.avatar, r.correct, r.total_ms
-    from public._quiz_solo_week_rank(p_from, p_to) r where r.place <= 3 order by r.place;
+  select x.user_id, x.place, x.alias, x.avatar, x.correct, x.total_ms
+    from (select r.user_id, (rank() over (order by r.correct desc, r.total_ms asc))::int as place, r.alias, r.avatar,
+                 r.correct, r.total_ms
+            from public._quiz_solo_week_rank(p_from, p_to) r
+            join public.profiles p on p.id = r.user_id and p.identity_verified_at is not null) x
+   where x.place <= 3 order by x.place;
 $$;
 
 -- Bu hafta en çok kaç can: geçen haftanın Solo ilk 3'ü quiz_champion_lives (10), diğerleri quiz_max_lives (5)
@@ -9774,6 +9781,16 @@ language sql stable security definer set search_path = public as $$
      group by mp.user_id
   )
   select w.user_id, (rank() over (order by w.pts desc, w.wins desc, w.reached asc))::int, w.pts, w.wins, w.reached from w;
+$$;
+
+-- Online ödül sırası: yalnızca hesabını doğrulamış üyeler arasında (doğrulanmamış üye sıralamada görünür ama ödül
+-- alamaz; ödül sıradaki doğrulanmış üyeye geçer)
+create or replace function public._quiz_online_prize_rank(p_from timestamptz, p_to timestamptz)
+returns table (user_id uuid, place int, points numeric, wins int, reached timestamptz)
+language sql stable security definer set search_path = public as $$
+  select o.user_id, (rank() over (order by o.points desc, o.wins desc, o.reached asc))::int, o.points, o.wins, o.reached
+    from public._quiz_online_rank(p_from, p_to) o
+    join public.profiles p on p.id = o.user_id and p.identity_verified_at is not null;
 $$;
 
 -- Seviye 5 ödülü: Bilgi Yarışması'nda sınırsız can (günlük oyun sınırı yine geçerlidir)
@@ -11687,7 +11704,8 @@ language sql stable security definer set search_path = public as $$
    order by o.place, p.alias;
 $$;
 
--- Moderatör: bir ayın Online ilk 3'ü (ödül için). p_offset -1 = geçen ay (varsayılan), 0 = bu ay (henüz bitmedi).
+-- Moderatör: bir ayın Online ilk 3'ü (ödül için; yalnızca hesabını doğrulamış üyeler arasında).
+-- p_offset -1 = geçen ay (varsayılan), 0 = bu ay (henüz bitmedi).
 create or replace function public.admin_quiz_online_winners(p_offset int default -1)
 returns table (month date, place int, user_id uuid, alias text, full_name text, points numeric, wins int,
                granted boolean, granted_at timestamptz)
@@ -11702,7 +11720,7 @@ begin
   return query
     select (v_from at time zone 'Europe/Istanbul')::date, o.place, o.user_id, p.alias, p.full_name, o.points, o.wins,
            r.user_id is not null, r.granted_at
-      from public._quiz_online_rank(v_from, v_to) o
+      from public._quiz_online_prize_rank(v_from, v_to) o
       join public.profiles p on p.id = o.user_id
       left join public.quiz_online_rewards r
         on r.month = (v_from at time zone 'Europe/Istanbul')::date and r.user_id = o.user_id
@@ -11724,7 +11742,7 @@ begin
   perform public._require_user();
   perform public._require_admin();
   perform pg_advisory_xact_lock(hashtext('quiz_online_reward:' || v_month::text));
-  select * into o from public._quiz_online_rank(v_from, v_to) x where x.user_id = p_user and x.place <= 3;
+  select * into o from public._quiz_online_prize_rank(v_from, v_to) x where x.user_id = p_user and x.place <= 3;
   if not found then raise exception 'not_a_winner'; end if;
   if exists (select 1 from public.quiz_online_rewards where month = v_month and user_id = p_user) then
     raise exception 'already_granted';
@@ -14189,12 +14207,16 @@ begin
   if v.photo_updated_at is not null and v.photo_updated_at > now() - interval '30 seconds' then
     raise exception 'rate_limited';
   end if;
+  -- Haftada bir değişiklik (kaldırıp yeniden eklemek de sayılır; reddedilen resim sayılmaz)
+  if v.role::text <> 'admin' and v.photo_changed_at is not null and v.photo_changed_at > now() - interval '7 days' then
+    raise exception 'photo_weekly_limit';
+  end if;
   if v_path !~ ('^' || v.id::text || '/[A-Za-z0-9_-]{1,60}\.(jpg|jpeg|png|webp)$') then raise exception 'invalid_image'; end if;
   if not exists (select 1 from storage.objects o where o.bucket_id = 'profile-photos' and o.name = v_path) then
     raise exception 'invalid_image';
   end if;
   update public.profiles
-     set photo_path = v_path, photo_updated_at = now(),
+     set photo_path = v_path, photo_updated_at = now(), photo_changed_at = now(),
          photo_status = case when v.role = 'admin' then 'approved' else 'pending' end,
          -- Moderatör kontrolü: 10–30 dakika içinde rastgele bir anda kendiliğinden onaylanır (moderatör bu sürede reddedebilir)
          photo_auto_at = now() + make_interval(mins => 10 + floor(random() * 21)::int)
@@ -14202,14 +14224,17 @@ begin
   return case when v_old is distinct from v_path then v_old end;
 end $$;
 
--- Storage kuralı: yalnızca doğrulanmış, etkin üye kendi klasörüne yükler; klasörde en çok 3 dosya (eskiler silinir)
+-- Storage kuralı: yalnızca doğrulanmış, etkin üye kendi klasörüne yükler; klasörde en çok 3 dosya (eskiler silinir).
+-- Haftalık değişiklik hakkı dolmuşsa yükleme de yapılamaz.
 create or replace function public._profile_photo_slot_ok(p_name text)
 returns boolean language sql stable security definer set search_path = public, storage as $$
   select (storage.foldername(p_name))[1] = auth.uid()::text
      and cardinality(storage.foldername(p_name)) = 1
      and public._is_active_user()
      and exists (select 1 from public.profiles pr
-                  where pr.id = auth.uid() and pr.identity_verified_at is not null and pr.role::text <> 'sponsor')
+                  where pr.id = auth.uid() and pr.identity_verified_at is not null and pr.role::text <> 'sponsor'
+                    and (pr.role::text = 'admin' or pr.photo_changed_at is null
+                         or pr.photo_changed_at <= now() - interval '7 days'))
      and (select count(*) from storage.objects o
            where o.bucket_id = 'profile-photos' and (storage.foldername(o.name))[1] = auth.uid()::text) < 3;
 $$;
@@ -14234,7 +14259,7 @@ begin
    where id = p_user;
   perform public._audit('identity_revoke', p_user, jsonb_build_object('note', v_note));
   perform public._notify(p_user, 'system', 'Hesap doğrulaman kaldırıldı',
-    coalesce(v_note || ' ', '') || 'İstersen Profil > avatarın yanındaki kalkan düğmesiyle yeniden doğrulama yapabilirsin.',
+    coalesce(v_note || ' ', '') || 'İstersen Profil > adının yanındaki “Doğrula” düğmesiyle yeniden doğrulama yapabilirsin.',
     jsonb_build_object('route', '/profile'));
 end $$;
 
@@ -14314,7 +14339,11 @@ returns void language plpgsql security definer set search_path = public as $$
 declare v_ok boolean := coalesce(p_approve, false);
 begin
   perform public._require_admin();
-  update public.profiles set photo_status = case when v_ok then 'approved' else 'rejected' end
+  -- Reddedilen resim profilden çıkar (dosyası moderatörün ekranında silinir) ve haftalık hak geri verilir
+  update public.profiles
+     set photo_status = case when v_ok then 'approved' else 'rejected' end,
+         photo_path = case when v_ok then photo_path end,
+         photo_changed_at = case when v_ok then photo_changed_at end
    where id = p_user and photo_status = 'pending' and photo_path = p_path;
   if not found then raise exception 'request_not_found'; end if;
   perform public._audit(case when v_ok then 'photo_approve' else 'photo_reject' end, p_user, jsonb_build_object('path', p_path));
@@ -14991,6 +15020,17 @@ begin
      limit greatest(1, least(coalesce(p_limit, 500), 5000));
 end $$;
 
+-- Çevrimiçi durumu: uygulama açıkken 5 dakikada bir "buradayım" der. Son 10 dakikada sinyal gelen üye çevrimiçi sayılır.
+-- Yalnızca moderatör görür (profil satırını başkası okuyamaz). Aynı dakikada birden çok sinyal yazılmaz.
+alter table public.profiles add column if not exists last_seen_at timestamptz;
+create index if not exists profiles_last_seen_idx on public.profiles (last_seen_at desc) where last_seen_at is not null;
+create or replace function public.heartbeat()
+returns void language sql security definer set search_path = public as $$
+  update public.profiles set last_seen_at = now()
+   where id = auth.uid() and banned_at is null
+     and (last_seen_at is null or last_seen_at < now() - interval '1 minute');
+$$;
+
 -- ---- Yedekleme --------------------------------------------------------------------------------------------------
 -- Yedek: public şemasındaki bütün tablolar tek bir JSON'da. Giriş hesapları (e-posta, şifre) yedeğe GİRMEZ ve geri
 -- yüklemede hiçbir giriş hesabına dokunulmaz. Bu fonksiyonları yalnızca sunucu (Edge Function `admin-backup`,
@@ -15505,6 +15545,7 @@ grant execute on function public.admin_revoke_identity(uuid, text) to authentica
 grant execute on function public.admin_web_claim() to authenticated;
 grant execute on function public.admin_web_release() to authenticated;
 grant execute on function public.admin_retention_status() to authenticated;
+grant execute on function public.heartbeat() to authenticated;
 grant execute on function public.admin_run_retention() to authenticated;
 grant execute on function public.admin_traffic_search(text, timestamptz, timestamptz, int) to authenticated;
 

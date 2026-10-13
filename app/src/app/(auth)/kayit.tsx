@@ -124,6 +124,14 @@ export default function RegisterScreen() {
         </Text>
       </View>
 
+      <View style={styles.infoBox}>
+        <Ionicons name="shield-checkmark-outline" size={18} color={colors.highlight} />
+        <Text style={styles.infoText}>
+          Sıralama ödülleri (aylık hediye, abonelik, can) yalnızca hesabını doğrulamış üyelere verilir. Hesabını doğrulamazsan
+          sıralamada yer alırsın ama ödül alamazsın. Doğrulamayı kayıttan sonra Profil sekmesinden yapabilirsin.
+        </Text>
+      </View>
+
       <View style={styles.checkRow}>
         <Pressable
           onPress={() => setAccepted((a) => !a)}

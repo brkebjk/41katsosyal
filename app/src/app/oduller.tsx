@@ -5,6 +5,7 @@ import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '@/components/Screen';
+import { VerifyPrizeNote } from '@/components/VerifyPrizeNote';
 import { DEFAULT_CONTEST, contestOn, getContest, type Contest } from '@/lib/contest';
 import { monthTitle } from '@/lib/labels';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
@@ -62,6 +63,7 @@ export default function PrizesScreen() {
           Genel puan sıralamasında ay sonunda ilk 3’e giren üyeler aşağıdaki ödülleri alır. Katılım ücretsizdir.
         </Text>
       </LinearGradient>
+      <VerifyPrizeNote />
 
       {!loaded ? (
         <Text style={styles.muted}>Yükleniyor…</Text>

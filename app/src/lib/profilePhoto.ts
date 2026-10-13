@@ -18,6 +18,7 @@ const PHOTO_TEXT: Record<string, string> = {
   not_identity_verified: 'Profil resmi eklemek için önce hesabını doğrulamalısın.',
   invalid_image: 'Resim yüklenemedi. Tekrar dene.',
   rate_limited: 'Biraz bekleyip tekrar dene.',
+  photo_weekly_limit: 'Profil resmini haftada bir değiştirebilirsin. Bir hafta dolunca tekrar dene.',
   request_not_found: 'Bu resim artık onay beklemiyor. Liste yenileniyor.',
 };
 
@@ -25,6 +26,27 @@ const PHOTO_TEXT: Record<string, string> = {
 export function profilePhotoUrl(path: string | null | undefined): string | null {
   if (!path || !supabase) return null;
   return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
+const WEEK_MS = 7 * 24 * 3600_000;
+
+/** Profil resmi haftada bir değiştirilebilir: bir sonraki değişikliğin zamanı (şimdi değiştirilebiliyorsa boş). */
+export function nextPhotoChangeAt(changedAt: string | null | undefined): Date | null {
+  if (!changedAt) return null;
+  const next = Date.parse(changedAt) + WEEK_MS;
+  return Number.isFinite(next) && next > Date.now() ? new Date(next) : null;
+}
+
+/**
+ * Üyenin klasöründe `keep` dışındaki bütün dosyaları siler (eski, reddedilmiş ya da yarım kalmış resimler sunucuda
+ * yer kaplamasın). Üye kendi klasörünü, moderatör herkesinkini silebilir (Storage kuralları).
+ */
+export async function pruneProfilePhotos(userId: string, keep: string | null): Promise<void> {
+  if (!supabase) return;
+  const { data, error } = await supabase.storage.from(BUCKET).list(userId, { limit: 100 });
+  if (error || !data) return;
+  const old = data.map((f) => `${userId}/${f.name}`).filter((p) => p !== keep);
+  if (old.length) await supabase.storage.from(BUCKET).remove(old);
 }
 
 function randomName(): string {
@@ -49,6 +71,9 @@ export async function pickAndUploadProfilePhoto(userId: string): Promise<{ error
     quality: 0.7,
   });
   if (res.canceled || !res.assets?.[0]) return { error: null, cancelled: true };
+  // Önce klasördeki artık dosyalar temizlenir (yükleme yeri açılsın)
+  const { data: me } = await supabase.from('profiles').select('photo_path').eq('id', userId).maybeSingle();
+  await pruneProfilePhotos(userId, (me as { photo_path: string | null } | null)?.photo_path ?? null).catch(() => {});
   const asset = res.assets[0];
   const mime = (asset.mimeType ?? 'image/jpeg').toLowerCase();
   const ext = TYPES[mime];
@@ -72,18 +97,20 @@ export async function pickAndUploadProfilePhoto(userId: string): Promise<{ error
   }
   const set = await callRpc<string | null>('set_profile_photo', { p_path: path }, PHOTO_TEXT);
   if (set.error) {
-    void supabase.storage.from(BUCKET).remove([path]);
+    await supabase.storage.from(BUCKET).remove([path]);
     return { error: set.error };
   }
-  if (set.data) void supabase.storage.from(BUCKET).remove([set.data]);
+  // Eski resim sunucuda saklanmaz: klasörde yalnızca yeni resim kalır
+  await pruneProfilePhotos(userId, path).catch(() => {});
   return { error: null };
 }
 
 /** Profil resmini kaldırır (dosya da silinir). */
-export async function removeProfilePhoto(): Promise<Result> {
+export async function removeProfilePhoto(userId: string): Promise<Result> {
   const res = await callRpc<string | null>('set_profile_photo', { p_path: null }, PHOTO_TEXT);
   if (res.error) return { error: res.error };
-  if (res.data && supabase) void supabase.storage.from(BUCKET).remove([res.data]);
+  if (res.data && supabase) await supabase.storage.from(BUCKET).remove([res.data]);
+  await pruneProfilePhotos(userId, null).catch(() => {});
   return { error: null };
 }
 
@@ -94,10 +121,13 @@ export async function listPhotoApprovals(): Promise<{ data: PhotoApproval[]; err
   return { data: data ?? [], error };
 }
 
+/** Moderatör: onayla / reddet. Reddedilen resmin dosyası hemen silinir (sunucuda saklanmaz). */
 export async function reviewPhoto(row: PhotoApproval, approve: boolean): Promise<Result> {
-  return callRpcVoid(
+  const res = await callRpcVoid(
     'admin_review_photo',
     { p_user: row.user_id, p_path: row.photo_path, p_approve: approve },
     PHOTO_TEXT,
   );
+  if (!res.error && !approve && supabase) await supabase.storage.from(BUCKET).remove([row.photo_path]).catch(() => {});
+  return res;
 }

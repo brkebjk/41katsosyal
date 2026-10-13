@@ -26,6 +26,8 @@ const TOAST_LIVE_FALLBACK_MS = 60_000;
 /** Bildirim noktalarının (sayaçların) okunma aralığı; anlık bağlantı açık olan üyede daha seyrek */
 const NOTICE_POLL_MS = 60_000;
 const NOTICE_LIVE_POLL_MS = 180_000;
+/** Çevrimiçi sinyali aralığı (moderatör panelinde son 10 dakikada sinyal gelen üye çevrimiçi görünür) */
+const HEARTBEAT_MS = 5 * 60_000;
 
 /** Sekme ikonunun sağ üstündeki kırmızı nokta: o sekmede yapılacak bir şey varsa görünür. */
 function useTabDot(key: DotKey): boolean {
@@ -79,6 +81,23 @@ export default function TabsLayout() {
   const { profile } = useAuth();
   const isModerator = profile?.role === 'admin';
   const userId = profile?.id ?? null;
+
+  // Çevrimiçi sinyali: uygulama açıkken 5 dakikada bir ve uygulamaya dönünce (yalnızca moderatör görür)
+  useEffect(() => {
+    if (!userId) return;
+    const beat = () => {
+      if (AppState.currentState === 'active') void callRpc<null>('heartbeat');
+    };
+    beat();
+    const t = setInterval(beat, HEARTBEAT_MS);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') beat();
+    });
+    return () => {
+      clearInterval(t);
+      sub.remove();
+    };
+  }, [userId]);
 
   // Moderatör: petek adı adayları saatte bir hesaplanır (sunucu da saatte bir kez çalıştırır); yeniler bildirim olur
   useEffect(() => {

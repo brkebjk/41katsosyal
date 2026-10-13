@@ -3,6 +3,7 @@ import { Children, Fragment, isValidElement, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { NoticeDot } from '@/components/NoticeDot';
+import { isPetekIconName, PetekIcon } from '@/components/HexClusterIcon';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -73,7 +74,11 @@ export function ListRow({
       <View style={styles.rowTop}>
         {icon ? (
           <View style={[styles.iconBox, tone === 'danger' && styles.iconBoxDanger]}>
-            <Ionicons name={icon} size={18} color={iconColor} />
+            {isPetekIconName(icon) ? (
+              <PetekIcon size={18} color={iconColor} outline={icon === 'grid-outline'} />
+            ) : (
+              <Ionicons name={icon} size={18} color={iconColor} />
+            )}
             {dot && dot > 0 ? (
               <NoticeDot size={12} ringColor={colors.surface} style={styles.rowDot} testID="row-dot" />
             ) : null}

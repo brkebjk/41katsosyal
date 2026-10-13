@@ -218,3 +218,8 @@ textarea.big { min-height: 380px; font-family: ui-monospace, Menlo, monospace; f
   .inline-form { grid-template-columns: 1fr; }
 }
 .card > h3:first-child { margin-top: 0; }
+
+.online-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.dot-on, .dot-off { width: 10px; height: 10px; border-radius: 5px; display: inline-block; flex: none; }
+.dot-on { background: #12b76a; box-shadow: 0 0 0 3px rgba(18, 183, 106, 0.18); }
+.dot-off { background: #e02424; opacity: 0.75; }

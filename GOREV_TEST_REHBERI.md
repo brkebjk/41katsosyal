@@ -1,77 +1,57 @@
-# Görev Test Rehberi – Web panel (tüm bölümler), yedekleme, kayıtlar ve veri saklama
+# Görev Test Rehberi – Harita, çevrimiçi üyeler, doğrulama uyarıları ve profil resmi
 
 ## A. Supabase'i güncelle
-
-**1. Veritabanı**
 - Supabase > **SQL Editor** > **+ New query**.
 - `supabase/schema.sql` dosyasının tamamını yapıştır > **Run**.
 - Yeşil "Success" görmelisin.
+- Web panel Cloudflare'de kendiliğinden güncellenir (2–3 dakika).
 
-**2. Yedekleme işlevi (yeni)**
-- Supabase > **Edge Functions** > **Deploy a new function** > **Via Editor**.
-- Function name: `admin-backup` (birebir böyle).
-- Editördeki örnek kodu tamamen sil.
-- Bilgisayarındaki `supabase/functions/admin-backup/index.ts` dosyasının tamamını yapıştır > **Deploy function**.
-- İşlevin ayarlarında **Verify JWT** anahtarını **KAPAT** ve kaydet.
-- Gizli değer eklemen gerekmiyor.
+## B. Harita
+1. Bir peteğe dokun: menü açılır. Menüyü kapat: **aynı petek seçili kalmalı** (yukarı kalkık).
+2. Seçili peteğe tekrar dokun: menü yeniden açılmalı.
+3. **?** bilgi düğmesi: ilk maddedeki simge kare değil **petek** olmalı. Yoğunluk renkleri de petek şeklinde olmalı.
+4. Akış, petek seçici, rumuz ve moderatör ekranlarındaki kare simgeler de petek olmalı.
+5. Sarı "Buradasın: …" yazısı eskisinden küçük olmalı.
 
-**3. Web panel**
-Cloudflare kendiliğinden güncellenir (2–3 dakika). Telefonda 1.1.1.1 uygulaması açıkken gir.
+## C. Çevrimiçi üyeler (moderatör)
+1. İkinci bir telefonla (ya da bir arkadaşınla) uygulamaya gir; 1–2 dakika açık kalsın.
+2. **Telefonda:** Moderatör paneli > **Üyeler**.
+   - En üstte "Şu an çevrimiçi: N" yazmalı.
+   - Açık olan üyenin yanında **yeşil**, diğerlerinde **kırmızı** nokta olmalı.
+   - **Çevrimiçi** süzgeci yalnızca yeşil noktalı üyeleri göstermeli.
+3. **Webde:** Panel > Üyeler: aynı sayı, aynı noktalar, "Çevrimiçi" süzgeci ve "Şimdi yenile" olmalı. Üyeye tıklayınca "Son görülme" yazmalı.
+4. Uygulamayı kapatan üye en geç 10 dakika sonra kırmızıya dönmeli (liste 10 dakikada bir kendiliğinden yenilenir).
 
-## B. Panel bölümleri (menü ☰)
+## D. Doğrulama uyarıları (hesabı doğrulanmamış bir hesapla)
+1. **Kayıt ekranı:** "Sıralama ödülleri yalnızca hesabını doğrulamış üyelere verilir" kutusu görünmeli.
+2. **Akış:** sekmeye gir → "Hesabını doğrula" penceresi açılmalı.
+   - "Sonra" de. Aynı gün akışa tekrar gir: pencere **çıkmamalı**. Ertesi gün ilk girişte yine çıkmalı.
+   - "Bunu bir daha gösterme" anahtarını açıp kapat: bir daha hiç çıkmamalı.
+   - "Hesabımı doğrula": Profil açılmalı ve doğrulama penceresi gelmeli.
+3. **Sıralama notu:** "Hesabını doğrulamayan üyeler sıralamada yer alır ama ödül alamaz" yazısı şuralarda görünmeli:
+   - Oyunlar sekmesi > Aylık Ödül Podyumu
+   - Sıralama ekranı
+   - Ödüller ekranı
+   - Bilgi Yarışması sıralama kartı
+   Yanındaki "Hesabını doğrula" bağlantısı doğrulama penceresini açmalı.
+4. **Kurallar ve Bilgi Yarışması puan tablosu:** aynı kural yazılı olmalı.
 
-| Bölüm | Dene |
-|---|---|
-| Özet | Sayılar görünmeli; sayısı olan kutuda "Aç →" ilgili bölüme gitmeli |
-| Şikayetler | Gizle / Yazarı göster / Haklı / Haksız |
-| Onaylar | Profil resmi ve etkinlik onayla / reddet |
-| Etkinlik kapatma istekleri | Bekleyen istekte Onayla (etkinlik kapanır, puanlar geri alınır) ya da Reddet |
-| Lider başvuruları | Onayla / Reddet; "Üyeyi aç" |
-| Sorun bildirimleri | Kapat |
-| Üyeler | Ara; susturma, askı, abonelik, puan, mesaj, doğrulamayı kaldır |
-| Üye mesajları | Yazışmayı aç, cevap yaz (üyeye "Moderatör" olarak gider), görüşmeyi sonlandır |
-| Akış | "Moderatör olarak yaz" ile gönderi at → uygulamada kırmızı simgeyle görünmeli. Gönderi ve yorumda Gizle / Yazarı göster |
-| Duyurular | Yeni duyuru → üyelerin bildirim kutusuna düşmeli; Kaldır / Yeniden yayınla |
-| Etkinlikler | Yaklaşan / Geçmiş / İptal edilen; İptal et; moderatör etkinliğinde "Resmî yap" |
-| Yarışma soruları | Ara, yeni soru ekle (doğru cevabı işaretle), düzenle, yayından kaldır |
-| Abone ayrıcalıkları | Ekle / düzenle / sil |
-| Petek adları | Adaylar listesi; q, r ve ad yazıp Kaydet → uygulamada petek adı değişmeli |
-| Mekânlar | Düzenle; haritadan kaldır |
-| Hazineler | Aktif / Bulunan; Kaldır |
-| İşlem günlüğü | Yaptığın her işlem moderatörün gerçek adıyla görünmeli; satıra dokununca ayrıntı açılmalı; "Excel (CSV) indir" çalışmalı |
-| Trafik kayıtları (5651) | Kendi kullanıcı adınla ara: girişlerin ve gönderilerin IP adresiyle listelenmeli; CSV indir |
-| Veri saklama (KVKK) | Tablo ve hukuki özet görünmeli; "Süresi dolanları şimdi temizle" çalışmalı |
-| Ayarlar | Bir ayarı değiştir → İşlem günlüğünde "Ayar değiştirdi" görünmeli (eski ve yeni değerle) |
-| Uygulama metinleri | Bir metni değiştir, kaydet → uygulamada Profil > Uygulama'da hemen görünmeli |
-| Rumuz kodum | #41 seç / bırak |
+## E. Profilim
+1. **Doğrula düğmesi:** avatarın üstünde değil, avatarın altındaki adının sağında olmalı.
+   - Doğrulanmamışsa "Doğrula" yazar; doğrulanmışsa sarı tik çıkar.
+2. **Ödül kutusu:** doğrulanmamış hesapta başarımların üstünde "Hesabını doğrula, ödülleri kaçırma." kutusu olmalı. Dokununca doğrulama açılmalı.
+3. **+ düğmesi:** avatarın sağ altında olmalı.
+   - Doğrulanmamış hesap: "Önce hesabını doğrula" penceresi açılmalı.
+   - Doğrulanmış hesap: resim seç → "kontrol ediliyor" yazmalı.
+4. **Haftalık sınır:** aynı hafta tekrar + düğmesine bas.
+   - "Bu hafta profil resmini değiştirdin…" uyarısı çıkmalı, "Resim seç" düğmesi olmamalı.
+   - Resmi kaldırıp yeniden eklemek de aynı hafta olmaz.
+5. **Reddedilen resim:** moderatör reddederse resim profilden kalkmalı ve üye hemen yeni resim ekleyebilmeli.
+6. **Eski resimler silinir:** Supabase > **Storage** > `profile-photos` > üyenin klasöründe yalnızca güncel resim olmalı.
+   - Reddedilen resmin dosyası silinmeli.
+   - Webden doğrulama kaldırılınca üyenin resim dosyaları da silinmeli.
 
-## C. Yedekleme (önce bir deneme hesabıyla dene)
-1. **Yedek al:**
-   - Panel > Sistem > Yedekleme > en az 10 karakterlik bir şifre yaz (iki kez) > **Yedek al ve indir**.
-   - `41kat-yedek-....json` dosyası inmeli. Şifreyi bir yere yaz.
-2. **Değişiklik yap:** Uygulamada bir gönderi yaz.
-3. **Geri yükle:**
-   - Yedekleme > Yedekten geri yükle > indirdiğin dosyayı seç > şifreyi yaz > kutuya `GERİ YÜKLE` yaz > **Yedeği geri yükle**.
-   - Önce "geri-yukleme-oncesi" yedeği inmeli.
-   - Sonra "Yedek geri yüklendi" yazmalı.
-   - 2. adımda yazdığın gönderi kaybolmalı.
-4. Yanlış şifreyle denersen "Şifre yanlış" yazmalı ve hiçbir şey değişmemeli.
-
-Hata yazısında "admin-backup işlevi sunucuda yok" geçiyorsa A.2 adımını yap.
-
-## D. Yasal metinlere eklenecek paragraf
-Panel > Sistem > **Uygulama metinleri** > **KVKK aydınlatma metni** ve **Gizlilik politikası** sekmelerine uygun bir yere şunu ekle ve kaydet:
-
-```
-## Trafik kayıtları
-5651 sayılı Kanun gereği uygulamaya giriş yaptığında ve içerik eklediğinde (gönderi, yorum, mesaj vb.) hangi IP adresinden ve ne zaman yaptığın kaydedilir. Bu kayıtlar içeriğin kendisini içermez; 2 yıl saklanır, hesabını silsen de bu süre boyunca tutulur ve yalnızca yetkili makamların talebi üzerine paylaşılır. Süre dolunca kendiliğinden silinir.
-
-## Saklama süreleri
-• Özel mesajlar: son mesajdan 1 yıl sonra silinir.
-• Akış gönderileri: 1 yıl sonra silinir.
-• Bildirimler: 60 gün sonra silinir.
-• Hesabını silince profilin, gönderilerin, mesajların ve oyun kayıtların hemen silinir.
-• TC kimlik numaran hiç saklanmaz; yalnızca aynı kişinin ikinci bir hesabı doğrulamasını önlemek için geri çevrilemeyen bir özeti tutulur.
-```
-
-> Yayına çıkmadan önce bu metinleri ve "Veri saklama" sayfasındaki hukuki özeti bir avukata kontrol ettir. Özellikle yurt dışına aktarım (standart sözleşme ve Kurul'a bildirim) konusunu netleştir.
+## F. Ödül kuralı (sunucu)
+- **Bilgi Yarışması Solo / Hafta:** fazladan can yalnızca doğrulanmış ilk 3'e verilir. Doğrulanmamış biri ilk 3'teyse atlanır; can sıradaki doğrulanmış üyeye geçer.
+- **Çoklu / Ay:** moderatörün "Çoklu / Ay sıralama ödülleri" listesinde yalnızca doğrulanmış üyeler görünür.
+- **Aylık genel hediye:** moderatör kazananı belirlerken üyenin sarı tiki olup olmadığına bakmalı (Panel > Üyeler).

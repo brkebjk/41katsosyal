@@ -11,6 +11,7 @@ import { SponsorMark } from '@/components/SponsorMark';
 import { skinColors } from '@/lib/bubbleSkins';
 import { router } from 'expo-router';
 import { goToDm } from '@/components/DirectMessages';
+import { PetekIcon } from '@/components/HexClusterIcon';
 import { notify, showDialog } from '@/lib/dialog';
 import { openDm } from '@/lib/dm';
 
@@ -311,7 +312,7 @@ export function PostCard({
             ) : null}
             {post.cell_q != null && post.cell_r != null ? (
               <View style={[styles.place, { borderColor: c.border }]} testID="post-cell">
-                <Ionicons name="grid" size={14} color={c.text} />
+                <PetekIcon size={14} color={c.text} />
                 <Text style={[styles.placeName, { color: c.text }]} numberOfLines={1}>
                   {`${cellName({ q: post.cell_q, r: post.cell_r })} peteği`}
                 </Text>

@@ -6,6 +6,7 @@ import { DialogHost } from '@/components/DialogHost';
 import { KeyboardLift } from '@/components/KeyboardLift';
 import { PlacePicker } from '@/components/PlacePicker';
 import { CloseX } from '@/components/CloseX';
+import { PetekIcon } from '@/components/HexClusterIcon';
 import { createPost, mentionTag, POST_MAX, THREAD_MAX } from '@/lib/feed';
 import type { Cell } from '@/lib/hex';
 import { notify } from '@/lib/dialog';
@@ -157,7 +158,7 @@ export function InlineComposer({
             </View>
             {cellLabel ? (
               <View style={styles.tag}>
-                <Ionicons name="grid" size={12} color={colors.primary} />
+                <PetekIcon size={12} color={colors.primary} />
                 <Text style={styles.tagText} numberOfLines={1}>
                   {cellLabel}
                 </Text>

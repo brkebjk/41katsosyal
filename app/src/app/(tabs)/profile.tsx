@@ -27,9 +27,11 @@ import { Screen } from '@/components/Screen';
 import { SponsorCodeModal } from '@/components/SponsorCodeModal';
 import { SponsorProfile } from '@/components/SponsorProfile';
 import { TextField } from '@/components/TextField';
+import { VerifyRewardsBox } from '@/components/VerifyPrizeNote';
 import type { AppTextKey } from '@/lib/account';
 import { getPlayCounts, progressFor, totalEarned, TOTAL_ACHIEVEMENTS } from '@/lib/achievements';
 import { useAuth } from '@/lib/auth';
+import { takeIdentityVerifyRequest } from '@/lib/identity';
 import { confirmAction, notify, showDialog } from '@/lib/dialog';
 import { eventGaugeAction } from '@/lib/eventQuota';
 import { getQuota, type Quota } from '@/lib/events';
@@ -48,7 +50,12 @@ import {
 } from '@/lib/labels';
 import { DEFAULT_LIMITS, getLimits, type Limits } from '@/lib/membership';
 import { useNotices } from '@/lib/notices';
-import { pickAndUploadProfilePhoto, profilePhotoUrl, removeProfilePhoto } from '@/lib/profilePhoto';
+import {
+  nextPhotoChangeAt,
+  pickAndUploadProfilePhoto,
+  profilePhotoUrl,
+  removeProfilePhoto,
+} from '@/lib/profilePhoto';
 import { REAL_NAME } from '@/lib/realName';
 import { getMyTitles, listLevels, type LevelInfo, type MyTitle } from '@/lib/ranking';
 import { useTabResetKey } from '@/lib/tabReset';
@@ -138,6 +145,8 @@ function ProfileScreen() {
   // Rumuz her girişte yeniden gizlenir.
   useFocusEffect(
     useCallback(() => {
+      // Başka bir ekrandan “Hesabını doğrula” ile gelindiyse doğrulama penceresi açılır
+      if (takeIdentityVerifyRequest()) setOverlay('identity');
       setAliasShown(false);
       setNow(Date.now());
       void refreshProfile();
@@ -182,16 +191,40 @@ function ProfileScreen() {
   const nameLeft = account ? account.name_changes_left : 0;
   const verified = Boolean(profile.identity_verified_at);
 
-  /** Avatara dokununca (yalnızca doğrulanmış hesap): profil resmi ekle / değiştir / kaldır */
+  /**
+   * Avatara ya da sağ altındaki + düğmesine dokununca: doğrulanmamış üye doğrulamaya yönlendirilir; doğrulanmış üye
+   * profil resmi ekler / değiştirir (haftada bir) / kaldırır.
+   */
   async function onAvatar() {
-    if (!verified || !profile) return;
+    if (!profile) return;
+    if (!verified) {
+      const go = await showDialog<boolean>({
+        title: 'Önce hesabını doğrula',
+        message:
+          'Profil resmi yalnızca hesabını doğrulamış üyeler ekleyebilir. Doğrulama birkaç saniye sürer; TC kimlik numaran hiçbir yere kaydedilmez.',
+        icon: 'shield-checkmark',
+        buttons: [
+          { label: 'Hesabımı doğrula', value: true, style: 'primary' },
+          { label: 'Vazgeç', value: false, style: 'ghost' },
+        ],
+        cancelValue: false,
+      });
+      if (go) setOverlay('identity');
+      return;
+    }
+    const nextAt = isModerator ? null : nextPhotoChangeAt(profile.photo_changed_at);
     const choice = await showDialog<'pick' | 'remove' | null>({
       title: 'Profil resmi',
       message:
-        'Profil resmin yalnızca gerçek adının göründüğü yerlerde (arkadaşlarına) görünür; rumuzunla göründüğün yerlerde hiç görünmez. En çok 2 MB. Moderatörler kontrol edip onaylayınca yayına girer.',
+        'Profil resmin yalnızca gerçek adının göründüğü yerlerde (arkadaşlarına) görünür; rumuzunla göründüğün yerlerde hiç görünmez. En çok 2 MB. Moderatörler kontrol edip onaylayınca yayına girer. Profil resmini haftada bir değiştirebilirsin; eski resmin silinir.',
+      warning: nextAt
+        ? `Bu hafta profil resmini değiştirdin. Yeni resmi ${nextAt.toLocaleString('tr-TR', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })} sonrasında ekleyebilirsin.`
+        : undefined,
       icon: 'image',
       buttons: [
-        { label: profile.photo_path ? 'Resmi değiştir' : 'Resim seç', value: 'pick', style: 'primary' },
+        ...(nextAt
+          ? []
+          : [{ label: profile.photo_path ? 'Resmi değiştir' : 'Resim seç', value: 'pick' as const, style: 'primary' as const }]),
         ...(profile.photo_path ? [{ label: 'Resmi kaldır', value: 'remove' as const, style: 'danger' as const }] : []),
         { label: 'Vazgeç', value: null, style: 'ghost' },
       ],
@@ -207,7 +240,7 @@ function ProfileScreen() {
         tone: 'success',
       });
     } else if (choice === 'remove') {
-      const res = await removeProfilePhoto();
+      const res = await removeProfilePhoto(profile.id);
       if (res.error) return void notify('Resim kaldırılamadı', res.error, { icon: 'image' });
       await refreshProfile();
     }
@@ -437,35 +470,23 @@ function ProfileScreen() {
           <View>
             <Pressable
               onPress={() => void onAvatar()}
-              disabled={!verified}
-              accessibilityRole={verified ? 'button' : undefined}
-              accessibilityLabel={verified ? 'Profil resmini değiştir' : undefined}
+              accessibilityRole="button"
+              accessibilityLabel={verified ? 'Profil resmini değiştir' : 'Profil resmi ekle'}
               testID="profile-avatar"
               style={[styles.ring, subscribed && styles.ringSubscription]}
             >
               <Avatar index={profile.avatar_index} size={84} uri={verified ? profilePhotoUrl(profile.photo_path) : null} />
             </Pressable>
-            {/* Avatarın solunda: hesap doğrulama (doğrulanmışsa sarı tik) */}
+            {/* Avatarın sağ altında: profil resmi ekle (doğrulanmamış üye doğrulamaya yönlendirilir) */}
             <Pressable
-              onPress={() =>
-                verified
-                  ? void notify(
-                      'Doğrulanmış hesap',
-                      'Hesabın NVİ kimlik doğrulama servisiyle doğrulandı. Akışta rumuzunun yanında sarı tik görünür.',
-                      { icon: 'checkmark-circle', tone: 'success' },
-                    )
-                  : setOverlay('identity')
-              }
+              onPress={() => void onAvatar()}
               accessibilityRole="button"
-              accessibilityLabel={verified ? 'Doğrulanmış hesap' : 'Hesabı doğrula'}
-              testID="profile-verify"
-              style={({ pressed }) => [styles.verifyBtn, verified && styles.verifyBtnOn, pressed && styles.pressed]}
+              accessibilityLabel="Profil resmi ekle"
+              testID="profile-photo-add"
+              hitSlop={6}
+              style={({ pressed }) => [styles.photoAdd, pressed && styles.pressed]}
             >
-              <Ionicons
-                name={verified ? 'checkmark' : 'shield-checkmark-outline'}
-                size={verified ? 24 : 20}
-                color={verified ? '#1A1200' : colors.highlight}
-              />
+              <Ionicons name={verified && profile.photo_path ? 'camera' : 'add'} size={20} color={colors.primaryText} />
             </Pressable>
             <Pressable
               onPress={() => router.push('/ayricaliklar')}
@@ -502,7 +523,32 @@ function ProfileScreen() {
           <Text style={styles.realName} numberOfLines={1}>
             {profile.full_name.toLocaleUpperCase('tr-TR')}
           </Text>
-          {verified ? <Ionicons name="checkmark-circle" size={20} color={colors.highlight} /> : null}
+          {/* Adın sonunda: hesap doğrulama (doğrulanmışsa sarı tik) */}
+          <Pressable
+            onPress={() =>
+              verified
+                ? void notify(
+                    'Doğrulanmış hesap',
+                    'Hesabın NVİ kimlik doğrulama servisiyle doğrulandı. Akışta rumuzunun yanında sarı tik görünür.',
+                    { icon: 'checkmark-circle', tone: 'success' },
+                  )
+                : setOverlay('identity')
+            }
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={verified ? 'Doğrulanmış hesap' : 'Hesabı doğrula'}
+            testID="profile-verify"
+            style={({ pressed }) => [!verified && styles.verifyBtn, pressed && styles.pressed]}
+          >
+            {verified ? (
+              <Ionicons name="checkmark-circle" size={22} color={colors.highlight} />
+            ) : (
+              <>
+                <Ionicons name="shield-checkmark-outline" size={14} color={colors.highlight} />
+                <Text style={styles.verifyBtnText}>Doğrula</Text>
+              </>
+            )}
+          </Pressable>
         </View>
         {verified &&
         profile.photo_status === 'pending' &&
@@ -510,10 +556,10 @@ function ProfileScreen() {
           <Text style={styles.photoNote}>Profil resmin moderatörler tarafından kontrol ediliyor</Text>
         ) : verified && profile.photo_status === 'rejected' ? (
           <Text style={[styles.photoNote, styles.photoNoteBad]}>
-            Profil resmin onaylanmadı; avatarına dokunup başka bir resim seçebilirsin
+            Profil resmin onaylanmadı; + düğmesine dokunup başka bir resim seçebilirsin
           </Text>
         ) : verified && !profile.photo_path ? (
-          <Text style={styles.photoNote}>Avatarına dokunup profil resmi ekleyebilirsin</Text>
+          <Text style={styles.photoNote}>+ düğmesine dokunup profil resmi ekleyebilirsin</Text>
         ) : null}
         <View style={styles.aliasRow}>
           <Text style={styles.aliasLabel}>Rumuz:</Text>
@@ -588,6 +634,9 @@ function ProfileScreen() {
                 : ''}
           </Text>
         </Pressable>
+
+        {/* Hesabını hiç doğrulamamış üye: ödülleri kaçırmasın */}
+        {!verified && profile.role === 'user' ? <VerifyRewardsBox onPress={() => setOverlay('identity')} /> : null}
 
         {/* Başarımlar: toplam ilerleme */}
         <Pressable
@@ -1047,19 +1096,30 @@ const styles = StyleSheet.create({
   photoNote: { color: colors.textMuted, fontSize: 11.5, textAlign: 'center' },
   photoNoteBad: { color: colors.danger },
   verifyBtn: {
-    position: 'absolute',
-    top: -6,
-    left: -10,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.highlight,
     backgroundColor: colors.surface,
+  },
+  verifyBtnText: { color: colors.highlight, fontFamily: fonts.extra, fontSize: 11.5 },
+  photoAdd: {
+    position: 'absolute',
+    bottom: 0,
+    right: -6,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
     borderWidth: 3,
     borderColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  verifyBtnOn: { backgroundColor: colors.highlight },
   aliasRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'center' },
   aliasLabel: { color: colors.textMuted, fontSize: 12 },
   alias: { color: colors.textMuted, fontSize: 12, fontFamily: fonts.semi, flexShrink: 1 },

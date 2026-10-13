@@ -14,6 +14,7 @@ import { FinalResultsSheet, RankTimers } from '@/components/RankExtras';
 import { RealNameNotice } from '@/components/RealNameNotice';
 import { Screen } from '@/components/Screen';
 import { Segmented } from '@/components/Segmented';
+import { VerifyPrizeNote } from '@/components/VerifyPrizeNote';
 import { TitleBadge } from '@/components/TitleBadge';
 import { ACHIEVEMENTS } from '@/lib/achievements';
 import { useAuth } from '@/lib/auth';
@@ -319,6 +320,7 @@ export default function LeaderboardScreen() {
               {giftOn ? <Ionicons name="chevron-forward" size={18} color={colors.primaryText} /> : null}
             </LinearGradient>
           </Pressable>
+          <VerifyPrizeNote />
 
           <RealNameNotice text={REAL_NAME.leaderboard} />
           {rules.titlesEnabled > 0 ? (

@@ -29,6 +29,7 @@ import {
   VENUE_COLOR,
 } from '@/components/HoneycombMap';
 import { GameSeekersSheet, SEEK_PURPLE } from '@/components/GameSeekersSheet';
+import { HexSwatch } from '@/components/HexClusterIcon';
 import { PresenceSheet, RenameCellSheet } from '@/components/MapSheets';
 import { NotificationBell, NotificationPanel } from '@/components/NotificationCenter';
 import { CellLeaders } from '@/components/CellLeaders';
@@ -284,7 +285,12 @@ function MapScreen({ resetKey }: { resetKey: number }) {
   );
 
   // Android geri tuşu / geri hareketi: önce petek menüsü, sonra öne çıkan petek (İncele) kapanır
-  useBackClose(selected !== null, () => setSelected(null));
+  /** Petek menüsü kapanınca son seçilen petek seçili (yükselmiş) kalır */
+  const closeCellMenu = useCallback(() => {
+    setPreview(selected);
+    setSelected(null);
+  }, [selected]);
+  useBackClose(selected !== null, closeCellMenu);
   useBackClose(selected === null && preview !== null, () => setPreview(null));
 
   // Oklar 10 saniye sonra kaybolur
@@ -564,13 +570,18 @@ function MapScreen({ resetKey }: { resetKey: number }) {
         <View style={styles.mapArea}>
           <HoneycombMap
             density={density}
-            selected={selected}
+            // Seçili petek düz turuncu çerçeve yerine yükselmiş (3B) olarak gösterilir; menü açıkken de kapanınca da
+            selected={null}
             onSelect={onSelectCell}
-            raised={selected ? null : preview}
-            onRaisedPress={() => {
-              setSelected(preview);
-              setPreview(null);
-            }}
+            raised={selected ?? preview}
+            onRaisedPress={
+              selected
+                ? undefined
+                : () => {
+                    setSelected(preview);
+                    setPreview(null);
+                  }
+            }
             eventCells={marks}
             gameCells={gameMarks}
             venueCells={venueCells}
@@ -625,7 +636,7 @@ function MapScreen({ resetKey }: { resetKey: number }) {
               {/* Konumum: petek adı 3 saniye sarı yazıyla */}
               {hereName ? (
                 <View style={styles.hereBanner} pointerEvents="none" testID="map-here-name">
-                  <Ionicons name="location" size={18} color={OFFICIAL_COLOR} />
+                  <Ionicons name="location" size={14} color={OFFICIAL_COLOR} />
                   <Text style={styles.hereText} numberOfLines={2}>
                     {hereName}
                   </Text>
@@ -750,7 +761,7 @@ function MapScreen({ resetKey }: { resetKey: number }) {
                     >{`${districtOf(selected.q, selected.r) ?? 'Kocaeli'} bölgesi`}</Text>
                   </View>
                   <Pressable
-                    onPress={() => setSelected(null)}
+                    onPress={closeCellMenu}
                     hitSlop={12}
                     accessibilityRole="button"
                     accessibilityLabel="Petek menüsünü kapat"
@@ -1004,22 +1015,22 @@ function Legend({ densityOpen, open, onToggle }: { densityOpen: boolean; open: b
       ? [
           {
             key: 'l0',
-            swatch: <View style={[styles.swatch, { backgroundColor: LAND_FILL }]} />,
+            swatch: <HexSwatch size={12} color={LAND_FILL} stroke={colors.border} />,
             label: 'Veri yok / az',
           },
           {
             key: 'l1',
-            swatch: <View style={[styles.swatch, { backgroundColor: LEVEL_COLORS[1] }]} />,
+            swatch: <HexSwatch size={12} color={LEVEL_COLORS[1]} stroke={colors.border} />,
             label: 'Hareketli',
           },
           {
             key: 'l2',
-            swatch: <View style={[styles.swatch, { backgroundColor: LEVEL_COLORS[2] }]} />,
+            swatch: <HexSwatch size={12} color={LEVEL_COLORS[2]} stroke={colors.border} />,
             label: 'Çok hareketli',
           },
           {
             key: 'l3',
-            swatch: <View style={[styles.swatch, { backgroundColor: LEVEL_COLORS[3] }]} />,
+            swatch: <HexSwatch size={12} color={LEVEL_COLORS[3]} stroke={colors.border} />,
             label: 'En hareketli',
           },
         ]
@@ -1591,7 +1602,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     backgroundColor: 'rgba(11, 15, 26, 0.88)',
   },
-  hereText: { color: OFFICIAL_COLOR, fontFamily: fonts.black, fontSize: fontSizes.lg, flexShrink: 1 },
+  hereText: { color: OFFICIAL_COLOR, fontFamily: fonts.extra, fontSize: 13.5, flexShrink: 1 },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1620,7 +1631,6 @@ const styles = StyleSheet.create({
   hint: { color: colors.textMuted, fontSize: fontSizes.xs, lineHeight: 18, textAlign: 'center' },
   legend: { flexDirection: 'row', flexWrap: 'wrap', columnGap: spacing.sm, rowGap: 2 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  swatch: { width: 11, height: 11, borderRadius: 3, borderWidth: 1, borderColor: colors.border },
   legendText: { color: colors.textMuted, fontSize: 10.5, fontFamily: fonts.semi },
   eventDot: { width: 11, height: 11, borderRadius: 6, backgroundColor: EVENT_COLOR },
   gameSwatch: { width: 11, height: 11, borderRadius: 4, backgroundColor: GAME_COLOR },

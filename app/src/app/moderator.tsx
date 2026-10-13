@@ -21,6 +21,7 @@ import { Screen } from '@/components/Screen';
 import { Segmented } from '@/components/Segmented';
 import { VenuesTab } from '@/components/VenuesTab';
 import { TextField } from '@/components/TextField';
+import { isPetekIconName, PetekIcon } from '@/components/HexClusterIcon';
 import { useAuth } from '@/lib/auth';
 import { removeEvent } from '@/lib/events';
 import { confirmAction } from '@/lib/dialog';
@@ -35,6 +36,9 @@ import {
   revealCommentAuthor,
   revealPostAuthor,
   searchMembers,
+  countOnlineMembers,
+  isMemberOnline,
+  ONLINE_MS,
   setHidden,
   type AuditRow,
   type CloseRequest,
@@ -179,7 +183,11 @@ export default function ModeratorScreen() {
               style={({ pressed }) => [styles.tile, active && styles.tileActive, pressed && styles.pressed]}
               testID={`mod-tab-${t.value}`}
             >
-              <Ionicons name={t.icon} size={20} color={active ? colors.primaryText : colors.primary} />
+              {isPetekIconName(t.icon) ? (
+                <PetekIcon size={20} color={active ? colors.primaryText : colors.primary} />
+              ) : (
+                <Ionicons name={t.icon} size={20} color={active ? colors.primaryText : colors.primary} />
+              )}
               <Text style={[styles.tileText, active && styles.tileTextActive]} numberOfLines={1}>
                 {t.label}
               </Text>
@@ -724,6 +732,7 @@ function RequestsTab({ onOpenCount, onNotice }: { onOpenCount: (n: number) => vo
 
 const FILTERS: { value: MemberFilter; label: string }[] = [
   { value: 'all', label: 'Hepsi' },
+  { value: 'online', label: 'Çevrimiçi' },
   { value: 'subscribed', label: 'Aboneler' },
   { value: 'muted', label: 'Susturulmuş' },
   { value: 'banned', label: 'Askıda' },
@@ -747,7 +756,16 @@ function MembersTab({
   });
   const [loaded, setLoaded] = useState(!isBackendReady);
   const [error, setError] = useState<string | null>(null);
+  const [online, setOnline] = useState<number | null>(null);
+  const [tick, setTick] = useState(0);
   const requestId = useRef(0);
+
+  // Çevrimiçi noktaları ve toplam 10 dakikada bir kendiliğinden yenilenir
+  useEffect(() => {
+    if (!isBackendReady) return;
+    const t = setInterval(() => setTick((n) => n + 1), ONLINE_MS);
+    return () => clearInterval(t);
+  }, []);
 
   // Yazı yazarken her harfte değil, kısa bir duraklamadan sonra ara
   useEffect(() => {
@@ -755,19 +773,27 @@ function MembersTab({
     const my = ++requestId.current;
     const t = setTimeout(
       async () => {
-        const res = await searchMembers(query, filter);
+        const [res, count] = await Promise.all([searchMembers(query, filter), countOnlineMembers()]);
         if (my !== requestId.current) return;
         setError(res.error);
         if (!res.error) setFetched({ rows: res.data, at: Date.now() });
+        setOnline(count);
         setLoaded(true);
       },
       query ? 350 : 0,
     );
     return () => clearTimeout(t);
-  }, [query, filter]);
+  }, [query, filter, tick]);
 
   return (
     <>
+      <View style={styles.onlineBar}>
+        <View style={[styles.dot, styles.dotOn]} />
+        <Text style={styles.onlineText}>
+          Şu an çevrimiçi: <Text style={styles.onlineCount}>{online ?? '…'}</Text>
+        </Text>
+        <Text style={styles.onlineHint}>10 dakikada bir yenilenir</Text>
+      </View>
       <TextField
         label="Üye ara"
         icon="search"
@@ -825,9 +851,15 @@ function MemberRow({ member, onPress }: { member: Member; onPress: () => void })
     >
       <Avatar index={member.avatar_index} size={44} />
       <View style={styles.memberText}>
-        <Text style={styles.memberName} numberOfLines={1}>
-          {member.full_name}
-        </Text>
+        <View style={styles.nameLine}>
+          <View
+            style={[styles.dot, isMemberOnline(member) ? styles.dotOn : styles.dotOff]}
+            accessibilityLabel={isMemberOnline(member) ? 'Çevrimiçi' : 'Çevrimdışı'}
+          />
+          <Text style={styles.memberName} numberOfLines={1}>
+            {member.full_name}
+          </Text>
+        </View>
         <Text style={styles.muted} numberOfLines={1}>
           {member.alias} · {fmtPts(member.points)} puan
         </Text>
@@ -1061,7 +1093,25 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   memberText: { flex: 1, gap: 2 },
-  memberName: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },
+  memberName: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md, flexShrink: 1 },
+  nameLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dot: { width: 10, height: 10, borderRadius: 5 },
+  dotOn: { backgroundColor: '#12b76a' },
+  dotOff: { backgroundColor: '#e02424' },
+  onlineBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    padding: spacing.md,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  onlineText: { color: colors.text, fontFamily: fonts.semi, fontSize: fontSizes.sm },
+  onlineCount: { fontFamily: fonts.black },
+  onlineHint: { color: colors.textMuted, fontSize: 12, marginLeft: 'auto' },
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 2 },
   tag: { borderWidth: 1, borderRadius: radii.pill, paddingHorizontal: 8, paddingVertical: 1 },
   tagText: { fontFamily: fonts.semi, fontSize: 11 },

@@ -18,7 +18,10 @@ import { Popup } from '@/components/Popup';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { Screen } from '@/components/Screen';
 import { SoftGlow } from '@/components/SoftGlow';
+import { isPetekIconName, PetekIcon } from '@/components/HexClusterIcon';
 import { useAuth } from '@/lib/auth';
+import { showDialog } from '@/lib/dialog';
+import { muteVerifyReminder, openIdentityVerify, takeVerifyReminder } from '@/lib/identity';
 import {
   displayName,
   getPost,
@@ -63,7 +66,7 @@ export default function FeedScreenTab() {
 }
 
 function FeedScreen() {
-  const { profile, refreshProfile } = useAuth();
+  const { profile, refreshProfile, previewMode } = useAuth();
   const isModerator = profile?.role === 'admin';
   const isSponsor = profile?.role === 'sponsor';
   const sponsorMenu = useSponsorMenu(isModerator);
@@ -259,6 +262,39 @@ function FeedScreen() {
       const t = setInterval(tick, 30000);
       return () => clearInterval(t);
     }, [load, refreshProfile]),
+  );
+
+  // Hesabını doğrulamamış üye: günün ilk akış ziyaretinde “Hesabını doğrula” uyarısı (“Bunu bir daha gösterme” seçilebilir)
+  const remindUser =
+    profile && profile.role === 'user' && !profile.identity_verified_at && !previewMode && isBackendReady
+      ? profile.id
+      : null;
+  useFocusEffect(
+    useCallback(() => {
+      if (!remindUser) return;
+      let alive = true;
+      void (async () => {
+        if (!alive || !(await takeVerifyReminder(remindUser))) return;
+        let never = false;
+        const go = await showDialog<boolean>({
+          title: 'Hesabını doğrula',
+          message:
+            'Hesabını doğrula; adının yanında sarı tik çıksın, profil resmi ekleyebil ve sıralama ödüllerini kaçırma. Hesabını doğrulamayan üyeler sıralamada yer alır ama ödül alamaz. TC kimlik numaran hiçbir yere kaydedilmez.',
+          icon: 'shield-checkmark',
+          check: { label: 'Bunu bir daha gösterme', onChange: (v) => (never = v) },
+          buttons: [
+            { label: 'Hesabımı doğrula', value: true, style: 'primary' },
+            { label: 'Sonra', value: false, style: 'ghost' },
+          ],
+          cancelValue: false,
+        });
+        if (never) await muteVerifyReminder(remindUser);
+        if (go) openIdentityVerify();
+      })();
+      return () => {
+        alive = false;
+      };
+    }, [remindUser]),
   );
 
   // Bildirim mesajı birkaç saniye sonra kendiliğinden kaybolur
@@ -883,7 +919,11 @@ function FilterRow({
       testID={testID}
       style={({ pressed }) => [styles.fRow, active && styles.fRowOn, pressed && styles.pressed]}
     >
-      <Ionicons name={icon} size={18} color={active ? colors.primary : colors.textMuted} />
+      {isPetekIconName(icon) ? (
+        <PetekIcon size={18} color={active ? colors.primary : colors.textMuted} outline={icon === 'grid-outline'} />
+      ) : (
+        <Ionicons name={icon} size={18} color={active ? colors.primary : colors.textMuted} />
+      )}
       <View style={styles.fRowText}>
         <Text style={[styles.fRowLabel, active && styles.fRowLabelOn]}>{label}</Text>
         {sub ? <Text style={styles.fRowSub}>{sub}</Text> : null}
@@ -920,7 +960,11 @@ function FilterChip({
       testID={testID}
       style={({ pressed }) => [styles.chip, active && styles.chipActive, pressed && styles.pressed]}
     >
-      {icon ? <Ionicons name={icon} size={12} color={active ? colors.primaryText : colors.textMuted} /> : null}
+      {icon && isPetekIconName(icon) ? (
+        <PetekIcon size={12} color={active ? colors.primaryText : colors.textMuted} outline={icon === 'grid-outline'} />
+      ) : icon ? (
+        <Ionicons name={icon} size={12} color={active ? colors.primaryText : colors.textMuted} />
+      ) : null}
       <Text style={[styles.chipText, active && styles.chipTextActive]} numberOfLines={1}>
         {label}
       </Text>
