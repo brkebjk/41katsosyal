@@ -1,10 +1,26 @@
-# Görev Test Rehberi – Harita, çevrimiçi üyeler, doğrulama uyarıları ve profil resmi
+# Görev Test Rehberi – Gün/ay/yıl ile kimlik doğrulama, harita, çevrimiçi üyeler, doğrulama uyarıları ve profil resmi
 
 ## A. Supabase'i güncelle
 - Supabase > **SQL Editor** > **+ New query**.
 - `supabase/schema.sql` dosyasının tamamını yapıştır > **Run**.
 - Yeşil "Success" görmelisin.
 - Web panel Cloudflare'de kendiliğinden güncellenir (2–3 dakika).
+
+**Kimlik doğrulama işlevini güncelle (yeni)**
+- Supabase > **Edge Functions** > `verify-identity` > **Code**.
+- Editördeki kodu tamamen sil.
+- Bilgisayarındaki `supabase/functions/verify-identity/index.ts` dosyasının tamamını yapıştır > **Deploy**.
+- Ayarlara ve gizli değerlere (IDENTITY_PEPPER) dokunma.
+
+## Kimlik doğrulama (gün / ay / yıl)
+1. Profil > adının yanındaki **Doğrula**.
+2. Pencerede doğum tarihi için **Gün**, **Ay**, **Yıl** kutuları olmalı. Hepsini kimliğindeki gibi doldur ve TC'ni yaz > **Doğrula**.
+3. Beklenen sonuçlar:
+   - Doğruysa: "Hesabın doğrulandı"; adın "E.Berke Taş" biçiminde olur.
+   - Gün ya da ay yanlışsa: "…doğum günü ya da ayı uyuşmadı (N-D)".
+   - Başka bir bilgi yanlışsa: "Bilgiler nüfus kaydıyla uyuşmadı".
+   - "ulaşılamıyor (N-…)" yazarsa: NVİ cevap vermedi; deneme hakkından sayılmaz. Parantez içindeki kodu bana yaz.
+4. 31 Şubat gibi olmayan bir tarih yazarsan sunucuya hiç gitmeden uyarı çıkmalı.
 
 ## B. Harita
 1. Bir peteğe dokun: menü açılır. Menüyü kapat: **aynı petek seçili kalmalı** (yukarı kalkık).

@@ -1,4 +1,4 @@
-// Profil > Hesabı doğrula: TC kimlik no, ad, soyad ve doğum yılı NVİ'nin kimlik doğrulama servisine sorulur.
+// Profil > Hesabı doğrula: TC kimlik no, ad, soyad ve doğum tarihi (gün, ay, yıl) NVİ'nin kimlik doğrulama servisine sorulur.
 // Sorguyu uygulama değil sunucu (Edge Function `verify-identity`) yapar; TC kimlik numarası hiçbir yere kaydedilmez.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -6,14 +6,24 @@ import { router } from 'expo-router';
 
 import { supabase } from '@/lib/supabase';
 
-export type IdentityInput = { tc: string; firstName: string; lastName: string; birthYear: string };
+export type IdentityInput = {
+  tc: string;
+  firstName: string;
+  lastName: string;
+  birthDay: number;
+  birthMonth: number;
+  birthYear: number;
+};
 
 const RESULT_TEXT: Record<string, string> = {
   invalid_tc: 'TC kimlik numarası geçersiz görünüyor. 11 haneyi kontrol et.',
   invalid_name: 'Adını ve soyadını nüfus cüzdanındaki gibi, yalnızca harflerle yaz.',
-  invalid_year: 'Doğum yılını 4 haneli yaz (ör. 1995).',
+  invalid_year: 'Doğum tarihini gün, ay ve yıl olarak kimliğindeki gibi yaz (ör. 7 / 3 / 1995).',
+  invalid_date: 'Doğum tarihini gün, ay ve yıl olarak kimliğindeki gibi yaz (ör. 7 / 3 / 1995).',
   mismatch:
-    'Bilgiler nüfus kaydıyla uyuşmadı. Adını (varsa ikinci adınla), soyadını ve doğum yılını kimliğindeki gibi yaz.',
+    'Bilgiler nüfus kaydıyla uyuşmadı. Adını (varsa ikinci adınla), soyadını ve doğum tarihini (gün, ay, yıl) kimliğindeki gibi yaz.',
+  date_mismatch:
+    'Adın, soyadın ve doğum yılın uyuştu ama doğum günü ya da ayı uyuşmadı. Kimliğindeki gibi yaz; sorun sürerse Profil > Sorun bildir ile haber ver. (N-D)',
   rate_limited: 'Bugün çok fazla deneme yaptın. Yarın tekrar deneyebilirsin.',
   used: 'Bu kimlik bilgileriyle başka bir hesap doğrulanmış. Bir kişi yalnızca bir hesabı doğrulayabilir.',
   already: 'Hesabın zaten doğrulanmış.',
@@ -69,7 +79,9 @@ export async function verifyIdentity(input: IdentityInput): Promise<{ ok: boolea
         tc: input.tc,
         firstName: input.firstName,
         lastName: input.lastName,
-        birthYear: Number(input.birthYear),
+        birthDay: input.birthDay,
+        birthMonth: input.birthMonth,
+        birthYear: input.birthYear,
       },
     });
     if (error) return { ok: false, error: await invokeErrorText(error) };

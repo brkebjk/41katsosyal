@@ -1,8 +1,9 @@
 // Edge Function: verify-identity
 //
-// Profil > "Hesabı doğrula". Uygulama TC kimlik no, ad, soyad ve doğum yılını yalnızca buraya gönderir. İşlev bunları
-// NVİ'nin ücretsiz kimlik doğrulama servisine (KPSPublic, TCKimlikNoDogrula) bir kez sorar ve sonucu veritabanına
-// yazar. Uygulamanın "doğrulandım" demesine güvenilmez; doğrulama yalnızca bu yolla açılır.
+// Profil > "Hesabı doğrula". Uygulama TC kimlik no, ad, soyad ve doğum tarihini (gün, ay, yıl) yalnızca buraya gönderir.
+// İşlev bunları NVİ'nin ücretsiz kimlik doğrulama servisine (KPSPublicV2, KisiVeCuzdanDogrula; NVİ sitesindeki
+// "T.C. Kimlik No Doğrulama" formunun aynısı, cüzdan/kart seri no boş bırakılır) sorar ve sonucu veritabanına yazar.
+// Uygulamanın "doğrulandım" demesine güvenilmez; doğrulama yalnızca bu yolla açılır.
 //
 // TC kimlik numarası HİÇBİR YERE yazılmaz ve günlüğe (log) basılmaz. Veritabanına yalnızca gizli anahtarla alınmış,
 // geri çevrilemeyen özeti (HMAC-SHA256) gider: aynı kişi ikinci bir hesabı doğrulayamasın diye.
@@ -20,7 +21,9 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const PEPPER = Deno.env.get('IDENTITY_PEPPER') ?? '';
-const NVI_URL = 'https://tckimlik.nvi.gov.tr/Service/KPSPublic.asmx';
+const NVI_URL = 'https://tckimlik.nvi.gov.tr/Service/KPSPublicV2.asmx';
+/** Yedek: V2 servisi hata verirse (cevap yok sayılmaz) yalnızca doğum yılını soran eski servis */
+const NVI_URL_V1 = 'https://tckimlik.nvi.gov.tr/Service/KPSPublic.asmx';
 const NVI_TIMEOUT_MS = 15_000;
 
 const CORS = {
@@ -83,46 +86,41 @@ async function hmacHex(value: string): Promise<string> {
   return Array.from(sig, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+type Birth = { day: number; month: number; year: number };
+type Answer = { match: boolean | null; why: string };
+
 /**
- * NVİ'ye sorar. `match`: true = uyuşuyor, false = uyuşmuyor, null = servise ulaşılamadı. Ulaşılamadıysa `why` kısa
- * nedendir (uygulamada ve Supabase > Edge Functions > Logs ekranında görünür; kimlik bilgisi içermez):
+ * NVİ'ye bir SOAP isteği gönderir. `match`: true = uyuşuyor, false = uyuşmuyor, null = servise ulaşılamadı. Ulaşılamadıysa
+ * `why` kısa nedendir (uygulamada ve Supabase > Edge Functions > Logs ekranında görünür; kimlik bilgisi içermez):
  *   T = zaman aşımı, H<kod> = NVİ bir hata kodu döndü (ör. H403 = erişim engeli), C = bağlantı/sertifika hatası,
  *   P = cevap anlaşılamadı.
  */
-async function askNviOnce(
-  tc: string,
-  ad: string,
-  soyad: string,
-  year: number,
-): Promise<{ match: boolean | null; why: string }> {
+async function soap(url: string, method: string, inner: string): Promise<Answer> {
   const body =
     '<?xml version="1.0" encoding="utf-8"?>' +
     '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ' +
     'xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">' +
-    '<soap:Body><TCKimlikNoDogrula xmlns="http://tckimlik.nvi.gov.tr/WS">' +
-    `<TCKimlikNo>${tc}</TCKimlikNo><Ad>${xml(upper(ad))}</Ad><Soyad>${xml(upper(soyad))}</Soyad>` +
-    `<DogumYili>${year}</DogumYili>` +
-    '</TCKimlikNoDogrula></soap:Body></soap:Envelope>';
+    `<soap:Body><${method} xmlns="http://tckimlik.nvi.gov.tr/WS">${inner}</${method}></soap:Body></soap:Envelope>`;
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), NVI_TIMEOUT_MS);
   try {
-    const res = await fetch(NVI_URL, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'text/xml; charset=utf-8',
-        SOAPAction: '"http://tckimlik.nvi.gov.tr/WS/TCKimlikNoDogrula"',
+        SOAPAction: `"http://tckimlik.nvi.gov.tr/WS/${method}"`,
       },
       body,
       signal: ctl.signal,
     });
     const text = await res.text();
     if (!res.ok) {
-      console.error(`NVİ HTTP ${res.status}: ${text.slice(0, 300).replace(/\d{11}/g, '***')}`);
+      console.error(`NVİ ${method} HTTP ${res.status}: ${text.slice(0, 300).replace(/\d{11}/g, '***')}`);
       return { match: null, why: `H${res.status}` };
     }
-    const m = /<TCKimlikNoDogrulaResult>\s*(true|false)\s*<\/TCKimlikNoDogrulaResult>/i.exec(text);
+    const m = new RegExp(`<${method}Result>\\s*(true|false)\\s*</${method}Result>`, 'i').exec(text);
     if (!m) {
-      console.error(`NVİ cevabı anlaşılamadı: ${text.slice(0, 300).replace(/\d{11}/g, '***')}`);
+      console.error(`NVİ ${method} cevabı anlaşılamadı: ${text.slice(0, 300).replace(/\d{11}/g, '***')}`);
       return { match: null, why: 'P' };
     }
     return { match: m[1].toLowerCase() === 'true', why: '' };
@@ -135,12 +133,44 @@ async function askNviOnce(
   }
 }
 
-/** Geçici bir bağlantı sorununda bir kez daha dener */
-async function askNvi(tc: string, ad: string, soyad: string, year: number) {
-  const first = await askNviOnce(tc, ad, soyad, year);
-  if (first.match !== null || first.why.startsWith('H4')) return first;
-  await new Promise((r) => setTimeout(r, 1500));
-  return askNviOnce(tc, ad, soyad, year);
+/** Gün, ay ve yılla sorgu (NVİ sitesindeki form). Seri numaraları gönderilmez: kütükteki son açık kayıt doğrulanır. */
+function askV2(tc: string, ad: string, soyad: string, b: Birth): Promise<Answer> {
+  return soap(
+    NVI_URL,
+    'KisiVeCuzdanDogrula',
+    `<TCKimlikNo>${tc}</TCKimlikNo><Ad>${xml(upper(ad))}</Ad><Soyad>${xml(upper(soyad))}</Soyad>` +
+      '<SoyadYok>false</SoyadYok>' +
+      `<DogumGun>${b.day}</DogumGun><DogumGunYok>false</DogumGunYok>` +
+      `<DogumAy>${b.month}</DogumAy><DogumAyYok>false</DogumAyYok>` +
+      `<DogumYil>${b.year}</DogumYil>`,
+  );
+}
+
+/** Eski servis (yalnızca doğum yılı) */
+function askV1(tc: string, ad: string, soyad: string, b: Birth): Promise<Answer> {
+  return soap(
+    NVI_URL_V1,
+    'TCKimlikNoDogrula',
+    `<TCKimlikNo>${tc}</TCKimlikNo><Ad>${xml(upper(ad))}</Ad><Soyad>${xml(upper(soyad))}</Soyad>` +
+      `<DogumYili>${b.year}</DogumYili>`,
+  );
+}
+
+/**
+ * Önce gün-ay-yıl servisi sorulur; geçici bağlantı sorununda bir kez daha denenir. Bu servis hata verirse (H, P) eski
+ * servise sorulur. "Uyuşmuyor" cevabı kesindir, başka servise sorulmaz. Kod başına V2/V1 eklenir (ör. N-V2H500).
+ */
+async function askNvi(tc: string, ad: string, soyad: string, b: Birth): Promise<Answer> {
+  let a = await askV2(tc, ad, soyad, b);
+  if (a.match === null && (a.why === 'T' || a.why === 'C')) {
+    await new Promise((r) => setTimeout(r, 1500));
+    a = await askV2(tc, ad, soyad, b);
+  }
+  if (a.match !== null) return a;
+  if (a.why === 'T' || a.why === 'C') return { match: null, why: `V2${a.why}` };
+  const old = await askV1(tc, ad, soyad, b);
+  if (old.match !== null) return old;
+  return { match: null, why: `V2${a.why}-V1${old.why}` };
 }
 
 Deno.serve(async (req) => {
@@ -166,12 +196,25 @@ Deno.serve(async (req) => {
   const ad = cleanName(input.firstName);
   const soyad = cleanName(input.lastName);
   const year = Number(input.birthYear);
+  const month = Number(input.birthMonth);
+  const day = Number(input.birthDay);
   const nowYear = new Date().getUTCFullYear();
+  const born = new Date(Date.UTC(year, month - 1, day));
   if (!tcValid(tc)) return json({ result: 'invalid_tc' });
   if (ad.length < 2 || ad.length > 40 || !NAME_RE.test(ad) || soyad.length < 2 || soyad.length > 40 || !NAME_RE.test(soyad)) {
     return json({ result: 'invalid_name' });
   }
   if (!Number.isInteger(year) || year < 1900 || year > nowYear) return json({ result: 'invalid_year' });
+  if (
+    !Number.isInteger(month) ||
+    !Number.isInteger(day) ||
+    born.getUTCFullYear() !== year ||
+    born.getUTCMonth() !== month - 1 ||
+    born.getUTCDate() !== day ||
+    born.getTime() > Date.now()
+  ) {
+    return json({ result: 'invalid_date' });
+  }
 
   const admin = createClient(SUPABASE_URL, SERVICE_KEY);
   const hash = await hmacHex(tc);
@@ -182,13 +225,18 @@ Deno.serve(async (req) => {
   if (start.data !== 'ok') return json({ result: start.data });
 
   // 4) NVİ'ye sor
-  const nvi = await askNvi(tc, ad, soyad, year);
+  const nvi = await askNvi(tc, ad, soyad, { day, month, year });
   if (nvi.match === null) {
     // Ulaşılamadıysa bu deneme günlük hakkından sayılmaz
     await admin.rpc('service_identity_refund', { p_user: userId });
     return json({ result: 'nvi_unavailable', detail: nvi.why });
   }
-  if (!nvi.match) return json({ result: 'mismatch' });
+  if (!nvi.match) {
+    // Hangi bilginin tutmadığını ayırmak için yalnızca doğum yılıyla da sorulur: ad, soyad ve yıl uyuşuyorsa
+    // sorun gün/ay'dadır (hesap yine doğrulanmaz)
+    const yearOnly = await askV1(tc, ad, soyad, { day, month, year });
+    return json({ result: yearOnly.match === true ? 'date_mismatch' : 'mismatch' });
+  }
 
   // 5) Hesabı doğrula; gerçek ad nüfustaki ad olur
   const finish = await admin.rpc('service_identity_finish', {

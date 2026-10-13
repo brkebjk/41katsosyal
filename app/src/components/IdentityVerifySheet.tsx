@@ -17,6 +17,8 @@ const NAME_RE = /^[A-Za-zÇĞİÖŞÜçğıöşüÂâÎîÛû]+( [A-Za-zÇĞİÖ
 export function IdentityVerifySheet({ onClose, onVerified }: { onClose: () => void; onVerified: () => void }) {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [day, setDay] = useState('');
+  const [month, setMonth] = useState('');
   const [year, setYear] = useState('');
   const [tc, setTc] = useState('');
   const [busy, setBusy] = useState(false);
@@ -30,13 +32,25 @@ export function IdentityVerifySheet({ onClose, onVerified }: { onClose: () => vo
     if (fn.length < 2 || !NAME_RE.test(fn) || ln.length < 2 || !NAME_RE.test(ln)) {
       return setError('Adını ve soyadını nüfus cüzdanındaki gibi, yalnızca harflerle yaz.');
     }
-    if (!/^\d{4}$/.test(year) || y < 1900 || y > new Date().getFullYear()) {
-      return setError('Doğum yılını 4 haneli yaz (ör. 1995).');
+    const d = Number(day);
+    const m = Number(month);
+    const born = new Date(Date.UTC(y, m - 1, d));
+    if (
+      !/^\d{4}$/.test(year) ||
+      y < 1900 ||
+      !/^\d{1,2}$/.test(day) ||
+      !/^\d{1,2}$/.test(month) ||
+      born.getUTCFullYear() !== y ||
+      born.getUTCMonth() !== m - 1 ||
+      born.getUTCDate() !== d ||
+      born.getTime() > Date.now()
+    ) {
+      return setError('Doğum tarihini gün, ay ve yıl olarak kimliğindeki gibi yaz (ör. 7 / 3 / 1995).');
     }
     if (!tcLooksValid(tc)) return setError('TC kimlik numarası geçersiz görünüyor. 11 haneyi kontrol et.');
     setBusy(true);
     setError(null);
-    const res = await verifyIdentity({ tc, firstName: fn, lastName: ln, birthYear: year });
+    const res = await verifyIdentity({ tc, firstName: fn, lastName: ln, birthDay: d, birthMonth: m, birthYear: y });
     setBusy(false);
     // TC numarası ekranda bekletilmez
     setTc('');
@@ -73,15 +87,39 @@ export function IdentityVerifySheet({ onClose, onVerified }: { onClose: () => vo
         maxLength={40}
         placeholder="ör. Yılmaz"
       />
-      <TextField
-        label="Doğum yılı"
-        icon="calendar-outline"
-        value={year}
-        onChangeText={(t) => setYear(t.replace(/\D/g, '').slice(0, 4))}
-        keyboardType="number-pad"
-        maxLength={4}
-        placeholder="ör. 1995"
-      />
+      <View style={styles.dateRow}>
+        <View style={styles.dateDay}>
+          <TextField
+            label="Doğum günü"
+            value={day}
+            onChangeText={(t) => setDay(t.replace(/\D/g, '').slice(0, 2))}
+            keyboardType="number-pad"
+            maxLength={2}
+            placeholder="Gün"
+          />
+        </View>
+        <View style={styles.dateDay}>
+          <TextField
+            label="Ay"
+            value={month}
+            onChangeText={(t) => setMonth(t.replace(/\D/g, '').slice(0, 2))}
+            keyboardType="number-pad"
+            maxLength={2}
+            placeholder="Ay"
+          />
+        </View>
+        <View style={styles.dateYear}>
+          <TextField
+            label="Yıl"
+            icon="calendar-outline"
+            value={year}
+            onChangeText={(t) => setYear(t.replace(/\D/g, '').slice(0, 4))}
+            keyboardType="number-pad"
+            maxLength={4}
+            placeholder="ör. 1995"
+          />
+        </View>
+      </View>
       <TextField
         label="TC kimlik numarası"
         icon="card-outline"
@@ -120,6 +158,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt,
   },
   infoText: { flex: 1, color: colors.text, fontSize: 13, lineHeight: 19 },
+  dateRow: { flexDirection: 'row', gap: spacing.sm },
+  dateDay: { flex: 1 },
+  dateYear: { flex: 1.6 },
   privacy: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
   privacyText: { flex: 1, color: colors.textMuted, fontSize: 12, lineHeight: 17 },
   warn: { color: colors.highlight, fontFamily: fonts.semi, fontSize: 12, lineHeight: 17 },
