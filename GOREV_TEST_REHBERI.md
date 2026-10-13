@@ -1,14 +1,12 @@
 # Görev Test Rehberi – Kimlik doğrulama tanısı ve yazı düzenleme modu (geçici)
 
 ## 0. Kimlik doğrulama hatasının nedeni
-1. **Önce (güncelleme yapmadan):**
-   - Supabase > **Edge Functions** > `verify-identity` > **Logs**.
-   - "NVİ KisiVeCuzdanDogrula cevabı anlaşılamadı" ile başlayan en son satırı aç.
-   - Metnin tamamını kopyalayıp bana gönder. TC numarası *** ile gizlidir.
-2. Logs'ta bulamazsan:
-   - `verify-identity` > **Code** > kodu sil, `supabase/functions/verify-identity/index.ts` dosyasının tamamını yapıştır > **Deploy**.
-   - Doğrulamayı bir kez dene. Hata kodu artık parantez içinde ipucu taşır, ör. `N-V2X(…)` ya da `N-V2P(text/html;1234)`.
-   - Bu kodu bana yaz.
+1. Supabase > **Edge Functions** > `verify-identity` > **Code**.
+2. Kodu sil, `supabase/functions/verify-identity/index.ts` dosyasının tamamını yapıştır > **Deploy**.
+3. Uygulamada doğrulamayı bir kez dene. Ekranda çıkan hata kodunu bana yaz, ör. `N-V2X(...)`.
+4. `verify-identity` > **Logs**: "cevabı anlaşılamadı (HTTP …" ile başlayan **en son** satırın Message kısmını kopyalayıp bana gönder.
+   - Bu satırda sayfanın kod yerine **okunur yazısı** ve yönlendirildiği adres var.
+   - TC numarası *** ile gizlidir.
 
 ## A. Supabase'i güncelle
 - Supabase > **SQL Editor** > **+ New query**.

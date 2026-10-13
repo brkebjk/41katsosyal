@@ -125,18 +125,32 @@ async function soap(url: string, method: string, inner: string): Promise<Answer>
     }
     const m = new RegExp(`<${method}Result>\\s*(true|false)\\s*</${method}Result>`, 'i').exec(text);
     if (!m) {
-      console.error(`NVİ ${method} cevabı anlaşılamadı: ${text.slice(0, 300).replace(/\d{11}/g, '***')}`);
+      // Görünen yazı (etiketler, betikler atılır) ve yönlendirildiyse son adres: nedeni anlamak için
+      const visible = text
+        .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/\d{11}/g, '***');
+      let where = '';
+      try {
+        where = res.redirected ? new URL(res.url).pathname : '';
+      } catch {
+        where = '';
+      }
+      console.error(
+        `NVİ ${method} cevabı anlaşılamadı (HTTP ${res.status}, ${res.headers.get('content-type') ?? '-'}` +
+          `${where ? `, yönlendirildi: ${where}` : ''}): ${visible.slice(0, 500)}`,
+      );
       if (/request rejected|url was rejected|support id/i.test(text)) {
         const id = /support id(?: is)?\s*:?\s*(\d{6,})/i.exec(text)?.[1];
         return { match: null, why: `W${id ? id.slice(-6) : ''}` };
       }
       if (/<(?:soap:)?Fault>/i.test(text)) return { match: null, why: 'F' };
-      // Web sayfası geldiyse (engel/uyarı sayfası) başlığı koda eklenir; rakamlar silinir, kimlik bilgisi içermez
-      if (/<html|<!doctype html/i.test(text)) {
-        const t = (/<title>([^<]{1,80})<\/title>/i.exec(text)?.[1] ?? '').replace(/[^A-Za-zÇĞİÖŞÜçğıöşü ]/g, '').trim();
-        return { match: null, why: `X(${t.slice(0, 40) || res.headers.get('content-type')?.slice(0, 20) || 'html'})` };
-      }
-      return { match: null, why: `P(${(res.headers.get('content-type') ?? '').slice(0, 20)};${text.length})` };
+      // Kısa ipucu (rakamsız): yönlendirilen adres ve sayfadaki yazının başı
+      const hint = `${where}${where ? ' ' : ''}${visible.replace(/[^A-Za-zÇĞİÖŞÜçğıöşü ./]/g, '').trim().slice(0, 50)}`;
+      return { match: null, why: `X(${hint || (res.headers.get('content-type') ?? '').slice(0, 20)})` };
     }
     return { match: m[1].toLowerCase() === 'true', why: '' };
   } catch (e) {
