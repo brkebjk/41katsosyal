@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { AppState, StyleSheet, View, type ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { HexClusterIcon } from '@/components/HexClusterIcon';
 import { NoticeDot } from '@/components/NoticeDot';
 import { useAuth } from '@/lib/auth';
 import { isLiveNotifyOn, startLiveNotify } from '@/lib/liveNotify';
@@ -55,6 +56,16 @@ function tabIcon(active: IconName, inactive: IconName, dot?: DotKey) {
     );
   }
   return TabIcon;
+}
+
+/** Harita sekmesi: küçük peteklerden oluşan küme simgesi */
+function MapTabIcon({ color, size, focused }: { color: ColorValue; size: number; focused: boolean }) {
+  return (
+    <View>
+      <HexClusterIcon size={size + 2} color={color} focused={focused} />
+      <TabDot dotKey="map" />
+    </View>
+  );
 }
 
 function TabDot({ dotKey }: { dotKey: DotKey }) {
@@ -164,7 +175,7 @@ export default function TabsLayout() {
         options={{ title: 'Etkinlik', tabBarIcon: tabIcon('calendar', 'calendar-outline', 'events') }}
       />
       {/* Sıra: Akış · Etkinlik · Harita · Oyun · Profil. Uygulama yine Harita (index) ile açılır. */}
-      <Tabs.Screen name="index" options={{ title: 'Harita', tabBarIcon: tabIcon('map', 'map-outline', 'map') }} />
+      <Tabs.Screen name="index" options={{ title: 'Harita', tabBarIcon: MapTabIcon }} />
       <Tabs.Screen
         name="games"
         options={{ title: 'Oyun', tabBarIcon: tabIcon('game-controller', 'game-controller-outline') }}

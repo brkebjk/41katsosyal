@@ -5,6 +5,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, View, useWindowDimensions } from 'react-native';
 
+import { FloatingActions } from '@/components/FloatingActions';
 import { GameActionButton } from '@/components/GameActionButton';
 import { GamePointsModal } from '@/components/GamePointsModal';
 import { HexGauge } from '@/components/HexGauge';
@@ -238,7 +239,7 @@ function GamesScreen() {
       headerRight={gauge}
       floatingFooter
       footer={
-        <View style={styles.footerWrap}>
+        <FloatingActions testID="games-actions">
           <View style={styles.footerButtons}>
             <GameActionButton
               label="Oda Oluştur"
@@ -263,7 +264,7 @@ function GamesScreen() {
               compact
             />
           </View>
-        </View>
+        </FloatingActions>
       }
     >
       {/* Aylık ödül podyumu: ayın ilk 3'ü; “Ödülleri gör” sıralama ekranını açar */}
@@ -723,7 +724,6 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
   // Yüzen düğmeler: arkalarında zemin yok, oyun kutuları altlarından görünür
-  footerWrap: { gap: 6, pointerEvents: 'box-none' },
   raffleBadge: {
     position: 'absolute',
     top: 8,

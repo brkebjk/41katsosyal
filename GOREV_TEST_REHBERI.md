@@ -1,50 +1,37 @@
-# Görev Test Rehberi – Paket: Profil 4 (Sorun Bildir, Kişisel Veriler, Davet, Tema)
+# Görev Test Rehberi – Paket: Düzeltmeler (Profil 4 sonrası)
 
-> Önce: Supabase > SQL Editor'e yeni `supabase/schema.sql` dosyasının tamamını yapıştır ve **Run**'a bas.
-> Sonra bilgisayarında `app` klasöründe **`npm install`** çalıştır (yeni paketler eklendi), ardından `npx expo start -c` ile Expo Go'da aç.
-> İsteğe bağlı: Supabase > Table Editor > `app_settings` tablosunda `website_url` (web siten) ve `app_download_url` (mağaza bağlantısı) değerlerini doldur.
+> Önce: Supabase > SQL Editor'e yeni `supabase/schema.sql` dosyasının tamamını yapıştır ve **Run**'a bas (Kişisel Verilerim hatası için gerekli).
+> Sonra bilgisayarında `app` klasöründe `npx expo start -c` çalıştır ve Expo Go ile uygulamayı aç.
 
-## 1. Profil düzeni
-1. Profil'de **Bildirim ve konum** artık Arkadaşlarım'ın hemen altında, tek başına durmalı.
-2. Hesabım çekmecesinin altında **Kişisel Verilerim & Rapor** satırı ve sarı çerçeveli **Bir Sorun Bildir** düğmesi olmalı.
-3. Uygulama çekmecesinde **Gizlilik politikası** ve **Sıkça sorulan sorular (SSS)** olmalı; dokununca metinler açılmalı.
-4. Uygulama çekmecesinin altında her zaman açık **Tercihler** kutusu olmalı: Tema, Dil, Uygulamayı değerlendir, Arkadaşlarını davet et.
-5. En altta, Çıkış'ın altında **Web sitesi** ve **Sürüm bilgisi** düğmeleri olmalı. Sürüm bilgisine dokun: logo ve altında küçük sürüm yazısı açılmalı.
+## 1. Kişisel Verilerim & Rapor
+1. Profil > Kişisel Verilerim & Rapor'u aç. Kırmızı "read-only transaction" hatası **çıkmamalı**.
+2. Kullanıcı kimliği (UUID) ve kayıt tarihi görünmeli.
+3. "Resmi Veri Dosyasını İndir" de çalışmalı (paylaş / kaydet penceresi açılmalı).
+4. Moderatör hesabıyla Moderatör paneli > Sorunlar sekmesi de hatasız açılmalı.
 
-## 2. Bir Sorun Bildir
-1. Düğmeye dokun; ortada **Sorun Bildir** penceresi açılmalı.
-2. Bir sorun türü seçmeden gönder: uyarı çıkmalı. Tür seç, kısa (10 karakterden az) mesajla gönder: uyarı çıkmalı.
-3. Ad soyad hazır gelmeli. Yanlış bir e-posta yaz (ör. `abc`): "E-posta geçersiz" uyarısı çıkmalı.
-4. Düzgün doldurup gönder: "Bildirimin alındı" çıkmalı.
-5. Moderatör hesabıyla: bildirim gelmeli; Moderatör paneli > **Sorunlar** sekmesinde bildirim görünmeli; e-posta/telefona dokununca e-posta/arama açılmalı; **Kapat** ile "Kapatılan" listesine geçmeli.
+## 2. Puan penceresi
+Profil'de puana dokun. Her seviye satırında seviye adı üstte, sarı küçük ödül yazısı **adın altında** olmalı; yazılar üst üste binmemeli.
 
-## 3. Kişisel Verilerim & Rapor
-1. Kullanıcı kimliği (UUID) ve kayıt tarihi görünmeli; UUID'ye dokununca kopyalanmalı.
-2. **Açık rızalar**: iki anahtar açık gelmeli. Birini kapat: onay sorulmalı, kapandıktan sonra ekrana tekrar girince kapalı kalmalı.
-   - "Haritadaki anonim yoğunluğa sayılmak" kapalıyken haritada petek bildirimi yap: yoğunluğa sayılmamalı.
-3. **Kabul edilen sözleşmeler**: 4 metin listelenmeli, dokununca açılmalı.
-4. **Reddet ve hesabımı silmeye git**: başka yolu olmadığını anlatan uyarı, sonra hesap silme penceresi açılmalı (silmeden vazgeç).
-5. **Resmi Veri Dosyasını İndir (.JSON)**: telefonun paylaş/kaydet penceresi açılmalı; dosyayı kaydedip açınca hesabın, gönderilerin, puan geçmişin vb. görünmeli.
+## 3. Akış başlığı
+1. Logonun arkasında yumuşak, köşesiz turkuaz bir ışık olmalı (açık temada daha hafif).
+2. Düğme sırası: solda **Süzgeç, Kurallar**; sağda **Mesajlar, Arkadaşlar**. Logo tam ortada kalmalı.
 
-## 4. Arkadaşlarını davet et
-1. Ekranın en üstünde davet puanı ve ilerleme çubuğu, altında **değiştirilemeyen davet kodun** olmalı (dokununca kopyalanır).
-2. **Bağlantı olarak paylaş**: paylaşım penceresi kod (ve doldurduysan indirme bağlantısı) ile açılmalı.
-3. **Rehberden davet et**: rehber izni istenmeli, kişi seçince SMS uygulaması hazır mesajla açılmalı.
-4. Davet testi (2 telefon ya da 2 hesap):
-   - Yeni hesap açarken kayıt ekranındaki **Davet kodu** alanına kodunu yaz.
-   - Yeni hesap 100 puana ulaşınca (deneme için Supabase > `point_events` tablosuna o kişiye 100 puanlık bir satır ekleyebilirsin), seni davet edene "Davet puanı kazandın" bildirimi gelmeli; davet puanı 1 artmalı.
-   - Kodu kayıtta yazmayı unutan, kayıttan sonraki 7 gün içinde davet ekranındaki "Seni biri davet etti mi?" kutusundan girebilmeli.
-5. **Mağaza** (her öğe bir kez): Elçi unvanı 1, petek adı hakkı 2, 1 aylık abonelik 3 davet puanı.
-   - Puanın yetmiyorsa "Satın al" soluk olmalı.
-   - **Elçi** al: Profil'de unvanlar arasında "Elçi · Davet ödülü · kalıcı" görünmeli; arkadaşlarının listesinde adının yanında da çıkmalı.
-   - **Petek adı** al, **Kullan**'a bas: harita açılır, özel adı olmayan bir petek seç, yeni adı yaz, Onayla, "Emin misin?", Eminim. Haritada o peteğin adı değişmeli. Uygunsuz kelime ya da "41 kat" içeren ad reddedilmeli.
-   - **1 aylık abonelik** al: Profil'de abone görünmeli.
+## 4. Ekran açık kalma
+1. Uygulamayı açık bırak, ekrana dokunma. Telefonun kendi ekran kapanma süresi geçse de ekran **kapanmamalı**.
+2. 2 dakika dokunmayınca ekran yavaşça kararmalı. Bir kez dokun: ekran aydınlanmalı ve bu dokunuş hiçbir düğmeye basmamalı.
+3. Yazı yazarken (klavye açıkken) ekran kararmamalı.
 
-## 5. Tema
-1. Tercihler > Tema > **Açık**: "Şimdi yeniden başlat" de. Uygulama hatasız yeniden açılmalı ve açık renklerle gelmeli (kartlar beyaz, yazılar koyu, sarı vurgular koyu kehribar). Daha önce hata aldıysan Expo Go'yu tamamen kapatıp projeyi yeniden aç; tema tercihin kayıtlı kalır.
-2. Harita ve oyun ekranları açık temada da okunur olmalı (harita koyu kalır, üstündeki kartlar açık renk olur).
-3. **Sistem**'i seç: telefonun karanlık/aydınlık moduna göre açılmalı. **Koyu** ile eski görünüme dönmeli.
-4. Dil: TR seçili, **EN "Yakında"** yazmalı.
+## 5. Sekme başlıkları
+Etkinlikler, Oyunlar, Profil başlıklarının arkasındaki ışık başlığın tam arkasında, yumuşak ve köşesiz olmalı; kayık ya da kırpık görünmemeli.
 
-## 6. Akışta abone rozeti
-Abone bir hesapla gönderi paylaş: akışta gönderinin rumuzunun yanındaki saatin hemen yanında küçük abone rozeti görünmeli. Abone olmayanlarda görünmemeli.
+## 6. Harita
+1. Tercihler'den Açık temaya geç: harita zemini (kara ve deniz) açık renk olmalı; etkinlik, oyun, yoğunluk renkleri ve ilçe adları okunmalı.
+2. Haritada en çok yakınlaştır: petek adları yalnızca ekranda görünen peteklerde çıkmalı. Ortadakiler tam okunmalı, kenara doğru saydamlaşmalı. Kaydırırken eskisinden akıcı olmalı.
+
+## 7. Yüzen düğmeler (Oyunlar ve Etkinlikler)
+1. Altta yalnızca ortada yuvarlak bir **+** düğmesi görünmeli; Katıl / Oluştur düğmeleri gizli olmalı.
+2. **+**'ya bas: düğmeler canlanarak görünmeli, + işareti **−**'ye dönmeli.
+3. **−**'ye bas: düğmeler aynı şekilde kaybolmalı. Gizliyken o alana dokunmak hiçbir şeye basmamalı.
+
+## 8. Harita sekme simgesi
+Alttaki sekme çubuğunda Harita simgesi küçük peteklerden oluşan bir küme olmalı. Seçiliyken içi dolu, değilken çizgili görünmeli.

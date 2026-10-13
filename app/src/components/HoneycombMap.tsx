@@ -37,7 +37,7 @@ import {
   type Cell,
   type Tile,
 } from '@/lib/hex';
-import { colors, fonts } from '@/theme';
+import { colors, fonts, isLight } from '@/theme';
 
 /** Seviye renkleri: 1 hareketli, 2 daha hareketli, 3 en hareketli */
 export const LEVEL_COLORS = {
@@ -45,9 +45,14 @@ export const LEVEL_COLORS = {
   2: 'rgba(255, 92, 122, 0.7)',
   3: '#FF5C7A',
 } as const;
-const LAND_FILL = '#1B2440';
-const LAND_STROKE = '#2C385C';
-export const SEA = '#0E1424';
+// Harita zemini temaya göre değişir; üstteki katman renkleri (etkinlik, oyun, yoğunluk, 41. Kat Özel) iki temada da aynıdır
+export const LAND_FILL = isLight ? '#D6E2EB' : '#1B2440';
+export const LAND_STROKE = isLight ? '#A9BDCC' : '#2C385C';
+export const SEA = isLight ? '#B7CFE0' : '#0E1424';
+/** Yakınlaşınca ızgara çizgisi */
+const GRID_STROKE = isLight ? 'rgba(11, 31, 46, 0.22)' : 'rgba(244, 246, 251, 0.3)';
+/** İlçe adlarının yazı rengi (altındaki kontur SEA rengindedir) */
+const DISTRICT_TEXT = isLight ? 'rgba(11, 31, 46, 0.85)' : 'rgba(244, 246, 251, 0.9)';
 /** Etkinlik katmanı: yoğunluk renginden (pembe-kırmızı) ve seçim renginden (sarı) ayrı bir turkuaz */
 export const EVENT_COLOR = colors.event;
 /** Oyun katmanı: etkinlikten (turkuaz) ve yoğunluktan (pembe) ayrı bir açık mor. Etkinlikle aynı petekte çerçeve ikiye bölünür. */
@@ -58,8 +63,8 @@ export const VENUE_COLOR = colors.venue;
 export const OFFICIAL_COLOR = '#FFC83D';
 /** Seçili petek: etkinlik (turkuaz) ve yoğunluk (pembe) katmanlarından ayrılsın diye sarı (arayüzün ana renginden bağımsız) */
 const SELECT_COLOR = '#FFB020';
-/** En yakın yakınlaşmada yazılan petek adlarının rengi (turkuaz) */
-const NAME_COLOR = '#35D6C3';
+/** En yakın yakınlaşmada yazılan petek adlarının rengi (turkuaz; açık temada okunsun diye koyu turkuaz) */
+const NAME_COLOR = isLight ? '#0B7F76' : '#35D6C3';
 const MARKER_R = 10;
 
 const MAX_ZOOM = 36; // kapsayıcı ölçeğin katı
@@ -559,15 +564,23 @@ export function HoneycombMap({
   // Paket 33: en yakın iki yakınlaşma basamağında petekler sade görünür: yoğunluk, etkinlik/oyun işaretleri, hazine,
   // mekân, 41. Kat Özel ve ilçe adları gizlenir; yalnızca petek adları sarı yazıyla görünür (seçim ve İNCELE kalır)
   const plain = plainCloseUp && view !== null && fitScale > 0 && view.scale >= fitScale * CARDS_HIDE_ZOOM;
-  const nameCells: { c: Cell; x: number; y: number }[] = [];
+  // Petek adları yalnızca ekranda görünen peteklerde yazılır. Ekranın ortasındakiler tam okunur, kenara doğru
+  // saydamlaşır; çok soluk kalacaklar hiç çizilmez (yakınlaşınca harita kasmasın diye).
+  const nameCells: { c: Cell; x: number; y: number; o: number }[] = [];
   if (plain && view) {
     const m = HEX_SIZE * view.scale;
+    const cx = size.w / 2;
+    const cy = size.h / 2;
+    const reach = Math.max(1, Math.hypot(size.w, size.h) * 0.5);
     for (const c of LAND_CELLS) {
       const p = cellCenter(c.q, c.r);
       const x = p.x * view.scale + view.tx;
       const y = -p.y * view.scale + view.ty;
       if (x < -m || y < -m || x > size.w + m || y > size.h + m) continue;
-      nameCells.push({ c, x, y });
+      const t = Math.min(1, Math.hypot(x - cx, y - cy) / reach);
+      const o = Math.max(0, 1 - Math.pow(t, 1.6) * 1.1);
+      if (o < 0.12) continue;
+      nameCells.push({ c, x, y, o });
     }
   }
   const nameSize = view ? Math.max(8, Math.min(13, (HEX_SIZE * SQ3 * view.scale) / 7.5)) : 10;
@@ -668,7 +681,7 @@ export function HoneycombMap({
             <Path
               d={OUTLINE_PATH}
               fill="none"
-              stroke={showGrid ? 'rgba(244, 246, 251, 0.3)' : LAND_STROKE}
+              stroke={showGrid ? GRID_STROKE : LAND_STROKE}
               strokeWidth={px(1.2)}
               strokeLinejoin="round"
             />
@@ -708,7 +721,7 @@ export function HoneycombMap({
                   y={y}
                   fontSize={12}
                   fontFamily={fonts.extra}
-                  fill="rgba(244, 246, 251, 0.9)"
+                  fill={DISTRICT_TEXT}
                   textAnchor="middle"
                 >
                   {l.name}
@@ -823,11 +836,11 @@ export function HoneycombMap({
               </G>
             );
           })}
-          {nameCells.map(({ c, x, y }) => {
+          {nameCells.map(({ c, x, y, o }) => {
             const parts = cellName(c).split('-');
             const two = parts.length > 1;
             return (
-              <G key={`nm-${c.q},${c.r}`}>
+              <G key={`nm-${c.q},${c.r}`} opacity={o}>
                 {/* Önce koyu kontur (altta, yalnızca çizgi), sonra üstüne düz turkuaz yazı: kontur harfin rengini bozmaz */}
                 {(two ? [parts[0], parts.slice(1).join('-')] : parts).map((t, i) => {
                   const ty = y + (two ? (i === 0 ? -nameSize * 0.25 : nameSize * 0.95) : nameSize * 0.35);

@@ -8,6 +8,7 @@ import { useEffect } from 'react';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AwakeDimmer } from '@/components/AwakeDimmer';
 import { DialogHost } from '@/components/DialogHost';
 import { FullScreenState } from '@/components/FullScreenState';
 import { PermissionOnboarding } from '@/components/PermissionOnboarding';
@@ -52,6 +53,8 @@ function RootNavigator() {
   }, [isLoggedIn]);
 
   return (
+    // Uygulama açıkken ekran kapanmaz; dokunulmayınca kararır
+    <AwakeDimmer active={isLoggedIn && !loading}>
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
         <Stack.Protected guard={isLoggedIn}>
@@ -108,5 +111,6 @@ function RootNavigator() {
 
       <DialogHost />
     </View>
+    </AwakeDimmer>
   );
 }

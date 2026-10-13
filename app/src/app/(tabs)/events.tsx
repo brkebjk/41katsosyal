@@ -14,6 +14,7 @@ import { useSponsorMenu } from '@/components/useSponsorMenu';
 import { useRoomActions } from '@/components/useRoomActions';
 import { EventForm } from '@/components/EventForm';
 import { EventPointsModal } from '@/components/EventPointsModal';
+import { FloatingActions } from '@/components/FloatingActions';
 import { GameActionButton } from '@/components/GameActionButton';
 import { HexGauge } from '@/components/HexGauge';
 import { LeaderApplySheet } from '@/components/LeaderApplySheet';
@@ -441,6 +442,7 @@ function EventsScreen() {
       floatingFooter
       // Oluştur (solda) / Katılım Doğrula (sağda): Oyunlar ekranındaki gibi içeriğin üstünde yüzer (arkasında zemin yok)
       footer={
+        <FloatingActions testID="events-actions">
         <View style={styles.topButtons}>
           <GameActionButton
             label="Oluştur"
@@ -469,6 +471,7 @@ function EventsScreen() {
             compact
           />
         </View>
+        </FloatingActions>
       }
       overlay={
         <>

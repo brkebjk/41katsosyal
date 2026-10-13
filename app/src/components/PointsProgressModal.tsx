@@ -210,10 +210,10 @@ const styles = StyleSheet.create({
   },
   stepDotOn: { backgroundColor: colors.primary },
   stepNum: { color: colors.textMuted, fontFamily: fonts.extra, fontSize: 11 },
-  stepText: { flex: 1, gap: 1 },
+  stepText: { flex: 1, gap: 2, justifyContent: 'center' },
   stepPerk: { color: colors.highlight, fontFamily: fonts.semi, fontSize: 10.5 },
+  // Ad üstte, sarı ödül yazısı altında (flex verilmez: alt alta dizilen kutuda yükseklik sıfırlanıp yazılar üst üste biniyordu)
   stepName: {
-    flex: 1,
     color: colors.text,
     fontFamily: fonts.semi,
     fontSize: fontSizes.sm,

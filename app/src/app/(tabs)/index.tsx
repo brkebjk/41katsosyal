@@ -24,6 +24,7 @@ import {
   LEVEL_COLORS,
   MapButton,
   OFFICIAL_COLOR,
+  LAND_FILL,
   SEA,
   VENUE_COLOR,
 } from '@/components/HoneycombMap';
@@ -1011,7 +1012,7 @@ function Legend({ densityOpen, open, onToggle }: { densityOpen: boolean; open: b
       ? [
           {
             key: 'l0',
-            swatch: <View style={[styles.swatch, { backgroundColor: '#1B2440' }]} />,
+            swatch: <View style={[styles.swatch, { backgroundColor: LAND_FILL }]} />,
             label: 'Veri yok / az',
           },
           {

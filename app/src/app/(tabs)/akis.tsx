@@ -17,6 +17,7 @@ import { dmUnreadCount } from '@/lib/dm';
 import { Popup } from '@/components/Popup';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { Screen } from '@/components/Screen';
+import { SoftGlow } from '@/components/SoftGlow';
 import { useAuth } from '@/lib/auth';
 import {
   displayName,
@@ -40,7 +41,7 @@ import { isFuture, isSubscriptionActive } from '@/lib/labels';
 import { useNotices } from '@/lib/notices';
 import { isBackendReady } from '@/lib/supabase';
 import { useTabResetKey } from '@/lib/tabReset';
-import { brand, colors, fonts, fontSizes, radii, spacing } from '@/theme';
+import { brand, colors, fonts, fontSizes, isLight, radii, spacing } from '@/theme';
 
 type Notice = { text: string; error: boolean };
 
@@ -440,30 +441,19 @@ function FeedScreen() {
           )}
           {profile && !isSponsor ? (
             <Pressable
-              onPress={() => setFriendsOpen(true)}
+              onPress={() => setRulesOpen(true)}
               accessibilityRole="button"
-              accessibilityLabel={
-                notices.friendRequests > 0
-                  ? `Arkadaşlarım, ${notices.friendRequests} yeni arkadaşlık isteği`
-                  : 'Arkadaşlarım'
-              }
+              accessibilityLabel="Topluluk ve yazışma kuralları"
               hitSlop={6}
-              testID="feed-friends-open"
-              style={({ pressed }) => [
-                styles.hdrBtn,
-                notices.friendRequests > 0 && styles.hdrBtnOn,
-                pressed && styles.pressed,
-              ]}
+              testID="feed-rules-open"
+              style={({ pressed }) => [styles.hdrBtn, styles.hdrBtnRules, pressed && styles.pressed]}
             >
-              <Ionicons name={notices.friendRequests > 0 ? 'people' : 'people-outline'} size={19} color={colors.primary} />
-              {notices.friendRequests > 0 ? (
-                <View style={styles.dmBadge}>
-                  <Text style={styles.dmBadgeText}>{notices.friendRequests > 9 ? '9+' : notices.friendRequests}</Text>
-                </View>
-              ) : null}
+              <Ionicons name="document-text-outline" size={19} color={colors.highlight} />
             </Pressable>
           ) : null}
           <View style={styles.hdrLogo}>
+            {/* Logonun arkasında temaya uygun hafif ışık (kenarları tamamen saydam: köşe görünmez) */}
+            <SoftGlow width={150} height={96} color={colors.primary} opacity={isLight ? 0.22 : 0.3} />
             {/* Yazısız logo (41 + kule); iki yandaki düğme sayısı eşit olduğu için tam ortada durur */}
             <ImageSlot name="logoMark" style={{ height: 72, aspectRatio: imageAspect.logoMark }} />
           </View>
@@ -487,16 +477,42 @@ function FeedScreen() {
               ) : null}
             </Pressable>
           ) : null}
-          <Pressable
-            onPress={() => setRulesOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Topluluk ve yazışma kuralları"
-            hitSlop={6}
-            testID="feed-rules-open"
-            style={({ pressed }) => [styles.hdrBtn, styles.hdrBtnRules, pressed && styles.pressed]}
-          >
-            <Ionicons name="document-text-outline" size={19} color={colors.highlight} />
-          </Pressable>
+          {profile && !isSponsor ? (
+            <Pressable
+              onPress={() => setFriendsOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel={
+                notices.friendRequests > 0
+                  ? `Arkadaşlarım, ${notices.friendRequests} yeni arkadaşlık isteği`
+                  : 'Arkadaşlarım'
+              }
+              hitSlop={6}
+              testID="feed-friends-open"
+              style={({ pressed }) => [
+                styles.hdrBtn,
+                notices.friendRequests > 0 && styles.hdrBtnOn,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Ionicons name={notices.friendRequests > 0 ? 'people' : 'people-outline'} size={19} color={colors.primary} />
+              {notices.friendRequests > 0 ? (
+                <View style={styles.dmBadge}>
+                  <Text style={styles.dmBadgeText}>{notices.friendRequests > 9 ? '9+' : notices.friendRequests}</Text>
+                </View>
+              ) : null}
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={() => setRulesOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Topluluk ve yazışma kuralları"
+              hitSlop={6}
+              testID="feed-rules-open"
+              style={({ pressed }) => [styles.hdrBtn, styles.hdrBtnRules, pressed && styles.pressed]}
+            >
+              <Ionicons name="document-text-outline" size={19} color={colors.highlight} />
+            </Pressable>
+          )}
         </View>
       }
       floatingFooter
@@ -917,7 +933,7 @@ const styles = StyleSheet.create({
   // Ayraç çizgisi artık PostCard'ın alt düğme satırında; burada yalnızca gönderiler arası boşluk kalır
   postDivider: { paddingTop: spacing.xs },
   hdr: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  hdrLogo: { flex: 1, alignItems: 'center' },
+  hdrLogo: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   hdrBtn: {
     width: 40,
     height: 40,

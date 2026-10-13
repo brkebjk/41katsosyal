@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Svg, { G, Polygon, Text as SvgText } from 'react-native-svg';
 
+import { LAND_FILL, LAND_STROKE, SEA } from '@/components/HoneycombMap';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { CloseX } from '@/components/CloseX';
 import { cellName } from '@/lib/cellNames';
@@ -82,8 +83,8 @@ export function MiniHexPicker({
                   <G key={`${dq},${dr}`} onPress={land ? () => onPick(c) : undefined}>
                     <Polygon
                       points={pts}
-                      fill={here ? 'rgba(255, 200, 61, 0.35)' : land ? '#1B2440' : '#0E1424'}
-                      stroke={on ? colors.primary : here ? '#FFC83D' : land ? '#3A4870' : '#1B2440'}
+                      fill={here ? 'rgba(255, 200, 61, 0.35)' : land ? LAND_FILL : SEA}
+                      stroke={on ? colors.primary : here ? '#FFC83D' : land ? LAND_STROKE : LAND_FILL}
                       strokeWidth={on || here ? 3 : 1.5}
                     />
                     {here ? (

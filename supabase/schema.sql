@@ -13762,7 +13762,7 @@ create or replace function public.admin_list_problem_reports(p_status text defau
 returns table (id uuid, category text, message text, contact_name text, contact_email text, contact_phone text,
                app_version text, platform text, status text, created_at timestamptz, user_id uuid,
                user_full_name text, user_alias text)
-language plpgsql stable security definer set search_path = public as $$
+language plpgsql security definer set search_path = public as $$
 begin
   perform public._require_admin();
   return query
@@ -13786,8 +13786,10 @@ begin
 end $$;
 
 -- Kişisel verilerim: kimlik, kayıt tarihi ve açık rızalar
+-- Not: _require_user haftalık rumuzu yenileyebildiği için (yazma yapar) bu fonksiyonlar "stable" işaretlenmez;
+-- stable olsaydı sunucu salt okunur işlemde çalıştırır ve "read-only transaction" hatası verirdi.
 create or replace function public.my_privacy()
-returns jsonb language plpgsql stable security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public as $$
 declare v public.profiles;
 begin
   v := public._require_user();
@@ -13812,7 +13814,7 @@ end $$;
 -- Resmi veri dosyası (KVKK md. 11): üyenin kendisine ait kayıtları tek bir JSON olarak. Her listede en yeni 1000 kayıt.
 -- Başka üyelerin kimliği (gerçek ad / kullanıcı adı) dosyaya yazılmaz; yalnızca arkadaşlarının o anki rumuzu yazılır.
 create or replace function public.my_data_export()
-returns jsonb language plpgsql stable security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public as $$
 declare v public.profiles;
 begin
   v := public._require_user();

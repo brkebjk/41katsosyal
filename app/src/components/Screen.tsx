@@ -3,11 +3,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useState, type ReactNode } from 'react';
 import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Defs, Ellipse, RadialGradient, Stop } from 'react-native-svg';
 
 import { KeyboardAwareScroll } from '@/components/KeyboardAwareScroll';
+import { SoftGlow } from '@/components/SoftGlow';
 import { KeyboardLift } from '@/components/KeyboardLift';
-import { colors, fonts, fontSizes, spacing } from '@/theme';
+import { colors, fonts, fontSizes, isLight, spacing } from '@/theme';
 
 type Props = {
   title: string;
@@ -50,6 +50,7 @@ export function Screen({
   floatingFooter = false,
 }: Props) {
   const [footH, setFootH] = useState(0);
+  const [titleBox, setTitleBox] = useState<{ w: number; h: number } | null>(null);
   return (
     <View style={styles.root}>
       {/* Üstte hafif mor bir ışıma: akşam gökyüzü, kulenin üst katları */}
@@ -94,17 +95,25 @@ export function Screen({
                       ) : (
                         // Sekme başlıkları (Etkinlikler, Oyunlar, Profil…): arkasında kenarlara doğru yumuşakça kaybolan
                         // yuvarlak bir ışık (köşesiz), solda sarı çizgi
-                        <View style={styles.titleWrap}>
-                          <Svg style={styles.titleGlow} width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
-                            <Defs>
-                              <RadialGradient id="titleGlow" cx="42" cy="50" r="50" gradientUnits="userSpaceOnUse">
-                                <Stop offset="0" stopColor="#22D3C5" stopOpacity="0.34" />
-                                <Stop offset="0.55" stopColor="#7C8CFF" stopOpacity="0.16" />
-                                <Stop offset="1" stopColor="#7C8CFF" stopOpacity="0" />
-                              </RadialGradient>
-                            </Defs>
-                            <Ellipse cx="42" cy="50" rx="58" ry="50" fill="url(#titleGlow)" />
-                          </Svg>
+                        <View
+                          style={styles.titleWrap}
+                          onLayout={(e) =>
+                            setTitleBox({
+                              w: Math.round(e.nativeEvent.layout.width),
+                              h: Math.round(e.nativeEvent.layout.height),
+                            })
+                          }
+                        >
+                          {/* Işık, başlığın ölçüsüne göre piksel olarak çizilir; kenarları tamamen saydamdır */}
+                          {titleBox ? (
+                            <SoftGlow
+                              width={titleBox.w + 70}
+                              height={titleBox.h + 34}
+                              color={colors.primary}
+                              color2={colors.accent}
+                              opacity={isLight ? 0.2 : 0.32}
+                            />
+                          ) : null}
                           <View style={styles.titleBar} />
                           <Text style={[styles.title, styles.titleLit]} accessibilityRole="header">
                             {title}
@@ -166,8 +175,6 @@ const styles = StyleSheet.create({
     paddingRight: spacing.xxl,
     marginLeft: -4,
   },
-  // Işık yazının dışına taşar; kenarları tamamen saydam olduğu için köşe görünmez
-  titleGlow: { position: 'absolute', top: -14, left: -20, right: -30, bottom: -14, pointerEvents: 'none' },
   titleBar: {
     position: 'absolute',
     left: 0,
