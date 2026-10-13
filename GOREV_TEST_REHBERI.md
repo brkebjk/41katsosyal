@@ -41,7 +41,7 @@
    - **1 aylık abonelik** al: Profil'de abone görünmeli.
 
 ## 5. Tema
-1. Tercihler > Tema > **Açık**: "Şimdi yeniden başlat" de. Uygulama açık renklerle açılmalı (kartlar beyaz, yazılar koyu, sarı vurgular koyu kehribar).
+1. Tercihler > Tema > **Açık**: "Şimdi yeniden başlat" de. Uygulama hatasız yeniden açılmalı ve açık renklerle gelmeli (kartlar beyaz, yazılar koyu, sarı vurgular koyu kehribar). Daha önce hata aldıysan Expo Go'yu tamamen kapatıp projeyi yeniden aç; tema tercihin kayıtlı kalır.
 2. Harita ve oyun ekranları açık temada da okunur olmalı (harita koyu kalır, üstündeki kartlar açık renk olur).
 3. **Sistem**'i seç: telefonun karanlık/aydınlık moduna göre açılmalı. **Koyu** ile eski görünüme dönmeli.
 4. Dil: TR seçili, **EN "Yakında"** yazmalı.

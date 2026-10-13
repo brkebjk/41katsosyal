@@ -1,8 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { reloadAppAsync } from 'expo';
 import { router } from 'expo-router';
 import * as StoreReview from 'expo-store-review';
 import { useState } from 'react';
-import { DevSettings, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { notify, showDialog } from '@/lib/dialog';
 import { colors, fonts, fontSizes, radii, saveThemePref, spacing, themePref, type ThemePref } from '@/theme';
@@ -47,11 +48,10 @@ export function PreferencesPanel({ canInvite }: { canInvite: boolean }) {
     });
     if (choice !== 'now') return;
     try {
-      // Geliştirme sürümünde (Expo Go) uygulama kendini yeniden yükler
-      if (__DEV__) {
-        DevSettings.reload();
-        return;
-      }
+      // Expo'nun önerdiği yeniden başlatma (Expo Go'da da mağaza sürümünde de çalışır). DevSettings.reload kullanılmaz:
+      // Expo Go'nun yeni mimarisinde uygulamayı yarım yüklenmiş bırakıp "ExpoAsset bulunamadı" hatası veriyordu.
+      await reloadAppAsync('Tema değişti');
+      return;
     } catch {
       // aşağıdaki açıklama gösterilir
     }
