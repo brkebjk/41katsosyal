@@ -2,8 +2,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { Avatar } from '@/components/Avatar';
 import { JokerCard, jokerLook, QuizChest, RewardPopup } from '@/components/QuizBits';
 import { CloseX } from '@/components/CloseX';

@@ -3,8 +3,9 @@ import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Switch, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { DeleteAccountSheet } from '@/components/DeleteAccountSheet';
 import { Screen } from '@/components/Screen';
 import type { AppTextKey } from '@/lib/account';

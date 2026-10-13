@@ -1,8 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Linking, StyleSheet, Text, View } from 'react-native';
+import { AppState, Linking, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { NotificationPrefsForm } from '@/components/NotificationPrefsForm';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { Sheet } from '@/components/Sheet';

@@ -1,34 +1,37 @@
-# Görev Test Rehberi – Etiketleme, profil başlığı, Bilgi Yarışması ve göstergeler
+# Görev Test Rehberi – Yazı düzenleme modu (geçici)
 
 ## A. Supabase'i güncelle
 - Supabase > **SQL Editor** > **+ New query**.
 - `supabase/schema.sql` dosyasının tamamını yapıştır > **Run**.
 - Yeşil "Success" görmelisin.
-- Önceki teslimattaki `verify-identity` işlevini henüz yüklemediysen onu da yükle:
-  - Edge Functions > `verify-identity` > Code.
-  - `supabase/functions/verify-identity/index.ts` dosyasının tamamını yapıştır > Deploy.
+- Web panel Cloudflare'de kendiliğinden güncellenir (2–3 dakika).
 
-## B. Etiketleme
-1. Arkadaşının rumuz numarasını öğren (ör. Kaptan#145 → 145).
-2. Akışa `selam @145` yaz ve gönder.
-   - Gönderi akışta **@Kaptan#145** olarak, renkli görünmeli.
-   - Arkadaşına "Akışta senden bahsedildi" bildirimi gitmeli.
-3. `@#145` ve `@Kaptan#145` yazınca da aynı sonuç çıkmalı.
-4. Sahibi olmayan bir numara (`@99999`) değişmeden kalmalı ve kimse etiketlenmemeli.
+## B. Modu aç (moderatör hesabıyla)
+1. Profil > **Moderatör paneli**.
+2. En üstteki **Yazı düzenleme modu** anahtarını aç.
+3. Düzenlenebilen yazıların altı **sarı noktalı çizgiyle** çizili olur.
 
-## C. Profilim
-1. Doğrulanmamış hesap:
-   - Ad tam ortada durmalı; küçük **Doğrula** düğmesi adın sağında olmalı ve adı sola itmemeli.
-2. Avatarın üstündeki hediye / VIP düğmesi eskisinden küçük olmalı.
-3. Avatarın sağ altındaki **+** düğmesi küçük olmalı.
-   - Profil resmi yüklediysen + yerine çok küçük "6 gün" gibi kalan gün yazmalı.
-   - Bir hafta dolunca yeniden + görünmeli.
+## C. Yazı düzelt
+1. Herhangi bir ekranda altı noktalı çizili bir yazıya **uzun bas**.
+2. "Yazıyı düzenle" penceresi açılır; üstte orijinal yazı görünür.
+3. Yeni halini yaz > **Kaydet**. Yazı hemen değişmeli.
+4. Başka bir telefonda uygulamayı kapatıp aç: o telefonda da yeni hali görünmeli.
+5. Geri almak için:
+   - Aynı yazıya uzun bas > **Orijinale dön**.
+   - Ya da kutuyu boşaltıp **Kaydet**.
 
-## D. Bilgi Yarışması
-1. Oyunlar > Bilgi Yarışması: başlık kartındaki "N kişi oynuyor" kutusu açık ve koyu temada okunur olmalı.
-   - Beyaz yazı, yeşil sayı ve nokta.
-2. **Nasıl oynanır?** listesinde "Ödüller yalnızca doğrulanmış hesaba" maddesi olmalı.
-3. **Puan sistemi** penceresindeki "Sıralama ödülleri" tablosunda "Hesabı doğrulanmamış üye: ödül alamaz" satırı olmalı.
+## D. Bilmen gerekenler
+- Mod açıkken düğmelerin **yazısına** dokunmak düğmeyi çalıştırmayabilir.
+  - Düğmenin kenarına dokun ya da işin bitince modu kapat.
+- İçinde sayı ya da isim geçen yazılar düzenlenemez (ör. "3 kişi oynuyor", "Kalan: 2").
+  - Bunları bana yaz, ben düzeltirim.
+- Gönderiler, adlar ve rumuzlar düzenlenemez; yalnızca uygulamanın kendi yazıları düzenlenir.
+- Kurallar, sözleşme ve KVKK metinleri yine Web panel > Uygulama metinleri bölümünden düzenlenir.
+- Normal üyelerde mod hiç açılmaz; yalnızca düzeltilmiş yazıları görürler.
 
-## E. Göstergeler
-- Profilde etkinlik ya da oyun hakkı bitince altıgen göstergenin çerçevesi koyu kırmızı değil, **açık kırmızı** olmalı.
+## E. İşin bitince
+1. Web panel > Sistem > **Yazı düzeltmeleri**.
+   - Bütün düzeltmeleri görürsün; istediğini "Orijinale döndür" ile geri alabilirsin.
+2. **Düzeltmeleri indir** ile dosyayı indir.
+3. Dosyayı GitHub'da depoya yükle: **Add file > Upload files**, dal `claude/kind-goodall-dy5z7y`.
+4. Bana haber ver. Düzeltmeleri koda işleyip bu özelliği tamamen kaldıracağım.

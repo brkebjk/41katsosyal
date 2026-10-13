@@ -3,8 +3,9 @@ import { reloadAppAsync } from 'expo';
 import { router } from 'expo-router';
 import * as StoreReview from 'expo-store-review';
 import { useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { notify, showDialog } from '@/lib/dialog';
 import { colors, fonts, fontSizes, radii, saveThemePref, spacing, themePref, type ThemePref } from '@/theme';
 

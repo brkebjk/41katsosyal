@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { DialogHost } from '@/components/DialogHost';
 import { KeyboardLift } from '@/components/KeyboardLift';
 import { PrimaryButton } from '@/components/PrimaryButton';

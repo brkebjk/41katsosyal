@@ -1,8 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Share, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { ListRow, Panel } from '@/components/Panel';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { Stars } from '@/components/VenueSheet';

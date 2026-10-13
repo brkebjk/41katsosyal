@@ -1,7 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { imageSpecs, images, type ImageKey } from '@/lib/images';
 import { colors, fontSizes, radii, spacing } from '@/theme';
 

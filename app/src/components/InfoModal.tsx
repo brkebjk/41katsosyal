@@ -1,7 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ReactNode } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import type { InfoItem } from '@/lib/gameInfo';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';

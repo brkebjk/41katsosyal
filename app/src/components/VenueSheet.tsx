@@ -1,7 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { ActionSheet } from '@/components/ActionSheet';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { RealNameNotice } from '@/components/RealNameNotice';

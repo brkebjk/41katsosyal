@@ -1,5 +1,6 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { ImageSlot } from '@/components/ImageSlot';
 import { imageAspect } from '@/lib/images';
 import { brand, colors, fonts, fontSizes, spacing } from '@/theme';

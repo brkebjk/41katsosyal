@@ -1,8 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { Popup } from '@/components/Popup';
 import { cellName } from '@/lib/cellNames';
 import { categoryInfo } from '@/lib/eventCategories';

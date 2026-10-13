@@ -8,7 +8,6 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text,
   View,
   type LayoutChangeEvent,
   type ViewStyle,
@@ -16,6 +15,7 @@ import {
 import { Image } from 'expo-image';
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
+import { Text } from '@/components/AppText';
 import type { EventCellMark } from '@/lib/events';
 import type { DensityCell } from '@/lib/map';
 import type { GameCellMark } from '@/lib/rooms';

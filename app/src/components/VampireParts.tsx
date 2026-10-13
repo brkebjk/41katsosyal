@@ -1,7 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { ROLES, type VvPlayer, type VvRole, type VvView } from '@/lib/vampire';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 

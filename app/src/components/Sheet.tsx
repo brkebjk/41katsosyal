@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
-import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, PanResponder, Pressable, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { KeyboardLift } from '@/components/KeyboardLift';
 import { useBackClose } from '@/lib/backPress';
 import { KeyboardAwareScroll } from '@/components/KeyboardAwareScroll';

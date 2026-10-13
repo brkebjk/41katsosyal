@@ -1,8 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Text } from '@/components/AppText';
 import { KeyboardLift } from '@/components/KeyboardLift';
 import { KeyboardAwareScroll } from '@/components/KeyboardAwareScroll';
 import { DialogHost } from '@/components/DialogHost';

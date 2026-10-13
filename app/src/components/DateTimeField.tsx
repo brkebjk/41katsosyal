@@ -1,7 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { HelpLabel } from '@/components/HelpLabel';
 import { DAY_SHORT, MONTH_SHORT, formatWhen } from '@/lib/labels';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';

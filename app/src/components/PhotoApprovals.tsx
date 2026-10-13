@@ -1,7 +1,8 @@
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { timeAgo } from '@/lib/labels';
 import { refreshNotices } from '@/lib/notices';

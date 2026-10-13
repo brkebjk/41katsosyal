@@ -1,6 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { fonts, radii } from '@/theme';
 
 /** Adı gerçek olarak gösterilen kişinin yanında çıkan küçük "Arkadaş" etiketi. */

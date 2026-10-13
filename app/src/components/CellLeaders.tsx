@@ -1,7 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import type { Cell } from '@/lib/hex';
 import { callRpc } from '@/lib/rpc';
 import { colors, fonts } from '@/theme';

@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useId, useState, useSyncExternalStore } from 'react';
-import { Animated, BackHandler, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Animated, BackHandler, Platform, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import {
   closeDialog,
@@ -10,6 +10,7 @@ import {
   type DialogRequest,
   type DialogTone,
 } from '@/lib/dialog';
+import { Text } from '@/components/AppText';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 const TONES: Record<DialogTone, { tint: string; icon: string }> = {

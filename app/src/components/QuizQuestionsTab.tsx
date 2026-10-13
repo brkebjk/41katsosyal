@@ -1,7 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { Popup } from '@/components/Popup';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { QuizRewardsCard } from '@/components/QuizRewardsCard';

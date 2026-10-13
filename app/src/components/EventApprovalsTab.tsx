@@ -1,8 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { NoteModal } from '@/components/NoteModal';
 import { PhotoApprovals } from '@/components/PhotoApprovals';
 import { PrimaryButton } from '@/components/PrimaryButton';

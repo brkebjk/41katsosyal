@@ -1,7 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { Avatar } from '@/components/Avatar';
 import { isModeratorName, ModeratorMark } from '@/components/ModeratorMark';
 import { ChatBubble } from '@/components/ChatBubble';

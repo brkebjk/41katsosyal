@@ -2,8 +2,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, View, type ImageSourcePropType } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { Popup } from '@/components/Popup';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { quizCardImages, quizImages } from '@/lib/images';

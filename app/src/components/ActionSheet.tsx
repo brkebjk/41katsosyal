@@ -1,6 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { DialogHost } from '@/components/DialogHost';
 import { Sheet } from '@/components/Sheet';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';

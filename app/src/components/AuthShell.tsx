@@ -1,9 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { ReactNode } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Text } from '@/components/AppText';
 import { KeyboardLift } from '@/components/KeyboardLift';
 import { KeyboardAwareScroll } from '@/components/KeyboardAwareScroll';
 import { ImageSlot } from '@/components/ImageSlot';

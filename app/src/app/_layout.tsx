@@ -13,6 +13,7 @@ import { DialogHost } from '@/components/DialogHost';
 import { FullScreenState } from '@/components/FullScreenState';
 import { PermissionOnboarding } from '@/components/PermissionOnboarding';
 import { RecoveryPhraseSetup } from '@/components/RecoveryPhraseSetup';
+import { TextEditHost } from '@/components/TextEditHost';
 import { TopToastHost } from '@/components/TopToastHost';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { leaveLiveGames } from '@/lib/presence';
@@ -110,6 +111,8 @@ function RootNavigator() {
       ) : null}
 
       <DialogHost />
+      {/* GEÇİCİ: moderatörün yazı düzenleme penceresi (yazı düzeltmeleri de buradan yüklenir) */}
+      <TextEditHost />
     </View>
     </AwakeDimmer>
   );

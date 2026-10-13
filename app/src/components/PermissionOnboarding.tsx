@@ -3,9 +3,10 @@ import { reloadAppAsync } from 'expo';
 import * as Location from 'expo-location';
 import * as SecureStore from 'expo-secure-store';
 import { useEffect, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Text } from '@/components/AppText';
 import { NotificationPrefsForm } from '@/components/NotificationPrefsForm';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { askNotificationPermission, syncEventReminders } from '@/lib/localNotify';

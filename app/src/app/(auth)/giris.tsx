@@ -1,8 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Link, router } from 'expo-router';
 import { useRef, useState } from 'react';
-import { StyleSheet, Text, View, type TextInput } from 'react-native';
+import { StyleSheet, View, type TextInput } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { AuthShell } from '@/components/AuthShell';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { TextField } from '@/components/TextField';

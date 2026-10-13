@@ -1,7 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { confirmAction } from '@/lib/dialog';
 import { fmtPts } from '@/lib/labels';
 import { adminGrantOnlineReward, adminOnlineWinners, type OnlineWinner } from '@/lib/quiz';

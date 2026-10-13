@@ -1,7 +1,8 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import type { CategoryInfo } from '@/lib/eventCategories';
 import { eventCategoryImages } from '@/lib/images';

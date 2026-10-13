@@ -15065,6 +15065,51 @@ returns void language sql security definer set search_path = public as $$
      and (last_seen_at is null or last_seen_at < now() - interval '1 minute');
 $$;
 
+-- ---- GEÇİCİ: Yazı düzenleme modu ---------------------------------------------------------------------------------
+-- Moderatör uygulamadaki sabit yazıları (düğme, başlık, açıklama) düzeltir; düzeltmeler herkeste görünür. Düzeltmeler
+-- koda işlenince bu bölüm ve tablo kaldırılacak. Yalnızca moderatör yazar; her değişiklik işlem günlüğüne düşer.
+create table if not exists public.ui_text_overrides (
+  source text primary key check (char_length(source) between 1 and 2000),
+  text text not null check (char_length(text) between 1 and 2000),
+  updated_by uuid references public.profiles (id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+alter table public.ui_text_overrides enable row level security;
+drop policy if exists ui_text_overrides_select on public.ui_text_overrides;
+create policy ui_text_overrides_select on public.ui_text_overrides for select to authenticated using (public.is_admin());
+
+-- Bütün düzeltmeler (giriş ekranı dahil her yerde gerekir; içinde kişisel bilgi yoktur)
+create or replace function public.get_ui_texts()
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_object_agg(source, text), '{}'::jsonb) from public.ui_text_overrides;
+$$;
+
+-- Moderatör: yazıyı düzelt. p_text boşsa ya da orijinalle aynıysa düzeltme silinir.
+create or replace function public.admin_set_ui_text(p_source text, p_text text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_text text := nullif(btrim(coalesce(p_text, '')), '');
+begin
+  perform public._require_user();
+  perform public._require_admin();
+  if p_source is null or char_length(p_source) not between 1 and 2000
+     or (v_text is not null and char_length(p_text) > 2000) then
+    raise exception 'invalid_text';
+  end if;
+  if v_text is null or p_text = p_source then
+    delete from public.ui_text_overrides where source = p_source;
+  else
+    if not exists (select 1 from public.ui_text_overrides where source = p_source)
+       and (select count(*) from public.ui_text_overrides) >= 5000 then
+      raise exception 'too_many';
+    end if;
+    insert into public.ui_text_overrides (source, text, updated_by) values (p_source, p_text, auth.uid())
+    on conflict (source) do update set text = excluded.text, updated_by = excluded.updated_by, updated_at = now();
+  end if;
+  perform public._audit('ui_text', null,
+    jsonb_build_object('source', left(p_source, 300), 'text', left(coalesce(v_text, '(orijinale döndü)'), 300)));
+end $$;
+
 -- ---- Yedekleme --------------------------------------------------------------------------------------------------
 -- Yedek: public şemasındaki bütün tablolar tek bir JSON'da. Giriş hesapları (e-posta, şifre) yedeğe GİRMEZ ve geri
 -- yüklemede hiçbir giriş hesabına dokunulmaz. Bu fonksiyonları yalnızca sunucu (Edge Function `admin-backup`,
@@ -15580,6 +15625,8 @@ grant execute on function public.admin_web_claim() to authenticated;
 grant execute on function public.admin_web_release() to authenticated;
 grant execute on function public.admin_retention_status() to authenticated;
 grant execute on function public.heartbeat() to authenticated;
+grant execute on function public.get_ui_texts() to anon, authenticated;
+grant execute on function public.admin_set_ui_text(text, text) to authenticated;
 grant execute on function public.admin_run_retention() to authenticated;
 grant execute on function public.admin_traffic_search(text, timestamptz, timestamptz, int) to authenticated;
 

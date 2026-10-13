@@ -1,17 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useRef, useState } from 'react';
 import { Image } from 'expo-image';
-import {
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  useWindowDimensions,
-  type ScrollView,
-  type TextInput,
-} from 'react-native';
+import { Modal, Pressable, StyleSheet, View, useWindowDimensions, type ScrollView, type TextInput } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { KeyboardLift } from '@/components/KeyboardLift';
 import { KeyboardAwareScroll } from '@/components/KeyboardAwareScroll';
 import { DialogHost } from '@/components/DialogHost';

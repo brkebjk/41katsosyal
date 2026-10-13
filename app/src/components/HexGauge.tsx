@@ -1,6 +1,7 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import Svg, { ClipPath, Defs, LinearGradient, Polygon, Rect, Stop } from 'react-native-svg';
 
+import { Text } from '@/components/AppText';
 import { colors, fonts } from '@/theme';
 
 type Props = {

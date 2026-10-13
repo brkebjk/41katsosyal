@@ -1,7 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { forwardRef, useState, type ComponentProps } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { HelpLabel } from '@/components/HelpLabel';
 import { requestReveal } from '@/lib/keyboard';
 import { colors, fontSizes, radii, spacing } from '@/theme';

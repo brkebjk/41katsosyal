@@ -3,8 +3,9 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, View, useWindowDimensions } from 'react-native';
+import { Pressable, StyleSheet, Switch, View, useWindowDimensions } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { FloatingActions } from '@/components/FloatingActions';
 import { GameActionButton } from '@/components/GameActionButton';
 import { GamePointsModal } from '@/components/GamePointsModal';

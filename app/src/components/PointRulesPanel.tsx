@@ -1,7 +1,8 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { GamePointsModal } from '@/components/GamePointsModal';
 import { InfoModal } from '@/components/InfoModal';
 import { ListRow, Panel } from '@/components/Panel';

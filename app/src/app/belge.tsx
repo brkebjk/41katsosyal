@@ -1,7 +1,8 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { Screen } from '@/components/Screen';
 import { APP_TEXT_TITLE, getAppText, type AppTextKey } from '@/lib/account';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';

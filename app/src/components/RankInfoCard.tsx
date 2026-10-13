@@ -1,6 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { formatDayIstanbul } from '@/lib/labels';
 import type { RankingInfo } from '@/lib/ranking';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';

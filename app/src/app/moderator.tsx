@@ -1,8 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { AliasCodeTab } from '@/components/AliasCodeTab';
 import { AnnouncementsTab } from '@/components/AnnouncementsTab';
 import { EventApprovalsTab } from '@/components/EventApprovalsTab';
@@ -11,6 +12,7 @@ import { CellCandidatesTab } from '@/components/CellCandidatesTab';
 import { LeaderApplicationsTab } from '@/components/LeaderApplicationsTab';
 import { Avatar } from '@/components/Avatar';
 import { MemberSheet } from '@/components/MemberSheet';
+import { TextEditToggle } from '@/components/TextEditHost';
 import { ModMessagesTab } from '@/components/ModMessagesTab';
 import { ModThreadSheet } from '@/components/ModThreadSheet';
 import { ProblemReportsTab } from '@/components/ProblemReportsTab';
@@ -144,6 +146,9 @@ export default function ModeratorScreen() {
         </View>
         <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
       </Pressable>
+
+      {/* GEÇİCİ: yazı düzenleme modu */}
+      <TextEditToggle />
 
       {/* Sekmeler: kutucuklar (her satırda 4) */}
       <View style={styles.tiles} accessibilityRole="tablist">

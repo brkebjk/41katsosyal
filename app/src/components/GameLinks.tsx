@@ -1,7 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 /** Bir oyunun ekranında: o oyunun sıralamasına ve başarımlara giden iki küçük düğme. */

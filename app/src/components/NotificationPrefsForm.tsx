@@ -1,6 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { StyleSheet, Switch, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { PREF_ITEMS, type NotifyPrefKey, type NotifyPrefs } from '@/lib/notifyPrefs';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 

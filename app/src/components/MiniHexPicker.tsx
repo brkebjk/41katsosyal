@@ -1,6 +1,7 @@
-import { Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Svg, { G, Polygon, Text as SvgText } from 'react-native-svg';
 
+import { Text } from '@/components/AppText';
 import { LAND_FILL, LAND_STROKE, SEA } from '@/components/HoneycombMap';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { CloseX } from '@/components/CloseX';

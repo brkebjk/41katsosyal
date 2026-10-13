@@ -1,7 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import type { ChatMsg } from '@/lib/quiz';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 

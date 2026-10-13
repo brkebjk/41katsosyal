@@ -23,6 +23,7 @@ import { SettingsPage } from './Settings';
 import { TextsPage } from './Texts';
 import { TrafficPage } from './Traffic';
 import { TreasuresPage } from './Treasures';
+import { UiTextsPage } from './UiTexts';
 import { VenuesPage } from './Venues';
 
 export type Page =
@@ -44,6 +45,7 @@ export type Page =
   | 'treasures'
   | 'settings'
   | 'texts'
+  | 'uitexts'
   | 'alias'
   | 'log'
   | 'traffic'
@@ -101,6 +103,7 @@ export const NAV_GROUPS: { title: string; items: { value: Page; label: string }[
     items: [
       { value: 'settings', label: 'Ayarlar' },
       { value: 'texts', label: 'Uygulama metinleri' },
+      { value: 'uitexts', label: 'Yazı düzeltmeleri' },
       { value: 'alias', label: 'Rumuz kodum' },
       { value: 'backup', label: 'Yedekleme' },
     ],
@@ -159,6 +162,8 @@ export function renderPage(page: Page, p: PageProps): ReactNode {
       return <SettingsPage onNotice={p.onNotice} />;
     case 'texts':
       return <TextsPage onNotice={p.onNotice} />;
+    case 'uitexts':
+      return <UiTextsPage onNotice={p.onNotice} />;
     case 'alias':
       return <AliasCodePage onNotice={p.onNotice} />;
     case 'log':

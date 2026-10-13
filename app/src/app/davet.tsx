@@ -5,8 +5,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import * as SMS from 'expo-sms';
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { EventCellPicker } from '@/components/EventCellPicker';
 import { Popup } from '@/components/Popup';
 import { PrimaryButton } from '@/components/PrimaryButton';

@@ -607,6 +607,7 @@ export type AuditRow = {
 
 export const AUDIT_TEXT: Record<string, string> = {
   reveal_post_author: 'Gönderi yazarını görüntüledi',
+  ui_text: 'Yazı düzenledi',
   reveal_comment_author: 'Yorum yazarını görüntüledi',
   mute: 'Susturdu',
   unmute: 'Susturmayı kaldırdı',

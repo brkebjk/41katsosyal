@@ -4,8 +4,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AppState, BackHandler, Pressable, StyleSheet, Text, Vibration, View, useWindowDimensions } from 'react-native';
+import { AppState, BackHandler, Pressable, StyleSheet, Vibration, View, useWindowDimensions } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { GamePointsModal } from '@/components/GamePointsModal';
 import { InviteSheet } from '@/components/InviteSheet';
 import { InfoLink, InfoModal } from '@/components/InfoModal';

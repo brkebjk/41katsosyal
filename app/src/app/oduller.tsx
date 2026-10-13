@@ -2,8 +2,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { Screen } from '@/components/Screen';
 import { VerifyPrizeNote } from '@/components/VerifyPrizeNote';
 import { DEFAULT_CONTEST, contestOn, getContest, type Contest } from '@/lib/contest';

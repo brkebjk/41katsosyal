@@ -1,7 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Children, Fragment, isValidElement, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { NoticeDot } from '@/components/NoticeDot';
 import { isPetekIconName, PetekIcon } from '@/components/HexClusterIcon';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';

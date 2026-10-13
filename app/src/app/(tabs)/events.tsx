@@ -2,8 +2,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { BackHandler, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { BackHandler, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 
+import { Text } from '@/components/AppText';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { CategoryTile } from '@/components/CategoryTile';
 import { CloseRequestModal } from '@/components/CloseRequestModal';
