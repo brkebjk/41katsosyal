@@ -1,12 +1,14 @@
 # Görev Test Rehberi – Kimlik doğrulama tanısı ve yazı düzenleme modu (geçici)
 
-## 0. Kimlik doğrulama işlevini güncelle (yeni)
-1. Supabase > **Edge Functions** > `verify-identity` > **Code**.
-2. Kodu tamamen sil, `supabase/functions/verify-identity/index.ts` dosyasının tamamını yapıştır > **Deploy**.
-3. Uygulamada doğrulamayı bir kez dene. Hata kodunu bana yaz:
-   - **N-V2W…** = NVİ'nin güvenlik duvarı sunucumuzu reddediyor (yurt dışı sunucu engeli).
-   - **N-V2F** = NVİ istek biçimini reddetti.
-   - **N-V2P-V1P** yine çıkarsa: Edge Functions > `verify-identity` > **Logs** sekmesinde "cevabı anlaşılamadı" ile başlayan satırı kopyalayıp bana gönder. O satırda kimlik bilgisi yoktur; TC numarası *** ile gizlenir.
+## 0. Kimlik doğrulama hatasının nedeni
+1. **Önce (güncelleme yapmadan):**
+   - Supabase > **Edge Functions** > `verify-identity` > **Logs**.
+   - "NVİ KisiVeCuzdanDogrula cevabı anlaşılamadı" ile başlayan en son satırı aç.
+   - Metnin tamamını kopyalayıp bana gönder. TC numarası *** ile gizlidir.
+2. Logs'ta bulamazsan:
+   - `verify-identity` > **Code** > kodu sil, `supabase/functions/verify-identity/index.ts` dosyasının tamamını yapıştır > **Deploy**.
+   - Doğrulamayı bir kez dene. Hata kodu artık parantez içinde ipucu taşır, ör. `N-V2X(…)` ya da `N-V2P(text/html;1234)`.
+   - Bu kodu bana yaz.
 
 ## A. Supabase'i güncelle
 - Supabase > **SQL Editor** > **+ New query**.

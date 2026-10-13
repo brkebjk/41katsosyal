@@ -131,7 +131,12 @@ async function soap(url: string, method: string, inner: string): Promise<Answer>
         return { match: null, why: `W${id ? id.slice(-6) : ''}` };
       }
       if (/<(?:soap:)?Fault>/i.test(text)) return { match: null, why: 'F' };
-      return { match: null, why: 'P' };
+      // Web sayfası geldiyse (engel/uyarı sayfası) başlığı koda eklenir; rakamlar silinir, kimlik bilgisi içermez
+      if (/<html|<!doctype html/i.test(text)) {
+        const t = (/<title>([^<]{1,80})<\/title>/i.exec(text)?.[1] ?? '').replace(/[^A-Za-zÇĞİÖŞÜçğıöşü ]/g, '').trim();
+        return { match: null, why: `X(${t.slice(0, 40) || res.headers.get('content-type')?.slice(0, 20) || 'html'})` };
+      }
+      return { match: null, why: `P(${(res.headers.get('content-type') ?? '').slice(0, 20)};${text.length})` };
     }
     return { match: m[1].toLowerCase() === 'true', why: '' };
   } catch (e) {
