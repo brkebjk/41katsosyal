@@ -60,6 +60,17 @@ const title = (s: string) =>
     .map((w) => w.charAt(0).toLocaleUpperCase('tr-TR') + w.slice(1).toLocaleLowerCase('tr-TR'))
     .join(' ');
 
+/**
+ * Profilde görünecek ad: birden çok adı olanın son adı dışındaki adları baş harfle kısaltılır, soyad aynen kalır.
+ * "ENGİN BERKE" + "TAŞ" -> "E.Berke Taş"; "AYŞE" + "YILMAZ" -> "Ayşe Yılmaz".
+ */
+function displayName(ad: string, soyad: string): string {
+  const given = title(ad).split(' ');
+  const last = given.pop() ?? '';
+  const initials = given.map((w) => `${w.charAt(0)}.`).join('');
+  return `${initials}${last} ${title(soyad)}`;
+}
+
 const xml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -152,7 +163,7 @@ Deno.serve(async (req) => {
   const finish = await admin.rpc('service_identity_finish', {
     p_user: userId,
     p_hash: hash,
-    p_full_name: `${title(ad)} ${title(soyad)}`,
+    p_full_name: displayName(ad, soyad),
   });
   if (finish.error) return json({ result: 'failed' });
   return json({ result: finish.data });

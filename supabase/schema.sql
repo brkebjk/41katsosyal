@@ -14094,6 +14094,8 @@ create table if not exists public.identity_verifications (
   tc_hash text not null unique check (char_length(tc_hash) = 64),
   verified_at timestamptz not null default now()
 );
+-- Doğrulamadan önceki gerçek ad: moderatör doğrulamayı kaldırırsa ad buna geri döner
+alter table public.identity_verifications add column if not exists previous_name text;
 alter table public.identity_verifications enable row level security;
 revoke all on public.identity_verifications from anon, authenticated;
 -- Deneme kaydı: günde en çok 5 deneme (TC/ad tahmini yapılamasın). Deneme kaydında kimlik bilgisi yoktur.
@@ -14141,7 +14143,7 @@ begin
   select * into v from public.profiles where id = p_user for update;
   if not found or v.banned_at is not null or v.role::text = 'sponsor' then return 'not_allowed'; end if;
   if v.identity_verified_at is not null then return 'already'; end if;
-  insert into public.identity_verifications (user_id, tc_hash) values (p_user, p_hash)
+  insert into public.identity_verifications (user_id, tc_hash, previous_name) values (p_user, p_hash, v.full_name)
   on conflict do nothing;
   get diagnostics v_n = row_count;
   if v_n = 0 then return 'used'; end if;
@@ -14197,6 +14199,30 @@ returns boolean language sql stable security definer set search_path = public, s
      and (select count(*) from storage.objects o
            where o.bucket_id = 'profile-photos' and (storage.foldername(o.name))[1] = auth.uid()::text) < 3;
 $$;
+
+-- Moderatör: üyenin hesap doğrulamasını kaldırır. Sarı tik ve profil resmi kalkar, gerçek ad doğrulamadan önceki ada
+-- döner, TC özeti silinir: üye isterse yeniden doğrulama yapabilir (deneme sayacı da sıfırlanır). Üyeye bildirim gider.
+create or replace function public.admin_revoke_identity(p_user uuid, p_note text default null)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_prev text;
+  v_note text := left(nullif(btrim(coalesce(p_note, '')), ''), 300);
+begin
+  perform public._require_admin();
+  perform 1 from public.profiles where id = p_user and identity_verified_at is not null for update;
+  if not found then raise exception 'not_identity_verified'; end if;
+  delete from public.identity_verifications where user_id = p_user returning previous_name into v_prev;
+  delete from public.identity_attempts where user_id = p_user;
+  update public.profiles
+     set identity_verified_at = null,
+         full_name = coalesce(nullif(btrim(v_prev), ''), full_name),
+         photo_path = null, photo_status = null, photo_auto_at = null
+   where id = p_user;
+  perform public._audit('identity_revoke', p_user, jsonb_build_object('note', v_note));
+  perform public._notify(p_user, 'system', 'Hesap doğrulaman kaldırıldı',
+    coalesce(v_note || ' ', '') || 'İstersen Profil > avatarın yanındaki kalkan düğmesiyle yeniden doğrulama yapabilirsin.',
+    jsonb_build_object('route', '/profile'));
+end $$;
 
 -- Moderatör: onay bekleyen profil resimleri
 drop function if exists public.admin_list_photo_approvals();
@@ -14957,6 +14983,7 @@ grant execute on function public.set_profile_photo(text) to authenticated;
 grant execute on function public._profile_photo_slot_ok(text) to authenticated;
 grant execute on function public.admin_list_photo_approvals() to authenticated;
 grant execute on function public.admin_review_photo(uuid, text, boolean) to authenticated;
+grant execute on function public.admin_revoke_identity(uuid, text) to authenticated;
 
 -- Profil resimleri (yalnızca doğrulanmış hesap): herkese açık okunan "profile-photos" kutusu; en çok 2 MB, jpg/png/webp.
 -- Dosya adı tahmin edilemez; adres yalnızca gerçek adın göründüğü yerlerde (arkadaşlara) verilir.

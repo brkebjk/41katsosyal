@@ -102,8 +102,8 @@ export function IdentityVerifySheet({ onClose, onVerified }: { onClose: () => vo
         </Text>
       </View>
       <Text style={styles.warn}>
-        Doğrulanınca profildeki gerçek adın nüfustaki adın olur ve artık değiştirilemez. Günde en çok 5 deneme
-        yapılabilir.
+        Doğrulanınca profildeki gerçek adın nüfustaki adın olur ve artık değiştirilemez. İki adın varsa ilki
+        kısaltılır (ör. Engin Berke Taş → E.Berke Taş). Günde en çok 5 deneme yapılabilir.
       </Text>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <PrimaryButton label="Doğrula" onPress={() => void submit()} loading={busy} testID="identity-submit" />

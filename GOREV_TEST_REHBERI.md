@@ -1,4 +1,6 @@
-# Görev Test Rehberi – Hesap doğrulamayı çalıştırma + profil resmi kontrolü
+# Görev Test Rehberi – Hesap doğrulamayı çalıştırma, ad biçimi, profil resmi kontrolü
+
+> İşlev kodu bu teslimatta değişti. `verify-identity` işlevini daha önce yayınladıysan Adım 3'teki kodu **yeniden yapıştırıp tekrar Deploy et**. Adım 1'i (schema.sql) de yeniden çalıştır.
 
 Hata büyük ihtimalle Supabase tarafının kurulmamış olmasından. Aşağıdaki adımları **sırayla** yap. Her adımın sonunda "Kontrol" satırı var.
 
@@ -42,7 +44,11 @@ Hata büyük ihtimalle Supabase tarafının kurulmamış olmasından. Aşağıda
 | "Nüfus kayıt servisine ulaşılamıyor" | NVİ, Supabase'in sunucusundan gelen isteği kabul etmiyor | Bana haber ver; başka bir yol kurarız |
 | "Bilgiler uyuşmadı" | Kurulum tamam, bilgilerden biri farklı | Ad (ikinci adınla), soyad ve doğum yılını kimliğindeki gibi yaz |
 
-4. **Başarılı olursa:** "Hesabın doğrulandı" penceresi çıkar, avatarın sol üstü sarı tik olur, adının yanında sarı tik görünür.
+4. **Başarılı olursa:**
+   - "Hesabın doğrulandı" penceresi çıkar.
+   - Avatarın sol üstü ve adının yanı sarı tik olur.
+   - Profildeki gerçek adın nüfustaki adın olur. İki adın varsa ilki kısaltılır: **Engin Berke Taş → E.BERKE TAŞ** (profilde büyük harfle görünür).
+   - Hesabım > "Gerçek adını değiştir" artık kapalıdır: "değiştirilemez" yazar.
 
 ## Adım 5 – Profil resmi kontrolü
 1. Doğrulanmış hesapla avatara dokun > **Resim seç**.
