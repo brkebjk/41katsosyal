@@ -124,7 +124,7 @@ const styles = StyleSheet.create({
   },
   plateCompact: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: 22 },
   brandName: {
-    color: colors.text,
+    color: '#F2FAFF', // fotoğrafın üstünde: her temada açık renk
     fontFamily: fonts.black,
     fontSize: 30,
     letterSpacing: 0.6,
@@ -165,9 +165,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 6,
   },
-  featureText: { color: colors.text, fontFamily: fonts.semi, fontSize: 12 },
+  featureText: { color: '#F2FAFF', fontFamily: fonts.semi, fontSize: 12 },
   card: {
-    backgroundColor: 'rgba(15, 35, 51, 0.95)',
+    backgroundColor: colors.overlay,
     borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,

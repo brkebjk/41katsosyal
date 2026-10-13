@@ -319,7 +319,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: radii.pill,
-    backgroundColor: 'rgba(36, 28, 74, 0.92)',
+    backgroundColor: colors.overlay,
   },
   anonText: { color: colors.accent, fontSize: fontSizes.xs, fontFamily: fonts.semi, flexShrink: 1 },
   tag: {
@@ -330,7 +330,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: radii.pill,
-    backgroundColor: 'rgba(15, 35, 51, 0.92)',
+    backgroundColor: colors.overlay,
   },
   tagText: { color: colors.text, fontSize: fontSizes.xs, flexShrink: 1 },
   row: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, pointerEvents: 'box-none' },

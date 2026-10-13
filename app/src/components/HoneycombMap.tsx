@@ -1067,7 +1067,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: 'rgba(15, 35, 51, 0.92)',
+    backgroundColor: colors.overlay,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',

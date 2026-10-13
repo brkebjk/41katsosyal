@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.md,
     borderRadius: radii.lg,
-    backgroundColor: 'rgba(15, 35, 51, 0.95)',
+    backgroundColor: colors.overlay,
     borderWidth: 1,
     borderColor: colors.border,
   },

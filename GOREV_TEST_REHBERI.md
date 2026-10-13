@@ -1,41 +1,50 @@
-# Görev Test Rehberi – Paket: Seviye Ödülleri ve Arayüz 3
+# Görev Test Rehberi – Paket: Profil 4 (Sorun Bildir, Kişisel Veriler, Davet, Tema)
 
-> Önce: Supabase > SQL Editor'e yeni `supabase/schema.sql` dosyasının tamamını yapıştır ve **Run**'a bas (seviye ödülleri için gerekli).
-> Sonra bilgisayarında `app` klasöründe `npx expo start -c` çalıştır ve Expo Go ile uygulamayı aç.
+> Önce: Supabase > SQL Editor'e yeni `supabase/schema.sql` dosyasının tamamını yapıştır ve **Run**'a bas.
+> Sonra bilgisayarında `app` klasöründe **`npm install`** çalıştır (yeni paketler eklendi), ardından `npx expo start -c` ile Expo Go'da aç.
+> İsteğe bağlı: Supabase > Table Editor > `app_settings` tablosunda `website_url` (web siten) ve `app_download_url` (mağaza bağlantısı) değerlerini doldur.
 
-## 1. Logo ve rozet
-1. Uygulamayı açarken çıkan açılış ekranındaki ve giriş ekranındaki logo tam ortada durmalı (sağ alta kaymamalı).
-2. Akış sekmesinin üstünde logo ortada, eskisinden büyük ve altında "SOSYAL" yazısı olmadan görünmeli.
-3. Profil > "Hesabı Yükselt" kutusundaki rozet tam ortalı olmalı.
+## 1. Profil düzeni
+1. Profil'de **Bildirim ve konum** artık Arkadaşlarım'ın hemen altında, tek başına durmalı.
+2. Hesabım çekmecesinin altında **Kişisel Verilerim & Rapor** satırı ve sarı çerçeveli **Bir Sorun Bildir** düğmesi olmalı.
+3. Uygulama çekmecesinde **Gizlilik politikası** ve **Sıkça sorulan sorular (SSS)** olmalı; dokununca metinler açılmalı.
+4. Uygulama çekmecesinin altında her zaman açık **Tercihler** kutusu olmalı: Tema, Dil, Uygulamayı değerlendir, Arkadaşlarını davet et.
+5. En altta, Çıkış'ın altında **Web sitesi** ve **Sürüm bilgisi** düğmeleri olmalı. Sürüm bilgisine dokun: logo ve altında küçük sürüm yazısı açılmalı.
 
-## 2. Abonelik ekranı
-1. Profil > Hesabı Yükselt'e gir. Üstteki rozet eskisinden çok daha büyük olmalı.
-2. Karşılaştırma tablosu: renkli ince çerçeve, her satırda simge, sağda turkuaz-mor başlıklı ve baştan sona açık renkli **Abone** sütunu olmalı. Abone sütunundaki değerler sarı olmalı.
+## 2. Bir Sorun Bildir
+1. Düğmeye dokun; ortada **Sorun Bildir** penceresi açılmalı.
+2. Bir sorun türü seçmeden gönder: uyarı çıkmalı. Tür seç, kısa (10 karakterden az) mesajla gönder: uyarı çıkmalı.
+3. Ad soyad hazır gelmeli. Yanlış bir e-posta yaz (ör. `abc`): "E-posta geçersiz" uyarısı çıkmalı.
+4. Düzgün doldurup gönder: "Bildirimin alındı" çıkmalı.
+5. Moderatör hesabıyla: bildirim gelmeli; Moderatör paneli > **Sorunlar** sekmesinde bildirim görünmeli; e-posta/telefona dokununca e-posta/arama açılmalı; **Kapat** ile "Kapatılan" listesine geçmeli.
 
-## 3. Sekme başlıkları
-Etkinlikler, Oyunlar ve Profil başlıklarının arkasındaki ışık kenarlara doğru yumuşakça kaybolmalı; köşe ya da kutu kenarı görünmemeli.
+## 3. Kişisel Verilerim & Rapor
+1. Kullanıcı kimliği (UUID) ve kayıt tarihi görünmeli; UUID'ye dokununca kopyalanmalı.
+2. **Açık rızalar**: iki anahtar açık gelmeli. Birini kapat: onay sorulmalı, kapandıktan sonra ekrana tekrar girince kapalı kalmalı.
+   - "Haritadaki anonim yoğunluğa sayılmak" kapalıyken haritada petek bildirimi yap: yoğunluğa sayılmamalı.
+3. **Kabul edilen sözleşmeler**: 4 metin listelenmeli, dokununca açılmalı.
+4. **Reddet ve hesabımı silmeye git**: başka yolu olmadığını anlatan uyarı, sonra hesap silme penceresi açılmalı (silmeden vazgeç).
+5. **Resmi Veri Dosyasını İndir (.JSON)**: telefonun paylaş/kaydet penceresi açılmalı; dosyayı kaydedip açınca hesabın, gönderilerin, puan geçmişin vb. görünmeli.
 
-## 4. Etkinlikler
-1. Kategori kutuları biraz daha büyük olmalı.
-2. Bir kategoriye dokun: sol üstte çerçevesiz **< Geri** yazısı çıkmalı ("Tüm kategoriler" değil).
+## 4. Arkadaşlarını davet et
+1. Ekranın en üstünde davet puanı ve ilerleme çubuğu, altında **değiştirilemeyen davet kodun** olmalı (dokununca kopyalanır).
+2. **Bağlantı olarak paylaş**: paylaşım penceresi kod (ve doldurduysan indirme bağlantısı) ile açılmalı.
+3. **Rehberden davet et**: rehber izni istenmeli, kişi seçince SMS uygulaması hazır mesajla açılmalı.
+4. Davet testi (2 telefon ya da 2 hesap):
+   - Yeni hesap açarken kayıt ekranındaki **Davet kodu** alanına kodunu yaz.
+   - Yeni hesap 100 puana ulaşınca (deneme için Supabase > `point_events` tablosuna o kişiye 100 puanlık bir satır ekleyebilirsin), seni davet edene "Davet puanı kazandın" bildirimi gelmeli; davet puanı 1 artmalı.
+   - Kodu kayıtta yazmayı unutan, kayıttan sonraki 7 gün içinde davet ekranındaki "Seni biri davet etti mi?" kutusundan girebilmeli.
+5. **Mağaza** (her öğe bir kez): Elçi unvanı 1, petek adı hakkı 2, 1 aylık abonelik 3 davet puanı.
+   - Puanın yetmiyorsa "Satın al" soluk olmalı.
+   - **Elçi** al: Profil'de unvanlar arasında "Elçi · Davet ödülü · kalıcı" görünmeli; arkadaşlarının listesinde adının yanında da çıkmalı.
+   - **Petek adı** al, **Kullan**'a bas: harita açılır, özel adı olmayan bir petek seç, yeni adı yaz, Onayla, "Emin misin?", Eminim. Haritada o peteğin adı değişmeli. Uygunsuz kelime ya da "41 kat" içeren ad reddedilmeli.
+   - **1 aylık abonelik** al: Profil'de abone görünmeli.
 
-## 5. Harita
-1. Bildirim yokken sağ üstteki zilin içi şeffaf olmalı (yalnızca beyaz halka ve zil).
-2. Bir bildirim gelince (ör. başka hesaptan arkadaşlık isteği) düğme büyüyüp küçülmeli ve **yalnızca zil simgesi** sallanmalı; halka sallanmamalı.
-3. Haritayı en çok yakınlaştır: petek adları turkuaz ve temiz görünmeli (harflerde renk bozulması olmamalı).
+## 5. Tema
+1. Tercihler > Tema > **Açık**: "Şimdi yeniden başlat" de. Uygulama açık renklerle açılmalı (kartlar beyaz, yazılar koyu, sarı vurgular koyu kehribar).
+2. Harita ve oyun ekranları açık temada da okunur olmalı (harita koyu kalır, üstündeki kartlar açık renk olur).
+3. **Sistem**'i seç: telefonun karanlık/aydınlık moduna göre açılmalı. **Koyu** ile eski görünüme dönmeli.
+4. Dil: TR seçili, **EN "Yakında"** yazmalı.
 
-## 6. Oyunlar
-1. Oyun kutuları eğik değil, düz durmalı (boyutları aynı).
-2. Aylık Ödül Podyumu daha alçak olmalı.
-
-## 7. Seviye ödülleri (puan ve hak sistemi)
-Yeni eşikler: Seviye 2 = 250, Seviye 3 = 1.200, Seviye 4 = 3.500, Seviye 5 = 8.000 puan.
-Denemek için Supabase > Table Editor > `profiles` tablosunda kendi satırındaki `points` değerini değiştirebilirsin (denemeden sonra geri al).
-1. **Seviye 2 (ör. 300 puan):** Oyunlar sekmesindeki oyun hakkı göstergesi 1 fazla olmalı (ücretsiz üyede 3 yerine 4).
-2. **Seviye 3 (ör. 1.300 puan):** Etkinlik hakkı 1 fazla olmalı; oyun hakkı yeniden normale dönmeli (ödüller birikmez).
-3. **Seviye 4 (ör. 4.000 puan):** Bilgi Yarışması'nda sarı "Seviye 4 ödülü: … ×1,2" notu görünmeli. "Puan sistemi" penceresinde sınırlar 12 / 150, Uzaktan penceresinde kazanana puanlar 1,5 / 1,8 / 2,1 / 2,4 olmalı.
-4. **Seviye 5 (ör. 9.000 puan):** Bilgi Yarışması'nda canlar kutusunda ∞ ve "Sınırsız" yazmalı. Solo oyna, can azalmamalı. Günlük oyun sınırı yine geçerli olmalı.
-5. Profil > **Başarımlar**: "Seviye ödülleri" kartında her seviyenin adının yanında sarı küçük yazıyla ödülü, altında sıfırlama kuralları görünmeli.
-6. Profil > puana dokun: açılan penceredeki seviye basamaklarında da ödüller sarı küçük yazıyla görünmeli.
-7. Profil > Uygulama > **Yarışma kuralları**: "Seviyeler ve seviye ödülleri" bölümü olmalı.
-8. Oyunlar > oyun hakkı göstergesi (bilgi penceresi), Oda kuralları ve Etkinlikler > etkinlik hakkı göstergesi pencerelerinde seviye ödülü ve "haklar biriktirilemez" bilgisi yazmalı.
+## 6. Akışta abone rozeti
+Abone bir hesapla gönderi paylaş: akışta gönderinin rumuzunun yanındaki saatin hemen yanında küçük abone rozeti görünmeli. Abone olmayanlarda görünmemeli.

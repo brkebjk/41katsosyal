@@ -542,7 +542,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   tableLabel: { flex: 1, color: colors.text, fontFamily: fonts.semi, fontSize: fontSizes.sm },
-  tableValue: { color: '#FFC83D', fontFamily: fonts.extra, fontSize: fontSizes.sm },
+  tableValue: { color: colors.highlight, fontFamily: fonts.extra, fontSize: fontSizes.sm },
   tableValueOff: { color: colors.textMuted },
   lifetime: {
     flexDirection: 'row',

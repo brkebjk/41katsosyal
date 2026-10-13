@@ -147,7 +147,7 @@ export default function SubscriptionScreen() {
 
           {/* 41. Kat Özel etkinlikleri: ayda en az 4 kez */}
           <View style={styles.specialBox} testID="subscription-special-events">
-            <Ionicons name="star" size={22} color="#FFC83D" />
+            <Ionicons name="star" size={22} color={colors.highlight} />
             <View style={styles.activeText}>
               <Text style={styles.specialTitle}>41. Kat Özel etkinlikleri ayda en az 4 kez düzenlenir</Text>
               <Text style={styles.muted}>
@@ -377,7 +377,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     padding: spacing.lg,
   },
-  specialTitle: { color: '#FFC83D', fontFamily: fonts.extra, fontSize: fontSizes.md },
+  specialTitle: { color: colors.highlight, fontFamily: fonts.extra, fontSize: fontSizes.md },
   activeTitle: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },
   muted: { color: colors.textMuted, fontSize: fontSizes.sm, lineHeight: 20 },
   // Renkli ince çerçeve (degrade) içinde tablo

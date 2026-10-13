@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.md,
     borderRadius: radii.lg,
-    backgroundColor: '#1A2138',
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.primary,
     shadowColor: '#000',

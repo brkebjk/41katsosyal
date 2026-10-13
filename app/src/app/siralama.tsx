@@ -716,7 +716,7 @@ const styles = StyleSheet.create({
   },
   giftText: { flex: 1, gap: 2 },
   giftTitle: { color: colors.text, fontFamily: fonts.black, fontSize: fontSizes.md },
-  giftSub: { color: 'rgba(244,246,251,0.85)', fontSize: fontSizes.sm, lineHeight: 20 },
+  giftSub: { color: colors.textMuted, fontSize: fontSizes.sm, lineHeight: 20 },
   giftLink: { color: colors.primaryText, fontFamily: fonts.extra, fontSize: 12, marginTop: 2 },
   me: {
     color: colors.text,

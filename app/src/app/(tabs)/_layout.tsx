@@ -12,7 +12,7 @@ import { refreshNotices, resetNotices, useNotices } from '@/lib/notices';
 import { tabFocused } from '@/lib/tabReset';
 import { pollToasts, resetToastClock } from '@/lib/topToast';
 import { callRpc } from '@/lib/rpc';
-import { colors, fonts } from '@/theme';
+import { colors, fonts, isLight } from '@/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -148,7 +148,7 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: colors.textMuted,
         tabBarLabelStyle: { fontFamily: fonts.semi, fontSize: 11, lineHeight: 14 },
         tabBarStyle: {
-          backgroundColor: '#0A1D2B',
+          backgroundColor: isLight ? colors.surface : '#0A1D2B',
           borderTopColor: colors.border,
           borderTopWidth: StyleSheet.hairlineWidth,
           height: 58 + bottom,

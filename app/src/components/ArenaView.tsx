@@ -1721,7 +1721,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 6,
     borderRadius: radii.pill,
-    backgroundColor: 'rgba(11, 15, 26, 0.92)',
+    backgroundColor: colors.overlay,
     borderWidth: 1,
     borderColor: colors.accent,
   },

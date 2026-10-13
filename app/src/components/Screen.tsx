@@ -95,7 +95,7 @@ export function Screen({
                         // Sekme başlıkları (Etkinlikler, Oyunlar, Profil…): arkasında kenarlara doğru yumuşakça kaybolan
                         // yuvarlak bir ışık (köşesiz), solda sarı çizgi
                         <View style={styles.titleWrap}>
-                          <Svg style={styles.titleGlow} viewBox="0 0 100 100" preserveAspectRatio="none">
+                          <Svg style={styles.titleGlow} width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
                             <Defs>
                               <RadialGradient id="titleGlow" cx="42" cy="50" r="50" gradientUnits="userSpaceOnUse">
                                 <Stop offset="0" stopColor="#22D3C5" stopOpacity="0.34" />
@@ -178,7 +178,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.highlight,
   },
   // Yazı gölgesi kullanılmaz: Android'de gölge yazı kutusunun sınırında kesilip köşeli görünüyordu
-  titleLit: { color: '#FFFFFF' },
+  titleLit: { color: colors.text },
   subtitle: { color: colors.textMuted, fontSize: fontSizes.sm },
   back: {
     flexDirection: 'row',

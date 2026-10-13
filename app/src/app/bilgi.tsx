@@ -1402,7 +1402,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     overflow: 'hidden',
   },
-  heroTitle: { flexShrink: 1, color: colors.text, fontFamily: fonts.black, fontSize: fontSizes.lg, letterSpacing: 0.5 },
+  heroTitle: { flexShrink: 1, color: '#F2FAFF', fontFamily: fonts.black, fontSize: fontSizes.lg, letterSpacing: 0.5 },
   onlineCount: {
     color: colors.success,
     fontFamily: fonts.black,
@@ -1660,7 +1660,7 @@ const styles = StyleSheet.create({
   },
   startText: { color: '#1A1200', fontFamily: fonts.black, fontSize: fontSizes.xl },
   introNote: { color: colors.textMuted, fontSize: fontSizes.sm, textAlign: 'center' },
-  searchTitle: { color: '#FFC83D', fontFamily: fonts.black, fontSize: fontSizes.xxl, textAlign: 'center' },
+  searchTitle: { color: colors.highlight, fontFamily: fonts.black, fontSize: fontSizes.xxl, textAlign: 'center' },
   seats: { flexDirection: 'row', gap: spacing.sm },
   seat: {
     width: 34,

@@ -166,7 +166,7 @@ export function JokerCard({
       style={({ pressed }) => [{ width: d.w }, pressed && !off && styles.pressed]}
     >
       <LinearGradient
-        colors={[`${look.color}55`, '#0F2333']}
+        colors={[`${look.color}55`, colors.surface]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0.4, y: 1 }}
         style={[
@@ -525,7 +525,7 @@ const styles = StyleSheet.create({
   cardOff: { opacity: 0.38 },
   cardCircle: { alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, backgroundColor: 'rgba(0,0,0,0.3)' },
   cardLabel: { color: colors.text, fontFamily: fonts.black, textAlign: 'center' },
-  cardShort: { color: 'rgba(244,246,251,0.82)', textAlign: 'center' },
+  cardShort: { color: colors.textMuted, textAlign: 'center' },
   countBadge: {
     position: 'absolute',
     top: -7,

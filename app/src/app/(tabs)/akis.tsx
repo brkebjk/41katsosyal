@@ -926,7 +926,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: 'rgba(15, 35, 51, 0.9)',
+    backgroundColor: colors.overlay,
   },
   hdrBtnOn: { borderColor: colors.primary },
   hdrBtnRules: { borderColor: 'rgba(255, 200, 61, 0.6)' },
