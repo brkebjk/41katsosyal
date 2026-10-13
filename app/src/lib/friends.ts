@@ -18,6 +18,8 @@ export type FriendRow = {
   created_at: string;
   /** Yalnızca arkadaşlarda: arkadaşın geçerli oyun şampiyonu ünvanı (varsa) */
   title: string | null;
+  /** Yalnızca arkadaşlarda: onaylı profil resmi (varsa) */
+  photo_path?: string | null;
 };
 
 export type Friendships = {

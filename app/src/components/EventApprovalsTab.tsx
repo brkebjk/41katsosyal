@@ -4,12 +4,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { NoteModal } from '@/components/NoteModal';
+import { PhotoApprovals } from '@/components/PhotoApprovals';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { categoryInfo } from '@/lib/eventCategories';
 import { eventImageUrl } from '@/lib/eventImage';
 import { formatWhen, timeAgo } from '@/lib/labels';
 import { listEventApprovals, reviewEvent, type EventApproval } from '@/lib/moderation';
-import { patchNotices, refreshNotices } from '@/lib/notices';
+import { refreshNotices } from '@/lib/notices';
 import { isBackendReady } from '@/lib/supabase';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
@@ -31,9 +32,8 @@ export function EventApprovalsTab({ onNotice }: { onNotice: (n: Notice) => void 
     setError(res.error);
     if (!res.error) {
       setRows(res.data);
-      patchNotices({
-        modApprovals: res.data.filter((r) => r.approval === 'pending' || r.image_status === 'pending').length,
-      });
+      // Sayaç profil resimlerini de içerdiği için sunucudan okunur
+      void refreshNotices();
     }
     setLoaded(true);
   }, []);
@@ -75,8 +75,10 @@ export function EventApprovalsTab({ onNotice }: { onNotice: (n: Notice) => void 
   return (
     <>
       <Text style={styles.muted}>
-        Konser & Festival etkinlikleri ve üyelerin yüklediği etkinlik görselleri, sen onaylayana kadar başka kimseye görünmez.
+        Konser & Festival etkinlikleri, üyelerin yüklediği etkinlik görselleri ve doğrulanmış üyelerin profil resimleri, sen
+        onaylayana kadar başka kimseye görünmez.
       </Text>
+      <PhotoApprovals onNotice={onNotice} />
       {!loaded ? (
         <Text style={styles.muted}>Yükleniyor…</Text>
       ) : error ? (
@@ -85,7 +87,7 @@ export function EventApprovalsTab({ onNotice }: { onNotice: (n: Notice) => void 
           <PrimaryButton label="Tekrar dene" variant="ghost" onPress={() => void load()} />
         </View>
       ) : rows.length === 0 ? (
-        <Text style={styles.empty}>Onay bekleyen bir şey yok.</Text>
+        <Text style={styles.empty}>Onay bekleyen etkinlik yok.</Text>
       ) : (
         rows.map((r) => (
           <View key={r.id} style={styles.card} testID="approval-card">

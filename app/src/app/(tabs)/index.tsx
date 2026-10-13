@@ -1076,7 +1076,9 @@ function CellFeedButton({ cell, near, onOpen }: { cell: Cell; near: boolean; onO
         <View style={styles.feedSummary}>
           <Ionicons name="time-outline" size={18} color={colors.primary} />
           <View style={styles.flex1}>
-            <Text style={styles.feedSummaryTitle} numberOfLines={1}>{`Son gönderi ${when}`}</Text>
+            <Text style={styles.feedSummaryTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+              {`Son gönderi ${when}`}
+            </Text>
             <Text style={styles.feedSummarySub} numberOfLines={1}>{`Bu hafta ${sum.count} gönderi`}</Text>
           </View>
         </View>
@@ -1526,8 +1528,8 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     backgroundColor: colors.surfaceAlt,
   },
-  feedSummaryTitle: { color: colors.text, fontFamily: fonts.extra, fontSize: 13 },
-  feedSummarySub: { color: colors.textMuted, fontSize: 11.5 },
+  feedSummaryTitle: { color: colors.text, fontFamily: fonts.extra, fontSize: 11 },
+  feedSummarySub: { color: colors.textMuted, fontSize: 10.5 },
   feedSmallBtn: {
     flexDirection: 'row',
     alignItems: 'center',

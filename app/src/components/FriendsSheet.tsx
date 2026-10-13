@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
 
 import { Avatar } from '@/components/Avatar';
+import { profilePhotoUrl } from '@/lib/profilePhoto';
 import { goToDm } from '@/components/DirectMessages';
 import { openDm } from '@/lib/dm';
 import { NoticeDot } from '@/components/NoticeDot';
@@ -431,7 +432,7 @@ function PersonRow({
 }) {
   return (
     <View style={styles.person}>
-      <Avatar index={row.avatar_index} size={44} />
+      <Avatar index={row.avatar_index} size={44} uri={profilePhotoUrl(row.photo_path)} />
       <View style={styles.personText}>
         <Text style={styles.personTitle} numberOfLines={1}>
           {title}

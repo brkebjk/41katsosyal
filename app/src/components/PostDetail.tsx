@@ -19,6 +19,7 @@ import { anchorOf, type MenuAnchor } from '@/lib/menuAnchor';
 import { skinColors } from '@/lib/bubbleSkins';
 import { COMMENT_MAX, createComment, displayName, listComments, type Comment, type Post } from '@/lib/feed';
 import { timeAgo } from '@/lib/labels';
+import { profilePhotoUrl } from '@/lib/profilePhoto';
 import { venueImageUrl } from '@/lib/venueImage';
 import { colors, fonts, fontSizes, spacing } from '@/theme';
 
@@ -298,7 +299,7 @@ function CommentRow({
         accessibilityLabel={`${displayName(comment)}. Rumuz profili ve seçenekler`}
         testID="comment-avatar"
       >
-        <Avatar index={comment.avatar_index} size={34} uri={venueImageUrl(comment.author_image)} />
+        <Avatar index={comment.avatar_index} size={34} uri={venueImageUrl(comment.author_image) ?? profilePhotoUrl(comment.author_photo)} />
       </Pressable>
       <View style={styles.commentBody}>
         <View style={styles.commentHead}>

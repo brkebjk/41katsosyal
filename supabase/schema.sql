@@ -2054,6 +2054,26 @@ begin
   return v_id;
 end $$;
 
+-- Hesap doğrulama (NVİ) ve profil resmi. Ayrıntı: "Hesap doğrulama" bölümü. Profil resmi yalnızca doğrulanmış hesaba
+-- açıktır, moderatör onaylayınca görünür ve YALNIZCA gerçek adın göründüğü yerlerde (arkadaşlar) avatarın yerine geçer;
+-- rumuzla görünülen hiçbir yerde gösterilmez (rumuzun kime ait olduğu anlaşılmasın).
+alter table public.profiles add column if not exists identity_verified_at timestamptz;
+alter table public.profiles add column if not exists photo_path text;
+alter table public.profiles add column if not exists photo_status text;
+alter table public.profiles add column if not exists photo_updated_at timestamptz;
+alter table public.profiles drop constraint if exists profiles_photo_status_check;
+alter table public.profiles add constraint profiles_photo_status_check
+  check (photo_status is null or photo_status in ('pending', 'approved', 'rejected'));
+
+-- Kişinin herkese gösterilebilecek profil resmi (onaylı, doğrulanmış, banlı değil); yoksa boş.
+-- Çağıran fonksiyon yalnızca gerçek adın gösterildiği durumda kullanır.
+create or replace function public._photo_of(p_user uuid)
+returns text language sql stable security definer set search_path = public as $$
+  select pr.photo_path from public.profiles pr
+   where pr.id = p_user and pr.photo_status = 'approved' and pr.identity_verified_at is not null
+     and pr.banned_at is null;
+$$;
+
 -- Giriş yapmış, banlı olmayan ve geçerli oturumdaki kullanıcı mı? (liste fonksiyonları ve okuma kuralları kullanır)
 create or replace function public._is_active_user()
 returns boolean language sql stable security definer set search_path = public as $$
@@ -2546,6 +2566,8 @@ begin
   if char_length(v_name) not between 2 and 60 then raise exception 'invalid_name'; end if;
   -- Sponsor hesabın adı mekân adıdır; yalnızca moderatör değiştirir
   if v.role::text = 'sponsor' then raise exception 'sponsor_locked'; end if;
+  -- Doğrulanmış hesabın adı nüfustaki addır; değiştirilemez
+  if v.identity_verified_at is not null then raise exception 'name_locked_verified'; end if;
   if v.role <> 'admin' and public._is_reserved_name(v_name) then raise exception 'reserved_name'; end if;
   if v_name = v.full_name then return; end if;
   -- Üye gerçek adını yalnızca 1 kez değiştirebilir (aynı anda iki istek hakkı aşmasın diye satır kilitlenir)
@@ -3090,7 +3112,8 @@ end $$;
 -- Yalnızca arkadaşların gerçek adı (full_name) gelir; istekte yalnızca rumuz görünür.
 drop function if exists public.my_friendships();
 create or replace function public.my_friendships()
-returns table (id uuid, kind text, full_name text, alias text, avatar_index int, created_at timestamptz, title text)
+returns table (id uuid, kind text, full_name text, alias text, avatar_index int, created_at timestamptz, title text,
+               photo_path text)
 language sql stable security definer set search_path = public as $$
   with ct as materialized (select * from public._champion_titles())
   select f.id,
@@ -3108,7 +3131,9 @@ language sql stable security definer set search_path = public as $$
          -- Ünvan yalnızca gerçek adı görünen arkadaşta gösterilir (istekte yalnızca rumuz var, ünvan yok)
          case when f.status = 'accepted'
               then public._title_join((select array_agg(t.label order by t.sort_order) from ct t where t.user_id = o.id))
-              else null end
+              else null end,
+         -- Profil resmi yalnızca arkadaşta (gerçek adı görünen)
+         case when f.status = 'accepted' then public._photo_of(o.id) else null end
     from public.friendships f
     join public.profiles o on o.id = case when f.requester_id = auth.uid() then f.addressee_id else f.requester_id end
    where public._is_active_user()
@@ -3762,7 +3787,9 @@ returns jsonb language sql stable security definer set search_path = public as $
       case when public.is_admin()
            then (select count(*)::int from public.events e
                   where not e.is_cancelled and public._event_end(e.starts_at, e.category) > now()
-                    and (e.approval = 'pending' or e.image_status = 'pending')) else 0 end
+                    and (e.approval = 'pending' or e.image_status = 'pending'))
+                + (select count(*)::int from public.profiles pr
+                    where pr.photo_status = 'pending' and pr.banned_at is null) else 0 end
   )
   where public._is_active_user();
 $$;
@@ -4144,7 +4171,7 @@ returns table (
   laugh_count int, plus_count int, minus_count int, my_reaction text,
   event_id uuid, event_title text, event_starts_at timestamptz, event_location text, event_category text,
   event_official boolean, event_image text, cell_q int, cell_r int, place_q int, place_r int,
-  thread jsonb, author_premium boolean
+  thread jsonb, author_premium boolean, author_verified boolean, author_photo text
 )
 language sql stable security definer set search_path = public as $$
   select p.id, p.alias, p.avatar_index, p.body, p.like_count, p.comment_count, p.is_hidden, p.created_at,
@@ -4181,7 +4208,14 @@ language sql stable security definer set search_path = public as $$
          -- Yazar şu an abone mi (akışta saatin yanında küçük abone rozeti; kim olduğu anlaşılmaz)
          coalesce((select pr.premium_until is not null and pr.premium_until > now()
                      from public.post_authors a join public.profiles pr on pr.id = a.author_id
-                    where a.post_id = p.id and pr.role = 'user' and not p.by_event and not p.by_sponsor), false)
+                    where a.post_id = p.id and pr.role = 'user' and not p.by_event and not p.by_sponsor), false),
+         -- Yazarın hesabı NVİ ile doğrulanmış mı (akışta sarı tik; kim olduğu anlaşılmaz)
+         coalesce((select pr.identity_verified_at is not null
+                     from public.post_authors a join public.profiles pr on pr.id = a.author_id
+                    where a.post_id = p.id and pr.role = 'user' and not p.by_event and not p.by_sponsor), false),
+         -- Profil resmi yalnızca gerçek adı görünen (arkadaş) yazarda
+         (select public._photo_of(a.author_id) from public.post_authors a
+           where a.post_id = p.id and public._is_friend(a.author_id) and not p.by_event and not p.by_sponsor)
     from public.posts p
     left join public.events e on e.id = p.event_id
    where public._is_active_user()
@@ -4317,7 +4351,7 @@ create or replace function public.list_comments(p_post_id uuid)
 returns table (
   id uuid, post_id uuid, alias text, avatar_index int, body text,
   is_hidden boolean, created_at timestamptz, is_mine boolean, author_name text, author_skin text, sponsor_id uuid,
-  author_image text
+  author_image text, author_photo text
 )
 language sql stable security definer set search_path = public as $$
   select c.id, c.post_id, c.alias, c.avatar_index, c.body, c.is_hidden, c.created_at,
@@ -4328,7 +4362,10 @@ language sql stable security definer set search_path = public as $$
            where a.comment_id = c.id),
          (select a.author_id from public.comment_authors a where a.comment_id = c.id and c.by_sponsor),
          (select vn.image_path from public.comment_authors a join public.venues vn on vn.user_id = a.author_id
-           where a.comment_id = c.id and c.by_sponsor)
+           where a.comment_id = c.id and c.by_sponsor),
+         -- Profil resmi yalnızca gerçek adı görünen (arkadaş) yazarda
+         (select public._photo_of(a.author_id) from public.comment_authors a
+           where a.comment_id = c.id and public._is_friend(a.author_id) and not c.by_sponsor)
     from public.comments c
    where public._is_active_user()
      and c.post_id = p_post_id
@@ -12457,9 +12494,10 @@ begin
 end $$;
 
 -- Yazışmalarım: açık olanlar (en az bir mesajı olan ya da benim başlattığım), son mesaja göre
+drop function if exists public.dm_list();
 create or replace function public.dm_list()
 returns table (id uuid, other_name text, other_avatar int, is_friend boolean, last_body text, last_at timestamptz,
-               last_mine boolean, unread int, i_started boolean)
+               last_mine boolean, unread int, i_started boolean, other_photo text)
 language sql stable security definer set search_path = public as $$
   select d.id,
          case when public._friends(d.user_a, d.user_b)
@@ -12472,7 +12510,10 @@ language sql stable security definer set search_path = public as $$
          (select count(*)::int from public.dm_messages m
            where m.thread_id = d.id and m.sender_id <> auth.uid()
              and m.created_at > coalesce(case when d.user_a = auth.uid() then d.read_a else d.read_b end, '-infinity')),
-         (d.user_a = auth.uid())
+         (d.user_a = auth.uid()),
+         -- Profil resmi yalnızca arkadaşta (gerçek adı görünen)
+         case when public._friends(d.user_a, d.user_b)
+              then public._photo_of(case when d.user_a = auth.uid() then d.user_b else d.user_a end) end
     from public.dm_threads d
     left join lateral (select m.body, m.created_at, m.sender_id from public.dm_messages m
                         where m.thread_id = d.id order by m.created_at desc limit 1) lm on true
@@ -12520,6 +12561,7 @@ begin
     'other_name', case when v_friend then (select pr.full_name from public.profiles pr where pr.id = v_other)
                        else case when t.user_a = v.id then t.alias_b else t.alias_a end end,
     'other_avatar', case when t.user_a = v.id then t.avatar_b else t.avatar_a end,
+    'other_photo', case when v_friend then public._photo_of(v_other) end,
     'my_alias', case when t.user_a = v.id then t.alias_a else t.alias_b end,
     'is_friend', v_friend,
     'blocked', public._blocked_between(t.user_a, t.user_b),
@@ -13895,7 +13937,8 @@ begin
       'kullanici_kimligi', v.id, 'gercek_ad', v.full_name, 'kullanici_adi', v.username, 'rumuz', v.alias,
       'avatar', v.avatar_index, 'rol', v.role, 'kayit_tarihi', v.created_at, 'toplam_puan', v.points,
       'seviye', public._user_level(v.id), 'abonelik_bitis', v.premium_until, 'abonelik_kaynagi', v.premium_source,
-      'arkadas_kodu', v.friend_code, 'davet_kodu', v.invite_code, 'susturma_bitis', v.muted_until),
+      'arkadas_kodu', v.friend_code, 'davet_kodu', v.invite_code, 'susturma_bitis', v.muted_until,
+      'kimlik_dogrulama', v.identity_verified_at, 'profil_resmi', v.photo_status),
     'acik_rizalar', (public.my_privacy()) -> 'consents',
     'kabul_edilen_sozlesmeler', jsonb_build_array(
       jsonb_build_object('metin', 'Kullanıcı sözleşmesi', 'kabul', v.created_at),
@@ -14019,6 +14062,152 @@ begin
   if v_n = 0 then raise exception 'dm_target_not_found'; end if;
   if v_n > 1 then raise exception 'dm_name_ambiguous'; end if;
   return public.dm_open(p_friendship => v_fid);
+end $$;
+
+-- ---------------------------------------------------------------------
+-- Hesap doğrulama (NVİ kimlik doğrulama servisi)
+-- ---------------------------------------------------------------------
+-- Akış: uygulama TC kimlik no, ad, soyad ve doğum yılını yalnızca Edge Function `verify-identity`'ye gönderir.
+-- İşlev NVİ'ye (KPSPublic) bir kez sorar. TC kimlik numarası HİÇBİR YERE yazılmaz; yalnızca gizli bir anahtarla alınmış
+-- geri çevrilemeyen özeti (HMAC) saklanır. Böylece aynı kişi ikinci bir hesabı doğrulayamaz. Doğrulanan hesabın gerçek
+-- adı nüfustaki ad olur ve artık değiştirilemez. Aşağıdaki fonksiyonları yalnızca sunucu (service_role) çağırabilir.
+create table if not exists public.identity_verifications (
+  user_id uuid primary key references public.profiles (id) on delete cascade,
+  tc_hash text not null unique check (char_length(tc_hash) = 64),
+  verified_at timestamptz not null default now()
+);
+alter table public.identity_verifications enable row level security;
+revoke all on public.identity_verifications from anon, authenticated;
+-- Deneme kaydı: günde en çok 5 deneme (TC/ad tahmini yapılamasın). Deneme kaydında kimlik bilgisi yoktur.
+create table if not exists public.identity_attempts (
+  id bigserial primary key,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create index if not exists identity_attempts_user_idx on public.identity_attempts (user_id, created_at desc);
+alter table public.identity_attempts enable row level security;
+revoke all on public.identity_attempts from anon, authenticated;
+
+-- Doğrulama başlangıcı (NVİ'ye sormadan önce). Döner: 'ok', 'already' (zaten doğrulanmış), 'rate_limited',
+-- 'used' (bu kimlik başka bir hesapta), 'not_allowed' (banlı / mekân hesabı).
+create or replace function public.service_identity_start(p_user uuid, p_hash text)
+returns text language plpgsql security definer set search_path = public as $$
+declare v public.profiles;
+begin
+  if p_hash is null or char_length(p_hash) <> 64 then raise exception 'invalid_hash'; end if;
+  select * into v from public.profiles where id = p_user for update;
+  if not found or v.banned_at is not null or v.role::text = 'sponsor' then return 'not_allowed'; end if;
+  if v.identity_verified_at is not null then return 'already'; end if;
+  if (select count(*) from public.identity_attempts
+       where user_id = p_user and created_at > now() - interval '1 day') >= 5 then
+    return 'rate_limited';
+  end if;
+  insert into public.identity_attempts (user_id) values (p_user);
+  if exists (select 1 from public.identity_verifications where tc_hash = p_hash and user_id <> p_user) then
+    return 'used';
+  end if;
+  return 'ok';
+end $$;
+
+-- NVİ "uyuşuyor" dediyse hesabı doğrular. p_full_name: nüfustaki ad soyad (Edge Function biçimlendirir).
+-- Döner: 'ok', 'already', 'used'.
+create or replace function public.service_identity_finish(p_user uuid, p_hash text, p_full_name text)
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_name text := left(btrim(regexp_replace(coalesce(p_full_name, ''), '\s+', ' ', 'g')), 60);
+  v_n int;
+begin
+  if p_hash is null or char_length(p_hash) <> 64 then raise exception 'invalid_hash'; end if;
+  if char_length(v_name) < 2 then raise exception 'invalid_name'; end if;
+  select * into v from public.profiles where id = p_user for update;
+  if not found or v.banned_at is not null or v.role::text = 'sponsor' then return 'not_allowed'; end if;
+  if v.identity_verified_at is not null then return 'already'; end if;
+  insert into public.identity_verifications (user_id, tc_hash) values (p_user, p_hash)
+  on conflict do nothing;
+  get diagnostics v_n = row_count;
+  if v_n = 0 then return 'used'; end if;
+  update public.profiles set identity_verified_at = now(), full_name = v_name where id = p_user;
+  perform public._notify(p_user, 'system', 'Hesabın doğrulandı',
+    'Kimlik bilgilerin nüfus kaydıyla uyuştu. Akışta adının yanında sarı doğrulama tiki görünür.',
+    jsonb_build_object('route', '/profile'));
+  return 'ok';
+end $$;
+
+-- Profil resmi (yalnızca doğrulanmış hesap). Dosya önce Storage'daki "profile-photos" kutusuna <üye kimliği>/<dosya>
+-- yoluna yüklenir (en çok 2 MB, jpg/png/webp; kutu kuralları zorlar). Moderatör onaylayınca arkadaşlara görünür.
+-- p_path boş = resmi kaldır. Döner: önceki dosyanın yolu (uygulama eski dosyayı siler) ya da boş.
+create or replace function public.set_profile_photo(p_path text)
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_path text := nullif(btrim(coalesce(p_path, '')), '');
+  v_old text;
+begin
+  v := public._require_writer(null);
+  if v.role::text = 'sponsor' then raise exception 'forbidden'; end if;
+  if v.identity_verified_at is null then raise exception 'not_identity_verified'; end if;
+  select photo_path into v_old from public.profiles where id = v.id for update;
+  if v_path is null then
+    update public.profiles set photo_path = null, photo_status = null, photo_updated_at = now() where id = v.id;
+    return v_old;
+  end if;
+  if v.photo_updated_at is not null and v.photo_updated_at > now() - interval '30 seconds' then
+    raise exception 'rate_limited';
+  end if;
+  if v_path !~ ('^' || v.id::text || '/[A-Za-z0-9_-]{1,60}\.(jpg|jpeg|png|webp)$') then raise exception 'invalid_image'; end if;
+  if not exists (select 1 from storage.objects o where o.bucket_id = 'profile-photos' and o.name = v_path) then
+    raise exception 'invalid_image';
+  end if;
+  update public.profiles
+     set photo_path = v_path, photo_updated_at = now(),
+         photo_status = case when v.role = 'admin' then 'approved' else 'pending' end
+   where id = v.id;
+  return case when v_old is distinct from v_path then v_old end;
+end $$;
+
+-- Storage kuralı: yalnızca doğrulanmış, etkin üye kendi klasörüne yükler; klasörde en çok 3 dosya (eskiler silinir)
+create or replace function public._profile_photo_slot_ok(p_name text)
+returns boolean language sql stable security definer set search_path = public, storage as $$
+  select (storage.foldername(p_name))[1] = auth.uid()::text
+     and cardinality(storage.foldername(p_name)) = 1
+     and public._is_active_user()
+     and exists (select 1 from public.profiles pr
+                  where pr.id = auth.uid() and pr.identity_verified_at is not null and pr.role::text <> 'sponsor')
+     and (select count(*) from storage.objects o
+           where o.bucket_id = 'profile-photos' and (storage.foldername(o.name))[1] = auth.uid()::text) < 3;
+$$;
+
+-- Moderatör: onay bekleyen profil resimleri
+drop function if exists public.admin_list_photo_approvals();
+create or replace function public.admin_list_photo_approvals()
+returns table (user_id uuid, full_name text, photo_path text, updated_at timestamptz)
+language plpgsql security definer set search_path = public as $$
+begin
+  perform public._require_admin();
+  return query
+    select pr.id, pr.full_name, pr.photo_path, pr.photo_updated_at
+      from public.profiles pr
+     where pr.photo_status = 'pending' and pr.photo_path is not null and pr.banned_at is null
+     order by pr.photo_updated_at asc
+     limit 100;
+end $$;
+
+-- Moderatör: profil resmini onayla / reddet. p_path: incelenen dosya (bu arada değiştiyse işlem yapılmaz). Üyeye bildirim gider.
+create or replace function public.admin_review_photo(p_user uuid, p_path text, p_approve boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_ok boolean := coalesce(p_approve, false);
+begin
+  perform public._require_admin();
+  update public.profiles set photo_status = case when v_ok then 'approved' else 'rejected' end
+   where id = p_user and photo_status = 'pending' and photo_path = p_path;
+  if not found then raise exception 'request_not_found'; end if;
+  perform public._audit(case when v_ok then 'photo_approve' else 'photo_reject' end, p_user, jsonb_build_object('path', p_path));
+  perform public._notify(p_user, 'system',
+    case when v_ok then 'Profil resmin onaylandı' else 'Profil resmin onaylanmadı' end,
+    case when v_ok then 'Profil resmin artık arkadaşlarına, gerçek adının göründüğü yerlerde görünüyor.'
+         else 'Profil resmin kurallara uymadığı için yayınlanmadı. Yüzünün net göründüğü başka bir resim ekleyebilirsin.' end,
+    jsonb_build_object('route', '/profile'));
 end $$;
 
 -- ---------------------------------------------------------------------
@@ -14741,6 +14930,32 @@ grant execute on function public.admin_draw_raffle(uuid) to authenticated;
 
 -- Yalnızca sunucu tarafı (Edge Function) çağırır; uygulamadaki kullanıcılar çağıramaz
 grant execute on function public.service_set_store_premium(uuid, timestamptz) to service_role;
+grant execute on function public.service_identity_start(uuid, text) to service_role;
+grant execute on function public.service_identity_finish(uuid, text, text) to service_role;
+grant execute on function public.set_profile_photo(text) to authenticated;
+grant execute on function public._profile_photo_slot_ok(text) to authenticated;
+grant execute on function public.admin_list_photo_approvals() to authenticated;
+grant execute on function public.admin_review_photo(uuid, text, boolean) to authenticated;
+
+-- Profil resimleri (yalnızca doğrulanmış hesap): herkese açık okunan "profile-photos" kutusu; en çok 2 MB, jpg/png/webp.
+-- Dosya adı tahmin edilemez; adres yalnızca gerçek adın göründüğü yerlerde (arkadaşlara) verilir.
+do $$ begin
+  insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+  values ('profile-photos', 'profile-photos', true, 2097152, array['image/jpeg', 'image/png', 'image/webp'])
+  on conflict (id) do update
+     set public = true, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+  drop policy if exists profile_photos_owner_insert on storage.objects;
+  create policy profile_photos_owner_insert on storage.objects for insert to authenticated
+    with check (bucket_id = 'profile-photos' and public._profile_photo_slot_ok(name));
+  drop policy if exists profile_photos_owner_select on storage.objects;
+  create policy profile_photos_owner_select on storage.objects for select to authenticated
+    using (bucket_id = 'profile-photos' and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin()));
+  drop policy if exists profile_photos_owner_delete on storage.objects;
+  create policy profile_photos_owner_delete on storage.objects for delete to authenticated
+    using (bucket_id = 'profile-photos' and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin()));
+exception when others then
+  raise warning 'profile-photos kutusu kurulamadı: %. Supabase > Storage bölümünden elle kurulmalı.', sqlerrm;
+end $$;
 
 -- Mekân profil resimleri: herkese açık okunan "venue-images" kutusu; en çok 2 MB, yalnızca jpg/png/webp.
 -- Dosya yükleme, değiştirme ve silme yalnızca moderatöre açıktır.

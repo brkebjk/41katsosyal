@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/Avatar';
+import { profilePhotoUrl } from '@/lib/profilePhoto';
 import { CloseX } from '@/components/CloseX';
 import { KeyboardLift } from '@/components/KeyboardLift';
 import { OverlayPanel } from '@/components/OverlayPanel';
@@ -202,7 +203,7 @@ export function DmInbox({
                       pressed && styles.pressed,
                     ]}
                   >
-                    <Avatar index={t.other_avatar} size={50} />
+                    <Avatar index={t.other_avatar} size={50} uri={profilePhotoUrl(t.other_photo)} />
                     <View style={styles.threadText}>
                       <View style={styles.threadTop}>
                         <Text style={styles.threadName} numberOfLines={1}>
@@ -347,7 +348,7 @@ function DmChat({ threadId, onClose }: { threadId: string | null; onClose: () =>
             <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Mesajlara dön">
               <Ionicons name="chevron-back" size={26} color={colors.primary} />
             </Pressable>
-            {view ? <Avatar index={view.other_avatar} size={40} /> : null}
+            {view ? <Avatar index={view.other_avatar} size={40} uri={profilePhotoUrl(view.other_photo)} /> : null}
             <View style={styles.headText}>
               <Text style={styles.chatName} numberOfLines={1}>
                 {view?.other_name ?? '…'}

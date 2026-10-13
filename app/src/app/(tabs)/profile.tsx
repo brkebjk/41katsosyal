@@ -9,6 +9,7 @@ import { Avatar } from '@/components/Avatar';
 import { DeleteAccountSheet } from '@/components/DeleteAccountSheet';
 import { FriendsSheet } from '@/components/FriendsSheet';
 import { HexGauge } from '@/components/HexGauge';
+import { IdentityVerifySheet } from '@/components/IdentityVerifySheet';
 import { InfoModal } from '@/components/InfoModal';
 import { LeaderApplySheet } from '@/components/LeaderApplySheet';
 import { MyThreadsSheet } from '@/components/MyThreadsSheet';
@@ -29,7 +30,7 @@ import { TextField } from '@/components/TextField';
 import type { AppTextKey } from '@/lib/account';
 import { getPlayCounts, progressFor, totalEarned, TOTAL_ACHIEVEMENTS } from '@/lib/achievements';
 import { useAuth } from '@/lib/auth';
-import { confirmAction, notify } from '@/lib/dialog';
+import { confirmAction, notify, showDialog } from '@/lib/dialog';
 import { eventGaugeAction } from '@/lib/eventQuota';
 import { getQuota, type Quota } from '@/lib/events';
 import { listBlocks, unblock, type BlockedAuthor } from '@/lib/feed';
@@ -47,6 +48,7 @@ import {
 } from '@/lib/labels';
 import { DEFAULT_LIMITS, getLimits, type Limits } from '@/lib/membership';
 import { useNotices } from '@/lib/notices';
+import { pickAndUploadProfilePhoto, profilePhotoUrl, removeProfilePhoto } from '@/lib/profilePhoto';
 import { REAL_NAME } from '@/lib/realName';
 import { getMyTitles, listLevels, type LevelInfo, type MyTitle } from '@/lib/ranking';
 import { useTabResetKey } from '@/lib/tabReset';
@@ -96,7 +98,9 @@ function ProfileScreen() {
   const [aliasShown, setAliasShown] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [open, setOpen] = useState<'account' | 'app' | 'custom' | null>(null);
-  const [overlay, setOverlay] = useState<'delete' | 'recovery' | 'leader' | 'notify' | 'threads' | 'friends' | null>(
+  const [overlay, setOverlay] = useState<
+    'delete' | 'recovery' | 'leader' | 'notify' | 'threads' | 'friends' | 'identity' | null
+  >(
     null,
   );
   const [codeOpen, setCodeOpen] = useState(false);
@@ -176,7 +180,39 @@ function ProfileScreen() {
   const subscribed = isSubscriptionActive(profile.premium_until);
   const isModerator = profile.role === 'admin';
   const nameLeft = account ? account.name_changes_left : 0;
-  const canRename = isModerator || (nameLeft ?? 0) > 0;
+  const verified = Boolean(profile.identity_verified_at);
+
+  /** Avatara dokununca (yalnızca doğrulanmış hesap): profil resmi ekle / değiştir / kaldır */
+  async function onAvatar() {
+    if (!verified || !profile) return;
+    const choice = await showDialog<'pick' | 'remove' | null>({
+      title: 'Profil resmi',
+      message:
+        'Profil resmin yalnızca gerçek adının göründüğü yerlerde (arkadaşlarına) görünür; rumuzunla göründüğün yerlerde hiç görünmez. En çok 2 MB. Moderatör onaylayınca yayına girer.',
+      icon: 'image',
+      buttons: [
+        { label: profile.photo_path ? 'Resmi değiştir' : 'Resim seç', value: 'pick', style: 'primary' },
+        ...(profile.photo_path ? [{ label: 'Resmi kaldır', value: 'remove' as const, style: 'danger' as const }] : []),
+        { label: 'Vazgeç', value: null, style: 'ghost' },
+      ],
+      cancelValue: null,
+    });
+    if (choice === 'pick') {
+      const res = await pickAndUploadProfilePhoto(profile.id);
+      if (res.cancelled) return;
+      if (res.error) return void notify('Resim eklenemedi', res.error, { icon: 'image' });
+      await refreshProfile();
+      void notify('Resim gönderildi', 'Moderatör onaylayınca profil resmin arkadaşlarına görünecek.', {
+        icon: 'checkmark-circle',
+        tone: 'success',
+      });
+    } else if (choice === 'remove') {
+      const res = await removeProfilePhoto();
+      if (res.error) return void notify('Resim kaldırılamadı', res.error, { icon: 'image' });
+      await refreshProfile();
+    }
+  }
+  const canRename = !verified && (isModerator || (nameLeft ?? 0) > 0);
 
   const openText = (doc: AppTextKey) => router.push({ pathname: '/belge', params: { doc } });
 
@@ -263,6 +299,19 @@ function ProfileScreen() {
             icon: 'checkmark-circle',
             tone: 'success',
           });
+        }}
+      />
+    ) : overlay === 'identity' ? (
+      <IdentityVerifySheet
+        onClose={() => setOverlay(null)}
+        onVerified={() => {
+          setOverlay(null);
+          void refreshProfile();
+          void notify(
+            'Hesabın doğrulandı',
+            'Bilgilerin nüfus kaydıyla uyuştu. Akışta rumuzunun yanında sarı doğrulama tiki görünecek.',
+            { icon: 'checkmark-circle', tone: 'success' },
+          );
         }}
       />
     ) : overlay === 'notify' ? (
@@ -386,9 +435,38 @@ function ProfileScreen() {
             <Text style={styles.gaugeLabel}>Etkinlik</Text>
           </View>
           <View>
-            <View style={[styles.ring, subscribed && styles.ringSubscription]}>
-              <Avatar index={profile.avatar_index} size={84} />
-            </View>
+            <Pressable
+              onPress={() => void onAvatar()}
+              disabled={!verified}
+              accessibilityRole={verified ? 'button' : undefined}
+              accessibilityLabel={verified ? 'Profil resmini değiştir' : undefined}
+              testID="profile-avatar"
+              style={[styles.ring, subscribed && styles.ringSubscription]}
+            >
+              <Avatar index={profile.avatar_index} size={84} uri={verified ? profilePhotoUrl(profile.photo_path) : null} />
+            </Pressable>
+            {/* Avatarın solunda: hesap doğrulama (doğrulanmışsa sarı tik) */}
+            <Pressable
+              onPress={() =>
+                verified
+                  ? void notify(
+                      'Doğrulanmış hesap',
+                      'Hesabın NVİ kimlik doğrulama servisiyle doğrulandı. Akışta rumuzunun yanında sarı tik görünür.',
+                      { icon: 'checkmark-circle', tone: 'success' },
+                    )
+                  : setOverlay('identity')
+              }
+              accessibilityRole="button"
+              accessibilityLabel={verified ? 'Doğrulanmış hesap' : 'Hesabı doğrula'}
+              testID="profile-verify"
+              style={({ pressed }) => [styles.verifyBtn, verified && styles.verifyBtnOn, pressed && styles.pressed]}
+            >
+              <Ionicons
+                name={verified ? 'checkmark' : 'shield-checkmark-outline'}
+                size={verified ? 24 : 20}
+                color={verified ? '#1A1200' : colors.highlight}
+              />
+            </Pressable>
             <Pressable
               onPress={() => router.push('/ayricaliklar')}
               accessibilityRole="button"
@@ -420,9 +498,21 @@ function ProfileScreen() {
             <Text style={styles.gaugeLabel}>Oyun</Text>
           </View>
         </View>
-        <Text style={styles.realName} numberOfLines={1}>
-          {profile.full_name.toLocaleUpperCase('tr-TR')}
-        </Text>
+        <View style={styles.realNameRow}>
+          <Text style={styles.realName} numberOfLines={1}>
+            {profile.full_name.toLocaleUpperCase('tr-TR')}
+          </Text>
+          {verified ? <Ionicons name="checkmark-circle" size={20} color={colors.highlight} /> : null}
+        </View>
+        {verified && profile.photo_status === 'pending' ? (
+          <Text style={styles.photoNote}>Profil resmin moderatör onayı bekliyor</Text>
+        ) : verified && profile.photo_status === 'rejected' ? (
+          <Text style={[styles.photoNote, styles.photoNoteBad]}>
+            Profil resmin onaylanmadı; avatarına dokunup başka bir resim seçebilirsin
+          </Text>
+        ) : verified && !profile.photo_path ? (
+          <Text style={styles.photoNote}>Avatarına dokunup profil resmi ekleyebilirsin</Text>
+        ) : null}
         <View style={styles.aliasRow}>
           <Text style={styles.aliasLabel}>Rumuz:</Text>
           <Text style={styles.alias} numberOfLines={1} testID="profile-alias">
@@ -689,7 +779,9 @@ function ProfileScreen() {
             icon="person"
             title="Gerçek adını değiştir"
             subtitle={
-              isModerator
+              verified
+                ? 'Doğrulanmış hesabın adı nüfustaki addır; değiştirilemez.'
+                : isModerator
                 ? 'Moderatör olarak sınırsız değiştirebilirsin'
                 : canRename
                   ? 'Yalnızca 1 kez değiştirebilirsin'
@@ -942,7 +1034,30 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   ringSubscription: { borderColor: colors.primary },
-  realName: { color: colors.highlight, fontFamily: fonts.black, fontSize: fontSizes.lg + 2, textAlign: 'center' },
+  realName: {
+    flexShrink: 1,
+    color: colors.highlight,
+    fontFamily: fonts.black,
+    fontSize: fontSizes.lg + 2,
+    textAlign: 'center',
+  },
+  realNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  photoNote: { color: colors.textMuted, fontSize: 11.5, textAlign: 'center' },
+  photoNoteBad: { color: colors.danger },
+  verifyBtn: {
+    position: 'absolute',
+    top: -6,
+    left: -10,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: colors.surface,
+    borderWidth: 3,
+    borderColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verifyBtnOn: { backgroundColor: colors.highlight },
   aliasRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'center' },
   aliasLabel: { color: colors.textMuted, fontSize: 12 },
   alias: { color: colors.textMuted, fontSize: 12, fontFamily: fonts.semi, flexShrink: 1 },

@@ -33,6 +33,11 @@ export type Profile = {
   premium_source: 'store' | 'moderator' | null;
   muted_until: string | null;
   banned_at: string | null;
+  /** NVİ ile kimliği doğrulandıysa zamanı (gerçek ad nüfustaki addır, değiştirilemez) */
+  identity_verified_at: string | null;
+  /** Profil resmi (yalnızca doğrulanmış hesap): dosya yolu ve onay durumu */
+  photo_path: string | null;
+  photo_status: 'pending' | 'approved' | 'rejected' | null;
 };
 
 type Result = { error: string | null };
@@ -77,7 +82,7 @@ type AuthState = {
 };
 
 const PROFILE_COLUMNS =
-  'id, full_name, alias, avatar_index, role, points, level_rewarded, premium_until, premium_source, muted_until, banned_at';
+  'id, full_name, alias, avatar_index, role, points, level_rewarded, premium_until, premium_source, muted_until, banned_at, identity_verified_at, photo_path, photo_status';
 
 const BACKEND_MISSING = 'Sunucu bağlantısı kurulmadı. .env dosyasındaki adres ve anahtarı doldurmalısın.';
 
@@ -409,6 +414,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             ? 'Ad 2 ile 60 karakter arasında olmalı.'
             : error.message.includes('reserved_name')
               ? 'Bu ad kullanılamaz. “41. Kat”, “Moderatör” veya “Yönetici” içeren adlar ayrılmıştır.'
+              : error.message.includes('name_locked_verified')
+                ? 'Doğrulanmış hesabın adı nüfustaki addır; değiştirilemez.'
               : error.message.includes('name_change_used')
                 ? 'Gerçek adını değiştirme hakkını kullandın. Yanlışlık varsa bize ulaş.'
                 : GENERIC_ERROR,
@@ -423,6 +430,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const deleteAccount = useCallback(async (confirmText: string): Promise<Result> => {
     if (!supabase) return { error: BACKEND_MISSING };
+    // Profil resmi dosyaları da silinir (hesap silindikten sonra oturum kalmadığı için önce silinir; yalnızca onay
+    // metni doğruysa)
+    const folded = confirmText
+      .trim()
+      .toLocaleLowerCase('tr-TR')
+      .replace(/ı/g, 'i')
+      .replace(/ş/g, 's')
+      .replace(/ç/g, 'c')
+      .replace(/ğ/g, 'g')
+      .replace(/ö/g, 'o')
+      .replace(/ü/g, 'u');
+    if (folded === 'onayliyorum') {
+      try {
+        const uid = (await supabase.auth.getUser()).data.user?.id;
+        if (uid) {
+          const { data: files } = await supabase.storage.from('profile-photos').list(uid, { limit: 20 });
+          const paths = (files ?? []).map((f) => `${uid}/${f.name}`);
+          if (paths.length > 0) await supabase.storage.from('profile-photos').remove(paths);
+        }
+      } catch {
+        // resim silinemese de hesap silme sürer
+      }
+    }
     const { error } = await supabase.rpc('delete_my_account', { p_confirm: confirmText });
     if (error) {
       return {

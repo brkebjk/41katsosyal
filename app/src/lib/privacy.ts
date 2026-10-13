@@ -138,6 +138,13 @@ export function readableExport(raw: Row): Row {
       'Arkadaş kodu': text(h.arkadas_kodu),
       'Davet kodu': text(h.davet_kodu),
       'Susturma bitişi': h.susturma_bitis ? when(h.susturma_bitis) : 'Susturulmadım',
+      'Hesap doğrulaması (NVİ)': h.kimlik_dogrulama
+        ? `${when(h.kimlik_dogrulama)} tarihinde doğrulandı (TC kimlik numarası saklanmaz)`
+        : 'Doğrulanmadı',
+      'Profil resmi': pick(
+        { pending: 'Onay bekliyor', approved: 'Onaylı (yalnızca arkadaşlara görünür)', rejected: 'Onaylanmadı' },
+        h.profil_resmi ?? 'Yok',
+      ),
     },
     'Açık rızalarım': {
       'Kampanya ve özel etkinlik bildirimleri': consents.marketing === false ? 'Kapalı' : 'Açık',

@@ -20,6 +20,7 @@ import { displayName, MENTION_RE, type Post, type Reaction } from '@/lib/feed';
 import { imageAspect } from '@/lib/images';
 import { formatWhen, timeAgo } from '@/lib/labels';
 import { anchorOf, type MenuAnchor } from '@/lib/menuAnchor';
+import { profilePhotoUrl } from '@/lib/profilePhoto';
 import { venueImageUrl } from '@/lib/venueImage';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
@@ -146,6 +147,12 @@ export function PostCard({
       <Text style={[styles.alias, sponsorId ? styles.aliasSponsor : null]} numberOfLines={1}>
         {name}
       </Text>
+      {/* Doğrulanmış hesap: sarı tik (abone rozetinin önünde) */}
+      {post.author_verified ? (
+        <View accessibilityLabel="Doğrulanmış hesap" testID="post-verified-tick">
+          <Ionicons name="checkmark-circle" size={15} color={colors.highlight} />
+        </View>
+      ) : null}
       {post.author_name ? <FriendTag /> : null}
       <Text style={styles.time}>{timeAgo(post.created_at)}</Text>
       {post.author_premium ? (
@@ -180,11 +187,11 @@ export function PostCard({
             testID="post-avatar"
             style={styles.avatar}
           >
-            <Avatar index={post.avatar_index} size={40} uri={venueImageUrl(post.author_image)} />
+            <Avatar index={post.avatar_index} size={40} uri={venueImageUrl(post.author_image) ?? profilePhotoUrl(post.author_photo)} />
           </Pressable>
         ) : (
           <View style={styles.avatar}>
-            <Avatar index={post.avatar_index} size={40} uri={venueImageUrl(post.author_image)} />
+            <Avatar index={post.avatar_index} size={40} uri={venueImageUrl(post.author_image) ?? profilePhotoUrl(post.author_photo)} />
           </View>
         )}
         <View style={styles.main}>

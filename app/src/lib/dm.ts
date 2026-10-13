@@ -17,6 +17,8 @@ export type DmThread = {
   last_mine: boolean | null;
   unread: number;
   i_started: boolean;
+  /** Yalnızca arkadaşla yazışmada: onaylı profil resmi (varsa) */
+  other_photo?: string | null;
 };
 
 export type DmMessage = { id: string; body: string; mine: boolean; created_at: string };
@@ -25,6 +27,7 @@ export type DmView = {
   id: string;
   other_name: string;
   other_avatar: number;
+  other_photo?: string | null;
   my_alias: string;
   is_friend: boolean;
   blocked: boolean;

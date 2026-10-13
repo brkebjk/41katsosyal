@@ -35,10 +35,14 @@ export type Post = {
   author_skin?: string | null;
   /** Yazar şu an abone mi (saatin yanında küçük abone rozeti); sunucu güncellenmediyse gelmeyebilir */
   author_premium?: boolean;
+  /** Yazarın hesabı NVİ ile doğrulanmış mı (sarı tik) */
+  author_verified?: boolean;
   /** Gönderiyi bir sponsor (mekân) hesabı yazdıysa kimliği; adı gerçek addır ve dokununca mekân profili açılır */
   sponsor_id?: string | null;
   /** Mekân hesabının profil resmi (Storage yolu); varsa avatarın yerine görünür */
   author_image?: string | null;
+  /** Profil resmi: yalnızca gerçek adı görünen (arkadaş) yazarda gelir */
+  author_photo?: string | null;
   /** Bu gönderide benden bahsedildi mi (beni etiketlediler mi)? */
   mentions_me?: boolean;
   /** Başka bir gönderiye cevap mı? */
@@ -82,6 +86,8 @@ export type Comment = {
   author_skin?: string | null;
   sponsor_id?: string | null;
   author_image?: string | null;
+  /** Profil resmi: yalnızca gerçek adı görünen (arkadaş) yazarda gelir */
+  author_photo?: string | null;
 };
 
 /** Ekranda yazının üstünde görünecek ad: arkadaşsa gerçek ad, değilse rumuz. */
