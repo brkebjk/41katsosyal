@@ -140,14 +140,29 @@ export async function recoverAccount(
   };
 }
 
-export type AppTextKey = 'legal_terms' | 'legal_consent' | 'legal_kvkk' | 'support_contact';
+export type AppTextKey =
+  | 'legal_terms'
+  | 'legal_consent'
+  | 'legal_kvkk'
+  | 'support_contact'
+  | 'legal_privacy'
+  | 'faq';
 
 export const APP_TEXT_TITLE: Record<AppTextKey, string> = {
   legal_terms: 'Kullanıcı sözleşmesi',
   legal_consent: 'Açık rıza metni',
   legal_kvkk: 'KVKK aydınlatma metni',
   support_contact: 'Bize ulaşın',
+  legal_privacy: 'Gizlilik politikası',
+  faq: 'Sıkça sorulan sorular',
 };
+
+/** Profil > Web sitesi düğmesinin adresi (sunucudaki website_url ayarı; boşsa null) */
+export async function getWebsiteUrl(): Promise<string | null> {
+  const { data } = await callRpc<string>('app_text', { p_key: 'website_url' });
+  const url = typeof data === 'string' ? data.trim() : '';
+  return /^https?:\/\//i.test(url) ? url : null;
+}
 
 /** Uygulama metni (giriş yapmadan da okunur). */
 export async function getAppText(key: AppTextKey): Promise<{ text: string | null; error: string | null }> {

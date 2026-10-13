@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Avatar } from '@/components/Avatar';
 import { ChatBubble } from '@/components/ChatBubble';
 import { FriendTag } from '@/components/FriendTag';
+import { ImageSlot } from '@/components/ImageSlot';
 import { SponsorMark } from '@/components/SponsorMark';
 import { skinColors } from '@/lib/bubbleSkins';
 import { router } from 'expo-router';
@@ -16,6 +17,7 @@ import { cellName } from '@/lib/cellNames';
 import { categoryInfo } from '@/lib/eventCategories';
 import { eventImageUrl } from '@/lib/eventImage';
 import { displayName, MENTION_RE, type Post, type Reaction } from '@/lib/feed';
+import { imageAspect } from '@/lib/images';
 import { formatWhen, timeAgo } from '@/lib/labels';
 import { anchorOf, type MenuAnchor } from '@/lib/menuAnchor';
 import { venueImageUrl } from '@/lib/venueImage';
@@ -146,6 +148,11 @@ export function PostCard({
       </Text>
       {post.author_name ? <FriendTag /> : null}
       <Text style={styles.time}>{timeAgo(post.created_at)}</Text>
+      {post.author_premium ? (
+        <View accessibilityLabel="Abone" testID="post-subscriber-badge">
+          <ImageSlot name="subscriptionBadge" style={styles.subBadge} />
+        </View>
+      ) : null}
     </>
   );
 
@@ -414,6 +421,7 @@ const styles = StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   who: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   alias: { flexShrink: 1, color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.sm },
+  subBadge: { height: 15, aspectRatio: imageAspect.subscriptionBadge },
   aliasSponsor: { color: colors.venue },
   time: { color: colors.textMuted, fontSize: 12 },
   menuBtn: { padding: spacing.xs },

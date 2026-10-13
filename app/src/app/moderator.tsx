@@ -12,6 +12,7 @@ import { Avatar } from '@/components/Avatar';
 import { MemberSheet } from '@/components/MemberSheet';
 import { ModMessagesTab } from '@/components/ModMessagesTab';
 import { ModThreadSheet } from '@/components/ModThreadSheet';
+import { ProblemReportsTab } from '@/components/ProblemReportsTab';
 import { QuizQuestionsTab } from '@/components/QuizQuestionsTab';
 import { NoteModal } from '@/components/NoteModal';
 import { PrimaryButton } from '@/components/PrimaryButton';
@@ -52,6 +53,7 @@ type Tab =
   | 'treasures'
   | 'cells'
   | 'messages'
+  | 'problems'
   | 'quiz'
   | 'members'
   | 'announce'
@@ -153,6 +155,7 @@ export default function ModeratorScreen() {
             { value: 'treasures', label: 'Hazineler', icon: 'search-circle', badge: notices.modTreasures },
             { value: 'cells', label: 'Petek adları', icon: 'grid', badge: notices.modCellCandidates },
             { value: 'messages', label: 'Mesajlar', icon: 'chatbubbles', badge: notices.modMessages },
+            { value: 'problems', label: 'Sorunlar', icon: 'bug', badge: 0 },
             { value: 'quiz', label: 'Yarışma', icon: 'help-circle', badge: 0 },
             { value: 'members', label: 'Üyeler', icon: 'people', badge: 0 },
             { value: 'announce', label: 'Duyuru', icon: 'megaphone', badge: 0 },
@@ -212,6 +215,8 @@ export default function ModeratorScreen() {
         <CellCandidatesTab onNotice={setNotice} />
       ) : tab === 'messages' ? (
         <ModMessagesTab onOpen={setThreadId} reloadKey={threadReload} />
+      ) : tab === 'problems' ? (
+        <ProblemReportsTab onNotice={setNotice} />
       ) : tab === 'quiz' ? (
         <QuizQuestionsTab onNotice={setNotice} />
       ) : tab === 'announce' ? (

@@ -6,7 +6,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "backgroundColor": "#071622",
     "ios": {
       "supportsTablet": false,
@@ -67,6 +67,12 @@
           "microphonePermission": false,
           "recordAudioAndroid": false,
           "enableBackgroundPlayback": false
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "41. Kat Sosyal, arkadaşını davet ederken rehberinden seçtiğin kişiye hazır davet mesajı göndermek için rehberine erişir. Rehberin sunucuya gönderilmez."
         }
       ]
     ],

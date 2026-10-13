@@ -4,6 +4,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { AppInfoButtons } from '@/components/AppInfoButtons';
 import { Avatar } from '@/components/Avatar';
 import { DeleteAccountSheet } from '@/components/DeleteAccountSheet';
 import { FriendsSheet } from '@/components/FriendsSheet';
@@ -16,7 +17,9 @@ import { ImageSlot } from '@/components/ImageSlot';
 import { NoticeBanner } from '@/components/NoticeBanner';
 import { ListRow, Meter, Panel } from '@/components/Panel';
 import { PointsProgressModal } from '@/components/PointsProgressModal';
+import { PreferencesPanel } from '@/components/PreferencesPanel';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { ProblemReportPopup } from '@/components/ProblemReportPopup';
 import { RealNameNotice } from '@/components/RealNameNotice';
 import { RecoveryPhraseSetup } from '@/components/RecoveryPhraseSetup';
 import { Screen } from '@/components/Screen';
@@ -99,6 +102,7 @@ function ProfileScreen() {
   const [codeOpen, setCodeOpen] = useState(false);
   const [quotaInfoOpen, setQuotaInfoOpen] = useState(false);
   const [pointsOpen, setPointsOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const notices = useNotices();
 
   // Seviye listesi ve hak sayıları bir kez okunur
@@ -295,8 +299,13 @@ function ProfileScreen() {
         <SponsorProfile fullName={profile.full_name} />
         <Panel>
           <ListRow icon="log-out-outline" title="Çıkış yap" onPress={() => void onSignOut()} />
+          <ListRow icon="bug" title="Bir Sorun Bildir" onPress={() => setReportOpen(true)} />
           <ListRow icon="trash-outline" tone="danger" title="Hesabımı sil" onPress={() => setOverlay('delete')} />
         </Panel>
+        <AppInfoButtons />
+        {reportOpen ? (
+          <ProblemReportPopup defaultName={profile.full_name} onClose={() => setReportOpen(false)} />
+        ) : null}
       </Screen>
     );
   }
@@ -527,9 +536,13 @@ function ProfileScreen() {
           {titles.map((t) => (
             <ListRow
               key={t.game_type}
-              icon="trophy"
+              icon={t.game_type === 'invite' ? 'ribbon' : 'trophy'}
               title={t.label}
-              subtitle={`Geçen ayın 1.’si · Son gün: ${lastDayBefore(t.valid_until)}`}
+              subtitle={
+                t.game_type === 'invite'
+                  ? 'Davet ödülü · kalıcı'
+                  : `Geçen ayın 1.’si · Son gün: ${lastDayBefore(t.valid_until)}`
+              }
             />
           ))}
         </Panel>
@@ -576,6 +589,12 @@ function ProfileScreen() {
           value={friends ? (friends.incoming.length > 0 ? 'Yanıtla' : String(friends.friends.length)) : undefined}
           onPress={() => setOverlay('friends')}
         />
+        <ListRow
+          icon="notifications"
+          title="Bildirim ve konum"
+          subtitle="Bildirim türlerini seç, telefon izinlerini gör"
+          onPress={() => setOverlay('notify')}
+        />
         {isModerator ? (
           <ListRow
             icon="shield-checkmark"
@@ -617,16 +636,10 @@ function ProfileScreen() {
         icon="person-circle"
         title="Hesabım"
         highlight
-        subtitle="Bildirimler, izinler, ad değişikliği, kurtarma kelimeleri, engellenenler, hesap silme"
+        subtitle="Kat Görevlisi mesajları, ad değişikliği, kurtarma kelimeleri, engellenenler, hesap silme"
         open={open === 'account'}
         onToggle={() => setOpen((o) => (o === 'account' ? null : 'account'))}
       >
-        <ListRow
-          icon="notifications"
-          title="Bildirim ve konum"
-          subtitle="Bildirim türlerini seç, telefon izinlerini gör"
-          onPress={() => setOverlay('notify')}
-        />
         <ListRow
           icon="shield-checkmark"
           title="Kat Görevlisi mesajlarım"
@@ -738,20 +751,45 @@ function ProfileScreen() {
         <ListRow icon="trash-outline" tone="danger" title="Hesabımı sil" onPress={() => setOverlay('delete')} />
       </Section>
 
+      {/* Hesabım'ın altında: kişisel veriler ve sorun bildirimi */}
+      <Panel>
+        <ListRow
+          icon="finger-print"
+          title="Kişisel Verilerim & Rapor"
+          subtitle="Kimlik bilgin, açık rızaların, sözleşmeler ve veri dosyan"
+          onPress={() => router.push('/verilerim')}
+        />
+      </Panel>
+      <Pressable
+        onPress={() => setReportOpen(true)}
+        accessibilityRole="button"
+        testID="profile-report-problem"
+        style={({ pressed }) => [styles.reportBtn, pressed && styles.pressed]}
+      >
+        <Ionicons name="bug" size={18} color={colors.highlight} />
+        <Text style={styles.reportText}>Bir Sorun Bildir</Text>
+        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+      </Pressable>
+
       {/* Uygulama (açılır) */}
       <Section
         icon="apps"
         title="Uygulama"
-        subtitle="Sözleşme, açık rıza, KVKK, yarışma kuralları, bize ulaşın"
+        subtitle="Sözleşme, gizlilik, KVKK, SSS, yarışma kuralları, bize ulaşın"
         open={open === 'app'}
         onToggle={() => setOpen((o) => (o === 'app' ? null : 'app'))}
       >
         <ListRow icon="document-text" title="Kullanıcı sözleşmesi" onPress={() => openText('legal_terms')} />
+        <ListRow icon="lock-closed" title="Gizlilik politikası" onPress={() => openText('legal_privacy')} />
+        <ListRow icon="help-buoy" title="Sıkça sorulan sorular (SSS)" onPress={() => openText('faq')} />
         <ListRow icon="checkmark-done" title="Açık rıza metni" onPress={() => openText('legal_consent')} />
         <ListRow icon="shield" title="KVKK aydınlatma metni" onPress={() => openText('legal_kvkk')} />
         <ListRow icon="trophy-outline" title="Yarışma kuralları" onPress={() => router.push('/kurallar')} />
         <ListRow icon="mail" title="Bize ulaşın" onPress={() => openText('support_contact')} />
       </Section>
+
+      {/* Tercihler (her zaman açık) */}
+      <PreferencesPanel canInvite={!isModerator} />
 
       {message ? (
         <Text style={[styles.message, message.error ? styles.messageError : styles.messageOk]}>{message.text}</Text>
@@ -768,6 +806,13 @@ function ProfileScreen() {
         <Ionicons name="log-out-outline" size={18} color="#FFFFFF" />
         <Text style={styles.signOutText}>Çıkış yap</Text>
       </Pressable>
+
+      {/* En altta: web sitesi ve sürüm bilgisi */}
+      <AppInfoButtons />
+
+      {reportOpen ? (
+        <ProblemReportPopup defaultName={profile.full_name} onClose={() => setReportOpen(false)} />
+      ) : null}
 
       <PointsProgressModal
         visible={pointsOpen}
@@ -877,6 +922,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#E5303F',
   },
   signOutText: { color: '#FFFFFF', fontFamily: fonts.extra, fontSize: fontSizes.sm },
+  reportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    minHeight: 52,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 200, 61, 0.45)',
+    backgroundColor: colors.surface,
+  },
+  reportText: { flex: 1, color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },
   ring: {
     padding: 4,
     borderRadius: 60,

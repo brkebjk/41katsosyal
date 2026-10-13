@@ -80,6 +80,24 @@ export function cellName(cell: Cell | { q: number; r: number }): string {
   return overrides.get(`${cell.q},${cell.r}`) ?? generatedCellName(cell.q, cell.r) ?? 'adsız-petek';
 }
 
+/** Peteğin özel (moderatörün ya da bir üyenin verdiği) adı var mı? */
+export function hasCustomCellName(q: number, r: number): boolean {
+  return overrides.has(`${q},${r}`);
+}
+
+let generatedNames: Set<string> | null = null;
+/** Bu ad herhangi bir petekte (özel ya da üretilen ad olarak) kullanılıyor mu? */
+export function cellNameInUse(name: string): boolean {
+  if (!generatedNames) {
+    generatedNames = new Set();
+    for (const c of LAND_CELLS) {
+      const n = generatedCellName(c.q, c.r);
+      if (n) generatedNames.add(n);
+    }
+  }
+  return generatedNames.has(name) || [...overrides.values()].includes(name);
+}
+
 export const CELL_NAME_RE = /^[a-zçğıöşüâîû0-9]+(-[a-zçğıöşüâîû0-9]+)*$/;
 
 /** Yazılan adı biçime sokar: küçük harf, boşluklar tire. */

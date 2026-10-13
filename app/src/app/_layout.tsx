@@ -15,7 +15,7 @@ import { RecoveryPhraseSetup } from '@/components/RecoveryPhraseSetup';
 import { TopToastHost } from '@/components/TopToastHost';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { leaveLiveGames } from '@/lib/presence';
-import { colors } from '@/theme';
+import { colors, isLight } from '@/theme';
 
 export default function RootLayout() {
   // Marka yazı tipi yüklenirken kısa bir bekleme; yüklenemese bile uygulama açılır.
@@ -30,7 +30,7 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="light" />
+      <StatusBar style={isLight ? 'dark' : 'light'} />
       <AuthProvider>
         <RootNavigator />
       </AuthProvider>
@@ -70,6 +70,8 @@ function RootNavigator() {
           <Stack.Screen name="siralama" />
           <Stack.Screen name="oduller" />
           <Stack.Screen name="hazine" />
+          <Stack.Screen name="davet" />
+          <Stack.Screen name="verilerim" />
           {/* Bilgi Yarışması: başlangıçta kapalı; ekran, hiçbir moda girilmemişken kaydırarak geri dönmeyi kendisi açar */}
           <Stack.Screen name="bilgi" options={{ gestureEnabled: false }} />
         </Stack.Protected>

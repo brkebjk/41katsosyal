@@ -18,6 +18,7 @@ export default function RegisterScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [accepted, setAccepted] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const usernameRef = useRef<TextInput>(null);
@@ -36,7 +37,7 @@ export default function RegisterScreen() {
 
     setError(null);
     setSubmitting(true);
-    const result = await signUp(name, user, password);
+    const result = await signUp(name, user, password, inviteCode);
     setSubmitting(false);
     if (result.error) setError(result.error);
     // Başarılıysa uygulama kendiliğinden açılır ve önce kurtarma kelimeleri gösterilir.
@@ -103,6 +104,17 @@ export default function RegisterScreen() {
         returnKeyType="go"
         maxLength={72}
         onSubmitEditing={onSubmit}
+      />
+      <TextField
+        label="Davet kodu (isteğe bağlı)"
+        icon="gift-outline"
+        value={inviteCode}
+        onChangeText={(t) => setInviteCode(t.replace(/\s/g, '').toUpperCase())}
+        placeholder="Seni davet eden arkadaşının kodu"
+        autoCapitalize="characters"
+        autoCorrect={false}
+        maxLength={10}
+        help="Seni bir arkadaşın davet ettiyse kodunu yaz. Sen puan kazandıkça arkadaşın ödül kazanır. Şimdi yazmazsan kayıttan sonraki 7 gün içinde Profil > Arkadaşlarını davet et ekranından da girebilirsin."
       />
       <View style={styles.infoBox}>
         <Ionicons name="key-outline" size={18} color={colors.primary} />

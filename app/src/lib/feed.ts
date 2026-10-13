@@ -33,6 +33,8 @@ export type Post = {
   place_district: string | null;
   /** Yazarın seçtiği balon rengi (anahtar); sunucu henüz güncellenmediyse gelmeyebilir */
   author_skin?: string | null;
+  /** Yazar şu an abone mi (saatin yanında küçük abone rozeti); sunucu güncellenmediyse gelmeyebilir */
+  author_premium?: boolean;
   /** Gönderiyi bir sponsor (mekân) hesabı yazdıysa kimliği; adı gerçek addır ve dokununca mekân profili açılır */
   sponsor_id?: string | null;
   /** Mekân hesabının profil resmi (Storage yolu); varsa avatarın yerine görünür */

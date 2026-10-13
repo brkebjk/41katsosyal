@@ -1190,6 +1190,77 @@ create table if not exists public.notification_prefs (
 alter table public.notification_prefs enable row level security;
 revoke all on public.notification_prefs from anon, authenticated;
 
+-- ---------------------------------------------------------------------
+-- Profil 4: sorun bildirimi, açık rızalar, davet sistemi
+-- ---------------------------------------------------------------------
+-- Sorun bildirimleri (Profil > Bir Sorun Bildir). Tablo doğrudan okunamaz; yalnızca sunucu fonksiyonları kullanır.
+create table if not exists public.problem_reports (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references public.profiles (id) on delete set null,
+  category text not null check (category in ('bug', 'account', 'points', 'event', 'game', 'map', 'subscription',
+                                             'abuse', 'suggestion', 'other')),
+  message text not null check (char_length(btrim(message)) between 10 and 2000),
+  contact_name text check (contact_name is null or char_length(contact_name) <= 80),
+  contact_email text check (contact_email is null or char_length(contact_email) <= 120),
+  contact_phone text check (contact_phone is null or char_length(contact_phone) <= 30),
+  app_version text check (app_version is null or char_length(app_version) <= 40),
+  platform text check (platform is null or char_length(platform) <= 20),
+  status text not null default 'open' check (status in ('open', 'closed')),
+  created_at timestamptz not null default now(),
+  closed_at timestamptz,
+  closed_by uuid references public.profiles (id) on delete set null
+);
+create index if not exists problem_reports_status_idx on public.problem_reports (status, created_at desc);
+create index if not exists problem_reports_user_idx on public.problem_reports (user_id, created_at desc);
+alter table public.problem_reports enable row level security;
+revoke all on public.problem_reports from anon, authenticated;
+
+-- Açık rızalar (Profil > Kişisel Verilerim). Satır yoksa rıza kayıtta verilmiş sayılır (kayıtta açık rıza metni kabul
+-- edilir); üye istediği an kapatıp açabilir. marketing: kampanya / özel etkinlik bildirimleri.
+-- map_density: oyun, etkinlik, gönderi ve petek bildirimlerinde bulunduğu peteğin haritadaki anonim yoğunluğa sayılması.
+create table if not exists public.user_consents (
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  key text not null check (key in ('marketing', 'map_density')),
+  granted boolean not null,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, key)
+);
+alter table public.user_consents enable row level security;
+revoke all on public.user_consents from anon, authenticated;
+
+-- Davet sistemi. Her üyenin değiştirilemeyen bir davet kodu vardır (ilk istendiğinde üretilir).
+-- Davet edilen kişi kodla kayıt olur (ya da kayıttan sonraki 7 gün içinde kodu girer); kod girildikten sonraki
+-- invite_reward_days (30) gün içinde toplam puanı invite_reward_points'e (100) ulaşırsa davet edene 1 davet puanı yazılır.
+-- Davet puanı = ödüllenen davet sayısı − harcanan; ayrı bir bakiye tutulmaz (çifte harcama olmaz).
+alter table public.profiles add column if not exists invite_code text;
+create unique index if not exists profiles_invite_code_idx on public.profiles (invite_code) where invite_code is not null;
+create table if not exists public.referrals (
+  id uuid primary key default gen_random_uuid(),
+  inviter_id uuid not null references public.profiles (id) on delete cascade,
+  invitee_id uuid references public.profiles (id) on delete set null,
+  created_at timestamptz not null default now(),
+  rewarded_at timestamptz,
+  check (invitee_id is null or invitee_id <> inviter_id)
+);
+create unique index if not exists referrals_invitee_idx on public.referrals (invitee_id) where invitee_id is not null;
+create index if not exists referrals_inviter_idx on public.referrals (inviter_id);
+alter table public.referrals enable row level security;
+revoke all on public.referrals from anon, authenticated;
+
+-- Davet puanıyla alınan öğeler: her biri hesap başına bir kez.
+--   cell_name: bir peteğe ad verme hakkı (tek kullanımlık) · premium_month: 1 aylık abonelik · title: "Elçi" unvanı
+create table if not exists public.invite_purchases (
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  item text not null check (item in ('cell_name', 'premium_month', 'title')),
+  cost int not null check (cost >= 0),
+  created_at timestamptz not null default now(),
+  used_at timestamptz,
+  used_detail jsonb,
+  primary key (user_id, item)
+);
+alter table public.invite_purchases enable row level security;
+revoke all on public.invite_purchases from anon, authenticated;
+
 -- Duyuru türü: 'general' (moderatör duyurusu, herkese), 'special_event' (41. Kat Özel etkinlik), 'treasure' (yeni hazine).
 -- Özel etkinlik ve hazine duyuruları, “Özel etkinlikler ve hazineler” tercihi kapalı üyede görünmez.
 alter table public.announcements add column if not exists kind text not null default 'general';
@@ -1237,7 +1308,10 @@ returns boolean language sql stable security definer set search_path = public as
                             when 'mention' then np.mention
                             when 'event_reminder' then np.event_reminder
                           end
-                     from public.notification_prefs np where np.user_id = p_user), true);
+                     from public.notification_prefs np where np.user_id = p_user), true)
+     -- Kampanya / özel etkinlik bildirimleri için açık rıza da gerekir (Profil > Kişisel Verilerim)
+     and (p_key <> 'special_events'
+          or coalesce((select c.granted from public.user_consents c where c.user_id = p_user and c.key = 'marketing'), true));
 $$;
 
 -- ---------------------------------------------------------------------
@@ -1842,7 +1916,7 @@ language sql stable security definer set search_path = public as $$
        and l.created_at < ((m.ls + interval '1 month') at time zone 'Europe/Istanbul')
      group by l.game_type, l.user_id
   )
-  select distinct on (a.game_type)
+  (select distinct on (a.game_type)
          a.user_id, a.game_type, (gt.title || ' Şampiyonu')::text, gt.sort_order,
          ((date_trunc('month', now() at time zone 'Europe/Istanbul') + interval '1 month') at time zone 'Europe/Istanbul'),
          a.score, a.plays
@@ -1852,7 +1926,13 @@ language sql stable security definer set search_path = public as $$
    where a.game_type <> 'raffle' and a.score > 0
      and a.plays >= greatest(1, public.setting_int('title_min_plays', 5))
      and public.setting_bool('titles_enabled')
-   order by a.game_type, a.score desc, a.wins desc, a.last_at asc, a.user_id;
+   order by a.game_type, a.score desc, a.wins desc, a.last_at asc, a.user_id)
+  union all
+  -- Davet mağazasından alınan kalıcı "Elçi" unvanı (game_type 'invite'; oyun sıralamalarında görünmez)
+  select ip.user_id, 'invite'::text, 'Elçi'::text, 1000, timestamptz '2100-01-01 00:00:00+03', 0::numeric, 0
+    from public.invite_purchases ip
+    join public.profiles p on p.id = ip.user_id and p.banned_at is null and p.role = 'user'
+   where ip.item = 'title';
 $$;
 
 -- Birden çok ünvanı kısa metne çevirir: "Tabu Şampiyonu" ya da "Tabu Şampiyonu +1"
@@ -2074,6 +2154,7 @@ declare
   v_username text;
   v_device text;
   v_hash text;
+  v_invite text;
 begin
   v_name := btrim(regexp_replace(coalesce(new.raw_user_meta_data ->> 'full_name', ''), '\s+', ' ', 'g'));
   if char_length(v_name) not between 2 and 60 then raise exception 'invalid_name'; end if;
@@ -2098,6 +2179,14 @@ begin
   values (new.id, v_name, v_id.o_alias, v_id.o_avatar, v_username);
   insert into public.device_accounts (device_hash, user_id) values (v_hash, new.id)
   on conflict (device_hash) do nothing;
+  -- Davet kodu (isteğe bağlı): geçerliyse davet kaydı açılır; geçersizse kayıt yine olur, yalnızca davet sayılmaz
+  v_invite := upper(btrim(coalesce(new.raw_user_meta_data ->> 'invite_code', '')));
+  if v_invite <> '' then
+    insert into public.referrals (inviter_id, invitee_id)
+    select p.id, new.id from public.profiles p
+     where p.invite_code = v_invite and p.banned_at is null and p.id <> new.id
+    on conflict do nothing;
+  end if;
   return new;
 end $$;
 
@@ -2121,6 +2210,8 @@ begin
      set level_rewarded = greatest(level_rewarded,
            coalesce((select max(l.level) from public.levels l where l.min_points <= v_points), 1))
    where id = new.user_id;
+  -- Davet ödülü: davet edilen kişi süresi içinde eşik puana ulaştıysa davet edene 1 davet puanı
+  if new.amount > 0 then perform public._invite_check_reward(new.user_id); end if;
   return new;
 end $$;
 
@@ -3981,7 +4072,7 @@ returns table (
   laugh_count int, plus_count int, minus_count int, my_reaction text,
   event_id uuid, event_title text, event_starts_at timestamptz, event_location text, event_category text,
   event_official boolean, event_image text, cell_q int, cell_r int, place_q int, place_r int,
-  thread jsonb
+  thread jsonb, author_premium boolean
 )
 language sql stable security definer set search_path = public as $$
   select p.id, p.alias, p.avatar_index, p.body, p.like_count, p.comment_count, p.is_hidden, p.created_at,
@@ -4014,7 +4105,11 @@ language sql stable security definer set search_path = public as $$
          -- Zincir: devam parçaları sırayla (gizlenen parça yalnızca moderatöre)
          (select coalesce(jsonb_agg(jsonb_build_object('id', t.id, 'body', t.body, 'at', t.created_at,
                                                        'hidden', t.is_hidden) order by t.thread_no), '[]'::jsonb)
-            from public.posts t where t.thread_root = p.id and (public.is_admin() or not t.is_hidden))
+            from public.posts t where t.thread_root = p.id and (public.is_admin() or not t.is_hidden)),
+         -- Yazar şu an abone mi (akışta saatin yanında küçük abone rozeti; kim olduğu anlaşılmaz)
+         coalesce((select pr.premium_until is not null and pr.premium_until > now()
+                     from public.post_authors a join public.profiles pr on pr.id = a.author_id
+                    where a.post_id = p.id and pr.role = 'user' and not p.by_event and not p.by_sponsor), false)
     from public.posts p
     left join public.events e on e.id = p.event_id
    where public._is_active_user()
@@ -6884,7 +6979,8 @@ $$;
 create or replace function public.app_text(p_key text)
 returns text language sql stable security definer set search_path = public as $$
   select s.value #>> '{}' from public.app_settings s
-   where s.key = p_key and p_key in ('legal_terms', 'legal_consent', 'legal_kvkk', 'support_contact');
+   where s.key = p_key and p_key in ('legal_terms', 'legal_consent', 'legal_kvkk', 'support_contact', 'legal_privacy',
+                                     'faq', 'website_url');
 $$;
 
 -- Kayıt öncesi kontrol (giriş yapmadan çağrılır): kullanıcı adı uygun mu, bu cihazdan daha önce hesap açılmış mı?
@@ -13594,6 +13690,453 @@ create policy admin_audit_log_select on public.admin_audit_log for select to aut
 -- 9) Yetkiler (giriş yapmamış kişi hiçbir şeye erişemez)
 -- ---------------------------------------------------------------------
 
+
+-- ---------------------------------------------------------------------
+-- Profil 4: sorun bildirimi, açık rızalar, kişisel veri dosyası, davet sistemi
+-- ---------------------------------------------------------------------
+
+-- Harita yoğunluğu rızası kapalıysa üyenin harita sinyali (oyun, etkinlik, gönderi, petek bildirimi) hiç yazılmaz
+create or replace function public._map_signal_consent()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if exists (select 1 from public.user_consents c
+              where c.user_id = new.user_id and c.key = 'map_density' and not c.granted) then
+    return null;
+  end if;
+  return new;
+end $$;
+drop trigger if exists map_signals_consent on public.map_signals;
+create trigger map_signals_consent before insert on public.map_signals
+  for each row execute function public._map_signal_consent();
+
+-- Sorun bildir. Günde en çok 5 bildirim. Moderatörlere bildirim gider.
+create or replace function public.submit_problem_report(p_category text, p_message text, p_name text default null,
+                                                        p_email text default null, p_phone text default null,
+                                                        p_version text default null, p_platform text default null)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_id uuid;
+  v_msg text := btrim(coalesce(p_message, ''));
+  v_email text := nullif(btrim(coalesce(p_email, '')), '');
+  v_phone text := nullif(btrim(coalesce(p_phone, '')), '');
+  v_label text;
+  a record;
+begin
+  v := public._require_user();
+  if p_category is null or p_category not in ('bug', 'account', 'points', 'event', 'game', 'map', 'subscription',
+                                               'abuse', 'suggestion', 'other') then
+    raise exception 'invalid_category';
+  end if;
+  if char_length(v_msg) not between 10 and 2000 then raise exception 'invalid_body'; end if;
+  if v_email is not null and (char_length(v_email) > 120 or v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$') then
+    raise exception 'invalid_email';
+  end if;
+  if v_phone is not null and (char_length(v_phone) > 30 or v_phone !~ '^\+?[0-9 ()-]{7,}$') then
+    raise exception 'invalid_phone';
+  end if;
+  if (select count(*) from public.problem_reports where user_id = v.id and created_at > now() - interval '1 day') >= 5 then
+    raise exception 'rate_limited';
+  end if;
+  insert into public.problem_reports (user_id, category, message, contact_name, contact_email, contact_phone,
+                                      app_version, platform)
+  values (v.id, p_category, v_msg, nullif(left(btrim(coalesce(p_name, '')), 80), ''), v_email, v_phone,
+          nullif(left(btrim(coalesce(p_version, '')), 40), ''), nullif(left(btrim(coalesce(p_platform, '')), 20), ''))
+  returning id into v_id;
+  v_label := case p_category when 'bug' then 'Uygulama hatası' when 'account' then 'Hesap ve giriş'
+                             when 'points' then 'Puan ve sıralama' when 'event' then 'Etkinlik'
+                             when 'game' then 'Oyunlar' when 'map' then 'Harita ve konum'
+                             when 'subscription' then 'Abonelik' when 'abuse' then 'Kötüye kullanım'
+                             when 'suggestion' then 'Öneri' else 'Diğer' end;
+  for a in select id from public.profiles where role = 'admin' and banned_at is null loop
+    perform public._notify(a.id, 'system', 'Yeni sorun bildirimi: ' || v_label,
+      left(v_msg, 200) || case when char_length(v_msg) > 200 then '…' else '' end,
+      jsonb_build_object('problem_report_id', v_id));
+  end loop;
+  return v_id;
+end $$;
+
+-- Moderatör: sorun bildirimleri (açık / kapalı)
+drop function if exists public.admin_list_problem_reports(text);
+create or replace function public.admin_list_problem_reports(p_status text default 'open')
+returns table (id uuid, category text, message text, contact_name text, contact_email text, contact_phone text,
+               app_version text, platform text, status text, created_at timestamptz, user_id uuid,
+               user_full_name text, user_alias text)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform public._require_admin();
+  return query
+    select r.id, r.category, r.message, r.contact_name, r.contact_email, r.contact_phone, r.app_version, r.platform,
+           r.status, r.created_at, r.user_id, p.full_name, p.alias
+      from public.problem_reports r
+      left join public.profiles p on p.id = r.user_id
+     where r.status = case when p_status = 'closed' then 'closed' else 'open' end
+     order by r.created_at desc
+     limit 200;
+end $$;
+
+create or replace function public.admin_close_problem_report(p_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform public._require_admin();
+  update public.problem_reports set status = 'closed', closed_at = now(), closed_by = auth.uid()
+   where id = p_id and status = 'open';
+  if not found then raise exception 'not_found'; end if;
+  perform public._audit('close_problem_report', null, jsonb_build_object('report_id', p_id));
+end $$;
+
+-- Kişisel verilerim: kimlik, kayıt tarihi ve açık rızalar
+create or replace function public.my_privacy()
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare v public.profiles;
+begin
+  v := public._require_user();
+  return jsonb_build_object(
+    'user_id', v.id,
+    'created_at', v.created_at,
+    'consents', jsonb_build_object(
+      'marketing', coalesce((select c.granted from public.user_consents c where c.user_id = v.id and c.key = 'marketing'), true),
+      'map_density', coalesce((select c.granted from public.user_consents c where c.user_id = v.id and c.key = 'map_density'), true)));
+end $$;
+
+create or replace function public.set_consent(p_key text, p_granted boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare v public.profiles;
+begin
+  v := public._require_user();
+  if p_key is null or p_key not in ('marketing', 'map_density') or p_granted is null then raise exception 'invalid_consent'; end if;
+  insert into public.user_consents (user_id, key, granted, updated_at) values (v.id, p_key, p_granted, now())
+  on conflict (user_id, key) do update set granted = excluded.granted, updated_at = now();
+end $$;
+
+-- Resmi veri dosyası (KVKK md. 11): üyenin kendisine ait kayıtları tek bir JSON olarak. Her listede en yeni 1000 kayıt.
+-- Başka üyelerin kimliği (gerçek ad / kullanıcı adı) dosyaya yazılmaz; yalnızca arkadaşlarının o anki rumuzu yazılır.
+create or replace function public.my_data_export()
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare v public.profiles;
+begin
+  v := public._require_user();
+  return jsonb_build_object(
+    'format', '41kat-veri-dosyasi-v1',
+    'olusturulma', now(),
+    'hesap', jsonb_build_object(
+      'kullanici_kimligi', v.id, 'gercek_ad', v.full_name, 'kullanici_adi', v.username, 'rumuz', v.alias,
+      'avatar', v.avatar_index, 'rol', v.role, 'kayit_tarihi', v.created_at, 'toplam_puan', v.points,
+      'seviye', public._user_level(v.id), 'abonelik_bitis', v.premium_until, 'abonelik_kaynagi', v.premium_source,
+      'arkadas_kodu', v.friend_code, 'davet_kodu', v.invite_code, 'susturma_bitis', v.muted_until),
+    'acik_rizalar', (public.my_privacy()) -> 'consents',
+    'kabul_edilen_sozlesmeler', jsonb_build_array(
+      jsonb_build_object('metin', 'Kullanıcı sözleşmesi', 'kabul', v.created_at),
+      jsonb_build_object('metin', 'KVKK aydınlatma metni', 'kabul', v.created_at),
+      jsonb_build_object('metin', 'Açık rıza metni', 'kabul', v.created_at)),
+    'bildirim_tercihleri', (select to_jsonb(np) - 'user_id' from public.notification_prefs np where np.user_id = v.id),
+    'gonderiler', coalesce((select jsonb_agg(x order by x.created_at desc) from (
+        select p.id, p.body, p.created_at, p.like_count, p.comment_count, p.is_hidden
+          from public.posts p join public.post_authors pa on pa.post_id = p.id
+         where pa.author_id = v.id order by p.created_at desc limit 1000) x), '[]'::jsonb),
+    'yorumlar', coalesce((select jsonb_agg(x order by x.created_at desc) from (
+        select c.id, c.post_id, c.body, c.created_at, c.is_hidden
+          from public.comments c join public.comment_authors ca on ca.comment_id = c.id
+         where ca.author_id = v.id order by c.created_at desc limit 1000) x), '[]'::jsonb),
+    'gonderdigim_ozel_mesajlar', coalesce((select jsonb_agg(x order by x.created_at desc) from (
+        select m.thread_id, m.body, m.created_at from public.dm_messages m
+         where m.sender_id = v.id order by m.created_at desc limit 1000) x), '[]'::jsonb),
+    'actigim_etkinlikler', coalesce((select jsonb_agg(x order by x.created_at desc) from (
+        select e.id, e.title, e.description, e.location, e.starts_at, e.capacity, e.is_cancelled, e.created_at
+          from public.events e where e.created_by = v.id order by e.created_at desc limit 1000) x), '[]'::jsonb),
+    'etkinlik_kayitlarim', coalesce((select jsonb_agg(x order by x.created_at desc) from (
+        select r.event_id, e.title, e.starts_at, r.created_at, r.checked_in_at
+          from public.event_registrations r join public.events e on e.id = r.event_id
+         where r.user_id = v.id order by r.created_at desc limit 1000) x), '[]'::jsonb),
+    'puan_gecmisi', coalesce((select jsonb_agg(x order by x.created_at desc) from (
+        select pe.amount, pe.reason, pe.source, pe.created_at from public.point_events pe
+         where pe.user_id = v.id order by pe.created_at desc limit 1000) x), '[]'::jsonb),
+    'oyunlar', coalesce((select jsonb_agg(x order by x.created_at desc) from (
+        select g.game_type, g.points, g.won, g.created_at from public.game_play_log g
+         where g.user_id = v.id order by g.created_at desc limit 1000) x), '[]'::jsonb),
+    'arkadasliklar', coalesce((select jsonb_agg(x order by x.created_at desc) from (
+        select f.status, f.created_at, f.responded_at,
+               case when f.requester_id = v.id then 'gonderdim' else 'aldim' end as yon,
+               case when f.requester_id = v.id then f.addressee_alias else f.requester_alias end as karsi_taraf_rumuz
+          from public.friendships f where f.requester_id = v.id or f.addressee_id = v.id
+         order by f.created_at desc limit 1000) x), '[]'::jsonb),
+    'davetler', jsonb_build_object(
+      'davet_ettiklerim', (select count(*) from public.referrals where inviter_id = v.id),
+      'odullenen', (select count(*) from public.referrals where inviter_id = v.id and rewarded_at is not null),
+      'satin_alinan_ogeler', coalesce((select jsonb_agg(jsonb_build_object('oge', ip.item, 'bedel', ip.cost,
+                                         'alinma', ip.created_at, 'kullanilma', ip.used_at))
+                                         from public.invite_purchases ip where ip.user_id = v.id), '[]'::jsonb)),
+    'sorun_bildirimlerim', coalesce((select jsonb_agg(x order by x.created_at desc) from (
+        select r.category, r.message, r.contact_name, r.contact_email, r.contact_phone, r.status, r.created_at
+          from public.problem_reports r where r.user_id = v.id order by r.created_at desc limit 1000) x), '[]'::jsonb),
+    'bildirimler', coalesce((select jsonb_agg(x order by x.created_at desc) from (
+        select n.kind, n.title, n.body, n.created_at, n.read_at from public.notifications n
+         where n.user_id = v.id order by n.created_at desc limit 1000) x), '[]'::jsonb)
+  );
+end $$;
+
+-- Davet puanı: ödüllenen davetler − harcanan
+create or replace function public._invite_balance(p_user uuid)
+returns int language sql stable security definer set search_path = public as $$
+  select (select count(*)::int from public.referrals where inviter_id = p_user and rewarded_at is not null)
+       - (select coalesce(sum(cost), 0)::int from public.invite_purchases where user_id = p_user);
+$$;
+
+create or replace function public._invite_cost(p_item text)
+returns int language sql stable security definer set search_path = public as $$
+  select greatest(0, case p_item when 'cell_name' then public.setting_int('invite_cost_cell_name', 2)
+                                 when 'premium_month' then public.setting_int('invite_cost_premium', 3)
+                                 when 'title' then public.setting_int('invite_cost_title', 1) end);
+$$;
+
+-- Davet edilen kişi puan kazandıkça: süre içinde eşiğe ulaştıysa davet edene 1 davet puanı (bir kez)
+create or replace function public._invite_check_reward(p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_pts numeric;
+  v_inviter uuid;
+begin
+  select points into v_pts from public.profiles where id = p_user and banned_at is null;
+  if v_pts is null or v_pts < greatest(1, public.setting_int('invite_reward_points', 100)) then return; end if;
+  update public.referrals set rewarded_at = now()
+   where invitee_id = p_user and rewarded_at is null
+     and created_at > now() - make_interval(days => greatest(1, public.setting_int('invite_reward_days', 30)))
+  returning inviter_id into v_inviter;
+  if v_inviter is not null then
+    perform public._notify(v_inviter, 'system', 'Davet puanı kazandın!',
+      'Davet ettiğin bir arkadaşın ' || public.setting_int('invite_reward_points', 100)
+        || ' puana ulaştı. 1 davet puanı hesabına eklendi.', jsonb_build_object('invite', true));
+  end if;
+end $$;
+
+-- Davet durumum: kod (yoksa üretilir), puanlar ve öğeler
+create or replace function public.my_invite()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_code text;
+  v_tries int := 0;
+begin
+  v := public._require_user();
+  if v.role::text <> 'user' then raise exception 'forbidden'; end if;
+  v_code := v.invite_code;
+  while v_code is null loop
+    v_tries := v_tries + 1;
+    if v_tries > 10 then raise exception 'code_generation_failed'; end if;
+    begin
+      update public.profiles set invite_code = public._random_code(7) where id = v.id and invite_code is null;
+      select invite_code into v_code from public.profiles where id = v.id;
+    exception when unique_violation then
+      v_code := null;
+    end;
+  end loop;
+  return jsonb_build_object(
+    'code', v_code,
+    'invited', (select count(*) from public.referrals where inviter_id = v.id),
+    'earned', (select count(*) from public.referrals where inviter_id = v.id and rewarded_at is not null),
+    'pending', (select count(*) from public.referrals where inviter_id = v.id and rewarded_at is null
+                  and invitee_id is not null
+                  and created_at > now() - make_interval(days => greatest(1, public.setting_int('invite_reward_days', 30)))),
+    'balance', public._invite_balance(v.id),
+    'reward_points', greatest(1, public.setting_int('invite_reward_points', 100)),
+    'reward_days', greatest(1, public.setting_int('invite_reward_days', 30)),
+    'can_redeem', v.created_at > now() - interval '7 days'
+                  and not exists (select 1 from public.referrals where invitee_id = v.id),
+    'download_url', coalesce((select s.value #>> '{}' from public.app_settings s where s.key = 'app_download_url'), ''),
+    'items', (select jsonb_agg(jsonb_build_object(
+                'item', i.item, 'cost', public._invite_cost(i.item),
+                'owned', ip.user_id is not null, 'used', ip.used_at is not null, 'detail', ip.used_detail)
+                order by i.ord)
+                from (values ('cell_name', 1), ('premium_month', 2), ('title', 3)) as i(item, ord)
+                left join public.invite_purchases ip on ip.user_id = v.id and ip.item = i.item));
+end $$;
+
+-- Kayıttan sonra davet kodu girme (yalnızca kayıttan sonraki 7 gün içinde ve bir kez)
+create or replace function public.redeem_invite_code(p_code text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_inviter uuid;
+begin
+  v := public._require_user();
+  if v.role::text <> 'user' then raise exception 'forbidden'; end if;
+  perform pg_advisory_xact_lock(hashtext('invite:' || v.id::text));
+  if v.created_at <= now() - interval '7 days' then raise exception 'invite_too_late'; end if;
+  if exists (select 1 from public.referrals where invitee_id = v.id) then raise exception 'invite_already_used'; end if;
+  select p.id into v_inviter from public.profiles p
+   where p.invite_code = upper(btrim(coalesce(p_code, ''))) and p.banned_at is null and p.id <> v.id;
+  -- Karşılıklı davet olmaz: davet ettiğin kişi seni davet etmiş sayılamaz
+  if v_inviter is null
+     or exists (select 1 from public.referrals where inviter_id = v.id and invitee_id = v_inviter) then
+    raise exception 'invite_not_found';
+  end if;
+  insert into public.referrals (inviter_id, invitee_id) values (v_inviter, v.id);
+  perform public._invite_check_reward(v.id);
+end $$;
+
+-- Davet puanıyla öğe al (her öğe hesap başına bir kez)
+create or replace function public.invite_buy(p_item text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_cost int;
+  v_until timestamptz;
+begin
+  v := public._require_user();
+  if v.role::text <> 'user' then raise exception 'forbidden'; end if;
+  if p_item is null or p_item not in ('cell_name', 'premium_month', 'title') then raise exception 'invalid_item'; end if;
+  perform pg_advisory_xact_lock(hashtext('invite:' || v.id::text));
+  if exists (select 1 from public.invite_purchases where user_id = v.id and item = p_item) then
+    raise exception 'already_bought';
+  end if;
+  v_cost := public._invite_cost(p_item);
+  if public._invite_balance(v.id) < v_cost then raise exception 'not_enough_invite_points'; end if;
+  insert into public.invite_purchases (user_id, item, cost) values (v.id, p_item, v_cost);
+  if p_item = 'premium_month' then
+    update public.profiles
+       set premium_until = greatest(coalesce(premium_until, now()), now()) + interval '1 month',
+           premium_source = 'achievement'
+     where id = v.id
+     returning premium_until into v_until;
+    perform public._notify(v.id, 'system', '1 aylık abonelik tanımlandı',
+      'Davet puanınla aldığın 1 aylık abonelik hesabına eklendi. Bitiş: '
+        || to_char(v_until at time zone 'Europe/Istanbul', 'DD.MM.YYYY'), '{}'::jsonb);
+  end if;
+end $$;
+
+-- Petek adı verme hakkını kullan: daha önce ad verilmemiş (moderatör ya da başka üye) bir karaya ad verilir.
+create or replace function public.invite_use_cell_name(p_q int, p_r int, p_name text)
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  pur public.invite_purchases;
+  v_name text := lower(btrim(regexp_replace(coalesce(p_name, ''), '\s+', '-', 'g')));
+begin
+  v := public._require_user();
+  perform pg_advisory_xact_lock(hashtext('invite:' || v.id::text));
+  select * into pur from public.invite_purchases where user_id = v.id and item = 'cell_name' for update;
+  if not found then raise exception 'item_not_owned'; end if;
+  if pur.used_at is not null then raise exception 'item_used'; end if;
+  if p_q is null or p_r is null or not public._map_cell_ok(p_q, p_r) then raise exception 'invalid_cell'; end if;
+  if exists (select 1 from public.map_cell_names where q = p_q and r = p_r) then raise exception 'cell_already_named'; end if;
+  if char_length(v_name) not between 3 and 40
+     or v_name !~ '^[a-zçğıöşüâîû0-9]+(-[a-zçğıöşüâîû0-9]+)*$'
+     or public._is_reserved_name(v_name)
+     or public._has_contact_info(replace(v_name, '-', ' '))
+     or public._mask_profanity(replace(v_name, '-', ' ')) <> replace(v_name, '-', ' ') then
+    raise exception 'invalid_cell_name';
+  end if;
+  if exists (select 1 from public.map_cell_names where name = v_name) then raise exception 'cell_name_taken'; end if;
+  insert into public.map_cell_names (q, r, name, updated_by) values (p_q, p_r, v_name, v.id);
+  update public.invite_purchases
+     set used_at = now(), used_detail = jsonb_build_object('q', p_q, 'r', p_r, 'name', v_name)
+   where user_id = v.id and item = 'cell_name';
+  return v_name;
+end $$;
+
+insert into public.app_settings (key, value, description) values
+  ('invite_reward_points', '100', 'Davet: davet edilen kişinin, davet edene 1 davet puanı kazandırması için ulaşması gereken toplam puan'),
+  ('invite_reward_days', '30', 'Davet: davet edilen kişinin bu puana ulaşması için gün sayısı (kod girildikten sonra)'),
+  ('invite_cost_cell_name', '2', 'Davet mağazası: petek adı verme hakkı (davet puanı)'),
+  ('invite_cost_premium', '3', 'Davet mağazası: 1 aylık abonelik (davet puanı)'),
+  ('invite_cost_title', '1', 'Davet mağazası: Elçi unvanı (davet puanı)'),
+  ('website_url', '""', 'Profil > Web sitesi düğmesinin açacağı adres (ör. https://ornek.com). Boşken "yakında" yazar.'),
+  ('app_download_url', '""', 'Davet mesajında paylaşılacak uygulama indirme bağlantısı (mağaza sayfası). Boşken yalnızca kod paylaşılır.')
+on conflict (key) do nothing;
+
+-- Gizlilik politikası ve Sıkça Sorulan Sorular (Profil > Uygulama). "## " bölüm başlığı, "• " madde olarak görünür.
+-- Yalnızca boşsa yazılır; moderatörün sonradan değiştirdiği metne dokunulmaz.
+insert into public.app_settings (key, value, description) values
+  ('legal_privacy', to_jsonb($privacy$## Gizlilik Politikası
+Bu politika, 41. Kat Sosyal uygulamasını kullanırken hangi bilgilerinin işlendiğini, neden işlendiğini ve hangi haklara sahip olduğunu anlatır. Ayrıntılı yasal bilgi için KVKK aydınlatma metnine de bakabilirsin.
+
+## 1. Veri sorumlusu
+• Ad / unvan: [VERİ SORUMLUSUNUN ADI]
+• Adres: [ADRES]
+• E-posta: [E-POSTA ADRESİ]
+
+## 2. Hangi bilgileri işliyoruz?
+• Hesap bilgileri: gerçek adın, kullanıcı adın ve kayıt tarihin. Şifren ve kurtarma kelimelerin yalnızca özet (şifrelenmiş) olarak saklanır; kimse açık hâlini göremez.
+• Telefon bilgisi: her telefondan yalnızca bir hesap açılabilmesi için telefon kimliğinin özeti; bildirim izni verdiysen bildirim adresi.
+• Konum: yalnızca sen bir işlem yaparken (gönderiye yer eklemek, oyuna girmek, etkinlik kodu yazmak, petek bildirmek) bir kez alınır. Sunucuya enlem/boylam değil, yalnızca bulunduğun peteğin numarası gider. Konumun sürekli takip edilmez.
+• İçerikler: gönderilerin, yorumların, özel mesajların, açtığın etkinlikler ve katılımların, oyun sonuçların.
+• Puan, seviye, başarım ve sıralama kayıtların; arkadaşlıkların; davet ve sorun bildirimlerin.
+• Abonelik: satın alma Apple / Google mağazası üzerinden yapılır; kart bilgin bize gelmez, yalnızca aboneliğinin bitiş tarihi bilinir.
+
+## 3. Bu bilgileri neden kullanıyoruz?
+• Hesabını açmak, girişini güvenli tutmak ve sahte hesapları önlemek için.
+• Akış, etkinlik, oyun, harita ve puan sistemini çalıştırmak için.
+• Kurallara aykırı içerik ve hileli puan kazanımını tespit etmek için.
+• Sana bildirim göndermek için (bildirim türlerini Profil > Bildirim ve konum bölümünden seçebilirsin).
+• Sorun bildirimlerine dönüş yapmak için.
+
+## 4. Kimler görebilir?
+• Akışta yalnızca haftalık rumuzun görünür. Gerçek adın arkadaşlarına, sıralamalarda ve etkinliklerde görünür.
+• Moderatörler, kurallara uyulup uyulmadığını denetlemek için gerekli kayıtları görebilir.
+• Hizmet aldığımız şirketler: veritabanı ve sunucu (Supabase), abonelik yönetimi (RevenueCat), mağaza ve bildirim altyapısı (Apple, Google). Bu şirketler bilgilerini yalnızca bize hizmet vermek için işler.
+• Bilgilerin reklam amacıyla satılmaz ve paylaşılmaz.
+
+## 5. Ne kadar süre saklıyoruz?
+• Hesabın açık olduğu sürece saklanır.
+• Hesabını sildiğinde kişisel bilgilerin silinir ya da kimseyle eşleştirilemeyecek biçimde anonim hâle getirilir. Yasaların saklamamızı zorunlu tuttuğu kayıtlar bu süre boyunca saklanır.
+• Haritadaki anonim yoğunluk kayıtları 30 gün sonra kendiliğinden silinir.
+
+## 6. Yurt dışına aktarım
+Sunucularımız [SUNUCU BÖLGESİ] bölgesindedir. Bilgilerin bu nedenle yurt dışındaki sunucularda işlenebilir. Aktarım KVKK'ya uygun olarak yapılır.
+
+## 7. Hakların
+• Hangi bilgilerinin işlendiğini öğrenebilir, bir kopyasını isteyebilirsin: Profil > Kişisel Verilerim & Rapor > Resmi Veri Dosyasını İndir.
+• Açık rızalarını istediğin an aynı ekrandan kapatıp açabilirsin.
+• Yanlış bilgilerin düzeltilmesini, bilgilerinin silinmesini isteyebilirsin. Hesabını Profil > Hesabım > Hesabımı sil ile kendin silebilirsin.
+• Diğer talepler için veri sorumlusuna e-posta ile başvurabilirsin.
+
+## 8. Çocuklar
+Uygulama 18 yaşından küçükler için tasarlanmamıştır.
+
+## 9. Değişiklikler
+Bu politikada değişiklik olursa uygulama içinden duyururuz. Güncel metin her zaman Profil > Uygulama > Gizlilik Politikası bölümündedir.
+
+Son güncelleme: [TARİH]$privacy$::text), 'Gizlilik politikası (Profil > Uygulama)'),
+  ('faq', to_jsonb($faq$## Rumuz nedir, neden her hafta değişiyor?
+Akışta gerçek adın değil, her pazartesi yenilenen rastgele bir rumuz görünür. Böylece rahatça yazabilirsin. Rumuzunu Profil sekmesinde görebilirsin; başkaları senin kim olduğunu bilemez.
+
+## Gerçek adımı kimler görür?
+Yalnızca arkadaşların, sıralamalar ve katıldığın / açtığın etkinlikler. Akışta gerçek adın hiçbir zaman görünmez.
+
+## Nasıl puan kazanırım?
+Etkinliklere katılıp yerinde verilen kodu yazarak, etkinlik açarak, yan yana oyunlar ve Bilgi Yarışması oynayarak ve hazine bularak. Ayrıntılar Profil > Uygulama > Yarışma kuralları bölümünde.
+
+## Seviyeler ne işe yarıyor?
+Toplam puanın arttıkça seviye atlarsın. Seviye 2'de +1 oyun hakkı, Seviye 3'te +1 etkinlik hakkı, Seviye 4'te Bilgi Yarışması puanı ×1,2, Seviye 5'te Bilgi Yarışması'nda sınırsız can kazanırsın. Ödüller her ay yenilenir, kullanılmayan haklar sonraki aya geçmez.
+
+## Etkinlik kodu nedir?
+Etkinliği açan kişi, etkinlik yerinde katılımcılara bir kod söyler. Kodu uygulamaya yazınca katılımın doğrulanır. Puan, etkinlikte en az 4 kişinin katılımı doğrulanınca yazılır.
+
+## Neden konumumu istiyor?
+Yalnızca yan yana oynanan bir oyuna girerken, etkinlik kodu yazarken, gönderiye yer eklerken ya da petek bildirirken bir kez. Tam konumun sunucuya gönderilmez ve kaydedilmez; yalnızca bulunduğun peteğin numarası gider.
+
+## Abonelik bana ne kazandırır?
+Daha çok etkinlik ve oyun açma hakkı, özel mesaj başlatma ve 41. Kat Özel ücretli etkinliklere ücretsiz katılım. Abonelik puanını ya da hediye kazanma şansını artırmaz.
+
+## Aboneliğimi nasıl iptal ederim?
+Telefonundaki mağaza hesabının (App Store / Google Play) abonelikler bölümünden. Profil > Hesabı Yükselt ekranında "Abonelikleri aç" düğmesi seni oraya götürür.
+
+## Arkadaşımı nasıl davet ederim?
+Profil > Arkadaşlarını davet et ekranındaki kodunu paylaş. Arkadaşın kodla kayıt olur ve 30 gün içinde 100 puana ulaşırsa sana 1 davet puanı yazılır. Davet puanlarınla petek adı verme hakkı, 1 aylık abonelik ya da Elçi unvanı alabilirsin.
+
+## Şifremi unuttum, ne yapmalıyım?
+Giriş ekranındaki "Şifremi unuttum" ile kayıt olurken verilen 12 kurtarma kelimesini yazarak yeni şifre belirleyebilirsin. Kelimeleri kaybettiysen Profil > Uygulama > Bize ulaşın bölümünden bize yaz.
+
+## Neden telefon başına bir hesap?
+Sahte hesaplarla puan toplanmasını ve kuralların aşılmasını önlemek için. Telefonunu değiştirirsen eski hesabınla giriş yapabilirsin.
+
+## Bir sorunu nasıl bildiririm?
+Profil > Bir Sorun Bildir ile sorununu ve iletişim bilgilerini gönderebilirsin. Moderatörlerimiz inceleyip dönüş yapar.
+
+## Hesabımı nasıl silerim?
+Profil > Hesabım > Hesabımı sil. Silinen hesap geri getirilemez; puanların ve hakların da silinir.$faq$::text), 'Sıkça sorulan sorular (Profil > Uygulama)')
+on conflict (key) do nothing;
+
 revoke all on all tables in schema public from anon, authenticated;
 grant select on all tables in schema public to authenticated;
 grant insert, update, delete on
@@ -14534,5 +15077,17 @@ do $$ begin
   begin alter publication supabase_realtime add table public.announcements;
   exception when duplicate_object or undefined_object then null; end;
 end $$;
+
+-- Profil 4
+grant execute on function public.submit_problem_report(text, text, text, text, text, text, text) to authenticated;
+grant execute on function public.admin_list_problem_reports(text) to authenticated;
+grant execute on function public.admin_close_problem_report(uuid) to authenticated;
+grant execute on function public.my_privacy() to authenticated;
+grant execute on function public.set_consent(text, boolean) to authenticated;
+grant execute on function public.my_data_export() to authenticated;
+grant execute on function public.my_invite() to authenticated;
+grant execute on function public.redeem_invite_code(text) to authenticated;
+grant execute on function public.invite_buy(text) to authenticated;
+grant execute on function public.invite_use_cell_name(int, int, text) to authenticated;
 
 notify pgrst, 'reload schema';

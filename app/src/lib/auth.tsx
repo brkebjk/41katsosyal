@@ -63,7 +63,8 @@ type AuthState = {
   previewMode: boolean;
   /** `login`: kullanıcı adı (eski hesaplarda e-posta) */
   signIn: (login: string, password: string) => Promise<Result>;
-  signUp: (fullName: string, username: string, password: string) => Promise<SignUpResult>;
+  /** inviteCode: isteğe bağlı davet kodu (geçersizse kayıt yine olur, yalnızca davet sayılmaz) */
+  signUp: (fullName: string, username: string, password: string, inviteCode?: string) => Promise<SignUpResult>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   refreshAccount: () => Promise<void>;
@@ -345,7 +346,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signUp = useCallback(
-    async (fullName: string, username: string, password: string): Promise<SignUpResult> => {
+    async (fullName: string, username: string, password: string, inviteCode?: string): Promise<SignUpResult> => {
       if (!supabase) return { error: BACKEND_MISSING };
       setNotice(null);
       const deviceId = await getDeviceId();
@@ -361,7 +362,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { data, error } = await supabase.auth.signUp({
           email: loginEmail(username),
           password,
-          options: { data: { full_name: fullName.trim(), username, device_id: deviceId } },
+          options: {
+            data: {
+              full_name: fullName.trim(),
+              username,
+              device_id: deviceId,
+              ...(inviteCode?.trim() ? { invite_code: inviteCode.trim().toUpperCase() } : {}),
+            },
+          },
         });
         if (error) return { error: friendlyAuthError(error) };
         if (data.user && data.user.identities && data.user.identities.length === 0) {
