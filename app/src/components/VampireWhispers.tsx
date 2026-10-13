@@ -126,16 +126,19 @@ export function WhisperPanel({
 export function WhisperCompose({
   view,
   replyTo,
+  initialTo = null,
   onClose,
   onSend,
 }: {
   view: VvView;
   replyTo: VvWhisper | null;
+  /** Avatardan açılınca alıcı önceden seçili gelir */
+  initialTo?: string | null;
   onClose: () => void;
   onSend: (to: string, body: string, replyTo: string | null) => Promise<string | null>;
 }) {
   const targets = view.players.filter((p) => p.is_alive && !p.left && !p.is_me);
-  const [to, setTo] = useState<string | null>(replyTo ? replyTo.from : null);
+  const [to, setTo] = useState<string | null>(replyTo ? replyTo.from : initialTo);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

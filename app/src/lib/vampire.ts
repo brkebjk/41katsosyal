@@ -18,6 +18,8 @@ export type VvPlayer = {
   is_alive: boolean;
   is_host: boolean;
   is_me: boolean;
+  /** Avatar numarası (1–12; eski sunucuda gelmez) */
+  avatar?: number;
   /** Oyundan ayrıldı (ekrandan çıktı ya da bağlantısı koptu); elenmiş sayılır, geri dönemez */
   left: boolean;
   /** Yalnızca görmeye hakkın olan roller dolu gelir (kendin, vampirsen dostların, moderatörsen herkes) */
@@ -61,6 +63,8 @@ export type VvView = {
     absent: number;
     tie: boolean;
   } | null;
+  /** Asılma oyları açıktır: oylama ve sonucu sırasında kim kime oy verdi (to boş = pas). Eski sunucuda gelmez. */
+  votes?: { from: string; to: string | null }[];
   players: VvPlayer[];
   /** Odanın sahibi (oyuncu listesinde yoksa, ör. anlatıcı moderatör, ayrıca gösterilir) */
   host: { id: string; name: string; is_moderator: boolean; is_me: boolean };

@@ -22,6 +22,8 @@ export type VoiceMember = {
   kick_votes: number;
   my_kick_vote: boolean;
   kickable: boolean;
+  /** Atma oyu eşiğe ulaştıysa kararın verileceği an (bu anda oylar hâlâ eşikteyse atılır) */
+  kick_decide_at?: string | null;
 };
 
 export type VoiceState = {
@@ -29,6 +31,12 @@ export type VoiceState = {
   /** Sesli sohbet açık ve bu ayın kotası dolmadı */
   enabled?: boolean;
   kick_enabled?: boolean;
+  /** Atma oylaması şu an açık mı (yalnızca sabah konuşmalarından hemen sonra: oylama ve sonucu sırasında) */
+  kick_open?: boolean;
+  /** Atmak için gereken oy (boşsa odada atılabilecek kadar kişi yok) */
+  kick_needed?: number | null;
+  /** Eşiğe ulaşınca kaç sn sonra karar verilir */
+  kick_seconds?: number;
   phase?: string | null;
   narrator?: string | null;
   speaker?: string | null;
@@ -42,6 +50,7 @@ export type VoiceState = {
 
 const TEXT: Record<string, string> = {
   kick_disabled: 'Oylamayla atma şu an kapalı.',
+  kick_closed: 'Atma oylaması yalnızca sabah konuşmalarından hemen sonra, oylama sırasında açılır.',
   not_kickable: 'Bu oyuncu oylamayla atılamaz.',
   room_not_found: 'Oda artık açık değil.',
 };
@@ -86,16 +95,15 @@ export async function yieldTurn(roomId: string): Promise<Result> {
   return callRpcVoid('voice_yield', { p_room_id: roomId }, TEXT);
 }
 
+/** Atma oyu ver / geri al. Eşiğe ulaşılırsa sunucu kısa bir süre sonra (decide_at) karar verir. */
 export async function voteKick(
   roomId: string,
   target: string,
-): Promise<{ data: { kicked: boolean; votes: number; needed: number } | null; error: string | null }> {
+): Promise<{
+  data: { kicked: boolean; votes: number; needed: number | null; decide_at: string | null } | null;
+  error: string | null;
+}> {
   return callRpc('room_vote_kick', { p_room_id: roomId, p_target: target }, TEXT);
-}
-
-/** Atılmak için gereken oy: odadaki etkin oyuncuların (atılacak kişi hariç) yarısından fazlası */
-export function kickNeeded(playersActive: number): number {
-  return Math.floor(Math.max(0, playersActive - 1) / 2) + 1;
 }
 
 async function micPermission(): Promise<boolean> {

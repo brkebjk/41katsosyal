@@ -5812,6 +5812,7 @@ begin
     perform public._vv_bots_act(p_room_id); -- GEÇİCİ: deneme odasında botların hamleleri
     if r.status = 'playing' then
       perform public._vv_auto_tick(p_room_id);
+      if r.remote then perform public._voice_kick_tick(p_room_id); end if;
       select * into r from public.game_rooms where id = p_room_id;
     end if;
   end if;
@@ -5839,6 +5840,7 @@ begin
            'is_alive', rp.is_alive,
            'is_host', (rp.user_id = r.host_id),
            'is_me', (rp.user_id = v.id),
+           'avatar', (select pr.avatar_index from public.profiles pr where pr.id = rp.user_id),
            'left', (rp.left_at is not null),
            'role', (case when v_reveal_all or rp.user_id = v.id or (me.role = 'vampire' and s.role = 'vampire')
                          then s.role
@@ -5923,6 +5925,14 @@ begin
     'composition', coalesce(r.state->'composition', public._vv_composition(v_count)),
     'last_night', r.state->'last_night',
     'last_vote', r.state->'last_vote',
+    -- Asılma oyları açıktır: oylama ve sonucu sırasında herkes kimin kime oy verdiğini görür (to boş = pas)
+    'votes', case when v_phase in ('vote', 'vote_result') then (
+               select coalesce(jsonb_agg(jsonb_build_object('from', s.user_id, 'to', s.data->'vote'->>'target')
+                                         order by rp.joined_at), '[]'::jsonb)
+                 from public.room_player_secrets s
+                 join public.room_players rp on rp.room_id = s.room_id and rp.user_id = s.user_id
+                where s.room_id = p_room_id and (s.data->'vote'->>'round')::int = v_round)
+             else '[]'::jsonb end,
     'players', v_players,
     'host', jsonb_build_object(
       'id', r.host_id,
@@ -15272,7 +15282,8 @@ on conflict (key) do nothing;
 --     oyuncu voice_turn_seconds (30) saniye konuşur, sonra sıradakine geçilir. Mikrofonunu kapatan, uygulamayı arka plana
 --     alan ya da telefon çağrısı gelen kişinin sırası atlanır. Anlatıcı (oynamayan moderatör) her zaman konuşabilir.
 --   * Konuşma sırası sunucuda belirlenir; uygulama yalnızca sırası gelenin mikrofonunu açar.
---   * Oylamayla atma: odadaki oyuncuların yarısından fazlası bir kişiyi atmak isterse kişi odadan çıkar ve geri giremez.
+--   * Oylamayla atma: yalnızca sabah konuşmalarından hemen sonra (oylama ve sonucu sırasında) açılır. Bir kişiyi
+--     atmak isteyen voice_kick_min_votes (4; odada daha azı varsa öteki herkes) olunca 10 sn içinde odadan çıkar ve geri giremez.
 --   * Aylık kişi-dakika sınırı (voice_month_minutes) dolunca sesli sohbet o ay kapanır (ücret çıkmasın).
 create sequence if not exists public.voice_uid_seq start 1000;
 
@@ -15306,6 +15317,18 @@ create table if not exists public.room_kick_votes (
   primary key (room_id, target_id, voter_id)
 );
 alter table public.room_kick_votes enable row level security;
+-- Oy hangi gündüze ait ("day:<tur>"); başka gündüzün oyu sayılmaz
+alter table public.room_kick_votes add column if not exists phase_key text not null default '';
+
+-- Atma sayacı: bir kişiyi atmak isteyen sayısı eşiğe ulaşınca 10 sn sonra karar verilir
+create table if not exists public.room_kick_timers (
+  room_id uuid not null references public.game_rooms (id) on delete cascade,
+  target_id uuid not null references public.profiles (id) on delete cascade,
+  phase_key text not null,
+  decide_at timestamptz not null,
+  primary key (room_id, target_id)
+);
+alter table public.room_kick_timers enable row level security;
 
 create table if not exists public.voice_usage (
   month date primary key,
@@ -15420,12 +15443,19 @@ declare
   t public.room_voice_turns;
   v_sp uuid;
   v_active int;
+  v_key text;
 begin
   v := public._require_user();
   select * into r from public.game_rooms where id = p_room_id;
   if not found or not public._voice_allowed(r, v.id) then
     return jsonb_build_object('allowed', false);
   end if;
+  perform public._voice_kick_tick(p_room_id);
+  select * into r from public.game_rooms where id = p_room_id;
+  if not found or not public._voice_allowed(r, v.id) then
+    return jsonb_build_object('allowed', false);
+  end if;
+  v_key := public._voice_kick_key(r);
   v_sp := public._voice_turn_tick(p_room_id);
   select * into t from public.room_voice_turns where room_id = p_room_id;
   select count(*)::int into v_active from public.room_players rp where rp.room_id = p_room_id and rp.left_at is null;
@@ -15433,6 +15463,10 @@ begin
     'allowed', true,
     'enabled', public._voice_budget_ok(),
     'kick_enabled', public.setting_bool('voice_kick_enabled'),
+    -- Atma oylaması yalnızca sabah konuşmalarından hemen sonra (oylama ve sonucu sırasında) açıktır
+    'kick_open', public.setting_bool('voice_kick_enabled') and v_key is not null,
+    'kick_needed', public._voice_kick_needed(p_room_id, null),
+    'kick_seconds', public._voice_kick_secs(),
     'phase', r.state->>'phase',
     'narrator', case when public._vv_mode(r) = 'narrator' then r.host_id end,
     'speaker', v_sp,
@@ -15448,12 +15482,12 @@ begin
                'connected', coalesce(m.last_ping > now() - interval '60 seconds', false),
                'mic_on', coalesce(m.mic_on, false), 'filter_on', coalesce(m.filter_on, false),
                'away', coalesce(m.away, false), 'agora_uid', m.agora_uid,
-               'kick_votes', (select count(*) from public.room_kick_votes k
-                               join public.room_players vp on vp.room_id = k.room_id and vp.user_id = k.voter_id
-                                and vp.left_at is null
-                              where k.room_id = p_room_id and k.target_id = rp.user_id)::int,
+               'kick_votes', public._voice_kick_count(p_room_id, rp.user_id, v_key),
                'my_kick_vote', exists (select 1 from public.room_kick_votes k
-                                        where k.room_id = p_room_id and k.target_id = rp.user_id and k.voter_id = v.id),
+                                        where k.room_id = p_room_id and k.target_id = rp.user_id and k.voter_id = v.id
+                                          and k.phase_key = v_key),
+               'kick_decide_at', (select kt.decide_at from public.room_kick_timers kt
+                                   where kt.room_id = p_room_id and kt.target_id = rp.user_id),
                'kickable', rp.user_id <> r.host_id and rp.user_id <> v.id
                            and not exists (select 1 from public.profiles p where p.id = rp.user_id and p.role = 'admin'))
              order by rp.joined_at)
@@ -15538,17 +15572,85 @@ begin
   return jsonb_build_object('result', 'ok', 'uid', v_uid, 'channel', 'room-' || p_room_id::text);
 end $$;
 
--- Oylamayla atma: oyuncu bir kişiyi atmak için oy verir / oyunu geri alır. Odadaki etkin oyuncuların (atılacak kişi
--- hariç) yarısından fazlası isterse kişi odadan çıkarılır ve geri giremez. Oda sahibi ve moderatör atılamaz.
--- Döner: { kicked, votes, needed }
+-- Oylamayla atma (uzaktan odalar). Oylama yalnızca sabah konuşmalarından hemen sonra açılır: o turun asılma oylaması
+-- ve sonucu ekrandayken. Bir kişiyi atmak isteyen sayısı eşiğe (voice_kick_min_votes, varsayılan 4; odada daha az
+-- kişi varsa öteki herkes) ulaşınca voice_kick_seconds (10) sn sayaç başlar; süre dolduğunda oylar hâlâ eşikteyse kişi
+-- odadan çıkarılır ve geri giremez. Oda sahibi ve moderatör atılamaz.
+create or replace function public._voice_kick_key(r public.game_rooms)
+returns text language sql stable set search_path = public as $$
+  select case when r.remote and r.status = 'playing' and coalesce(r.state->>'phase', '') in ('vote', 'vote_result')
+              then 'day:' || coalesce(r.state->>'round', '0') end;
+$$;
+
+create or replace function public._voice_kick_secs()
+returns int language sql stable set search_path = public as $$
+  select least(60, greatest(5, public.setting_int('voice_kick_seconds', 10)));
+$$;
+
+-- Atmak için gereken oy (p_target boşsa odadaki genel eşik). Atılamıyorsa (odada 2'den az kişi kalır) boş döner.
+create or replace function public._voice_kick_needed(p_room_id uuid, p_target uuid)
+returns int language sql stable security definer set search_path = public as $$
+  select case when x.n >= 2 then least(greatest(2, public.setting_int('voice_kick_min_votes', 4)), x.n) end
+    from (select count(*)::int - (case when p_target is null then 1 else 0 end) as n
+            from public.room_players rp
+           where rp.room_id = p_room_id and rp.left_at is null
+             and rp.user_id is distinct from p_target) x;
+$$;
+
+create or replace function public._voice_kick_count(p_room_id uuid, p_target uuid, p_key text)
+returns int language sql stable security definer set search_path = public as $$
+  select count(*)::int from public.room_kick_votes k
+    join public.room_players vp on vp.room_id = k.room_id and vp.user_id = k.voter_id and vp.left_at is null
+   where k.room_id = p_room_id and k.target_id = p_target and k.phase_key = p_key;
+$$;
+
+-- Süresi dolan atma sayaçlarını sonuçlandırır (voice_state / room_vote_kick / vv_view çağırır)
+create or replace function public._voice_kick_tick(p_room_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  k record;
+  v_needed int;
+begin
+  if not exists (select 1 from public.room_kick_timers where room_id = p_room_id and decide_at <= now()) then return; end if;
+  -- Kilit sırası room_vote_kick ile aynı: önce oda, sonra sayaç
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found or r.status <> 'playing' then
+    delete from public.room_kick_timers where room_id = p_room_id;
+    return;
+  end if;
+  for k in delete from public.room_kick_timers
+            where room_id = p_room_id and decide_at <= now()
+        returning target_id, phase_key
+  loop
+    v_needed := public._voice_kick_needed(p_room_id, k.target_id);
+    if v_needed is not null
+       and public._voice_kick_count(p_room_id, k.target_id, k.phase_key) >= v_needed
+       and exists (select 1 from public.room_players rp
+                    where rp.room_id = p_room_id and rp.user_id = k.target_id and rp.left_at is null)
+       and k.target_id <> r.host_id
+       and not exists (select 1 from public.profiles p where p.id = k.target_id and p.role = 'admin') then
+      insert into public.room_bans (room_id, user_id) values (p_room_id, k.target_id) on conflict do nothing;
+      delete from public.room_kick_votes where room_id = p_room_id and (target_id = k.target_id or voter_id = k.target_id);
+      delete from public.room_kick_timers where room_id = p_room_id and target_id = k.target_id;
+      delete from public.room_voice_members where room_id = p_room_id and user_id = k.target_id;
+      perform public._room_remove_player(p_room_id, k.target_id, 'kicked');
+      perform public._notify(k.target_id, 'system', 'Odadan çıkarıldın',
+        'Uzaktan oyundaki oyuncular seni odadan çıkarmak için oy verdi. Bu odaya yeniden giremezsin.', '{}'::jsonb);
+    end if;
+  end loop;
+end $$;
+
+-- Oy ver / oyunu geri al. Döner: { kicked, votes, needed, decide_at }
 create or replace function public.room_vote_kick(p_room_id uuid, p_target uuid)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
   v public.profiles;
   r public.game_rooms;
+  v_key text;
   v_votes int;
-  v_eligible int;
   v_needed int;
+  v_at timestamptz;
 begin
   v := public._require_writer(null);
   select * into r from public.game_rooms where id = p_room_id for update;
@@ -15562,27 +15664,27 @@ begin
      or not exists (select 1 from public.room_players rp where rp.room_id = p_room_id and rp.user_id = p_target and rp.left_at is null) then
     raise exception 'not_kickable';
   end if;
-  if exists (select 1 from public.room_kick_votes where room_id = p_room_id and target_id = p_target and voter_id = v.id) then
+  v_key := public._voice_kick_key(r);
+  if v_key is null then raise exception 'kick_closed'; end if;
+  if exists (select 1 from public.room_kick_votes
+              where room_id = p_room_id and target_id = p_target and voter_id = v.id and phase_key = v_key) then
     delete from public.room_kick_votes where room_id = p_room_id and target_id = p_target and voter_id = v.id;
   else
-    insert into public.room_kick_votes (room_id, target_id, voter_id) values (p_room_id, p_target, v.id);
+    insert into public.room_kick_votes (room_id, target_id, voter_id, phase_key) values (p_room_id, p_target, v.id, v_key)
+    on conflict (room_id, target_id, voter_id) do update set phase_key = excluded.phase_key, created_at = now();
   end if;
-  select count(*)::int into v_eligible from public.room_players rp
-   where rp.room_id = p_room_id and rp.left_at is null and rp.user_id <> p_target;
-  select count(*)::int into v_votes from public.room_kick_votes k
-    join public.room_players rp on rp.room_id = k.room_id and rp.user_id = k.voter_id and rp.left_at is null
-   where k.room_id = p_room_id and k.target_id = p_target;
-  v_needed := v_eligible / 2 + 1;
-  if v_eligible >= 2 and v_votes >= v_needed then
-    insert into public.room_bans (room_id, user_id) values (p_room_id, p_target) on conflict do nothing;
-    delete from public.room_kick_votes where room_id = p_room_id and (target_id = p_target or voter_id = p_target);
-    delete from public.room_voice_members where room_id = p_room_id and user_id = p_target;
-    perform public._room_remove_player(p_room_id, p_target, 'kicked');
-    perform public._notify(p_target, 'system', 'Odadan çıkarıldın',
-      'Uzaktan oyundaki oyuncuların çoğunluğu seni odadan çıkarmak için oy verdi. Bu odaya yeniden giremezsin.', '{}'::jsonb);
-    return jsonb_build_object('kicked', true, 'votes', v_votes, 'needed', v_needed);
+  v_votes := public._voice_kick_count(p_room_id, p_target, v_key);
+  v_needed := public._voice_kick_needed(p_room_id, p_target);
+  if v_needed is not null and v_votes >= v_needed then
+    insert into public.room_kick_timers (room_id, target_id, phase_key, decide_at)
+    values (p_room_id, p_target, v_key, now() + make_interval(secs => public._voice_kick_secs()))
+    on conflict (room_id, target_id) do nothing;
+  else
+    -- Oylar eşiğin altına indi: sayaç durur
+    delete from public.room_kick_timers where room_id = p_room_id and target_id = p_target;
   end if;
-  return jsonb_build_object('kicked', false, 'votes', v_votes, 'needed', v_needed);
+  select decide_at into v_at from public.room_kick_timers where room_id = p_room_id and target_id = p_target;
+  return jsonb_build_object('kicked', false, 'votes', v_votes, 'needed', v_needed, 'decide_at', v_at);
 end $$;
 
 -- Uzaktan oyun puanı ve sesli sohbet ayarları
@@ -15594,6 +15696,8 @@ insert into public.app_settings (key, value, description) values
   ('voice_turn_seconds', '30', 'Sesli sohbette her oyuncunun konuşma süresi (saniye, 10–120)'),
   ('voice_month_minutes', '9000', 'Ayda en çok kaç kişi-dakika sesli sohbet (ses sağlayıcının ücretsiz kotası 10.000; dolunca sesli sohbet o ay kapanır)'),
   ('voice_kick_enabled', 'true', 'Uzaktan odalarda oylamayla oyuncu atma açık mı?'),
+  ('voice_kick_min_votes', '4', 'Uzaktan odada bir oyuncuyu atmak için gereken oy (odada daha az kişi varsa öteki herkes)'),
+  ('voice_kick_seconds', '10', 'Atma oyu eşiğe ulaşınca kaç saniye sonra karar verilir (5–60)'),
   ('game_join_max_meters', '100', 'Yan yana oyunda odaya girenin oda sahibine en çok kaç metre uzakta olabileceği (telefonların konum hatası bunun üstüne eklenir)'),
   ('game_join_max_meters_cap', '150', 'Yan yana oyunda konum hatası dahil en çok kaç metre uzaklığa izin verilir')
 on conflict (key) do nothing;

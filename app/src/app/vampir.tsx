@@ -3,38 +3,40 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AppState, BackHandler, Pressable, StyleSheet, Vibration, View, useWindowDimensions } from 'react-native';
+import {
+  AppState,
+  BackHandler,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Vibration,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ActionSheet, type ActionOption } from '@/components/ActionSheet';
 import { Text } from '@/components/AppText';
 import { GamePointsModal } from '@/components/GamePointsModal';
 import { InviteSheet } from '@/components/InviteSheet';
-import { InfoLink, InfoModal } from '@/components/InfoModal';
+import { InfoModal } from '@/components/InfoModal';
+import { Popup } from '@/components/Popup';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { RoleCard } from '@/components/RoleCard';
 import { useSafetyMenu } from '@/components/SafetyMenu';
-import { VoicePanel } from '@/components/VoicePanel';
+import { useVoiceRoom, VoiceBar } from '@/components/VoicePanel';
 import { Screen } from '@/components/Screen';
-import { SectionHeader } from '@/components/SectionHeader';
 import { DeadChat, RoleGallery } from '@/components/VampireExtras';
 import { WhisperCompose, WhisperPanel } from '@/components/VampireWhispers';
-import {
-  CheckMark,
-  clock,
-  InfoCard,
-  PhaseClock,
-  PlayerList,
-  ProgressLine,
-  RoleChip,
-  TargetPicker,
-  useElapsedSeconds,
-  type PickOption,
-} from '@/components/VampireParts';
+import { clock, InfoCard, useElapsedSeconds } from '@/components/VampireParts';
+import { ClockBar, G, GameButton, Glass, Pill, PlayerGrid, ToolButton, type Tile } from '@/components/VampireStage';
 import { useAuth } from '@/lib/auth';
 import { confirmAction, notify, showDialog } from '@/lib/dialog';
 import { fmtPts } from '@/lib/labels';
 import { VAMPIRE_RANK_ITEM, type InfoItem } from '@/lib/gameInfo';
-import { VAMPIRE_SCENE_ASPECT, vampireImages } from '@/lib/images';
+import { VAMPIRE_CARD_ASPECT, vampireImages } from '@/lib/images';
 import { getMyGameResult, getPointRules, type MyGameResult, type PointRules } from '@/lib/ranking';
 import { joinRoomWithLocation, leaveRoom } from '@/lib/rooms';
 import type { Result } from '@/lib/rpc';
@@ -61,10 +63,11 @@ import {
   VV_NOT_IN_ROOM,
   VV_ROOM_GONE,
   type VvPhase,
+  type VvPlayer,
   type VvView,
   type VvWhisper,
 } from '@/lib/vampire';
-import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
+import { colors, fonts, fontSizes, spacing } from '@/theme';
 
 const POLL_MS = 2500;
 /** "Oy kullanmıyorum" seçeneğinin yer tutucu kimliği */
@@ -134,7 +137,7 @@ export default function VampireScreen() {
 }
 
 function Game({ roomId }: { roomId: string }) {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const myId = useAuth().profile?.id ?? null;
   const [view, setView] = useState<VvView | null>(null);
   /** Görünümün sunucudan alındığı an (ms); geri sayım bu andan itibaren akıtılır */
@@ -162,10 +165,17 @@ function Game({ roomId }: { roomId: string }) {
   /** Kendi isteğimle ayrıldım: ekran kapanırken "çıkarıldın" ekranı yanıp sönmesin */
   const leaving = useRef(false);
   /** Fısıltı yazma penceresi (cevapsa hangi fısıltıya) */
-  const [compose, setCompose] = useState<{ replyTo: VvWhisper | null } | null>(null);
+  /** Fısıltı yazma penceresi (cevapsa hangi fısıltıya; avatardan açıldıysa kime) */
+  const [compose, setCompose] = useState<{ replyTo: VvWhisper | null; to?: string | null } | null>(null);
   /** "Oyun kartlarını gör" penceresi */
   const [cardsOpen, setCardsOpen] = useState(false);
   const [sound, setSound] = useState(soundOn);
+  /** Açık alt pencere: fısıltılar, rolüm, elenenlerin sohbeti */
+  const [sheet, setSheet] = useState<'whispers' | 'role' | 'dead' | null>(null);
+  /** Avatara dokunulunca açılan menü (fısılda, odadan atma oyu) */
+  const [menuFor, setMenuFor] = useState<VvPlayer | null>(null);
+  /** Fısıltı listesi en son açıldığında bana gelmiş fısıltı sayısı (yenisi gelince düğme yanar) */
+  const [seenIncoming, setSeenIncoming] = useState(0);
 
   const load = useCallback(async () => {
     if (!isBackendReady || leaving.current) return;
@@ -311,6 +321,11 @@ function Game({ roomId }: { roomId: string }) {
     }
   }, [whisperCount, view]);
 
+  // Uzaktan oda: sesli sohbet (sırayla konuşma, mikrofon, ses filtresi, oylamayla atma)
+  const voiceOn =
+    !gone && !!view && view.remote === true && !view.me.left && view.phase !== 'ended' && view.phase !== 'cancelled';
+  const voice = useVoiceRoom(voiceOn && myId ? roomId : null, myId);
+
   /** Bir işlemi yapar: çift dokunmayı engeller, istenirse önce onay sorar, sonunda görünümü tazeler. */
   async function act(
     key: string,
@@ -373,8 +388,8 @@ function Game({ roomId }: { roomId: string }) {
   const present = view.players.filter((p) => !p.left);
   const playing = phase !== 'lobby' && phase !== 'ended' && phase !== 'cancelled';
   const pickedId = pick && pick.key === phaseKey ? pick.id : undefined;
-  const cardWidth = Math.min(width - spacing.lg * 2, 280);
   const nameOf = (id: string | null | undefined) => view.players.find((p) => p.id === id)?.name ?? '—';
+  const myPid = view.players.find((p) => p.is_me)?.id ?? null;
   /** Oyunu ilerleten kişi, cümle içinde: "sen" ya da kişinin adı */
   const managerName = me.is_host ? 'sen' : view.host.name;
   /** Bu kişi oyundan ayrılırken uyarı alır (izleyen moderatör sorgusuz çıkar) */
@@ -423,8 +438,9 @@ function Game({ roomId }: { roomId: string }) {
     if (phase === 'reveal') {
       const everyone = view.ready_count >= present.length;
       return (
-        <PrimaryButton
+        <GameButton
           label="Geceyi başlat"
+          icon="moon"
           loading={busy === 'night'}
           onPress={() =>
             void act('night', () => beginNight(roomId), {
@@ -445,37 +461,31 @@ function Game({ roomId }: { roomId: string }) {
       const left = view.pending ? view.pending.total - view.pending.done : 0;
       const gated = waitLeft > 0;
       return (
-        <>
-          <PrimaryButton
-            label={gated ? `Geceyi bitir · ${clock(waitLeft)}` : 'Geceyi bitir'}
-            variant={left > 0 || !view.pending ? 'ghost' : 'primary'}
-            disabled={gated}
-            loading={busy === 'endnight'}
-            onPress={() =>
-              void act('endnight', () => endNight(roomId), {
-                confirm: () =>
-                  confirmAction(
-                    'Geceyi şimdi bitir',
-                    view.pending
-                      ? `${left} kişi henüz seçim yapmadı. Beklemeden bitirirsen onların seçimi sayılmaz.`
-                      : 'Seçim yapmayan olabilir. Beklemeden bitirirsen onların seçimi sayılmaz.',
-                    'Geceyi bitir',
-                  ),
-              })
-            }
-          />
-          {gated ? (
-            <Text style={styles.muted}>
-              Herkes seçim yapınca gece kendiliğinden biter. Beklemek istemezsen düğme {clock(waitLeft)} sonra açılır.
-            </Text>
-          ) : null}
-        </>
+        <GameButton
+          label={gated ? `Geceyi bitir · ${clock(waitLeft)}` : 'Geceyi bitir'}
+          variant={left > 0 || !view.pending ? 'ghost' : 'primary'}
+          disabled={gated}
+          loading={busy === 'endnight'}
+          onPress={() =>
+            void act('endnight', () => endNight(roomId), {
+              confirm: () =>
+                confirmAction(
+                  'Geceyi şimdi bitir',
+                  view.pending
+                    ? `${left} kişi henüz seçim yapmadı. Beklemeden bitirirsen onların seçimi sayılmaz.`
+                    : 'Seçim yapmayan olabilir. Beklemeden bitirirsen onların seçimi sayılmaz.',
+                  'Geceyi bitir',
+                ),
+            })
+          }
+        />
       );
     }
     if (phase === 'dawn') {
       return (
-        <PrimaryButton
+        <GameButton
           label="Oylamayı başlat"
+          icon="hand-left"
           loading={busy === 'vote'}
           onPress={() => void act('vote', () => beginVote(roomId))}
         />
@@ -485,38 +495,32 @@ function Game({ roomId }: { roomId: string }) {
       const left = view.pending ? view.pending.total - view.pending.done : 0;
       const gated = waitLeft > 0;
       return (
-        <>
-          <PrimaryButton
-            label={gated ? `Oylamayı bitir · ${clock(waitLeft)}` : 'Oylamayı bitir'}
-            variant={left > 0 ? 'ghost' : 'primary'}
-            disabled={gated}
-            loading={busy === 'endvote'}
-            onPress={() =>
-              void act('endvote', () => endVote(roomId), {
-                confirm:
-                  left > 0
-                    ? () =>
-                        confirmAction(
-                          'Oylamayı şimdi bitir',
-                          `${left} kişi henüz oy vermedi. Oy vermeyenler oy kullanmamış sayılır.`,
-                          'Oylamayı bitir',
-                        )
-                    : undefined,
-              })
-            }
-          />
-          {gated ? (
-            <Text style={styles.muted}>
-              Herkes oy verince oylama kendiliğinden biter. Beklemek istemezsen düğme {clock(waitLeft)} sonra açılır.
-            </Text>
-          ) : null}
-        </>
+        <GameButton
+          label={gated ? `Oylamayı bitir · ${clock(waitLeft)}` : 'Oylamayı bitir'}
+          variant={left > 0 ? 'ghost' : 'primary'}
+          disabled={gated}
+          loading={busy === 'endvote'}
+          onPress={() =>
+            void act('endvote', () => endVote(roomId), {
+              confirm:
+                left > 0
+                  ? () =>
+                      confirmAction(
+                        'Oylamayı şimdi bitir',
+                        `${left} kişi henüz oy vermedi. Oy vermeyenler oy kullanmamış sayılır.`,
+                        'Oylamayı bitir',
+                      )
+                  : undefined,
+            })
+          }
+        />
       );
     }
     if (phase === 'vote_result') {
       return (
-        <PrimaryButton
+        <GameButton
           label="Geceyi başlat"
+          icon="moon"
           loading={busy === 'night'}
           onPress={() => void act('night', () => beginNight(roomId))}
         />
@@ -525,360 +529,182 @@ function Game({ roomId }: { roomId: string }) {
     return null;
   })();
 
-  // ---- Aşamaya göre içerik ---------------------------------------------------------------
-  let body: ReactNode = null;
+  // ---- Gece: rolü olanın seçebileceği kişiler --------------------------------------------------
+  const role = me.role;
+  const nightActor =
+    phase === 'night' &&
+    !me.is_omniscient &&
+    me.is_player &&
+    me.is_alive &&
+    !me.left &&
+    (role === 'vampire' || role === 'doctor' || role === 'detective');
+  const todayResult = role === 'detective' ? me.investigations.find((i) => i.round === view.round) : undefined;
+  const nightPicking = nightActor && !todayResult;
+  const allyIds = new Set((me.allies ?? []).map((a) => a.id));
+  const nightTargets = new Set(
+    alive
+      .filter((p) =>
+        role === 'vampire'
+          ? !p.is_me && !allyIds.has(p.id)
+          : role === 'doctor'
+            ? p.id !== me.last_protect
+            : !p.is_me,
+      )
+      .map((p) => p.id),
+  );
+  const savedNight = me.night_target;
+  const nightSel = pickedId ?? savedNight ?? undefined;
 
-  if (me.left && phase !== 'ended') {
-    body = (
-      <>
-        <InfoCard title="Oyundan çıkarıldın" tone="danger">
-          Oyun ekranından ayrıldığın ya da bağlantın uzun süre koptuğu için oyundan çıkarıldın. Oyundan ayrılan kişi
-          elenmiş sayılır ve geri dönemez.
-        </InfoCard>
-        <PrimaryButton label="Oyunlara dön" onPress={goToGames} />
-      </>
-    );
-  } else if (phase === 'cancelled') {
-    body = (
-      <>
-        <InfoCard title="Oda kapandı">{closedText(view.close_reason, me.is_host)}</InfoCard>
-        <PrimaryButton label="Oyunlara dön" onPress={goToGames} />
-      </>
-    );
-  } else if (phase === 'lobby') {
-    const count = view.players.length;
-    const enough = count >= view.min_players;
-    const modeCard =
-      mode === 'auto'
-        ? {
-            title: 'Otomatik Oyun',
-            text: 'Yönetici yok. Oyun başlayınca roller dağıtılır; gece, tartışma ve oylama süreleri dolunca oyun kendiliğinden ilerler. Herkes oyuncudur.',
-          }
-        : mode === 'host'
-          ? {
-              title: me.is_host ? 'Ben Yöneticiyim' : `Yönetici: ${view.host.name}`,
-              text: me.is_host
-                ? 'Geceyi ve oylamayı sen başlatıp bitirirsin; sen de oynarsın.'
-                : `${view.host.name} oyunu ilerletir ve o da oynar.`,
-            }
-          : {
-              title: me.is_omniscient ? 'Sen anlatıcısın' : 'Anlatıcı: 41. Kat Sosyal',
-              text: me.is_omniscient
-                ? 'Moderatör olarak oyuncu sayılmazsın. Herkesin rolünü görür, oyunu sen ilerletirsin.'
-                : 'Moderatör anlatıcıdır, oyuncu değildir. Oyunu o ilerletir.',
-            };
-    body = (
-      <>
-        {view.code ? (
-          <View style={styles.codeCard}>
-            <Text style={styles.codeLabel}>Oda kodu · yalnızca sende görünür</Text>
-            <Text style={styles.code} selectable accessibilityLabel={`Oda kodu ${view.code.split('').join(' ')}`}>
-              {view.code}
-            </Text>
-            <Text style={styles.codeHint}>
-              Yanındakilere söyle; Oyunlar sekmesinden girerler. Oyun başlayınca yeni oyuncu giremez.
-            </Text>
-          </View>
-        ) : null}
+  // ---- Oylama ---------------------------------------------------------------------------------
+  const canVote = phase === 'vote' && me.is_player && me.is_alive && !me.left;
+  const savedVote = me.voted ? (me.vote_target ?? SKIP) : undefined;
+  const voteSel = pickedId ?? savedVote;
+  const showVotes = phase === 'vote' || phase === 'vote_result';
+  /** Asılma oyları herkese açık: kim kime oy verdi (null = pas) */
+  const voteOf = new Map<string, string | null>((view.votes ?? []).map((v) => [v.from, v.to]));
+  const hasOpenVotes = Boolean(view.votes);
+  const votesIn = new Map<string, number>();
+  if (showVotes) {
+    if (view.votes) {
+      for (const v of view.votes) if (v.to) votesIn.set(v.to, (votesIn.get(v.to) ?? 0) + 1);
+    } else if (phase === 'vote_result') {
+      for (const t of view.last_vote?.tally ?? []) votesIn.set(t.id, t.votes);
+    }
+  }
+  const investigated = new Map<string, boolean>();
+  if (role === 'detective') for (const i of me.investigations) investigated.set(i.id, i.is_vampire);
 
-        <InfoCard title={modeCard.title}>{modeCard.text}</InfoCard>
+  // ---- Fısıltı ve sesli sohbet ------------------------------------------------------------------
+  const showWhispers = (playing || phase === 'ended') && !me.left && (me.is_player || me.is_omniscient);
+  const canWhisper =
+    view.status === 'playing' &&
+    phase !== 'night' &&
+    me.is_player &&
+    me.is_alive &&
+    !me.left &&
+    view.whispers_left > 0 &&
+    view.whisper_limit > 0;
+  const incoming = view.whispers.filter((w) => w.to === myPid).length;
+  const vs = voice.state;
+  const kickOpen = Boolean(vs?.allowed && vs.kick_open && vs.kick_enabled);
 
-        <SectionHeader title="Oyuncular" count={view.players.length} />
-        <PlayerList players={view.players} showAlive={false} host={view.host} />
-        <Text style={enough ? styles.muted : styles.warn}>
-          {enough
-            ? `Bu oyuncu sayısıyla roller: ${compositionText(view.composition)}.`
-            : `Başlamak için en az ${view.min_players} oyuncu gerekir (şu an ${count}). En fazla ${view.max_players} kişi oynayabilir.`}
-        </Text>
+  /** Adın altındaki satır: ölü mü, kime oy verdi, rolü (görmeye hakkın varsa), dedektif notu */
+  function subFor(p: VvPlayer): Tile['sub'] {
+    // Kendi rolüm ekranda yazmaz (yan yana oynarken başkası görmesin); oyun bitince herkesinki açılır
+    const known = p.role && (!p.is_me || phase === 'ended') ? ROLES[p.role] : null;
+    if (phase !== 'lobby' && !p.is_alive) {
+      if (p.left) return { icon: 'exit-outline', text: known ? `Ayrıldı · ${known.name}` : 'Ayrıldı', color: G.faint };
+      return { icon: 'skull', text: known ? known.name : 'Elendi', color: known ? known.color : G.redSoft };
+    }
+    if (showVotes && voteOf.has(p.id)) {
+      const to = voteOf.get(p.id);
+      return to
+        ? { icon: 'arrow-forward', text: nameOf(to), color: G.gold }
+        : { icon: 'remove-circle-outline', text: 'Pas', color: G.muted };
+    }
+    if (phase === 'vote' && hasOpenVotes) return { icon: 'time-outline', text: 'Düşünüyor', color: G.faint };
+    if (investigated.has(p.id)) {
+      const vamp = investigated.get(p.id);
+      return { icon: 'search', text: vamp ? 'Vampir' : 'Temiz', color: vamp ? G.redSoft : G.green };
+    }
+    if (known) return { text: known.name, color: known.color };
+    if (phase === 'lobby' && p.is_host) return { icon: 'star', text: 'Oda sahibi', color: G.gold };
+    return null;
+  }
 
-        {me.is_host ? (
-          <PrimaryButton label="Oyuncu davet et" variant="ghost" onPress={() => setInviteOpen(true)} />
-        ) : null}
+  /** Anlatıcı için: hazır / gece seçimini yaptı / oy verdi */
+  function checkFor(p: VvPlayer): boolean | null {
+    if (!me.is_omniscient) return null;
+    if (phase === 'reveal') return p.ready;
+    if (phase === 'night') return p.is_alive && p.role && p.role !== 'villager' ? p.night_done : null;
+    if (phase === 'vote') return p.is_alive ? p.voted : null;
+    return null;
+  }
 
-        {/* GEÇİCİ: moderatör tek telefonla test edebilsin diye deneme oyuncuları (botlar) */}
-        {me.is_admin ? (
-          <PrimaryButton
-            label="Deneme oyuncusu ekle (+3)"
-            variant="ghost"
-            onPress={() =>
-              void act('bots', () => addTestBots(roomId, 3), {
-                confirm: () =>
-                  confirmAction(
-                    'Deneme oyuncusu eklensin mi?',
-                    'Kendi kendine oynayan 3 deneme oyuncusu eklenir. Bu oda deneme odası olur: oyun bitince KİMSEYE puan, başarım ya da istatistik yazılmaz.',
-                    'Ekle',
-                  ),
-              })
-            }
-          />
-        ) : null}
+  function voiceFor(p: VvPlayer): Tile['voice'] {
+    if (!vs?.allowed) return null;
+    const m = voice.member(p.id);
+    if (!m) return null;
+    return {
+      speaking: vs.speaker === p.id,
+      micOff: m.connected && !m.mic_on,
+      filter: m.filter_on,
+      away: m.away,
+      offline: !m.connected,
+    };
+  }
 
-        <View style={styles.infoLinks}>
-          <InfoLink label="Nasıl oynanır?" onPress={() => setInfo('how')} testID="vv-how" />
-          <InfoLink label="Puan kazanç tablosu" onPress={() => setInfo('points')} testID="vv-points" />
-        </View>
+  function kickFor(p: VvPlayer): Tile['kick'] {
+    if (!kickOpen) return null;
+    const m = voice.member(p.id);
+    if (!m || m.kick_votes <= 0) return null;
+    const secs = m.kick_decide_at
+      ? Math.max(0, Math.ceil((Date.parse(m.kick_decide_at) - voice.now) / 1000))
+      : null;
+    return { votes: m.kick_votes, need: vs?.kick_needed ?? null, mine: m.my_kick_vote, secsLeft: secs };
+  }
 
-        {me.is_host && !me.is_player && mode !== 'narrator' && view.code ? (
-          <PrimaryButton
-            label="Oyuna katıl"
-            loading={busy === 'join'}
-            onPress={() => {
-              const code = view.code;
-              if (code) void act('join', async () => ({ error: (await joinRoomWithLocation(code)).error }));
-            }}
-          />
-        ) : null}
-        {canStart ? (
-          <PrimaryButton
-            label="Oyunu başlat"
-            disabled={!enough}
-            loading={busy === 'start'}
-            onPress={() =>
-              void act('start', () => startVampireGame(roomId), {
-                confirm: () =>
-                  confirmAction(
-                    'Oyunu başlat',
-                    `${count} oyuncuya roller dağıtılacak: ${compositionText(view.composition)}. ${
-                      mode === 'auto' ? 'Oyun kendi kendine akacak; süreler dolunca aşamalar otomatik geçer. ' : ''
-                    }Başladıktan sonra yeni oyuncu giremez.`,
-                    'Oyunu başlat',
-                    false,
-                    { icon: 'moon' },
-                  ),
-              })
-            }
-          />
-        ) : (
-          <InfoCard>
-            {`${view.host.name} oyunu başlatınca bu ekran kendiliğinden değişir. Bekleme odasından ayrılırsan listeden çıkarsın.`}
-          </InfoCard>
-        )}
-        {mustConfirmLeave ? (
-          <PrimaryButton
-            label={me.is_host ? 'Odayı kapat' : 'Odadan ayrıl'}
-            variant={me.is_host ? 'danger' : 'ghost'}
-            loading={busy === 'leave'}
-            onPress={requestLeave}
-          />
-        ) : null}
-      </>
-    );
-  } else if (phase === 'reveal') {
-    body = (
-      <>
-        <InfoCard>{`Bu oyunda: ${compositionText(view.composition)}.`}</InfoCard>
-        {me.is_player && me.role ? (
-          <View style={styles.cardStage}>
-            <RoleCard role={me.role} faceUp={faceUp} width={cardWidth} onPress={() => setFaceUp((f) => !f)} />
-            <Text style={styles.stageHint}>
-              {faceUp
-                ? 'Gizlemek için karta tekrar dokun.'
-                : 'Rolünü görmek için karta dokun. Ekranı kimseye gösterme.'}
-            </Text>
-            {faceUp ? (
-              <View style={styles.roleText}>
-                <Text style={styles.roleGoal}>{ROLES[me.role].goal}</Text>
-                <Text style={styles.roleNight}>{ROLES[me.role].night}</Text>
-                {me.role === 'vampire' && me.allies && me.allies.length > 0 ? (
-                  <Text style={styles.allies}>Dostların: {me.allies.map((a) => a.name).join(', ')}</Text>
-                ) : null}
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-        {me.is_player && me.role ? (
-          me.ready ? (
-            <InfoCard tone="success">
-              {mode === 'auto'
-                ? 'Hazırsın. Herkes hazır olunca ya da süre dolunca gece kendiliğinden başlar. Rolünü unutursan oyun sırasında “Rolümü hatırlat” düğmesine basabilirsin.'
-                : `Hazırsın. ${me.is_host ? 'Geceyi sen başlatınca' : `${view.host.name} geceyi başlatınca`} oyun devam eder. Rolünü unutursan oyun sırasında “Rolümü hatırlat” düğmesine basabilirsin.`}
-            </InfoCard>
-          ) : (
-            <PrimaryButton
-              label="Rolümü gördüm, hazırım"
-              disabled={!faceUp}
-              loading={busy === 'ready'}
-              onPress={() => {
-                setFaceUp(false);
-                void act('ready', () => markRoleSeen(roomId));
-              }}
-            />
-          )
-        ) : null}
-        <ProgressLine label="Rolünü gören" done={view.ready_count} total={present.length} />
-        {me.is_omniscient ? (
-          <>
-            <SectionHeader title="Oyuncular ve roller" count={view.players.length} />
-            <PlayerList
-              players={view.players}
-              showAlive={false}
-              host={view.host}
-              status={(p) => (p.ready === null ? null : <CheckMark on={p.ready} label="Rolünü gördü" />)}
-            />
-          </>
-        ) : null}
-      </>
-    );
-  } else if (phase === 'night') {
-    body = (
-      <NightBody
-        view={view}
-        pickedId={pickedId}
-        setPick={(id) => setPick({ key: phaseKey, id })}
-        busy={busy}
-        onAct={act}
-        roomId={roomId}
-        nameOf={nameOf}
-      />
-    );
-  } else if (phase === 'dawn') {
-    const killed = view.last_night?.killed ?? [];
-    body = (
-      <>
-        <InfoCard
-          title={killed.length > 0 ? 'Gece biri öldü' : 'Bu gece kimse ölmedi'}
-          tone={killed.length > 0 ? 'danger' : 'success'}
-        >
-          <Text style={styles.cardText}>
-            {killed.length > 0
-              ? `${killed.map((k) => k.name).join(', ')} sabah ölü bulundu. Rolü açıklanmıyor.`
-              : 'Köy sağ salim uyandı. Vampirler kimseyi ısıramadı ya da doktor yetişti; hangisi olduğu belli değil.'}
-          </Text>
-        </InfoCard>
-        <SectionHeader title="Köy" count={alive.length} />
-        <PlayerList players={view.players} host={view.host} />
-        <Text style={styles.muted}>Masada konuşun: kim şüpheli? Oylama başlayınca herkes bir kişiye oy verecek.</Text>
-        {!canControl ? (
-          <InfoCard>
-            {mode === 'auto' ? 'Süre dolunca oylama kendiliğinden başlar.' : `Oylamayı ${managerName} başlatacak.`}
-          </InfoCard>
-        ) : null}
-      </>
-    );
-  } else if (phase === 'vote') {
-    const savedChoice = me.voted ? (me.vote_target ?? SKIP) : undefined;
-    const selection = pickedId ?? savedChoice;
-    const options: PickOption[] = [
-      ...alive.filter((p) => !p.is_me).map((p) => ({ id: p.id, name: p.name })),
-      { id: SKIP, name: 'Oy kullanmıyorum', subtle: true },
-    ];
-    const canVote = me.is_player && me.is_alive;
-    body = (
-      <>
-        {canVote ? (
-          <>
-            <InfoCard title="Kimi köyden çıkarıyoruz?">
-              {me.voted
-                ? 'Oyun kaydedildi. Herkes oy verince sonuç açıklanır; istersen oyunu değiştirebilirsin.'
-                : 'En çok oy alan kişi elenir ve rolü açıklanır. Eşitlik olursa kimse elenmez.'}
-            </InfoCard>
-            <TargetPicker options={options} selected={selection} onSelect={(id) => setPick({ key: phaseKey, id })} />
-            <PrimaryButton
-              label={me.voted ? 'Oyumu değiştir' : 'Oyumu ver'}
-              disabled={selection === undefined || selection === savedChoice}
-              loading={busy === 'cast'}
-              onPress={() =>
-                void act('cast', () => castVote(roomId, selection === SKIP || !selection ? null : selection))
-              }
-            />
-          </>
-        ) : (
-          <>
-            <InfoCard title="Oylama sürüyor">
-              {me.is_omniscient
-                ? 'Anlatıcı olarak oy vermezsin; kimin oy verdiğini aşağıdan izleyebilirsin.'
-                : me.is_player
-                  ? 'Elendin, oy veremezsin. Oylamayı izleyebilirsin.'
-                  : 'Bu oyunda oyuncu değilsin; oylamayı izleyebilirsin.'}
-            </InfoCard>
-          </>
-        )}
-        {view.pending ? <ProgressLine label="Oy verenler" done={view.pending.done} total={view.pending.total} /> : null}
-        {me.is_omniscient ? (
-          <PlayerList
-            players={view.players}
-            host={view.host}
-            status={(p) => (p.voted === null || !p.is_alive ? null : <CheckMark on={p.voted} label="Oy verdi" />)}
-          />
-        ) : null}
-      </>
-    );
-  } else if (phase === 'vote_result') {
-    const lv = view.last_vote;
-    const max = Math.max(1, ...(lv?.tally ?? []).map((t) => t.votes));
-    body = (
-      <>
-        {lv?.executed ? (
-          <View style={styles.cardStage}>
-            <RoleCard role={lv.executed.role} faceUp width={Math.min(cardWidth, 220)} />
-            <Text style={styles.resultTitle}>{lv.executed.name} köyden çıkarıldı</Text>
-            <View style={styles.resultRole}>
-              <Text style={styles.muted}>Rolü:</Text>
-              <RoleChip role={lv.executed.role} />
-            </View>
-          </View>
-        ) : (
-          <InfoCard title="Kimse elenmedi" tone="accent">
-            {lv && lv.tie
-              ? 'Oylar eşit çıktı, bu turda kimse köyden çıkarılmadı.'
-              : 'Yeterli oy çıkmadı, bu turda kimse köyden çıkarılmadı.'}
-          </InfoCard>
-        )}
-        {lv && lv.tally.length > 0 ? (
-          <>
-            <SectionHeader title="Oylar" />
-            <View style={styles.tally}>
-              {lv.tally.map((t) => (
-                <View key={t.id} style={styles.tallyRow}>
-                  <View style={styles.tallyHead}>
-                    <Text style={styles.tallyName} numberOfLines={1}>
-                      {t.name}
-                    </Text>
-                    <Text style={styles.tallyVotes}>{t.votes} oy</Text>
-                  </View>
-                  <View style={styles.bar}>
-                    <View style={[styles.barFill, { width: `${Math.round((t.votes / max) * 100)}%` }]} />
-                  </View>
-                </View>
-              ))}
-              {lv.skips + lv.absent > 0 ? (
-                <Text style={styles.muted}>
-                  {lv.skips > 0 ? `${lv.skips} kişi oy kullanmadı. ` : ''}
-                  {lv.absent > 0 ? `${lv.absent} kişi oy vermedi.` : ''}
-                </Text>
-              ) : null}
-            </View>
-          </>
-        ) : null}
-        {!canControl ? (
-          <InfoCard>
-            {mode === 'auto'
-              ? 'Süre dolunca yeni gece kendiliğinden başlar.'
-              : `Sonraki geceyi ${managerName} başlatacak.`}
-          </InfoCard>
-        ) : null}
-      </>
-    );
-  } else if (phase === 'ended') {
-    const vampiresWon = view.winner === 'vampire';
-    const myTeam = me.role ? ROLES[me.role].team : null;
-    const iWon = myTeam ? (myTeam === 'vampire') === vampiresWon : null;
-    body = (
-      <>
-        {iWon !== null ? (
-          <InfoCard title={iWon ? 'Kazandın!' : 'Bu sefer kaybettin'} tone={iWon ? 'success' : 'danger'}>
-            {`Rolün: ${ROLES[me.role!].name}. ${vampiresWon ? 'Vampirler köyü ele geçirdi.' : 'Köylüler bütün vampirleri buldu.'}`}
-          </InfoCard>
-        ) : null}
-        <SectionHeader title="Herkesin rolü" count={view.players.length} />
-        <PlayerList players={view.players} host={view.host} />
-        {me.is_player ? <ResultCard result={result} isModerator={me.is_admin} /> : null}
-        <View style={styles.infoLinks}>
-          <InfoLink label="Puan nasıl kazanılır?" onPress={() => setInfo('points')} testID="vv-points" />
-        </View>
-        <PrimaryButton label="Oyunlara dön" onPress={goToGames} />
-      </>
-    );
+  const tiles: Tile[] = view.players.map((p) => {
+    let selectable = false;
+    let dim = false;
+    if (nightPicking) {
+      selectable = nightTargets.has(p.id);
+      dim = !selectable && p.is_alive;
+    } else if (canVote) {
+      selectable = p.is_alive && !p.is_me;
+    }
+    return {
+      p,
+      selectable,
+      dim,
+      votesIn: votesIn.get(p.id),
+      sub: subFor(p),
+      check: checkFor(p),
+      voice: voiceFor(p),
+      kick: kickFor(p),
+    };
+  });
+
+  /** Avatar menüsü: fısılda, odadan atma oyu */
+  function menuOptions(p: VvPlayer): ActionOption[] {
+    const opts: ActionOption[] = [];
+    if (canWhisper && p.is_alive && !p.left && !p.is_me) {
+      opts.push({
+        label: `${p.name} kişisine fısılda`,
+        icon: 'ear',
+        onPress: () => {
+          setMenuFor(null);
+          setCompose({ replyTo: null, to: p.id });
+        },
+      });
+    }
+    const m = kickOpen ? voice.member(p.id) : undefined;
+    if (m && m.kickable) {
+      opts.push({
+        label: m.my_kick_vote
+          ? 'Odadan atma oyumu geri al'
+          : `Odadan atma oyu ver (${m.kick_votes}/${vs?.kick_needed ?? '–'})`,
+        icon: 'exit-outline',
+        destructive: !m.my_kick_vote,
+        onPress: () => {
+          setMenuFor(null);
+          void voice.kick(m);
+        },
+      });
+    }
+    return opts;
+  }
+
+  function pressTile(t: Tile) {
+    if (t.selectable) {
+      setPick({ key: phaseKey, id: t.p.id });
+      return;
+    }
+    if (menuOptions(t.p).length > 0) setMenuFor(t.p);
+  }
+
+  function longPressTile(t: Tile) {
+    if (menuOptions(t.p).length > 0) setMenuFor(t.p);
   }
 
   async function whisper(to: string, text: string, replyTo: string | null): Promise<string | null> {
@@ -913,8 +739,6 @@ function Game({ roomId }: { roomId: string }) {
     await notify('Bildirimin alındı', 'Moderatörler inceleyecek.', { icon: 'flag', tone: 'success' });
   }
 
-  const showWhispers = (playing || phase === 'ended') && !me.left && (me.is_player || me.is_omniscient);
-
   async function sayDead(text: string): Promise<string | null> {
     const res = await sayAsDead(roomId, text);
     if (res.error) return res.error;
@@ -945,115 +769,654 @@ function Game({ roomId }: { roomId: string }) {
     await notify('Bildirimin alındı', 'Moderatörler inceleyecek.', { icon: 'flag', tone: 'success' });
   }
 
+  // ---- Alttaki bilgi kutusu: aşamaya göre kısa yazı ve düğmeler ------------------------------------
+  let panel: ReactNode = null;
+  /** Ortada avatarlar yerine rol kartı (rolünü görme aşaması) */
+  let stage: ReactNode = null;
+
+  if (me.left && phase !== 'ended') {
+    panel = (
+      <>
+        <Text style={[styles.pTitle, { color: G.redSoft }]}>Oyundan çıkarıldın</Text>
+        <Text style={styles.pText}>
+          Oyun ekranından ayrıldığın ya da bağlantın uzun süre koptuğu için oyundan çıkarıldın. Oyundan ayrılan kişi
+          elenmiş sayılır ve geri dönemez.
+        </Text>
+        <GameButton label="Oyunlara dön" onPress={goToGames} />
+      </>
+    );
+  } else if (phase === 'cancelled') {
+    panel = (
+      <>
+        <Text style={styles.pTitle}>Oda kapandı</Text>
+        <Text style={styles.pText}>{closedText(view.close_reason, me.is_host)}</Text>
+        <GameButton label="Oyunlara dön" onPress={goToGames} />
+      </>
+    );
+  } else if (phase === 'lobby') {
+    const count = view.players.length;
+    const enough = count >= view.min_players;
+    const modeCard =
+      mode === 'auto'
+        ? { title: 'Otomatik Oyun', text: 'Yönetici yok; süreler dolunca oyun kendiliğinden ilerler. Herkes oyuncudur.' }
+        : mode === 'host'
+          ? {
+              title: me.is_host ? 'Ben Yöneticiyim' : `Yönetici: ${view.host.name}`,
+              text: me.is_host
+                ? 'Geceyi ve oylamayı sen başlatıp bitirirsin; sen de oynarsın.'
+                : `${view.host.name} oyunu ilerletir ve o da oynar.`,
+            }
+          : {
+              title: me.is_omniscient ? 'Sen anlatıcısın' : 'Anlatıcı: 41. Kat Sosyal',
+              text: me.is_omniscient
+                ? 'Oyuncu sayılmazsın; herkesin rolünü görür, oyunu sen ilerletirsin.'
+                : 'Moderatör anlatıcıdır, oyuncu değildir. Oyunu o ilerletir.',
+            };
+    panel = (
+      <>
+        {view.code ? (
+          <View style={styles.codeRow}>
+            <View style={styles.flex}>
+              <Text style={styles.codeLabel}>Oda kodu · yalnızca sende görünür</Text>
+              <Text style={styles.pText}>Yanındakilere söyle; Oyunlar sekmesinden girerler.</Text>
+            </View>
+            <Text style={styles.code} selectable accessibilityLabel={`Oda kodu ${view.code.split('').join(' ')}`}>
+              {view.code}
+            </Text>
+          </View>
+        ) : null}
+        <Text style={styles.pText}>
+          <Text style={styles.strong}>{`${modeCard.title}. `}</Text>
+          {modeCard.text}
+        </Text>
+        <Text style={enough ? styles.pText : styles.pWarn}>
+          {enough
+            ? `${count} oyuncu · roller: ${compositionText(view.composition)}.`
+            : `Başlamak için en az ${view.min_players} oyuncu gerekir (şu an ${count}, en fazla ${view.max_players}).`}
+        </Text>
+        {me.is_host || me.is_admin ? (
+          <View style={styles.btnRow}>
+            {me.is_host ? (
+              <GameButton
+                label="Davet et"
+                icon="person-add"
+                variant="ghost"
+                flex
+                onPress={() => setInviteOpen(true)}
+              />
+            ) : null}
+            {/* GEÇİCİ: moderatör tek telefonla test edebilsin diye deneme oyuncuları (botlar) */}
+            {me.is_admin ? (
+              <GameButton
+                label="+3 deneme oyuncusu"
+                icon="hardware-chip-outline"
+                variant="ghost"
+                flex
+                loading={busy === 'bots'}
+                onPress={() =>
+                  void act('bots', () => addTestBots(roomId, 3), {
+                    confirm: () =>
+                      confirmAction(
+                        'Deneme oyuncusu eklensin mi?',
+                        'Kendi kendine oynayan 3 deneme oyuncusu eklenir. Bu oda deneme odası olur: oyun bitince KİMSEYE puan, başarım ya da istatistik yazılmaz.',
+                        'Ekle',
+                      ),
+                  })
+                }
+              />
+            ) : null}
+          </View>
+        ) : null}
+        {me.is_host && !me.is_player && mode !== 'narrator' && view.code ? (
+          <GameButton
+            label="Oyuna katıl"
+            variant="ghost"
+            loading={busy === 'join'}
+            onPress={() => {
+              const code = view.code;
+              if (code) void act('join', async () => ({ error: (await joinRoomWithLocation(code)).error }));
+            }}
+          />
+        ) : null}
+        {canStart ? (
+          <GameButton
+            label="Oyunu başlat"
+            icon="moon"
+            disabled={!enough}
+            loading={busy === 'start'}
+            onPress={() =>
+              void act('start', () => startVampireGame(roomId), {
+                confirm: () =>
+                  confirmAction(
+                    'Oyunu başlat',
+                    `${count} oyuncuya roller dağıtılacak: ${compositionText(view.composition)}. ${
+                      mode === 'auto' ? 'Oyun kendi kendine akacak; süreler dolunca aşamalar otomatik geçer. ' : ''
+                    }Başladıktan sonra yeni oyuncu giremez.`,
+                    'Oyunu başlat',
+                    false,
+                    { icon: 'moon' },
+                  ),
+              })
+            }
+          />
+        ) : (
+          <Text style={styles.pText}>{`${view.host.name} oyunu başlatınca ekran kendiliğinden değişir.`}</Text>
+        )}
+      </>
+    );
+  } else if (phase === 'reveal') {
+    if (me.is_player && me.role) {
+      const cardW = Math.round(Math.min(width * 0.46, height * 0.3 * VAMPIRE_CARD_ASPECT, 200));
+      stage = (
+        <View style={styles.stage}>
+          <RoleCard role={me.role} faceUp={faceUp} width={cardW} onPress={() => setFaceUp((f) => !f)} />
+          {faceUp ? (
+            <>
+              <Text style={[styles.stageRole, { color: ROLES[me.role].color }]}>{ROLES[me.role].name}</Text>
+              <Text style={styles.stageText} numberOfLines={3}>
+                {ROLES[me.role].goal}
+              </Text>
+              {me.role === 'vampire' && me.allies && me.allies.length > 0 ? (
+                <Text style={styles.allies}>Dostların: {me.allies.map((a) => a.name).join(', ')}</Text>
+              ) : null}
+            </>
+          ) : (
+            <Text style={styles.stageText}>Rolünü görmek için karta dokun. Ekranı kimseye gösterme.</Text>
+          )}
+        </View>
+      );
+    }
+    panel = (
+      <>
+        <Text style={styles.pText}>{`Bu oyunda: ${compositionText(view.composition)}.`}</Text>
+        {me.is_player && me.role ? (
+          me.ready ? (
+            <Text style={styles.pOk}>
+              {mode === 'auto'
+                ? 'Hazırsın. Herkes hazır olunca ya da süre dolunca gece kendiliğinden başlar.'
+                : `Hazırsın. ${me.is_host ? 'Geceyi sen başlatınca' : `${view.host.name} geceyi başlatınca`} oyun devam eder.`}
+            </Text>
+          ) : (
+            <GameButton
+              label={faceUp ? 'Rolümü gördüm, hazırım' : 'Önce kartına dokun'}
+              disabled={!faceUp}
+              loading={busy === 'ready'}
+              onPress={() => {
+                setFaceUp(false);
+                void act('ready', () => markRoleSeen(roomId));
+              }}
+            />
+          )
+        ) : null}
+        <Text style={styles.pText}>{`Rolünü gören: ${view.ready_count} / ${present.length}`}</Text>
+        {hostButton}
+      </>
+    );
+  } else if (phase === 'night') {
+    const pend = view.pending ? `Seçimini yapanlar: ${view.pending.done} / ${view.pending.total}` : null;
+    if (me.is_omniscient) {
+      panel = (
+        <>
+          <Text style={styles.pTitle}>Gece sürüyor</Text>
+          <Text style={styles.pText}>
+            Vampirler, doktor ve dedektif seçimini yapıyor. Avatarların köşesindeki işaret seçim yapanı gösterir.
+          </Text>
+          {pend ? <Text style={styles.pText}>{pend}</Text> : null}
+          {hostButton}
+        </>
+      );
+    } else if (!nightActor || !role) {
+      panel = (
+        <>
+          <Text style={styles.pTitle}>{me.is_alive ? 'Köy uyuyor' : 'Köyü izliyorsun'}</Text>
+          <Text style={styles.pText}>
+            {!me.is_player
+              ? 'Bu oyunda oyuncu değilsin; geceyi izliyorsun.'
+              : me.is_alive
+                ? 'Bu gece yapacağın bir şey yok. Ekran açık kalsın; sabah olunca kendiliğinden değişir.'
+                : 'Elendin. Gece seçim yapamazsın; sabahı bekle.'}
+          </Text>
+          {hostButton}
+        </>
+      );
+    } else {
+      const info = ROLES[role];
+      const verb = role === 'vampire' ? 'Isır' : role === 'doctor' ? 'Koru' : 'Bak';
+      const ask =
+        role === 'vampire' ? 'Kimi ısıracaksın?' : role === 'doctor' ? 'Kimi koruyacaksın?' : 'Kime bakacaksın?';
+      const intro =
+        role === 'vampire'
+          ? 'Dostlarınla aynı kişiyi seçerseniz kesin ısırılır; farklıysa çoğunluk, eşitse rastgele.'
+          : role === 'doctor'
+            ? 'Seçtiğin kişi ısırılsa da ölmez. Kendini de seçebilirsin; art arda aynı kişiyi koruyamazsın.'
+            : 'Seçtiğin kişinin vampir olup olmadığını hemen öğrenirsin.';
+      const roleHead = (
+        <View style={styles.roleHead}>
+          <Ionicons
+            name={role === 'vampire' ? 'moon' : role === 'doctor' ? 'medkit' : 'search'}
+            size={18}
+            color={info.color}
+          />
+          <Text style={[styles.pTitle, { color: info.color }]}>{info.name}</Text>
+          {!todayResult ? <Text style={styles.pTitle}>· {ask}</Text> : null}
+        </View>
+      );
+      panel = todayResult ? (
+        <>
+          {roleHead}
+          <Text style={[styles.pTitle, { color: todayResult.is_vampire ? G.redSoft : G.green }]}>
+            {todayResult.is_vampire ? `${todayResult.name} bir vampir!` : `${todayResult.name} vampir değil`}
+          </Text>
+          <Text style={styles.pText}>
+            Bu bilgiyi yalnızca sen biliyorsun. Notların avatarların altında görünür.
+          </Text>
+          {hostButton}
+        </>
+      ) : (
+        <>
+          {roleHead}
+          <Text style={styles.pText}>{intro}</Text>
+          {role === 'vampire' && me.allies && me.allies.length > 0 ? (
+            <Text style={styles.allies} numberOfLines={2}>
+              {'Dostların: ' +
+                me.allies
+                  .map((a) => `${a.name}${a.is_alive ? '' : ' (elendi)'}${a.pick ? ` → ${a.pick}` : ''}`)
+                  .join(', ')}
+            </Text>
+          ) : null}
+          <GameButton
+            label={
+              nightSel
+                ? nightSel === savedNight
+                  ? `${verb}: ${nameOf(nightSel)} ✓`
+                  : `${verb}: ${nameOf(nightSel)}`
+                : 'Avatara dokunarak seç'
+            }
+            disabled={!nightSel || nightSel === savedNight}
+            loading={busy === 'night-action'}
+            onPress={() => nightSel && void act('night-action', () => nightAction(roomId, nightSel))}
+          />
+          {savedNight ? <Text style={styles.pText}>Seçimin kaydedildi. Herkes seçince sabah olur.</Text> : null}
+          {hostButton}
+        </>
+      );
+    }
+  } else if (phase === 'dawn') {
+    const killed = view.last_night?.killed ?? [];
+    panel = (
+      <>
+        <Text style={[styles.pTitle, { color: killed.length > 0 ? G.redSoft : G.green }]}>
+          {killed.length > 0 ? 'Gece biri öldü' : 'Bu gece kimse ölmedi'}
+        </Text>
+        <Text style={styles.pText}>
+          {killed.length > 0
+            ? `${killed.map((k) => k.name).join(', ')} sabah ölü bulundu. Rolü açıklanmıyor.`
+            : 'Köy sağ salim uyandı. Vampirler ısıramadı ya da doktor yetişti.'}
+        </Text>
+        <Text style={styles.pText}>
+          {view.remote ? 'Sırayla konuşun: kim şüpheli?' : 'Masada konuşun: kim şüpheli?'}{' '}
+          {!canControl
+            ? mode === 'auto'
+              ? view.remote
+                ? 'Herkes konuşunca oylama başlar.'
+                : 'Süre dolunca oylama başlar.'
+              : `Oylamayı ${managerName} başlatacak.`
+            : ''}
+        </Text>
+        {hostButton}
+      </>
+    );
+  } else if (phase === 'vote') {
+    const pend = view.pending ? `Oy verenler: ${view.pending.done} / ${view.pending.total}` : null;
+    panel = canVote ? (
+      <>
+        <Text style={styles.pTitle}>Kimi köyden çıkarıyoruz?</Text>
+        <Text style={styles.pText}>
+          Avatara dokunarak seç. Oylar herkese açık. En çok oy alan elenir; eşitlikte kimse elenmez.
+          {pend ? ` ${pend}` : ''}
+        </Text>
+        <View style={styles.btnRow}>
+          <GameButton
+            label={savedVote === SKIP ? 'Pas ✓' : 'Pas'}
+            variant="ghost"
+            disabled={savedVote === SKIP}
+            loading={busy === 'skip'}
+            onPress={() => {
+              setPick({ key: phaseKey, id: SKIP });
+              void act('skip', () => castVote(roomId, null));
+            }}
+          />
+          <GameButton
+            flex
+            label={
+              voteSel && voteSel !== SKIP
+                ? voteSel === savedVote
+                  ? `Oyun: ${nameOf(voteSel)} ✓`
+                  : `Oy ver: ${nameOf(voteSel)}`
+                : 'Avatara dokunarak seç'
+            }
+            disabled={!voteSel || voteSel === SKIP || voteSel === savedVote}
+            loading={busy === 'cast'}
+            onPress={() => {
+              if (voteSel && voteSel !== SKIP) void act('cast', () => castVote(roomId, voteSel));
+            }}
+          />
+        </View>
+        {hostButton}
+      </>
+    ) : (
+      <>
+        <Text style={styles.pTitle}>Oylama sürüyor</Text>
+        <Text style={styles.pText}>
+          {me.is_omniscient
+            ? 'Anlatıcı olarak oy vermezsin.'
+            : me.is_player
+              ? 'Elendin, oy veremezsin. Oylamayı izleyebilirsin.'
+              : 'Bu oyunda oyuncu değilsin; oylamayı izleyebilirsin.'}
+          {pend ? ` ${pend}` : ''}
+        </Text>
+        {hostButton}
+      </>
+    );
+  } else if (phase === 'vote_result') {
+    const lv = view.last_vote;
+    panel = (
+      <>
+        {lv?.executed ? (
+          <View style={styles.execRow}>
+            <RoleCard role={lv.executed.role} faceUp width={44} />
+            <View style={styles.flex}>
+              <Text style={styles.pTitle}>{`${lv.executed.name} köyden çıkarıldı`}</Text>
+              <Text style={[styles.strong, { color: ROLES[lv.executed.role].color }]}>
+                {`Rolü: ${ROLES[lv.executed.role].name}`}
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <>
+            <Text style={styles.pTitle}>Kimse elenmedi</Text>
+            <Text style={styles.pText}>
+              {lv && lv.tie ? 'Oylar eşit çıktı.' : 'Yeterli oy çıkmadı.'} Bu turda kimse köyden çıkarılmadı.
+            </Text>
+          </>
+        )}
+        {lv && lv.skips + lv.absent > 0 ? (
+          <Text style={styles.pText}>
+            {lv.skips > 0 ? `${lv.skips} kişi pas geçti. ` : ''}
+            {lv.absent > 0 ? `${lv.absent} kişi oy vermedi.` : ''}
+          </Text>
+        ) : null}
+        {!canControl ? (
+          <Text style={styles.pText}>
+            {mode === 'auto' ? 'Süre dolunca yeni gece başlar.' : `Sonraki geceyi ${managerName} başlatacak.`}
+          </Text>
+        ) : null}
+        {hostButton}
+      </>
+    );
+  } else if (phase === 'ended') {
+    const vampiresWon = view.winner === 'vampire';
+    const myTeam = me.role ? ROLES[me.role].team : null;
+    const iWon = myTeam ? (myTeam === 'vampire') === vampiresWon : null;
+    const res = me.is_player ? resultLine(result, me.is_admin) : null;
+    panel = (
+      <>
+        {iWon !== null && me.role ? (
+          <>
+            <Text style={[styles.pTitle, { color: iWon ? G.green : G.redSoft }]}>
+              {iWon ? 'Kazandın!' : 'Bu sefer kaybettin'}
+            </Text>
+            <Text style={styles.pText}>
+              {`Rolün: ${ROLES[me.role].name}. ${vampiresWon ? 'Vampirler köyü ele geçirdi.' : 'Köylüler bütün vampirleri buldu.'}`}
+            </Text>
+          </>
+        ) : (
+          <Text style={styles.pText}>
+            {vampiresWon ? 'Vampirler köyü ele geçirdi.' : 'Köylüler bütün vampirleri buldu.'} Herkesin rolü
+            avatarların altında.
+          </Text>
+        )}
+        {res ? <Text style={[styles.pText, res.good && styles.pOk]}>{res.text}</Text> : null}
+        <View style={styles.btnRow}>
+          <GameButton label="Puanlar" icon="trophy" variant="ghost" onPress={() => setInfo('points')} />
+          <GameButton label="Oyunlara dön" flex onPress={goToGames} />
+        </View>
+      </>
+    );
+  }
+
   const modeLabel =
     mode === 'auto' ? 'Otomatik Oyun' : mode === 'host' ? `Yönetici: ${managerName}` : 'Anlatıcılı oyun';
-  const subtitle = [view.code ? `Oda ${view.code}` : null, modeLabel, view.round > 0 ? `${view.round}. tur` : null]
+  const subtitle = [
+    view.code ? `Oda ${view.code}` : null,
+    view.remote ? 'Uzaktan' : null,
+    modeLabel,
+    view.round > 0 ? `${view.round}. tur` : null,
+  ]
     .filter(Boolean)
     .join(' · ');
   const blocking = live && mustConfirmLeave;
+  const scene = sceneFor(phase, view.winner);
+  const title =
+    phase === 'ended'
+      ? view.winner === 'vampire'
+        ? 'Vampirler kazandı'
+        : 'Köylüler kazandı'
+      : phase === 'night' || phase === 'dawn'
+        ? `${view.round}. ${phase === 'night' ? 'gece' : 'sabah'}`
+        : HERO_TITLE[phase];
+  const lastWhisper = view.whispers.length > 0 ? view.whispers[view.whispers.length - 1] : null;
+  const whisperLine = lastWhisper
+    ? lastWhisper.to === myPid
+      ? `${lastWhisper.from_name} sana ${lastWhisper.reply ? 'cevap verdi' : 'fısıldadı'} · okumak için dokun`
+      : lastWhisper.from === myPid
+        ? `Sen → ${lastWhisper.to_name} fısıldadın`
+        : `${lastWhisper.from_name}, ${lastWhisper.to_name} kişisine fısıldadı`
+    : null;
+  const whisperHot = incoming > seenIncoming;
+  const menuOpts = menuFor ? menuOptions(menuFor) : [];
 
   return (
-    <Screen
-      title="Vampir–Köylü"
-      subtitle={subtitle}
-      onBack={blocking ? requestLeave : goToGames}
-      backLabel={blocking ? 'Oyundan ayrıl' : 'Oyunlar'}
-      headerRight={phase === 'lobby' || playing ? safety.button : undefined}
-      overlay={
-        safety.isOpen ? (
-          safety.nodes
-        ) : inviteOpen && phase === 'lobby' && me.is_host ? (
-          <InviteSheet roomId={roomId} onClose={() => setInviteOpen(false)} />
-        ) : null
-      }
-    >
-      <BackBlocker enabled={blocking} onBack={requestLeave} />
-      <Hero view={view} />
-      {view.test ? (
-        <InfoCard title="Deneme odası" tone="danger">
-          Bu odada deneme oyuncuları (botlar) var. Oyun bitince kimseye puan, başarım ya da istatistik yazılmaz.
-        </InfoCard>
+    <View style={styles.root}>
+      <StatusBar style="light" />
+      <Image source={vampireImages[scene]} contentFit="cover" style={styles.fill} transition={500} />
+      <LinearGradient
+        colors={['rgba(4,5,12,0.7)', 'rgba(4,5,12,0.2)', 'rgba(4,5,12,0.35)', 'rgba(4,5,12,0.92)']}
+        locations={[0, 0.22, 0.5, 1]}
+        style={[styles.fill, styles.noTouch]}
+      />
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <BackBlocker enabled={blocking} onBack={requestLeave} />
+
+        {/* Üst şerit: çık, aşama başlığı, sesler, güvenlik */}
+        <View style={styles.top}>
+          <Pressable
+            onPress={blocking ? requestLeave : goToGames}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={blocking ? (me.is_host ? 'Oyunu kapat' : 'Oyundan ayrıl') : 'Oyunlara dön'}
+            style={({ pressed }) => [styles.topBtn, pressed && styles.pressed]}
+            testID="vv-back"
+          >
+            <Ionicons name={blocking ? 'exit-outline' : 'chevron-back'} size={20} color={G.text} />
+          </Pressable>
+          <View style={styles.flex} accessibilityRole="header">
+            <Text style={styles.title} numberOfLines={1}>
+              {title}
+            </Text>
+            <Text style={styles.subtitle} numberOfLines={1}>
+              {subtitle}
+            </Text>
+          </View>
+          {playing || phase === 'lobby' ? (
+            <Pressable
+              onPress={() => setSoundOn(!sound)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={sound ? 'Sesleri kapat' : 'Sesleri aç'}
+              style={({ pressed }) => [styles.topBtn, pressed && styles.pressed]}
+              testID="vv-sound"
+            >
+              <Ionicons name={sound ? 'volume-high' : 'volume-mute'} size={19} color={sound ? G.text : G.faint} />
+            </Pressable>
+          ) : null}
+          {phase === 'lobby' || playing ? safety.button : null}
+        </View>
+
+        <View style={styles.body}>
+          {playing && !me.left && view.phase_limit !== null ? (
+            <ClockBar
+              label={CLOCK_LABEL[phase] ?? 'Kalan süre'}
+              left={Math.max(0, view.phase_limit - view.phase_age - elapsed)}
+              limit={view.phase_limit}
+            />
+          ) : null}
+          {view.test || connError || (playing && me.is_player && !me.is_alive && !me.left) ? (
+            <View style={styles.pills}>
+              {view.test ? <Pill icon="hardware-chip-outline" text="Deneme odası · puan yazılmaz" tone="danger" /> : null}
+              {connError ? <Pill icon="cloud-offline" text="Bağlantı koptu, yeniden deniyor…" tone="warn" /> : null}
+              {playing && me.is_player && !me.is_alive && !me.left ? (
+                <Pill icon="skull" text="Elendin · oyunu izliyorsun" tone="danger" />
+              ) : null}
+            </View>
+          ) : null}
+
+          {/* Ortada: oyuncular (ya da rolünü görme aşamasında rol kartı) */}
+          {stage ?? (
+            <PlayerGrid
+              tiles={tiles}
+              selected={phase === 'night' ? nightSel : phase === 'vote' && voteSel !== SKIP ? voteSel : null}
+              accent={phase === 'night' && role ? ROLES[role].color : G.red}
+              onPress={pressTile}
+              onLongPress={longPressTile}
+            />
+          )}
+
+          {/* Son fısıltı: içeriği burada yazmaz (yanındakiler görmesin); dokununca liste açılır */}
+          {showWhispers && whisperLine ? (
+            <Pressable
+              onPress={() => {
+                setSeenIncoming(incoming);
+                setSheet('whispers');
+              }}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.ticker, whisperHot && styles.tickerHot, pressed && styles.pressed]}
+              testID="vv-whisper-line"
+            >
+              <Ionicons name="ear" size={14} color={whisperHot ? G.tealText : G.violet} />
+              <Text style={[styles.tickerText, whisperHot && { color: G.tealText }]} numberOfLines={1}>
+                {whisperLine}
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {vs?.allowed && myId ? <VoiceBar voice={voice} myId={myId} /> : null}
+
+          <Glass style={[styles.panel, { maxHeight: Math.round(height * 0.42) }]}>
+            <ScrollView style={styles.panelScroll} contentContainerStyle={styles.panelInner} bounces={false}>
+              {panel}
+              {actionError ? (
+                <Text style={styles.error} accessibilityLiveRegion="polite">
+                  {actionError}
+                </Text>
+              ) : null}
+            </ScrollView>
+          </Glass>
+
+          {/* Alt şerit */}
+          <View style={styles.tools}>
+            {showWhispers && view.whisper_limit > 0 ? (
+              <ToolButton
+                icon="ear"
+                label="Fısıltı"
+                badge={me.is_player && view.status === 'playing' ? view.whispers_left : null}
+                hot={whisperHot}
+                onPress={() => {
+                  setSeenIncoming(incoming);
+                  setSheet('whispers');
+                }}
+                testID="vv-whispers"
+              />
+            ) : null}
+            {me.is_player && me.role && phase !== 'lobby' && !me.left ? (
+              <ToolButton icon="eye-outline" label="Rolüm" onPress={() => setSheet('role')} testID="vv-role" />
+            ) : null}
+            {view.dead_chat ? (
+              <ToolButton
+                icon="skull"
+                label="Elenenler"
+                badge={view.dead_chat.length > 0 ? view.dead_chat.length : null}
+                onPress={() => setSheet('dead')}
+                testID="vv-dead"
+              />
+            ) : null}
+            {phase !== 'cancelled' ? (
+              <ToolButton icon="albums" label="Kartlar" onPress={() => setCardsOpen(true)} testID="vv-cards" />
+            ) : null}
+            {phase === 'lobby' ? (
+              <ToolButton icon="trophy" label="Puanlar" onPress={() => setInfo('points')} testID="vv-points" />
+            ) : null}
+            <ToolButton icon="help-circle-outline" label="Nasıl?" onPress={() => setInfo('how')} testID="vv-how" />
+          </View>
+        </View>
+      </SafeAreaView>
+
+      {safety.isOpen ? safety.nodes : null}
+      {inviteOpen && phase === 'lobby' && me.is_host ? (
+        <InviteSheet roomId={roomId} onClose={() => setInviteOpen(false)} />
       ) : null}
-      {connError ? <Text style={styles.warn}>Bağlantı koptu, yeniden deniyor…</Text> : null}
-      {/* Uzaktan oda: sesli sohbet (sırayla konuşma, mikrofon, ses filtresi, oylamayla atma) */}
-      {view.remote && (phase === 'lobby' || playing) && !me.left && myId ? (
-        <VoicePanel roomId={roomId} myId={myId} />
+      {menuFor && menuOpts.length > 0 ? (
+        <ActionSheet title={menuFor.name} options={menuOpts} onClose={() => setMenuFor(null)} />
       ) : null}
-      {playing || phase === 'lobby' ? (
-        <Pressable
-          onPress={() => setSoundOn(!sound)}
-          accessibilityRole="button"
-          accessibilityLabel={sound ? 'Sesleri kapat' : 'Sesleri aç'}
-          style={({ pressed }) => [styles.soundBtn, pressed && { opacity: 0.7 }]}
-          testID="vv-sound"
-        >
-          <Ionicons
-            name={sound ? 'volume-high' : 'volume-mute'}
-            size={16}
-            color={sound ? colors.primary : colors.textMuted}
+      {sheet === 'whispers' && showWhispers ? (
+        <Popup title="Fısıltılar" subtitle="İçeriği yalnızca gönderen ve alan görür." icon="ear" onClose={() => setSheet(null)}>
+          <WhisperPanel
+            view={view}
+            onCompose={() => {
+              setSheet(null);
+              setCompose({ replyTo: null });
+            }}
+            onReply={(w) => {
+              setSheet(null);
+              setCompose({ replyTo: w });
+            }}
+            onReport={(w) => void report(w)}
           />
-          <Text style={[styles.soundText, !sound && { color: colors.textMuted }]}>
-            {sound ? 'Sesler açık' : 'Sesler kapalı'}
-          </Text>
-        </Pressable>
+        </Popup>
       ) : null}
-      {playing && !me.left && view.phase_limit !== null ? (
-        <PhaseClock
-          label={CLOCK_LABEL[phase] ?? 'Kalan süre'}
-          limit={view.phase_limit}
-          age={view.phase_age}
-          elapsed={elapsed}
-        />
+      {sheet === 'role' && me.role ? (
+        <Popup title={`Rolün: ${ROLES[me.role].name}`} icon="eye-outline" onClose={() => setSheet(null)}>
+          <View style={styles.roleSheet}>
+            <RoleCard role={me.role} faceUp width={130} />
+            <Text style={styles.sheetText}>{ROLES[me.role].goal}</Text>
+            <Text style={styles.sheetMuted}>{ROLES[me.role].night}</Text>
+            {me.role === 'vampire' && me.allies && me.allies.length > 0 ? (
+              <Text style={styles.sheetText}>
+                {'Dostların: ' + me.allies.map((a) => `${a.name}${a.is_alive ? '' : ' (elendi)'}`).join(', ')}
+              </Text>
+            ) : null}
+            {me.role === 'detective' && me.investigations.length > 0
+              ? [...me.investigations].reverse().map((i) => (
+                  <Text key={`${i.round}-${i.id}`} style={styles.sheetText}>
+                    {`${i.round}. gece · ${i.name}: `}
+                    <Text style={{ color: i.is_vampire ? colors.danger : colors.success }}>
+                      {i.is_vampire ? 'Vampir' : 'Vampir değil'}
+                    </Text>
+                  </Text>
+                ))
+              : null}
+          </View>
+        </Popup>
       ) : null}
-      {playing && !me.left && me.is_player && !me.is_alive ? (
-        <InfoCard title="Elendin" tone="danger">
-          Artık seçim yapamazsın ama oyunu izlemeye devam edebilirsin. Oyun bitince herkesin rolü açıklanır.
-        </InfoCard>
-      ) : null}
-      {body}
-      {hostButton}
-      {view.dead_chat ? (
-        <DeadChat
-          messages={view.dead_chat}
-          canWrite={playing && me.is_player && !me.is_alive && !me.left}
-          onSend={sayDead}
-          onReport={(m) => void reportDead(m)}
-        />
-      ) : null}
-      {phase !== 'cancelled' ? (
-        <PrimaryButton label="Oyun kartlarını gör" variant="ghost" onPress={() => setCardsOpen(true)} />
-      ) : null}
-      {showWhispers ? (
-        <WhisperPanel
-          view={view}
-          onCompose={() => setCompose({ replyTo: null })}
-          onReply={(w) => setCompose({ replyTo: w })}
-          onReport={(w) => void report(w)}
-        />
-      ) : null}
-      {actionError ? (
-        <Text style={styles.error} accessibilityLiveRegion="polite">
-          {actionError}
-        </Text>
-      ) : null}
-      {playing && !me.left && me.is_player && me.role ? (
-        <PrimaryButton
-          label="Rolümü hatırlat"
-          variant="ghost"
-          onPress={() =>
-            void notify(`Rolün: ${ROLES[me.role!].name}`, `${ROLES[me.role!].goal}\n\n${ROLES[me.role!].night}`, {
-              icon: 'eye-outline',
-            })
-          }
-        />
-      ) : null}
-      {playing && mustConfirmLeave ? (
-        <PrimaryButton
-          label={me.is_host ? 'Oyunu kapat' : 'Oyundan ayrıl'}
-          variant={me.is_host ? 'danger' : 'ghost'}
-          loading={busy === 'leave'}
-          onPress={requestLeave}
-        />
+      {sheet === 'dead' && view.dead_chat ? (
+        <Popup title="Elenenlerin sohbeti" icon="skull" onClose={() => setSheet(null)}>
+          <DeadChat
+            messages={view.dead_chat}
+            canWrite={playing && me.is_player && !me.is_alive && !me.left}
+            onSend={sayDead}
+            onReport={(m) => void reportDead(m)}
+          />
+        </Popup>
       ) : null}
       <InfoModal
         visible={info === 'how'}
@@ -1064,7 +1427,13 @@ function Game({ roomId }: { roomId: string }) {
       />
       {cardsOpen ? <RoleGallery onClose={() => setCardsOpen(false)} /> : null}
       {compose && showWhispers ? (
-        <WhisperCompose view={view} replyTo={compose.replyTo} onClose={() => setCompose(null)} onSend={whisper} />
+        <WhisperCompose
+          view={view}
+          replyTo={compose.replyTo}
+          initialTo={compose.to ?? null}
+          onClose={() => setCompose(null)}
+          onSend={whisper}
+        />
       ) : null}
       <GamePointsModal
         visible={info === 'points'}
@@ -1072,7 +1441,7 @@ function Game({ roomId }: { roomId: string }) {
         players={present.length}
         extra={[VAMPIRE_RANK_ITEM]}
       />
-    </Screen>
+    </View>
   );
 }
 
@@ -1085,17 +1454,27 @@ const HOW_TO_PLAY: InfoItem[] = [
   {
     icon: 'moon',
     lead: 'Gece.',
-    text: 'Vampirler birini ısırır, doktor birini korur, dedektif birine bakıp vampir olup olmadığını öğrenir.',
+    text: 'Vampirler birini ısırır, doktor birini korur, dedektif birine bakıp vampir olup olmadığını öğrenir. Seçimi avatara dokunarak yaparsın.',
   },
   {
     icon: 'sunny',
     lead: 'Gündüz.',
-    text: 'Sabah kimin öldüğü açıklanır. Masada konuşursunuz, sonra herkes oy verip bir kişiyi köyden çıkarır.',
+    text: 'Sabah kimin öldüğü açıklanır. Konuşursunuz, sonra herkes açık oyla bir kişiyi köyden çıkarır: kaç oy aldığı avatarın üstünde, kime oy verdiği adının altında görünür.',
+  },
+  {
+    icon: 'skull',
+    lead: 'Ölü / sağ.',
+    text: 'Elenen oyuncunun avatarı kararır, üstünde kurukafa ve adının üstü çizili görünür.',
   },
   {
     icon: 'ear',
     lead: 'Fısıltı.',
-    text: 'Oyunda yaşayan herkes 3 kez birine gizli mesaj fısıldayabilir. Masadakiler kimin kime fısıldadığını görür ama ne yazdığını yalnızca alan kişi görür. Cevap vermek de bir hak yer.',
+    text: 'Oyunda yaşayan herkes 3 kez birine gizli mesaj fısıldayabilir (avatara dokun ya da alttaki Fısıltı düğmesi). Herkes kimin kime fısıldadığını görür, ne yazdığını yalnızca alan kişi görür. Cevap vermek de bir hak yer.',
+  },
+  {
+    icon: 'exit-outline',
+    lead: 'Uzaktan odada atma.',
+    text: 'Sesli odada kötü davranan biri, sabah konuşmalarından hemen sonra (oylama sırasında) odadan atılabilir: avatarına uzun bas. 4 kişi atmak isterse (odada daha az kişi varsa diğer herkes) 10 saniye içinde atılır ve geri giremez.',
   },
   {
     icon: 'trophy',
@@ -1104,49 +1483,30 @@ const HOW_TO_PLAY: InfoItem[] = [
   },
 ];
 
-/** Oyun bitince: kaçıncı sırada bitirdin, kaç puan yazıldı. */
-function ResultCard({
-  result,
-  isModerator,
-}: {
-  result: { data: MyGameResult | null; rules: PointRules } | null;
-  isModerator: boolean;
-}) {
-  if (result === null) return <Text style={styles.muted}>Sonucun hesaplanıyor…</Text>;
+/** Oyun bitince: kaçıncı sırada bitirdin, kaç puan yazıldı (tek satır). */
+function resultLine(
+  result: { data: MyGameResult | null; rules: PointRules } | null,
+  isModerator: boolean,
+): { text: string; good: boolean } | null {
+  if (result === null) return { text: 'Sonucun hesaplanıyor…', good: false };
   const r = result.data;
   if (!r) return null;
   if (r.note === 'none' || r.best_rank === null || r.players === null) {
-    return (
-      <InfoCard>
-        {isModerator ? 'Moderatörler oyundan puan kazanmaz.' : 'Oyundan erken ayrıldığın için puan yazılmadı.'}
-      </InfoCard>
-    );
+    return {
+      text: isModerator ? 'Moderatörler oyundan puan kazanmaz.' : 'Oyundan erken ayrıldığın için puan yazılmadı.',
+      good: false,
+    };
   }
   const place = `${r.players} oyuncu arasında ${r.best_rank}. sırada bitirdin`;
-  if (r.note === 'ok') {
-    return (
-      <InfoCard title={`+${fmtPts(r.awarded)} puan`} tone="success">
-        {`${place}; puanın hesabına yazıldı.`}
-      </InfoCard>
-    );
-  }
+  if (r.note === 'ok') return { text: `+${fmtPts(r.awarded)} puan · ${place}; puanın hesabına yazıldı.`, good: true };
   if (r.note === 'too_few') {
-    return (
-      <InfoCard title="Bu oyundan puan yok">
-        {`${place}. Puan için oyunda en az ${result.rules.gameMinPlayers} kişi gerekir.`}
-      </InfoCard>
-    );
+    return { text: `${place}. Puan için oyunda en az ${result.rules.gameMinPlayers} kişi gerekir.`, good: false };
   }
-  return (
-    <InfoCard title="Günlük ya da aylık sınır doldu" tone="accent">
-      {`${place} (${fmtPts(r.result_points)} puan değerinde) ama puan sınırın dolduğu için bu oyundan puan yazılmadı.`}
-    </InfoCard>
-  );
+  return {
+    text: `${place} (${fmtPts(r.result_points)} puan değerinde) ama puan sınırın dolduğu için bu oyundan puan yazılmadı.`,
+    good: false,
+  };
 }
-
-// ---------------------------------------------------------------------------
-// Sahne görseli ve başlığı
-// ---------------------------------------------------------------------------
 
 const HERO_TITLE: Record<VvView['phase'], string> = {
   lobby: 'Bekleme odası',
@@ -1159,286 +1519,82 @@ const HERO_TITLE: Record<VvView['phase'], string> = {
   cancelled: 'Oda iptal edildi',
 };
 
-function Hero({ view }: { view: VvView }) {
-  const scene = sceneFor(view.phase, view.winner);
-  const title =
-    view.phase === 'ended'
-      ? view.winner === 'vampire'
-        ? 'Vampirler kazandı'
-        : 'Köylüler kazandı'
-      : view.phase === 'night' || view.phase === 'dawn'
-        ? `${view.round}. ${view.phase === 'night' ? 'gece' : 'sabah'}`
-        : HERO_TITLE[view.phase];
-  return (
-    <View style={styles.hero} accessible accessibilityLabel={title}>
-      <Image source={vampireImages[scene]} contentFit="cover" style={styles.fill} />
-      <LinearGradient
-        colors={['rgba(8,10,20,0)', 'rgba(8,10,20,0.85)']}
-        locations={[0.4, 1]}
-        style={[styles.fill, styles.noTouch]}
-      />
-      <Text style={styles.heroTitle}>{title}</Text>
-    </View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Gece: her rol kendi ekranını görür
-// ---------------------------------------------------------------------------
-
-type ActFn = (
-  key: string,
-  fn: () => Promise<Result>,
-  options?: { confirm?: () => Promise<boolean>; after?: () => void },
-) => Promise<void>;
-
-function NightBody({
-  view,
-  pickedId,
-  setPick,
-  busy,
-  onAct,
-  roomId,
-  nameOf,
-}: {
-  view: VvView;
-  pickedId: string | undefined;
-  setPick: (id: string) => void;
-  busy: string | null;
-  onAct: ActFn;
-  roomId: string;
-  nameOf: (id: string | null | undefined) => string;
-}) {
-  const me = view.me;
-  const alive = view.players.filter((p) => p.is_alive);
-  const progress = view.pending ? (
-    <ProgressLine label="Seçimini yapanlar" done={view.pending.done} total={view.pending.total} />
-  ) : null;
-
-  // Anlatıcı: herkesin rolünü ve kimin seçim yaptığını görür
-  if (me.is_omniscient) {
-    return (
-      <>
-        <InfoCard title="Gece sürüyor">
-          {view.mode === 'auto'
-            ? 'Vampirler, doktor ve dedektif seçimini yapıyor. Herkes seçince ya da süre dolunca sabah kendiliğinden olur.'
-            : 'Vampirler, doktor ve dedektif seçimini yapıyor. Herkes seçince sabah kendiliğinden olur; beklemek istemezsen aşağıdan bitirebilirsin.'}
-        </InfoCard>
-        {progress}
-        <PlayerList
-          players={view.players}
-          host={view.host}
-          status={(p) =>
-            p.night_done === null || !p.role || p.role === 'villager' || !p.is_alive ? null : (
-              <CheckMark on={p.night_done} label="Seçim yaptı" />
-            )
-          }
-        />
-      </>
-    );
-  }
-
-  const role = me.role;
-  const canAct = me.is_player && me.is_alive && (role === 'vampire' || role === 'doctor' || role === 'detective');
-
-  if (!canAct || !role) {
-    return (
-      <>
-        <InfoCard title={me.is_alive ? 'Köy uyuyor' : 'Köyü izliyorsun'}>
-          {!me.is_player
-            ? 'Bu oyunda oyuncu değilsin; geceyi izliyorsun. Sabah olunca ekran kendiliğinden değişir.'
-            : me.is_alive
-              ? 'Gece oldu. Bu gece yapacağın bir şey yok. Telefonu masaya bırak (ekran açık kalsın); sabah olunca ekran kendiliğinden değişir.'
-              : 'Elendin. Gece sürerken seçim yapamazsın. Sabahı bekle.'}
-        </InfoCard>
-        {progress}
-      </>
-    );
-  }
-
-  const info = ROLES[role];
-  const saved = me.night_target;
-  const selection = pickedId ?? saved ?? undefined;
-  const allyIds = new Set((me.allies ?? []).map((a) => a.id));
-
-  let title = '';
-  let verb = '';
-  let intro = '';
-  let options: PickOption[] = [];
-  if (role === 'vampire') {
-    title = 'Kimi ısıracaksın?';
-    verb = 'Isır';
-    intro =
-      'Dostlarınla aynı kişiyi seçersen o kişi kesin ısırılır. Farklı seçerseniz çoğunluk, eşitse rastgele biri seçilir.';
-    options = alive.filter((p) => !p.is_me && !allyIds.has(p.id)).map((p) => ({ id: p.id, name: p.name }));
-  } else if (role === 'doctor') {
-    title = 'Kimi koruyacaksın?';
-    verb = 'Koru';
-    intro =
-      'Seçtiğin kişi bu gece ısırılsa bile ölmez. Kendini de seçebilirsin; ama art arda iki gece aynı kişiyi koruyamazsın.';
-    options = alive.map((p) => {
-      const blocked = p.id === me.last_protect;
-      return {
-        id: p.id,
-        name: p.is_me ? `${p.name} (sen)` : p.name,
-        disabled: blocked,
-        note: blocked ? 'Geçen gece korudun' : undefined,
-      };
-    });
-  } else {
-    title = 'Kime bakacaksın?';
-    verb = 'Bak';
-    intro = 'Seçtiğin kişinin vampir olup olmadığını hemen öğrenirsin. Her gece yalnızca bir kişiye bakabilirsin.';
-    options = alive.filter((p) => !p.is_me).map((p) => ({ id: p.id, name: p.name }));
-  }
-
-  const todayResult = role === 'detective' ? me.investigations.find((i) => i.round === view.round) : undefined;
-
-  return (
-    <>
-      <View style={[styles.roleBanner, { borderColor: info.color }]}>
-        <Ionicons
-          name={role === 'vampire' ? 'moon' : role === 'doctor' ? 'medkit' : 'search'}
-          size={22}
-          color={info.color}
-        />
-        <Text style={[styles.roleBannerText, { color: info.color }]}>{info.name}</Text>
-      </View>
-
-      {todayResult ? (
-        <InfoCard
-          title={todayResult.is_vampire ? `${todayResult.name} bir vampir!` : `${todayResult.name} vampir değil`}
-          tone={todayResult.is_vampire ? 'danger' : 'success'}
-        >
-          Bu bilgiyi yalnızca sen biliyorsun. Gündüz ne kadarını paylaşacağın sana kalmış.
-        </InfoCard>
-      ) : (
-        <>
-          <InfoCard title={title}>{intro}</InfoCard>
-          {role === 'vampire' && me.allies && me.allies.length > 0 ? (
-            <InfoCard title="Dostların">
-              {me.allies
-                .map((a) => `${a.name}${a.is_alive ? '' : ' (elendi)'}${a.pick ? ` → ${a.pick}` : ''}`)
-                .join('\n')}
-            </InfoCard>
-          ) : null}
-          <TargetPicker options={options} selected={selection} onSelect={setPick} accent={info.color} />
-          <PrimaryButton
-            label={saved ? `${verb} · seçimi değiştir` : verb}
-            disabled={!selection || selection === saved}
-            loading={busy === 'night-action'}
-            onPress={() => selection && void onAct('night-action', () => nightAction(roomId, selection))}
-          />
-          {saved ? (
-            <Text style={styles.muted}>Seçimin kaydedildi: {nameOf(saved)}. Herkes seçince sabah olur.</Text>
-          ) : null}
-        </>
-      )}
-
-      {role === 'detective' && me.investigations.length > 0 ? (
-        <>
-          <SectionHeader title="Notların" />
-          <View style={styles.tally}>
-            {[...me.investigations].reverse().map((i) => (
-              <View key={`${i.round}-${i.id}`} style={styles.noteRow}>
-                <Text style={styles.noteRound}>{i.round}. gece</Text>
-                <Text style={styles.noteName} numberOfLines={1}>
-                  {i.name}
-                </Text>
-                <Text style={[styles.noteResult, { color: i.is_vampire ? colors.danger : colors.success }]}>
-                  {i.is_vampire ? 'Vampir' : 'Vampir değil'}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </>
-      ) : null}
-      {progress}
-    </>
-  );
-}
-
 const styles = StyleSheet.create({
-  soundBtn: {
-    alignSelf: 'flex-end',
+  root: { flex: 1, backgroundColor: '#05060E' },
+  fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  noTouch: { pointerEvents: 'none' },
+  safe: { flex: 1 },
+  flex: { flex: 1 },
+  pressed: { opacity: 0.7 },
+  muted: { color: colors.textMuted, fontSize: fontSizes.sm, lineHeight: 20 },
+  top: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: 4,
+    paddingBottom: 6,
+  },
+  topBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8, 10, 20, 0.55)',
+  },
+  title: {
+    color: G.text,
+    fontFamily: fonts.black,
+    fontSize: 20,
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowRadius: 8,
+  },
+  subtitle: { color: G.muted, fontFamily: fonts.semi, fontSize: 11.5 },
+  body: { flex: 1, gap: 8, paddingHorizontal: spacing.md, paddingBottom: 6 },
+  pills: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6 },
+  stage: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  stageRole: { fontFamily: fonts.black, fontSize: 18, textShadowColor: 'rgba(0,0,0,0.8)', textShadowRadius: 6 },
+  stageText: {
+    color: G.text,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
+    textShadowColor: 'rgba(0,0,0,0.9)',
+    textShadowRadius: 6,
+  },
+  allies: { color: G.violet, fontFamily: fonts.semi, fontSize: 12.5, textAlign: 'center' },
+  ticker: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: radii.pill,
+    paddingHorizontal: 10,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(8, 10, 20, 0.7)',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: 'rgba(155, 123, 255, 0.45)',
   },
-  soundText: { color: colors.text, fontFamily: fonts.semi, fontSize: fontSizes.sm },
-  fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-  noTouch: { pointerEvents: 'none' },
-  muted: { color: colors.textMuted, fontSize: fontSizes.sm, lineHeight: 20 },
-  warn: { color: colors.primary, fontSize: fontSizes.sm, lineHeight: 20 },
-  error: { color: colors.danger, fontSize: fontSizes.sm, lineHeight: 20 },
-  cardText: { color: colors.textMuted, fontSize: fontSizes.sm, lineHeight: 21 },
-  hero: {
-    width: '100%',
-    aspectRatio: VAMPIRE_SCENE_ASPECT,
-    borderRadius: radii.lg,
-    overflow: 'hidden',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    justifyContent: 'flex-end',
-  },
-  heroTitle: {
-    color: '#FFFFFF',
-    fontFamily: fonts.black,
-    fontSize: fontSizes.lg,
-    padding: spacing.lg,
-    textShadowColor: 'rgba(0,0,0,0.7)',
-    textShadowRadius: 8,
-  },
-  codeCard: {
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderColor: colors.primary,
-    borderWidth: 1,
-    borderRadius: radii.lg,
-    padding: spacing.lg,
-  },
-  codeLabel: { color: colors.textMuted, fontFamily: fonts.semi, fontSize: fontSizes.sm },
-  code: { color: colors.primary, fontFamily: fonts.black, fontSize: 44, letterSpacing: 8 },
-  codeHint: { color: colors.textMuted, fontSize: 12, lineHeight: 18, textAlign: 'center' },
-  infoLinks: { flexDirection: 'row', flexWrap: 'wrap', columnGap: spacing.lg, rowGap: 2 },
-  rolesRow: { flexDirection: 'row', gap: spacing.md, justifyContent: 'center' },
-  roleMini: { alignItems: 'center', gap: 6 },
-  roleMiniName: { color: colors.textMuted, fontFamily: fonts.semi, fontSize: 11 },
-  cardStage: { alignItems: 'center', gap: spacing.md },
-  stageHint: { color: colors.textMuted, fontSize: fontSizes.sm, textAlign: 'center' },
-  roleText: { gap: spacing.sm, alignItems: 'center', paddingHorizontal: spacing.md },
-  roleGoal: { color: colors.text, fontSize: fontSizes.md, lineHeight: 23, textAlign: 'center' },
-  roleNight: { color: colors.textMuted, fontSize: fontSizes.sm, lineHeight: 21, textAlign: 'center' },
-  allies: { color: '#B7A8FF', fontFamily: fonts.semi, fontSize: fontSizes.sm, textAlign: 'center' },
-  roleBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    borderWidth: 1,
-    borderRadius: radii.pill,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.surface,
-  },
-  roleBannerText: { fontFamily: fonts.extra, fontSize: fontSizes.md },
-  resultTitle: { color: colors.text, fontFamily: fonts.black, fontSize: fontSizes.lg, textAlign: 'center' },
-  resultRole: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  tally: { gap: spacing.md, backgroundColor: colors.surface, borderRadius: radii.lg, padding: spacing.lg },
-  tallyRow: { gap: 6 },
-  tallyHead: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md },
-  tallyName: { flex: 1, color: colors.text, fontFamily: fonts.semi, fontSize: fontSizes.md },
-  tallyVotes: { color: colors.primary, fontFamily: fonts.extra, fontSize: fontSizes.sm },
-  bar: { height: 6, borderRadius: radii.pill, backgroundColor: colors.surfaceAlt, overflow: 'hidden' },
-  barFill: { height: '100%', borderRadius: radii.pill, backgroundColor: colors.primary },
-  noteRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  noteRound: { color: colors.textMuted, fontSize: 12, width: 56 },
-  noteName: { flex: 1, color: colors.text, fontFamily: fonts.semi, fontSize: fontSizes.sm },
-  noteResult: { fontFamily: fonts.extra, fontSize: fontSizes.sm },
+  tickerHot: { backgroundColor: G.teal, borderColor: G.teal },
+  tickerText: { flex: 1, color: G.text, fontFamily: fonts.semi, fontSize: 12 },
+  panel: { padding: 0 },
+  panelScroll: { flexGrow: 0 },
+  panelInner: { gap: 8, padding: 12 },
+  pTitle: { color: G.text, fontFamily: fonts.extra, fontSize: 15 },
+  pText: { color: G.muted, fontSize: 12.5, lineHeight: 17 },
+  pWarn: { color: G.gold, fontSize: 12.5, lineHeight: 17 },
+  pOk: { color: G.green, fontSize: 12.5, lineHeight: 17 },
+  strong: { color: G.text, fontFamily: fonts.extra, fontSize: 12.5 },
+  btnRow: { flexDirection: 'row', gap: 8 },
+  roleHead: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  execRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  codeRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  codeLabel: { color: G.text, fontFamily: fonts.semi, fontSize: 12 },
+  code: { color: G.teal, fontFamily: fonts.black, fontSize: 30, letterSpacing: 5 },
+  error: { color: G.redSoft, fontSize: 12.5, lineHeight: 17 },
+  tools: { flexDirection: 'row', justifyContent: 'space-around', gap: 4, paddingTop: 2 },
+  roleSheet: { alignItems: 'center', gap: spacing.sm },
+  sheetText: { color: colors.text, fontSize: fontSizes.sm, lineHeight: 20, textAlign: 'center' },
+  sheetMuted: { color: colors.textMuted, fontSize: 13, lineHeight: 18, textAlign: 'center' },
 });

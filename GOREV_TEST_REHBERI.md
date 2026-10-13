@@ -1,45 +1,43 @@
-# Görev Test Rehberi – Yan yana puan sınırı, 100 metre konum, deneme oyuncuları
+# Görev Test Rehberi – Vampir–Köylü yeni ekran, açık oylar, odadan atma
 
 ## A. Supabase'i güncelle
 - Supabase > **SQL Editor** > **+ New query**.
 - `supabase/schema.sql` dosyasının tamamını yapıştır > **Run**.
 - Yeşil "Success" görmelisin.
-- Bu çalıştırma 8 deneme oyuncusu (bot) hesabı da oluşturur: "Deneme Botu 1–8". Bu hesaplara giriş yapılamaz.
 
-## B. Deneme oyuncularıyla Vampir–Köylü (moderatör hesabı + 1 telefon yeterli)
-1. Moderatör hesabıyla Oyunlar > Vampir–Köylü > Oda aç.
-   - **Yan yana** (ya da Uzaktan) > **Otomatik Oyun** > Evet, ben de oynarım.
-2. Bekleme salonunda **Deneme oyuncusu ekle (+3)** > Ekle.
-   - Oyuncu listesine 3 bot gelmeli.
-   - Üstte kırmızı "Deneme odası" uyarısı çıkmalı.
-   - Açık odalar listesinde "Deneme odası · puan verilmez" yazmalı.
-3. Gerekirse bir kez daha bas (en çok 8 bot). İkinci telefonu da odaya alabilirsin.
-4. **Oyunu başlat.**
-   - Botlar rolünü görür, gece seçim yapar, oy verir.
-   - Oyun kendi kendine ilerleyip bitmeli.
-5. Oyun bitince puan geçmişine, başarımlara ve sıralamaya **hiçbir şey yazılmamalı**.
+## B. Yeni oyun ekranı (moderatör hesabı + 1 telefon)
+1. Oyunlar > Vampir–Köylü > Oda aç > **Yan yana** > **Otomatik Oyun** > Evet, ben de oynarım.
+2. Ekranın tamamında gece görseli olmalı. Yazılar ve düğmeler görselin üstünde durmalı.
+   - Sayfa aşağı kaymamalı; her şey tek ekranda olmalı.
+3. Altta **+3 deneme oyuncusu** > Ekle > **Oyunu başlat**.
+4. Rol aşaması: ortada rol kartı çıkar. Karta dokun > **Rolümü gördüm, hazırım**.
+5. Gece / sabah / oylama:
+   - Ortada oyuncuların avatarları görünmeli.
+   - Ölen oyuncunun avatarı kararmalı, üstünde kurukafa olmalı, adının üstü çizilmeli.
+   - Gece rolün varsa (vampir, doktor, dedektif) avatara dokunarak seç > alttaki düğmeye bas.
+6. Oylamada:
+   - Avatara dokun > **Oy ver: …**. Oy vermek istemezsen **Pas**.
+   - Avatarın üstünde kırmızı ✋ ile **kaç oy aldığı** görünmeli.
+   - Adın altında **kime oy verdiği** görünmeli (→ Ad). Pas geçen için "Pas", henüz oy vermeyen için "Düşünüyor".
+7. Alt şerit:
+   - **Fısıltı**: liste açılır. Fısıldamak için bir avatara dokunup "… kişisine fısılda" da diyebilirsin.
+   - **Rolüm**: rol kartın ve (dedektifsen) notların.
+   - **Elenenler** (elendiysen), **Kartlar**, **Nasıl?**.
+   - Son fısıltı tek satır olarak görünür. İçeriği orada yazmaz, yanındakiler görmesin diye.
 
-## C. Yan yana oyun: 100 metre kuralı (2 telefon)
-1. Telefon 1 yan yana oda açar.
-   - Konum uyarısında "yaklaşık 100 metre" yazmalı.
-2. Telefon 2 aynı masadan kodla girer: girebilmeli.
-3. Telefon 2 yaklaşık 200 metre uzaklaşıp girmeye çalışır.
-   - "Oda sahibinden uzaktasın… yaklaşık 100 metre (konum hatası dahil en çok 150 m)" uyarısı çıkmalı.
-4. Mesafe ayarları: Web panel > Ayarlar:
-   - `game_join_max_meters` (100)
-   - `game_join_max_meters_cap` (150)
-
-## D. Yan yana oyunda puan sınırı yok
-- Kurallar ve Açık odalar > puan tablosu: "Yan yana oyunda günlük/aylık puan sınırı yok" yazmalı.
-- Uzaktan oyun sınırları aynen geçerli: günde 2, ayda 6.
-- Bilgi Yarışması ve Hazine Avı sınırları aynen geçerli.
-
-## E. KVKK aydınlatma metnine eklenecek paragraf
-Web panel > Sistem > **Uygulama metinleri** > **KVKK aydınlatma metni** ve **Gizlilik politikası**'na ekle:
-
-```
-## Yan yana oyunlarda konum
-Yan yana oynanan bir oyuna girerken, oyuncuların gerçekten bir arada olduğunu kontrol etmek için telefonunun kesin konumu (enlem, boylam ve telefonun bildirdiği konum hata payı) bir kez sunucuya gönderilir. Odaya girenin kesin konumu yalnızca bu karşılaştırmada kullanılır ve hiçbir yere kaydedilmez. Oda sahibinin kesin konumu yalnızca oda katılıma açıkken tutulur; oyun başladığında, oda kapandığında ya da iptal edildiğinde (en geç 12 saat içinde) kendiliğinden silinir ve yedeklere alınmaz. Uygulama konumunu sürekli takip etmez ve arka planda konuma bakmaz. Uygulamanın diğer bölümlerinde (akış, harita, etkinlik) yalnızca bulunduğun bölgenin (peteğin) numarası kullanılır.
-```
-
-> Bu paragraf, bir sonraki pakette yazacağım hukuki metin taslaklarına da işlenecek.
+## C. Uzaktan sesli odada atma (2 telefon + botlar)
+> Ses, Expo Go'da çalışmaz. Atma oylamasının kendisi Expo Go'da da denenebilir.
+1. Telefon 1 (moderatör): **Uzaktan (sesli)** oda açar, **+3 deneme oyuncusu** ekler.
+2. Telefon 2 odaya katılır. Oyun başlar.
+3. Gece ve sabah, avatara uzun basınca atma seçeneği **çıkmamalı**.
+4. Sabah konuşmaları bitip oylama başlayınca avatara uzun bas > **Odadan atma oyu ver (1/4)**.
+   - Avatarın sol üstünde kırmızı "1/4" görünür.
+5. Kural:
+   - Bir kişiyi **4 kişi** atmak isterse 10 saniye geri sayım başlar ("10 sn").
+   - Süre dolunca kişi odadan çıkar ve o odaya geri giremez.
+   - Odada daha az kişi varsa (ör. 3 kişi daha), diğer herkesin oyu gerekir.
+   - Süre dolmadan oy geri alınırsa sayaç durur.
+   - Botlar atma oyu vermez. 2 telefonla "1/4", "2/4" görünür ama atma gerçekleşmez. Tam deneme için 5 gerçek kişi gerekir.
+6. Ayarlar: Web panel > Ayarlar:
+   - `voice_kick_min_votes` (4)
+   - `voice_kick_seconds` (10)
