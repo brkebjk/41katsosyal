@@ -30,6 +30,7 @@ import { SideBySideView } from '@/components/SideBySideView';
 import { SoloMarathonView } from '@/components/SoloMarathonView';
 import { TextField } from '@/components/TextField';
 import { useAuth } from '@/lib/auth';
+import { useIdentityEnabled } from '@/lib/identityFlag';
 import { confirmAction, notify } from '@/lib/dialog';
 import { quizInfo } from '@/lib/gameInfo';
 import type { Cell } from '@/lib/hex';
@@ -986,6 +987,7 @@ function PointsTable({ title, rows }: { title: string; rows: [string, string][] 
 
 /** “Puan sistemi” penceresi: Bilgi Yarışması'nda puanın nasıl kazanıldığı, tablolarla */
 function PointsPopup({ lobby, onClose }: { lobby: QuizLobby | null; onClose: () => void }) {
+  const identityOn = useIdentityEnabled();
   const p = lobby?.arena_points ?? [1.25, 1.5, 1.75, 2];
   return (
     <Popup
@@ -1029,7 +1031,9 @@ function PointsPopup({ lobby, onClose }: { lobby: QuizLobby | null; onClose: () 
         rows={[
           ['Solo / Hafta ilk 3', `sonraki hafta ${lobby?.champion_lives ?? 10} can`],
           ['Çoklu / Ay ilk 3', '1 aylık abonelik'],
-          ['Hesabı doğrulanmamış üye', 'ödül alamaz (sıradaki doğrulanmış üyeye geçer)'],
+          ...(identityOn
+            ? ([['Hesabı doğrulanmamış üye', 'ödül alamaz (sıradaki doğrulanmış üyeye geçer)']] as [string, string][])
+            : []),
         ]}
       />
       <Text style={styles.ptableNote}>

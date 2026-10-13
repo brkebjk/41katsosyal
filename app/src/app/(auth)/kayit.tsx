@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, type TextInput } from 'react-native';
 
 import { Text } from '@/components/AppText';
+import { useIdentityEnabled } from '@/lib/identityFlag';
 import { AuthShell } from '@/components/AuthShell';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { NameVisibilityTable } from '@/components/NameVisibilityTable';
@@ -14,6 +15,8 @@ import { isReservedName, RESERVED_NAME_TEXT } from '@/lib/labels';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 export default function RegisterScreen() {
+  // Kimlik doğrulama kapalıyken (varsayılan) ödül uyarısı gösterilmez
+  const identityOn = useIdentityEnabled();
   const { signUp } = useAuth();
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
@@ -125,6 +128,7 @@ export default function RegisterScreen() {
         </Text>
       </View>
 
+      {identityOn ? (
       <View style={styles.infoBox}>
         <Ionicons name="shield-checkmark-outline" size={18} color={colors.highlight} />
         <Text style={styles.infoText}>
@@ -132,6 +136,7 @@ export default function RegisterScreen() {
           sıralamada yer alırsın ama ödül alamazsın. Doğrulamayı kayıttan sonra Profil sekmesinden yapabilirsin.
         </Text>
       </View>
+      ) : null}
 
       <View style={styles.checkRow}>
         <Pressable

@@ -21,6 +21,7 @@ import { ListRow, Meter, Panel } from '@/components/Panel';
 import { PointsProgressModal } from '@/components/PointsProgressModal';
 import { PreferencesPanel } from '@/components/PreferencesPanel';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { ProfilePhotoCamera } from '@/components/ProfilePhotoCamera';
 import { ProblemReportPopup } from '@/components/ProblemReportPopup';
 import { RealNameNotice } from '@/components/RealNameNotice';
 import { RecoveryPhraseSetup } from '@/components/RecoveryPhraseSetup';
@@ -51,12 +52,8 @@ import {
 } from '@/lib/labels';
 import { DEFAULT_LIMITS, getLimits, type Limits } from '@/lib/membership';
 import { useNotices } from '@/lib/notices';
-import {
-  nextPhotoChangeAt,
-  pickAndUploadProfilePhoto,
-  profilePhotoUrl,
-  removeProfilePhoto,
-} from '@/lib/profilePhoto';
+import { useIdentityEnabled } from '@/lib/identityFlag';
+import { nextPhotoChangeAt, profilePhotoUrl, removeProfilePhoto, uploadProfilePhoto } from '@/lib/profilePhoto';
 import { REAL_NAME } from '@/lib/realName';
 import { getMyTitles, listLevels, type LevelInfo, type MyTitle } from '@/lib/ranking';
 import { useTabResetKey } from '@/lib/tabReset';
@@ -106,6 +103,8 @@ function ProfileScreen() {
   const [aliasShown, setAliasShown] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [open, setOpen] = useState<'account' | 'app' | 'custom' | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const identityOn = useIdentityEnabled();
   const [overlay, setOverlay] = useState<
     'delete' | 'recovery' | 'leader' | 'notify' | 'threads' | 'friends' | 'identity' | null
   >(
@@ -191,64 +190,77 @@ function ProfileScreen() {
   const isModerator = profile.role === 'admin';
   const nameLeft = account ? account.name_changes_left : 0;
   const verified = Boolean(profile.identity_verified_at);
+  // Profil resmi hakkı: abone (abonelik sürerken), hesabı doğrulanmış üye ya da moderatör (sunucu da aynısını zorlar)
+  const canPhoto = subscribed || verified || isModerator;
 
   /**
-   * Avatara ya da sağ altındaki + düğmesine dokununca: doğrulanmamış üye doğrulamaya yönlendirilir; doğrulanmış üye
-   * profil resmi ekler / değiştirir (haftada bir) / kaldırır.
+   * Avatara ya da sağ altındaki + düğmesine dokununca: abone olmayan üye aboneliğe yönlendirilir; abone profil resmini
+   * kamerayla çeker / değiştirir (haftada bir) / kaldırır.
    */
   async function onAvatar() {
     if (!profile) return;
-    if (!verified) {
+    if (!canPhoto) {
       const go = await showDialog<boolean>({
-        title: 'Önce hesabını doğrula',
+        title: 'Profil resmi abonelere özel',
         message:
-          'Profil resmi yalnızca hesabını doğrulamış üyeler ekleyebilir. Doğrulama birkaç saniye sürer; TC kimlik numaran hiçbir yere kaydedilmez.',
-        icon: 'shield-checkmark',
+          'Profil resmini yalnızca aboneler ekleyebilir. Resim uygulama içindeki kamerayla çekilir ve moderatör kontrolünden geçer.',
+        icon: 'camera',
         buttons: [
-          { label: 'Hesabımı doğrula', value: true, style: 'primary' },
+          { label: 'Aboneliğe bak', value: true, style: 'primary' },
           { label: 'Vazgeç', value: false, style: 'ghost' },
         ],
         cancelValue: false,
       });
-      if (go) setOverlay('identity');
+      if (go) router.push('/abonelik');
       return;
     }
     const nextAt = isModerator ? null : nextPhotoChangeAt(profile.photo_changed_at);
     const choice = await showDialog<'pick' | 'remove' | null>({
       title: 'Profil resmi',
       message:
-        'Profil resmin yalnızca gerçek adının göründüğü yerlerde (arkadaşlarına) görünür; rumuzunla göründüğün yerlerde hiç görünmez. En çok 2 MB. Moderatörler kontrol edip onaylayınca yayına girer. Profil resmini haftada bir değiştirebilirsin; eski resmin silinir.',
+        'Profil resmin yalnızca gerçek adının göründüğü yerlerde (arkadaşlarına) görünür; rumuzunla göründüğün yerlerde hiç görünmez. Resim yalnızca uygulama içindeki kamerayla çekilir. Moderatörler kontrol edip onaylayınca yayına girer. Profil resmini haftada bir değiştirebilirsin; eski resmin silinir.',
       warning: nextAt
         ? `Bu hafta profil resmini değiştirdin. Yeni resmi ${nextAt.toLocaleString('tr-TR', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })} sonrasında ekleyebilirsin.`
         : undefined,
-      icon: 'image',
+      icon: 'camera',
       buttons: [
         ...(nextAt
           ? []
-          : [{ label: profile.photo_path ? 'Resmi değiştir' : 'Resim seç', value: 'pick' as const, style: 'primary' as const }]),
+          : [
+              {
+                label: profile.photo_path ? 'Yeni fotoğraf çek' : 'Kamerayla çek',
+                value: 'pick' as const,
+                style: 'primary' as const,
+              },
+            ]),
         ...(profile.photo_path ? [{ label: 'Resmi kaldır', value: 'remove' as const, style: 'danger' as const }] : []),
         { label: 'Vazgeç', value: null, style: 'ghost' },
       ],
       cancelValue: null,
     });
     if (choice === 'pick') {
-      const res = await pickAndUploadProfilePhoto(profile.id);
-      if (res.cancelled) return;
-      if (res.error) return void notify('Resim eklenemedi', res.error, { icon: 'image' });
-      await refreshProfile();
-      void notify('Resim kontrole gönderildi', 'Moderatörler resmini kontrol ediyor; onaylanınca arkadaşlarına görünecek.', {
-        icon: 'checkmark-circle',
-        tone: 'success',
-      });
+      setCameraOpen(true);
     } else if (choice === 'remove') {
       const res = await removeProfilePhoto(profile.id);
       if (res.error) return void notify('Resim kaldırılamadı', res.error, { icon: 'image' });
       await refreshProfile();
     }
   }
+  /** Kameradan gelen fotoğrafı yükler */
+  async function onPhotoTaken(uri: string) {
+    if (!profile) return;
+    setCameraOpen(false);
+    const res = await uploadProfilePhoto(profile.id, uri);
+    if (res.error) return void notify('Resim eklenemedi', res.error, { icon: 'camera' });
+    await refreshProfile();
+    void notify('Resim kontrole gönderildi', 'Moderatörler resmini kontrol ediyor; onaylanınca arkadaşlarına görünecek.', {
+      icon: 'checkmark-circle',
+      tone: 'success',
+    });
+  }
   const canRename = !verified && (isModerator || (nameLeft ?? 0) > 0);
   // Profil resmi yüklediyse: bir sonraki değişiklik hakkına kalan gün (+ düğmesinin yerinde küçük yazı)
-  const nextPhotoAt = verified && !isModerator ? nextPhotoChangeAt(profile.photo_changed_at) : null;
+  const nextPhotoAt = canPhoto && !isModerator ? nextPhotoChangeAt(profile.photo_changed_at) : null;
   const photoDays = nextPhotoAt ? Math.max(1, Math.ceil((nextPhotoAt.getTime() - now) / 86_400_000)) : 0;
 
   const openText = (doc: AppTextKey) => router.push({ pathname: '/belge', params: { doc } });
@@ -475,11 +487,11 @@ function ProfileScreen() {
             <Pressable
               onPress={() => void onAvatar()}
               accessibilityRole="button"
-              accessibilityLabel={verified ? 'Profil resmini değiştir' : 'Profil resmi ekle'}
+              accessibilityLabel={canPhoto ? 'Profil resmini değiştir' : 'Profil resmi ekle'}
               testID="profile-avatar"
               style={[styles.ring, subscribed && styles.ringSubscription]}
             >
-              <Avatar index={profile.avatar_index} size={84} uri={verified ? profilePhotoUrl(profile.photo_path) : null} />
+              <Avatar index={profile.avatar_index} size={84} uri={canPhoto ? profilePhotoUrl(profile.photo_path) : null} />
             </Pressable>
             {/* Avatarın sağ altında: profil resmi ekle (doğrulanmamış üye doğrulamaya yönlendirilir) */}
             <Pressable
@@ -535,6 +547,7 @@ function ProfileScreen() {
               {profile.full_name.toLocaleUpperCase('tr-TR')}
             </Text>
             {/* Adın sağında (adı kaydırmaz): hesap doğrulama (doğrulanmışsa sarı tik) */}
+            {verified || identityOn ? (
             <View style={styles.verifyAnchor} pointerEvents="box-none">
               <Pressable
                 onPress={() =>
@@ -562,17 +575,18 @@ function ProfileScreen() {
                 )}
               </Pressable>
             </View>
+            ) : null}
           </View>
         </View>
-        {verified &&
+        {canPhoto &&
         profile.photo_status === 'pending' &&
         !(profile.photo_auto_at && Date.parse(profile.photo_auto_at) <= now) ? (
           <Text style={styles.photoNote}>Profil resmin moderatörler tarafından kontrol ediliyor</Text>
-        ) : verified && profile.photo_status === 'rejected' ? (
+        ) : canPhoto && profile.photo_status === 'rejected' ? (
           <Text style={[styles.photoNote, styles.photoNoteBad]}>
             Profil resmin onaylanmadı; + düğmesine dokunup başka bir resim seçebilirsin
           </Text>
-        ) : verified && !profile.photo_path ? (
+        ) : canPhoto && !profile.photo_path ? (
           <Text style={styles.photoNote}>+ düğmesine dokunup profil resmi ekleyebilirsin</Text>
         ) : null}
         <View style={styles.aliasRow}>
@@ -649,8 +663,15 @@ function ProfileScreen() {
           </Text>
         </Pressable>
 
+        {/* Profil resmi yalnızca uygulama içindeki kamerayla çekilir */}
+        {cameraOpen ? (
+          <ProfilePhotoCamera onDone={(uri) => void onPhotoTaken(uri)} onClose={() => setCameraOpen(false)} />
+        ) : null}
+
         {/* Hesabını hiç doğrulamamış üye: ödülleri kaçırmasın */}
-        {!verified && profile.role === 'user' ? <VerifyRewardsBox onPress={() => setOverlay('identity')} /> : null}
+        {identityOn && !verified && profile.role === 'user' ? (
+          <VerifyRewardsBox onPress={() => setOverlay('identity')} />
+        ) : null}
 
         {/* Başarımlar: toplam ilerleme */}
         <Pressable

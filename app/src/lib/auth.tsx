@@ -35,7 +35,7 @@ export type Profile = {
   banned_at: string | null;
   /** NVİ ile kimliği doğrulandıysa zamanı (gerçek ad nüfustaki addır, değiştirilemez) */
   identity_verified_at: string | null;
-  /** Profil resmi (yalnızca doğrulanmış hesap): dosya yolu ve onay durumu */
+  /** Profil resmi (abone ya da doğrulanmış hesap; kamerayla çekilir): dosya yolu ve onay durumu */
   photo_path: string | null;
   photo_status: 'pending' | 'approved' | 'rejected' | null;
   /** Moderatör kontrolünün bittiği an (bu andan sonra resim onaylı sayılır) */

@@ -23,6 +23,7 @@ import { isPetekIconName, PetekIcon } from '@/components/HexClusterIcon';
 import { useAuth } from '@/lib/auth';
 import { showDialog } from '@/lib/dialog';
 import { muteVerifyReminder, openIdentityVerify, takeVerifyReminder } from '@/lib/identity';
+import { useIdentityEnabled } from '@/lib/identityFlag';
 import {
   displayName,
   getPost,
@@ -266,8 +267,9 @@ function FeedScreen() {
   );
 
   // Hesabını doğrulamamış üye: günün ilk akış ziyaretinde “Hesabını doğrula” uyarısı (“Bunu bir daha gösterme” seçilebilir)
+  const identityOn = useIdentityEnabled();
   const remindUser =
-    profile && profile.role === 'user' && !profile.identity_verified_at && !previewMode && isBackendReady
+    identityOn && profile && profile.role === 'user' && !profile.identity_verified_at && !previewMode && isBackendReady
       ? profile.id
       : null;
   useFocusEffect(
@@ -280,7 +282,7 @@ function FeedScreen() {
         const go = await showDialog<boolean>({
           title: 'Hesabını doğrula',
           message:
-            'Hesabını doğrula; adının yanında sarı tik çıksın, profil resmi ekleyebil ve sıralama ödüllerini kaçırma. Hesabını doğrulamayan üyeler sıralamada yer alır ama ödül alamaz. TC kimlik numaran hiçbir yere kaydedilmez.',
+            'Hesabını doğrula; adının yanında sarı tik çıksın ve sıralama ödüllerini kaçırma. Hesabını doğrulamayan üyeler sıralamada yer alır ama ödül alamaz. TC kimlik numaran hiçbir yere kaydedilmez.',
           icon: 'shield-checkmark',
           check: { label: 'Bunu bir daha gösterme', onChange: (v) => (never = v) },
           buttons: [

@@ -2084,12 +2084,19 @@ alter table public.profiles drop constraint if exists profiles_photo_status_chec
 alter table public.profiles add constraint profiles_photo_status_check
   check (photo_status is null or photo_status in ('pending', 'approved', 'rejected'));
 
--- Kişinin herkese gösterilebilecek profil resmi (onaylı, doğrulanmış, banlı değil); yoksa boş.
+-- Profil resmi hakkı: abone (abonelik sürerken), hesabı doğrulanmış ya da moderatör
+create or replace function public._photo_allowed(p public.profiles)
+returns boolean language sql stable set search_path = public as $$
+  select p.role::text = 'admin' or p.identity_verified_at is not null
+      or (p.role::text <> 'sponsor' and p.premium_until is not null and p.premium_until > now());
+$$;
+
+-- Kişinin herkese gösterilebilecek profil resmi (onaylı, resim hakkı süren, banlı değil); yoksa boş.
 -- Çağıran fonksiyon yalnızca gerçek adın gösterildiği durumda kullanır.
 create or replace function public._photo_of(p_user uuid)
 returns text language sql stable security definer set search_path = public as $$
   select pr.photo_path from public.profiles pr
-   where pr.id = p_user and pr.identity_verified_at is not null and pr.banned_at is null
+   where pr.id = p_user and public._photo_allowed(pr) and pr.banned_at is null
      and (pr.photo_status = 'approved' or (pr.photo_status = 'pending' and pr.photo_auto_at <= now()));
 $$;
 
@@ -9776,7 +9783,8 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 -- Bir haftanın Solo ilk 3'ü (eşitlikte aynı sıra). Ödül: sonraki hafta en çok 10 can.
--- Ödülü yalnızca hesabını doğrulamış üyeler alır: doğrulanmamışlar atlanır, ödül sıradaki doğrulanmış üyeye geçer.
+-- Kimlik doğrulama açıkken (identity_verification_enabled) ödülü yalnızca hesabını doğrulamış üyeler alır: doğrulanmamışlar
+-- atlanır, ödül sıradaki doğrulanmış üyeye geçer. Kapalıyken herkes ödül alır.
 create or replace function public._quiz_solo_champions(p_from timestamptz, p_to timestamptz)
 returns table (user_id uuid, place int, alias text, avatar int, correct int, total_ms int)
 language sql stable security definer set search_path = public as $$
@@ -9784,7 +9792,8 @@ language sql stable security definer set search_path = public as $$
     from (select r.user_id, (rank() over (order by r.correct desc, r.total_ms asc))::int as place, r.alias, r.avatar,
                  r.correct, r.total_ms
             from public._quiz_solo_week_rank(p_from, p_to) r
-            join public.profiles p on p.id = r.user_id and p.identity_verified_at is not null) x
+            join public.profiles p on p.id = r.user_id
+             and (p.identity_verified_at is not null or not public.setting_bool('identity_verification_enabled'))) x
    where x.place <= 3 order by x.place;
 $$;
 
@@ -9824,7 +9833,8 @@ returns table (user_id uuid, place int, points numeric, wins int, reached timest
 language sql stable security definer set search_path = public as $$
   select o.user_id, (rank() over (order by o.points desc, o.wins desc, o.reached asc))::int, o.points, o.wins, o.reached
     from public._quiz_online_rank(p_from, p_to) o
-    join public.profiles p on p.id = o.user_id and p.identity_verified_at is not null;
+    join public.profiles p on p.id = o.user_id
+     and (p.identity_verified_at is not null or not public.setting_bool('identity_verification_enabled'));
 $$;
 
 -- Seviye 5 ödülü: Bilgi Yarışması'nda sınırsız can (günlük oyun sınırı yine geçerlidir)
@@ -14173,6 +14183,8 @@ returns text language plpgsql security definer set search_path = public as $$
 declare v public.profiles;
 begin
   if p_hash is null or char_length(p_hash) <> 64 then raise exception 'invalid_hash'; end if;
+  -- Kimlik doğrulama ayarla kapatılabilir (NVİ'nin ücretsiz servisi kapandı; yeni yöntem gelene kadar kapalı)
+  if not public.setting_bool('identity_verification_enabled') then return 'disabled'; end if;
   select * into v from public.profiles where id = p_user for update;
   if not found or v.banned_at is not null or v.role::text = 'sponsor' then return 'not_allowed'; end if;
   if v.identity_verified_at is not null then return 'already'; end if;
@@ -14220,7 +14232,8 @@ begin
   return 'ok';
 end $$;
 
--- Profil resmi (yalnızca doğrulanmış hesap). Dosya önce Storage'daki "profile-photos" kutusuna <üye kimliği>/<dosya>
+-- Profil resmi (abone, doğrulanmış hesap ya da moderatör; uygulamada yalnızca kamerayla çekilir). Dosya önce Storage'daki
+-- "profile-photos" kutusuna <üye kimliği>/<dosya>
 -- yoluna yüklenir (en çok 2 MB, jpg/png/webp; kutu kuralları zorlar). Moderatör onaylayınca arkadaşlara görünür.
 -- p_path boş = resmi kaldır. Döner: önceki dosyanın yolu (uygulama eski dosyayı siler) ya da boş.
 create or replace function public.set_profile_photo(p_path text)
@@ -14232,8 +14245,11 @@ declare
 begin
   v := public._require_writer(null);
   if v.role::text = 'sponsor' then raise exception 'forbidden'; end if;
-  if v.identity_verified_at is null then raise exception 'not_identity_verified'; end if;
   select photo_path into v_old from public.profiles where id = v.id for update;
+  -- Resim kaldırmak her zaman serbest; eklemek abonelere (ya da doğrulanmış hesaba) açık
+  if p_path is not null and btrim(p_path) <> '' and not public._photo_allowed(v) then
+    raise exception 'photo_requires_premium';
+  end if;
   if v_path is null then
     update public.profiles set photo_path = null, photo_status = null, photo_updated_at = now() where id = v.id;
     return v_old;
@@ -14258,7 +14274,8 @@ begin
   return case when v_old is distinct from v_path then v_old end;
 end $$;
 
--- Storage kuralı: yalnızca doğrulanmış, etkin üye kendi klasörüne yükler; klasörde en çok 3 dosya (eskiler silinir).
+-- Storage kuralı: yalnızca resim hakkı olan (abone / doğrulanmış / moderatör), etkin üye kendi klasörüne yükler; klasörde en
+-- çok 3 dosya (eskiler silinir).
 -- Haftalık değişiklik hakkı dolmuşsa yükleme de yapılamaz.
 create or replace function public._profile_photo_slot_ok(p_name text)
 returns boolean language sql stable security definer set search_path = public, storage as $$
@@ -14266,7 +14283,7 @@ returns boolean language sql stable security definer set search_path = public, s
      and cardinality(storage.foldername(p_name)) = 1
      and public._is_active_user()
      and exists (select 1 from public.profiles pr
-                  where pr.id = auth.uid() and pr.identity_verified_at is not null and pr.role::text <> 'sponsor'
+                  where pr.id = auth.uid() and public._photo_allowed(pr) and pr.role::text <> 'sponsor'
                     and (pr.role::text = 'admin' or pr.photo_changed_at is null
                          or pr.photo_changed_at <= now() - interval '7 days'))
      and (select count(*) from storage.objects o
@@ -14288,9 +14305,12 @@ begin
   delete from public.identity_attempts where user_id = p_user;
   update public.profiles
      set identity_verified_at = null,
-         full_name = coalesce(nullif(btrim(v_prev), ''), full_name),
-         photo_path = null, photo_status = null, photo_auto_at = null
+         full_name = coalesce(nullif(btrim(v_prev), ''), full_name)
    where id = p_user;
+  -- Profil resmi yalnızca başka bir hakkı (abonelik) yoksa kalkar
+  update public.profiles p
+     set photo_path = null, photo_status = null, photo_auto_at = null
+   where p.id = p_user and not public._photo_allowed(p);
   perform public._audit('identity_revoke', p_user, jsonb_build_object('note', v_note));
   perform public._notify(p_user, 'system', 'Hesap doğrulaman kaldırıldı',
     coalesce(v_note || ' ', '') || 'İstersen Profil > adının yanındaki “Doğrula” düğmesiyle yeniden doğrulama yapabilirsin.',
@@ -15064,6 +15084,14 @@ returns void language sql security definer set search_path = public as $$
    where id = auth.uid() and banned_at is null
      and (last_seen_at is null or last_seen_at < now() - interval '1 minute');
 $$;
+
+-- Kimlik doğrulama açık mı? NVİ'nin ücretsiz doğrulama servisi 30.09.2025'te kapandı; yeni bir yöntem (ücretli doğrulama
+-- firması, KPS ya da kimlik kartı çipi) bağlanana kadar KAPALI. Kapalıyken: uygulamada doğrulama düğmeleri ve
+-- "doğrulanmamış üye ödül alamaz" uyarıları görünmez, sıralama ödülleri herkese verilir, doğrulama isteği reddedilir.
+insert into public.app_settings (key, value, description) values
+  ('identity_verification_enabled', 'false',
+   'Kimlik doğrulama açık mı? (true yapınca doğrulama düğmeleri görünür ve sıralama ödülleri yalnızca doğrulanmış üyelere verilir. Çalışan bir doğrulama yöntemi bağlanmadan AÇMA)')
+on conflict (key) do nothing;
 
 -- ---- GEÇİCİ: Yazı düzenleme modu ---------------------------------------------------------------------------------
 -- Moderatör uygulamadaki sabit yazıları (düğme, başlık, açıklama) düzeltir; düzeltmeler herkeste görünür. Düzeltmeler

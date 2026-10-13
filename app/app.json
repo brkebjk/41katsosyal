@@ -65,6 +65,14 @@
         }
       ],
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Cihaz dosyalarınız bizi ilgilendirmiyor. Kişi gerçekliğini maksimize etmek ve küçük yaşta kullanıcıların önüne geçmek için profil fotoğrafı eklemek için sadece kameranı kullanabilirsin.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
         "expo-notifications",
         {
           "color": "#FFB020"

@@ -232,8 +232,9 @@ function MemberDetail({ m, onNotice, onChanged }: { m: Row; onNotice: (n: Notice
     const sb = supabase;
     await run(async () => {
       const { error } = await sb.rpc('admin_revoke_identity', { p_user: m.id, p_note: note || null });
-      // Profil resmi kalktı: üyenin resim dosyaları da sunucudan silinir
-      if (!error) {
+      // Aboneliği yoksa profil resmi de kalkar: üyenin resim dosyaları sunucudan silinir
+      const subscribed = Boolean(m.premium_until && Date.parse(m.premium_until) > Date.now());
+      if (!error && !subscribed && m.role !== 'admin') {
         const { data: files } = await sb.storage.from('profile-photos').list(m.id, { limit: 100 });
         const paths = (files ?? []).map((f) => `${m.id}/${f.name}`);
         if (paths.length) await sb.storage.from('profile-photos').remove(paths);

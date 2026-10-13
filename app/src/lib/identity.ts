@@ -28,6 +28,7 @@ const RESULT_TEXT: Record<string, string> = {
   used: 'Bu kimlik bilgileriyle başka bir hesap doğrulanmış. Bir kişi yalnızca bir hesabı doğrulayabilir.',
   already: 'Hesabın zaten doğrulanmış.',
   not_allowed: 'Bu hesap doğrulanamaz.',
+  disabled: 'Kimlik doğrulama şu an kullanılamıyor. Yakında yeniden açılacak.',
   nvi_unavailable: 'Nüfus kayıt servisine şu an ulaşılamıyor. Bu deneme hakkından sayılmadı; biraz sonra tekrar dene.',
   not_configured:
     'Hesap doğrulama sunucuda yarım kurulmuş: Supabase > Edge Functions > Secrets bölümünde IDENTITY_PEPPER eksik ya da 32 karakterden kısa. (K5)',

@@ -3,6 +3,7 @@
 
 import type Ionicons from '@expo/vector-icons/Ionicons';
 
+import { identityEnabledNow } from '@/lib/identityFlag';
 import { LEVEL_QUIZ_MULT } from '@/lib/levelPerks';
 import { placePoints, quizPts, topPoints, quizRuleSummary, type PointRules } from '@/lib/ranking';
 
@@ -145,11 +146,15 @@ export function quizInfo(rules: PointRules, enabled: boolean): InfoContent {
         lead: 'Çoklu / Ay sıralaması.',
         text: 'Uzaktan maçlardan ay boyunca kazanılan puana göre. Ayın ilk 3’üne 1 aylık abonelik hediye (moderatör onayıyla).',
       },
-      {
-        icon: 'shield-checkmark-outline',
-        lead: 'Ödüller yalnızca doğrulanmış hesaba.',
-        text: 'Hesabını doğrulamayan üyeler Solo / Hafta ve Çoklu / Ay sıralamalarında yer alır ama ödül (can, abonelik) alamaz; ödül sıradaki doğrulanmış üyeye geçer. Hesabını Profil sekmesinden doğrulayabilirsin.',
-      },
+      ...(identityEnabledNow()
+        ? [
+            {
+              icon: 'shield-checkmark-outline' as const,
+              lead: 'Ödüller yalnızca doğrulanmış hesaba.',
+              text: 'Hesabını doğrulamayan üyeler Solo / Hafta ve Çoklu / Ay sıralamalarında yer alır ama ödül (can, abonelik) alamaz; ödül sıradaki doğrulanmış üyeye geçer. Hesabını Profil sekmesinden doğrulayabilirsin.',
+            },
+          ]
+        : []),
       {
         icon: 'shield-checkmark',
         lead: 'Puan sınırı.',

@@ -1,9 +1,8 @@
-// Profil resmi: yalnızca hesabını NVİ ile doğrulamış üye ekleyebilir (en çok 2 MB; jpg, png, webp). Resim Supabase
+// Profil resmi: aboneler (ve hesabı doğrulanmış üyeler) ekleyebilir; yalnızca uygulama içindeki kamerayla çekilir,
+// galeriden seçilemez (en çok 2 MB). Resim Supabase
 // Storage'a ("profile-photos") yüklenir ve moderatör onaylayınca görünür. Rumuzla görünülen yerlerde ASLA gösterilmez;
 // yalnızca gerçek adın göründüğü yerlerde (kendi profilin, arkadaşların gördüğü gönderi/yorum, arkadaş listesi,
 // arkadaşla yazışma) avatarın yerine geçer. Sınırları sunucudaki kutu ve kurallar da ayrıca zorlar.
-
-import * as ImagePicker from 'expo-image-picker';
 
 import { callRpc, callRpcVoid, type Result } from '@/lib/rpc';
 import { supabase } from '@/lib/supabase';
@@ -12,10 +11,9 @@ const BUCKET = 'profile-photos';
 export const PROFILE_PHOTO_MAX_BYTES = 2 * 1024 * 1024;
 const TOO_BIG = 'Resim 2 MB’tan büyük. Daha küçük bir resim seç.';
 
-const TYPES: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
-
 const PHOTO_TEXT: Record<string, string> = {
   not_identity_verified: 'Profil resmi eklemek için önce hesabını doğrulamalısın.',
+  photo_requires_premium: 'Profil resmi abonelere özeldir. Abone olunca kamerayla profil resmi çekebilirsin.',
   invalid_image: 'Resim yüklenemedi. Tekrar dene.',
   rate_limited: 'Biraz bekleyip tekrar dene.',
   photo_weekly_limit: 'Profil resmini haftada bir değiştirebilirsin. Bir hafta dolunca tekrar dene.',
@@ -57,42 +55,28 @@ function randomName(): string {
 }
 
 /**
- * Galeriden kare bir resim seçtirir, 2 MB sınırını kontrol eder, yükler ve profile bağlar (moderatör onayına gider).
- * Eski resim dosyası silinir. Döner: `cancelled` (vazgeçti) ya da hata metni.
+ * Kamerayla çekilmiş (uygulama içinde kare kırpılmış, JPEG) resmi yükler ve profile bağlar (moderatör kontrolüne gider).
+ * Galeriden resim seçilemez. Klasördeki eski resimler silinir. Döner: hata metni ya da boş.
  */
-export async function pickAndUploadProfilePhoto(userId: string): Promise<{ error: string | null; cancelled?: boolean }> {
+export async function uploadProfilePhoto(userId: string, uri: string): Promise<{ error: string | null }> {
   if (!supabase) return { error: 'Sunucu bağlantısı kurulmadı.' };
-  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!perm.granted) return { error: 'Galeri izni verilmedi. Telefon ayarlarından izin verip tekrar dene.' };
-  const res = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ['images'],
-    allowsEditing: true,
-    aspect: [1, 1],
-    quality: 0.7,
-  });
-  if (res.canceled || !res.assets?.[0]) return { error: null, cancelled: true };
+  let body: ArrayBuffer;
+  try {
+    body = await (await fetch(uri)).arrayBuffer();
+  } catch {
+    return { error: 'Fotoğraf okunamadı. Tekrar çek.' };
+  }
+  if (body.byteLength > PROFILE_PHOTO_MAX_BYTES) return { error: TOO_BIG };
   // Önce klasördeki artık dosyalar temizlenir (yükleme yeri açılsın)
   const { data: me } = await supabase.from('profiles').select('photo_path').eq('id', userId).maybeSingle();
   await pruneProfilePhotos(userId, (me as { photo_path: string | null } | null)?.photo_path ?? null).catch(() => {});
-  const asset = res.assets[0];
-  const mime = (asset.mimeType ?? 'image/jpeg').toLowerCase();
-  const ext = TYPES[mime];
-  if (!ext) return { error: 'Yalnızca JPG, PNG ya da WEBP resim yüklenebilir.' };
-  if (asset.fileSize && asset.fileSize > PROFILE_PHOTO_MAX_BYTES) return { error: TOO_BIG };
-  let body: ArrayBuffer;
-  try {
-    body = await (await fetch(asset.uri)).arrayBuffer();
-  } catch {
-    return { error: 'Resim okunamadı. Başka bir resim dene.' };
-  }
-  if (body.byteLength > PROFILE_PHOTO_MAX_BYTES) return { error: TOO_BIG };
-  const path = `${userId}/${randomName()}.${ext}`;
-  const up = await supabase.storage.from(BUCKET).upload(path, body, { contentType: mime, upsert: false });
+  const path = `${userId}/${randomName()}.jpg`;
+  const up = await supabase.storage.from(BUCKET).upload(path, body, { contentType: 'image/jpeg', upsert: false });
   if (up.error) {
     return {
       error: /size|large/i.test(up.error.message)
         ? TOO_BIG
-        : 'Resim yüklenemedi. Eski resimlerin silinmemiş olabilir; biraz sonra tekrar dene.',
+        : 'Fotoğraf yüklenemedi. Aboneliğin sürüyor mu ve bu hafta resim değiştirmedin mi? Biraz sonra tekrar dene.',
     };
   }
   const set = await callRpc<string | null>('set_profile_photo', { p_path: path }, PHOTO_TEXT);

@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '@/components/AppText';
 import { useAuth } from '@/lib/auth';
 import { openIdentityVerify } from '@/lib/identity';
+import { useIdentityEnabled } from '@/lib/identityFlag';
 import { colors, fonts, radii, spacing } from '@/theme';
 
 /**
@@ -12,8 +13,11 @@ import { colors, fonts, radii, spacing } from '@/theme';
  */
 export function VerifyPrizeNote({ onDark = false }: { onDark?: boolean }) {
   const { profile } = useAuth();
+  // Kimlik doğrulama kapalıyken (yeni yöntem bağlanana kadar) ödül için doğrulama aranmaz: not gösterilmez
+  const identityOn = useIdentityEnabled();
   const canVerify = Boolean(profile && !profile.identity_verified_at && profile.role === 'user');
   const text = onDark ? '#E8EEF5' : colors.textMuted;
+  if (!identityOn) return null;
   return (
     <View style={[styles.box, onDark && styles.boxDark]} testID="verify-prize-note">
       <Ionicons name="shield-checkmark" size={15} color={colors.highlight} />
