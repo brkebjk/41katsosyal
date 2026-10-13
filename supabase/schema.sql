@@ -2061,6 +2061,8 @@ alter table public.profiles add column if not exists identity_verified_at timest
 alter table public.profiles add column if not exists photo_path text;
 alter table public.profiles add column if not exists photo_status text;
 alter table public.profiles add column if not exists photo_updated_at timestamptz;
+-- Kontrol süresi: yüklenen resim bu anda kendiliğinden onaylanır (yüklemeden 10–30 dakika sonra, rastgele)
+alter table public.profiles add column if not exists photo_auto_at timestamptz;
 alter table public.profiles drop constraint if exists profiles_photo_status_check;
 alter table public.profiles add constraint profiles_photo_status_check
   check (photo_status is null or photo_status in ('pending', 'approved', 'rejected'));
@@ -2070,9 +2072,23 @@ alter table public.profiles add constraint profiles_photo_status_check
 create or replace function public._photo_of(p_user uuid)
 returns text language sql stable security definer set search_path = public as $$
   select pr.photo_path from public.profiles pr
-   where pr.id = p_user and pr.photo_status = 'approved' and pr.identity_verified_at is not null
-     and pr.banned_at is null;
+   where pr.id = p_user and pr.identity_verified_at is not null and pr.banned_at is null
+     and (pr.photo_status = 'approved' or (pr.photo_status = 'pending' and pr.photo_auto_at <= now()));
 $$;
+
+-- Kontrol süresi dolan resmi onaylar ve üyeye bildirir (üyenin her işleminde, _require_user içinden çağrılır).
+-- Moderatör bu sürede reddederse resim yayınlanmaz.
+create or replace function public._photo_auto_approve(p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  update public.profiles set photo_status = 'approved'
+   where id = p_user and photo_status = 'pending' and photo_auto_at <= now();
+  if found then
+    perform public._notify(p_user, 'system', 'Profil resmin onaylandı',
+      'Moderatör kontrolü tamamlandı. Profil resmin artık arkadaşlarına, gerçek adının göründüğü yerlerde görünüyor.',
+      jsonb_build_object('route', '/profile'));
+  end if;
+end $$;
 
 -- Giriş yapmış, banlı olmayan ve geçerli oturumdaki kullanıcı mı? (liste fonksiyonları ve okuma kuralları kullanır)
 create or replace function public._is_active_user()
@@ -2146,6 +2162,8 @@ begin
   if auth.uid() is null then raise exception 'not_authenticated'; end if;
   -- Yeni haftaya geçildiyse rumuz ve avatar burada yenilenir
   perform public._rotate_alias_if_needed(auth.uid());
+  -- Kontrol süresi dolan profil resmi onaylanır
+  perform public._photo_auto_approve(auth.uid());
   select * into v from public.profiles where id = auth.uid();
   if not found then raise exception 'profile_missing'; end if;
   if not public._session_ok(v.active_session) then raise exception 'session_replaced'; end if;
@@ -3789,7 +3807,7 @@ returns jsonb language sql stable security definer set search_path = public as $
                   where not e.is_cancelled and public._event_end(e.starts_at, e.category) > now()
                     and (e.approval = 'pending' or e.image_status = 'pending'))
                 + (select count(*)::int from public.profiles pr
-                    where pr.photo_status = 'pending' and pr.banned_at is null) else 0 end
+                    where pr.photo_status = 'pending' and pr.photo_auto_at > now() and pr.banned_at is null) else 0 end
   )
   where public._is_active_user();
 $$;
@@ -14161,7 +14179,9 @@ begin
   end if;
   update public.profiles
      set photo_path = v_path, photo_updated_at = now(),
-         photo_status = case when v.role = 'admin' then 'approved' else 'pending' end
+         photo_status = case when v.role = 'admin' then 'approved' else 'pending' end,
+         -- Moderatör kontrolü: 10–30 dakika içinde rastgele bir anda kendiliğinden onaylanır (moderatör bu sürede reddedebilir)
+         photo_auto_at = now() + make_interval(mins => 10 + floor(random() * 21)::int)
    where id = v.id;
   return case when v_old is distinct from v_path then v_old end;
 end $$;
@@ -14188,7 +14208,8 @@ begin
   return query
     select pr.id, pr.full_name, pr.photo_path, pr.photo_updated_at
       from public.profiles pr
-     where pr.photo_status = 'pending' and pr.photo_path is not null and pr.banned_at is null
+     where pr.photo_status = 'pending' and pr.photo_auto_at > now() and pr.photo_path is not null
+       and pr.banned_at is null
      order by pr.photo_updated_at asc
      limit 100;
 end $$;

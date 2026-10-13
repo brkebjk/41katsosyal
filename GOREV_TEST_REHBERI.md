@@ -1,48 +1,54 @@
-# Görev Test Rehberi – Paket: Hesap doğrulama (NVİ), profil resmi, sarı tik
+# Görev Test Rehberi – Hesap doğrulamayı çalıştırma + profil resmi kontrolü
 
-## Kurulum (bir kez)
-1. **SQL:** Supabase > SQL Editor'e yeni `supabase/schema.sql` dosyasının tamamını yapıştır ve **Run**'a bas.
-2. **Gizli değer:** Supabase > Edge Functions > **Secrets** > Add new secret.
-   - Ad: `IDENTITY_PEPPER`
-   - Değer: en az 32 karakterlik uzun, rastgele bir parola. Bunu bir yere not et ve **asla değiştirme**.
-3. **İşlevi yayınla:** Supabase > Edge Functions > **Deploy a new function** > Via Editor.
-   - Ad: `verify-identity`
-   - İçerik: `supabase/functions/verify-identity/index.ts` dosyasının tamamını yapıştır.
-   - **Verify JWT** açık kalsın. Sonra Deploy'a bas.
-4. Bilgisayarda `app` klasöründe `npx expo start -c` çalıştır ve Expo Go ile aç.
+Hata büyük ihtimalle Supabase tarafının kurulmamış olmasından. Aşağıdaki adımları **sırayla** yap. Her adımın sonunda "Kontrol" satırı var.
 
-## 1. Hesap doğrulama
-1. Profil'e gir. Avatarın sol üstünde sarı kalkan simgeli yuvarlak bir düğme olmalı. Bas.
-2. "Hesabını doğrula" penceresi açılmalı: Ad, Soyad, Doğum yılı, TC kimlik numarası. TC kutusu yazılırken gizli görünmeli.
-3. Bilerek yanlış bir doğum yılı yaz: "Bilgiler nüfus kaydıyla uyuşmadı" yazmalı.
-4. Kendi gerçek bilgilerini yaz (varsa ikinci adınla) ve "Doğrula"ya bas:
-   - "Hesabın doğrulandı" penceresi çıkmalı.
-   - Avatarın sol üstündeki düğme sarı tik olmalı.
-   - Profildeki gerçek adın nüfustaki adın olmalı ve yanında sarı tik görünmeli.
-   - Bildirim kutusuna "Hesabın doğrulandı" düşmeli.
-5. Hesabım > "Gerçek adını değiştir": "Doğrulanmış hesabın adı nüfustaki addır; değiştirilemez" yazmalı.
-6. Aynı TC numarasıyla başka bir hesabı doğrulamayı dene: "başka bir hesap doğrulanmış" yazmalı.
-7. Günde 5 denemeden sonra "Bugün çok fazla deneme yaptın" yazmalı.
+## Adım 1 – Veritabanını güncelle
+1. https://supabase.com/dashboard adresine gir ve projeni aç.
+2. Sol menüden **SQL Editor**'e tıkla, sonra **+ New query**.
+3. Bilgisayarındaki `supabase/schema.sql` dosyasını aç, tamamını kopyala (Ctrl+A, Ctrl+C), boş sorgu kutusuna yapıştır.
+4. Sağ alttaki **Run** düğmesine bas.
+5. **Kontrol:** Altta yeşil "Success" yazmalı. Kırmızı hata çıkarsa hatanın fotoğrafını bana gönder.
 
-> "Nüfus kayıt servisine şu an ulaşılamıyor" yazarsa NVİ servisi Supabase sunucusundan gelen isteği kabul etmiyor olabilir. Bana haber ver.
+## Adım 2 – Gizli parolayı ekle
+1. Sol menüden **Edge Functions**'a tıkla, üstteki **Secrets** sekmesine geç. Bazı ekranlarda yolu şudur: Project Settings > Edge Functions > Secrets.
+2. **Add new secret**:
+   - **Name:** `IDENTITY_PEPPER` (birebir böyle, büyük harflerle)
+   - **Value:** en az 32 karakter, rastgele harf ve rakam. Örnek biçim: `k41xQ9vT2mLr8NwZ5pYc3HdJ7sFb0GeA6uKi`. Kendin yeni bir tane uydur.
+3. **Save**.
+4. Bu parolayı bir yere yaz ve **bir daha asla değiştirme**.
+5. **Kontrol:** Secrets listesinde `IDENTITY_PEPPER` görünmeli.
 
-## 2. Akışta sarı tik
-1. Doğrulanmış hesapla akışa bir gönderi yaz.
-2. Başka bir hesapta bu gönderinin rumuzunun hemen yanında sarı tik görünmeli.
-3. Yazan hem abone hem doğrulanmışsa sarı tik, abone rozetinin **önünde** olmalı.
+## Adım 3 – Doğrulama işlevini yayınla
+1. **Edge Functions** sayfasında **Deploy a new function** düğmesine bas ve **Via Editor**'ü seç.
+2. Function name kutusuna birebir şunu yaz: `verify-identity`
+3. Editördeki örnek kodun **tamamını sil**. Bilgisayarındaki `supabase/functions/verify-identity/index.ts` dosyasının tamamını kopyalayıp yapıştır.
+4. **Deploy function**'a bas ve bitmesini bekle.
+5. İşlevin **Details** (ya da Settings) bölümünde **"Verify JWT"** / **"Enforce JWT Verification"** anahtarını **KAPAT** ve kaydet. Giriş kontrolünü işlev kendisi yapıyor; bu anahtar açıkken bazı projelerde istek reddediliyor.
+6. **Kontrol:** Edge Functions listesinde `verify-identity` görünmeli.
 
-## 3. Profil resmi
-1. Doğrulanmış hesapla Profil'de avatara dokun > "Resim seç" > galeriden bir resim seç.
-   - 2 MB'tan büyük resim kabul edilmemeli.
-   - Avatarında resmin görünmeli; altında "moderatör onayı bekliyor" yazmalı.
-2. Moderatör hesabı > Moderatör paneli > **Onaylar**: en üstte "Profil resimleri" altında resim ve ad görünmeli. "Onayla"ya bas.
-3. Bu kişiyle **arkadaş olan** bir hesapta resim şu yerlerde avatarın yerine görünmeli:
-   - akıştaki gönderisi ve yorumu,
-   - arkadaş listesi,
-   - mesaj kutusu.
-4. Arkadaşı **olmayan** bir hesapta aynı gönderide resim **görünmemeli**; normal avatar görünmeli. Rumuz profilinde ve Oyun arayanlar listesinde de görünmemeli.
-5. Doğrulanmamış hesapta avatara dokununca hiçbir şey olmamalı.
-6. "Reddet" denenirse üyeye "Profil resmin onaylanmadı" bildirimi gelmeli ve profilinde kırmızı yazı çıkmalı.
+## Adım 4 – Telefonda dene
+1. Bilgisayarda `app` klasöründe `npx expo start -c` çalıştır ve Expo Go ile aç.
+2. Profil > avatarın sol üstündeki sarı kalkan > bilgilerini yaz > **Doğrula**.
+3. Hata çıkarsa mesajın sonundaki **koda** bak:
 
-## 4. Petek menüsü
-Haritada bu hafta gönderi olan bir peteğe dokun. Soldaki kutuda "Son gönderi X dk önce" yazısı küçülmüş ve **tam okunur** olmalı, sonunda "…" olmamalı.
+| Kod | Anlamı | Ne yap |
+|---|---|---|
+| K1 | `verify-identity` işlevi bulunamadı | Adım 3'ü tekrar yap; ad birebir `verify-identity` olmalı |
+| K2 | Oturum reddedildi | Adım 3.5'teki anahtarı kapat; uygulamadan çıkış yapıp tekrar gir |
+| K3 | İşlev çalışırken hata verdi | Edge Functions > verify-identity > **Logs** ekranının fotoğrafını bana gönder |
+| K4 | Telefonun internet bağlantısı yok | Bağlantını kontrol et |
+| K5 | `IDENTITY_PEPPER` eksik ya da kısa | Adım 2'yi tekrar yap (en az 32 karakter) |
+| K6 | Veritabanı güncel değil | Adım 1'i tekrar yap |
+| "Nüfus kayıt servisine ulaşılamıyor" | NVİ, Supabase'in sunucusundan gelen isteği kabul etmiyor | Bana haber ver; başka bir yol kurarız |
+| "Bilgiler uyuşmadı" | Kurulum tamam, bilgilerden biri farklı | Ad (ikinci adınla), soyad ve doğum yılını kimliğindeki gibi yaz |
+
+4. **Başarılı olursa:** "Hesabın doğrulandı" penceresi çıkar, avatarın sol üstü sarı tik olur, adının yanında sarı tik görünür.
+
+## Adım 5 – Profil resmi kontrolü
+1. Doğrulanmış hesapla avatara dokun > **Resim seç**.
+2. "Resim kontrole gönderildi" penceresi çıkmalı. Profilde "Profil resmin moderatörler tarafından kontrol ediliyor" yazmalı.
+3. **10–30 dakika sonra** (her seferinde farklı bir süre) uygulamada herhangi bir şey yap, örneğin akışı yenile:
+   - Bildirim kutusuna "Profil resmin onaylandı" düşmeli.
+   - Kontrol yazısı kaybolmalı.
+   - Arkadaşların resmini görmeli.
+4. Bu süre dolmadan arkadaşların resmi **görmemeli**.

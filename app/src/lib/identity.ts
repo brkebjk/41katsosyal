@@ -16,7 +16,9 @@ const RESULT_TEXT: Record<string, string> = {
   already: 'Hesabın zaten doğrulanmış.',
   not_allowed: 'Bu hesap doğrulanamaz.',
   nvi_unavailable: 'Nüfus kayıt servisine şu an ulaşılamıyor. Biraz sonra tekrar dene.',
-  not_configured: 'Hesap doğrulama henüz açılmadı. Biraz sonra tekrar dene.',
+  not_configured:
+    'Hesap doğrulama sunucuda yarım kurulmuş: Supabase > Edge Functions > Secrets bölümünde IDENTITY_PEPPER eksik ya da 32 karakterden kısa. (K5)',
+  failed: 'Doğrulama kaydedilemedi: veritabanı güncel değil olabilir (schema.sql yeniden çalıştırılmalı). (K6)',
 };
 
 /** TC kimlik numarasının resmi kontrol haneleri tutuyor mu? (sunucu da ayrıca denetler) */
@@ -27,6 +29,32 @@ export function tcLooksValid(tc: string): boolean {
   const even = d[1] + d[3] + d[5] + d[7];
   if ((((odd * 7 - even) % 10) + 10) % 10 !== d[9]) return false;
   return d.slice(0, 10).reduce((a, b) => a + b, 0) % 10 === d[10];
+}
+
+/**
+ * İşlev çağrılamadıysa nedenini ayırt eder; ekranda kısa bir kodla gösterilir (destek için):
+ * K1 = işlev Supabase'de yok (yayınlanmamış ya da adı farklı), K2 = oturum / "Verify JWT" sorunu,
+ * K3 = işlev içinde hata (çoğunlukla IDENTITY_PEPPER eksik), K4 = telefonun internet bağlantısı.
+ */
+async function invokeErrorText(error: unknown): Promise<string> {
+  const name = (error as { name?: string } | null)?.name ?? '';
+  const ctx = (error as { context?: unknown } | null)?.context;
+  const status = ctx instanceof Response ? ctx.status : typeof (ctx as { status?: unknown })?.status === 'number'
+    ? (ctx as { status: number }).status
+    : 0;
+  if (name === 'FunctionsFetchError') {
+    return 'Sunucuya ulaşılamadı. İnternet bağlantını kontrol edip tekrar dene. (K4)';
+  }
+  if (status === 404) {
+    return 'Hesap doğrulama sunucuda henüz kurulmamış: Supabase\'de "verify-identity" işlevi bulunamadı. (K1)';
+  }
+  if (status === 401 || status === 403) {
+    return 'Oturumun doğrulanamadı. Çıkış yapıp yeniden giriş yap; düzelmezse işlevin ayarı kontrol edilmeli. (K2)';
+  }
+  if (name === 'FunctionsRelayError' || status >= 500) {
+    return 'Doğrulama işlevi çalışırken hata oluştu. Supabase ayarları kontrol edilmeli. (K3)';
+  }
+  return `Doğrulama yapılamadı. Biraz sonra tekrar dene.${status ? ` (K${status})` : ''}`;
 }
 
 export async function verifyIdentity(input: IdentityInput): Promise<{ ok: boolean; error: string | null }> {
@@ -41,11 +69,11 @@ export async function verifyIdentity(input: IdentityInput): Promise<{ ok: boolea
         birthYear: Number(input.birthYear),
       },
     });
-    if (error || !data) return { ok: false, error: 'Doğrulama yapılamadı. İnternet bağlantını kontrol edip tekrar dene.' };
-    const result = String((data as { result?: unknown }).result ?? '');
+    if (error) return { ok: false, error: await invokeErrorText(error) };
+    const result = String((data as { result?: unknown } | null)?.result ?? '');
     if (result === 'ok') return { ok: true, error: null };
-    return { ok: false, error: RESULT_TEXT[result] ?? 'Doğrulama yapılamadı. Biraz sonra tekrar dene.' };
+    return { ok: false, error: RESULT_TEXT[result] ?? `Doğrulama yapılamadı. Biraz sonra tekrar dene. (${result || 'K0'})` };
   } catch {
-    return { ok: false, error: 'Doğrulama yapılamadı. İnternet bağlantını kontrol edip tekrar dene.' };
+    return { ok: false, error: 'Sunucuya ulaşılamadı. İnternet bağlantını kontrol edip tekrar dene. (K4)' };
   }
 }

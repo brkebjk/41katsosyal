@@ -7,7 +7,8 @@
 // TC kimlik numarası HİÇBİR YERE yazılmaz ve günlüğe (log) basılmaz. Veritabanına yalnızca gizli anahtarla alınmış,
 // geri çevrilemeyen özeti (HMAC-SHA256) gider: aynı kişi ikinci bir hesabı doğrulayamasın diye.
 //
-// Kurulum: bu işlevi "Verify JWT" AÇIK olarak yayınla (yalnızca giriş yapmış üye çağırabilir).
+// Kurulum: bu işlevi "Verify JWT with legacy secret" KAPALI olarak yayınla. Giriş kontrolünü işlev kendisi yapar
+// (aşağıda 1. adım: oturum anahtarı Supabase'e sorulur; giriş yapmamış biri hiçbir şey yapamaz).
 // Gerekli gizli değer (Supabase > Edge Functions > Secrets):
 //   IDENTITY_PEPPER   En az 32 karakterlik uzun rastgele bir parola. Bir kez belirlenir, ASLA değiştirilmez
 //                     (değişirse eski özetler tutmaz ve aynı kişi yeni bir hesabı doğrulayabilir). Uygulamaya konmaz.

@@ -38,6 +38,8 @@ export type Profile = {
   /** Profil resmi (yalnızca doğrulanmış hesap): dosya yolu ve onay durumu */
   photo_path: string | null;
   photo_status: 'pending' | 'approved' | 'rejected' | null;
+  /** Moderatör kontrolünün bittiği an (bu andan sonra resim onaylı sayılır) */
+  photo_auto_at: string | null;
 };
 
 type Result = { error: string | null };
@@ -82,7 +84,7 @@ type AuthState = {
 };
 
 const PROFILE_COLUMNS =
-  'id, full_name, alias, avatar_index, role, points, level_rewarded, premium_until, premium_source, muted_until, banned_at, identity_verified_at, photo_path, photo_status';
+  'id, full_name, alias, avatar_index, role, points, level_rewarded, premium_until, premium_source, muted_until, banned_at, identity_verified_at, photo_path, photo_status, photo_auto_at';
 
 const BACKEND_MISSING = 'Sunucu bağlantısı kurulmadı. .env dosyasındaki adres ve anahtarı doldurmalısın.';
 

@@ -188,7 +188,7 @@ function ProfileScreen() {
     const choice = await showDialog<'pick' | 'remove' | null>({
       title: 'Profil resmi',
       message:
-        'Profil resmin yalnızca gerçek adının göründüğü yerlerde (arkadaşlarına) görünür; rumuzunla göründüğün yerlerde hiç görünmez. En çok 2 MB. Moderatör onaylayınca yayına girer.',
+        'Profil resmin yalnızca gerçek adının göründüğü yerlerde (arkadaşlarına) görünür; rumuzunla göründüğün yerlerde hiç görünmez. En çok 2 MB. Moderatörler kontrol edip onaylayınca yayına girer.',
       icon: 'image',
       buttons: [
         { label: profile.photo_path ? 'Resmi değiştir' : 'Resim seç', value: 'pick', style: 'primary' },
@@ -202,7 +202,7 @@ function ProfileScreen() {
       if (res.cancelled) return;
       if (res.error) return void notify('Resim eklenemedi', res.error, { icon: 'image' });
       await refreshProfile();
-      void notify('Resim gönderildi', 'Moderatör onaylayınca profil resmin arkadaşlarına görünecek.', {
+      void notify('Resim kontrole gönderildi', 'Moderatörler resmini kontrol ediyor; onaylanınca arkadaşlarına görünecek.', {
         icon: 'checkmark-circle',
         tone: 'success',
       });
@@ -504,8 +504,10 @@ function ProfileScreen() {
           </Text>
           {verified ? <Ionicons name="checkmark-circle" size={20} color={colors.highlight} /> : null}
         </View>
-        {verified && profile.photo_status === 'pending' ? (
-          <Text style={styles.photoNote}>Profil resmin moderatör onayı bekliyor</Text>
+        {verified &&
+        profile.photo_status === 'pending' &&
+        !(profile.photo_auto_at && Date.parse(profile.photo_auto_at) <= now) ? (
+          <Text style={styles.photoNote}>Profil resmin moderatörler tarafından kontrol ediliyor</Text>
         ) : verified && profile.photo_status === 'rejected' ? (
           <Text style={[styles.photoNote, styles.photoNoteBad]}>
             Profil resmin onaylanmadı; avatarına dokunup başka bir resim seçebilirsin
