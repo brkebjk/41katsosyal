@@ -14,6 +14,7 @@ import { useSponsorMenu } from '@/components/useSponsorMenu';
 import { TitleBadge } from '@/components/TitleBadge';
 import { DragGrab, DragScreen } from '@/components/Sheet';
 import { CloseX } from '@/components/CloseX';
+import { isModeratorName, ModeratorMark } from '@/components/ModeratorMark';
 import { confirmAction, notifyReportSent } from '@/lib/dialog';
 import {
   EVENT_COMMENT_MAX,
@@ -271,6 +272,7 @@ function EventCommentsBody({ event, canWrite, isModerator, onClose, onCountDelta
                               </Text>
                             </Pressable>
                           )}
+                          {isModeratorName(c.author_name) ? <ModeratorMark size={13} /> : null}
                           <Text style={styles.time}>{timeAgo(c.created_at)}</Text>
                           <View style={styles.flex} />
                           <Pressable

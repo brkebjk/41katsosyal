@@ -1652,11 +1652,26 @@ update public.quiz_matches set status = 'abandoned', phase = 'finished', end_rea
 
 -- Bu istek, hesabın geçerli oturumundan mı geliyor? (Başka bir telefondan giriş yapılınca eski telefonun oturumu
 -- geçersiz olur.) Hesapta henüz oturum kaydı yoksa ya da anahtarda oturum numarası yoksa geçerli sayılır.
+-- Web yönetim paneli oturumları: moderatör web panele girince o oturum burada kayıtlı olur. Böylece web panel girişi,
+-- moderatörün telefondaki oturumunu kapatmaz (uygulamada her hesap tek telefonda açık kalır kuralı web paneli saymaz).
+create table if not exists public.admin_web_sessions (
+  session_id uuid primary key,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null
+);
+create index if not exists admin_web_sessions_user_idx on public.admin_web_sessions (user_id);
+alter table public.admin_web_sessions enable row level security;
+revoke all on public.admin_web_sessions from anon, authenticated;
+
 create or replace function public._session_ok(p_active uuid)
-returns boolean language sql stable set search_path = public as $$
+returns boolean language sql stable security definer set search_path = public as $$
   select p_active is null
       or nullif(auth.jwt() ->> 'session_id', '') is null
-      or p_active::text = (auth.jwt() ->> 'session_id');
+      or p_active::text = (auth.jwt() ->> 'session_id')
+      or exists (select 1 from public.admin_web_sessions w
+                  where w.session_id::text = (auth.jwt() ->> 'session_id') and w.user_id = auth.uid()
+                    and w.expires_at > now());
 $$;
 
 create or replace function public.is_admin()
@@ -2808,8 +2823,7 @@ begin
   -- Sponsor hesap gerçek adıyla yazar (rumuz yerine); bu bayrak yazıldığı anki durumu saklar
   insert into public.posts (alias, avatar_index, body, place_id, place_name, place_label, place_district, by_sponsor,
                             reply_to, cell_q, cell_r, thread_root, thread_no)
-  values (case when v.role::text = 'sponsor' then v.full_name when v.role = 'admin' and not v.alias_no = any (public._reserved_alias_nos())
-               then 'Kat Görevlisi' else v.alias end,
+  values (case when v.role::text = 'sponsor' then v.full_name when v.role = 'admin' then 'Moderatör' else v.alias end,
           v.avatar_index, v_body,
           v_place.id, v_place.name, v_place.cat_label, v_place.district, v.role::text = 'sponsor', p_reply_to,
           p_cell_q, p_cell_r, p_thread_of, v_no)
@@ -2872,8 +2886,7 @@ begin
   if public._has_shared_code(v_body) then raise exception 'contact_not_allowed'; end if;
   v_body := left(public._mask_profanity(v_body), 300);
   insert into public.comments (post_id, alias, avatar_index, body, by_sponsor)
-  values (p_post_id, case when v.role::text = 'sponsor' then v.full_name when v.role = 'admin'
-                           and not v.alias_no = any (public._reserved_alias_nos()) then 'Kat Görevlisi'
+  values (p_post_id, case when v.role::text = 'sponsor' then v.full_name when v.role = 'admin' then 'Moderatör'
                           else v.alias end, v.avatar_index, v_body,
           v.role::text = 'sponsor') returning id into v_id;
   insert into public.comment_authors (comment_id, author_id) values (v_id, v.id);
@@ -8766,7 +8779,7 @@ begin
     -- Aynı yazışmanın okunmamış eski bildirimi yerine tek bir yenisi kalır
     delete from public.notifications
      where user_id = t.user_id and kind = 'admin_message' and read_at is null and data ->> 'thread_id' = t.id::text;
-    perform public._notify(t.user_id, 'admin_message', 'Kat Görevlisi yanıt verdi: ' || left(t.title, 80),
+    perform public._notify(t.user_id, 'admin_message', 'Moderatör yanıt verdi: ' || left(t.title, 80),
       left(v_body, 140) || case when char_length(v_body) > 140 then '…' else '' end,
       jsonb_build_object('thread_id', t.id));
     perform public._audit('thread_reply', t.user_id, jsonb_build_object('thread_id', t.id));
@@ -8825,7 +8838,7 @@ begin
   delete from public.notifications
    where user_id = t.user_id and kind = 'admin_message' and data ->> 'thread_id' = t.id::text;
   perform public._notify(t.user_id, 'system', 'Görüşme sonlandırıldı',
-    left('Kat Görevlisi “' || t.title || '” görüşmesini sonlandırdı. Yazışma silindi.', 1000), '{}'::jsonb);
+    left('Moderatör “' || t.title || '” görüşmesini sonlandırdı. Yazışma silindi.', 1000), '{}'::jsonb);
   perform public._audit('thread_end', t.user_id, jsonb_build_object('title', t.title));
 end $$;
 
@@ -13030,13 +13043,13 @@ do $$ begin
   end if;
 end $$;
 
--- Moderatörün eski gönderi ve yorumları "Kat Görevlisi" adıyla görünür (rumuz yerine)
-update public.posts p set alias = 'Kat Görevlisi'
+-- Moderatörün gönderi ve yorumları "Moderatör" adıyla görünür (rumuz yerine; eski "Kat Görevlisi" adı da değişir)
+update public.posts p set alias = 'Moderatör'
   from public.post_authors a join public.profiles pr on pr.id = a.author_id
- where a.post_id = p.id and pr.role = 'admin' and not p.by_event and p.alias <> 'Kat Görevlisi';
-update public.comments c set alias = 'Kat Görevlisi'
+ where a.post_id = p.id and pr.role = 'admin' and not p.by_event and p.alias <> 'Moderatör';
+update public.comments c set alias = 'Moderatör'
   from public.comment_authors a join public.profiles pr on pr.id = a.author_id
- where a.comment_id = c.id and pr.role = 'admin' and c.alias <> 'Kat Görevlisi';
+ where a.comment_id = c.id and pr.role = 'admin' and c.alias <> 'Moderatör';
 
 -- Katılım kodu girişi etkinlik başlamadan 5 dakika önce açılır (bir kez uygulanır; sonra değeri değiştirebilirsin)
 do $$ begin
@@ -13096,7 +13109,7 @@ update public.app_settings set value = to_jsonb($legal$41. Kat Sosyal olarak ki�
 • Rumuz ve avatar: sistemin her hafta sana rastgele verdiği takma ad ve avatar.
 • Cihaz bilgisi: telefonunun kimliğinin geri çevrilemeyen özeti (Android'de telefonun kalıcı cihaz kimliğinden üretilir). Telefon kimliğinin kendisi saklanmaz.
 • Yaklaşık konum: tam konumun sunucularımıza hiç gönderilmez ve kaydedilmez. Telefonun, konumunu yalnızca yaklaşık 500 metrelik bir bölge numarasına ("petek") çevirir ve sadece bu numara gönderilir. Bu yalnızca sen bir işlem yaptığında olur: gönderiye yer eklerken, petek akışını açarken, "Buradayım" derken, yan yana oyun açarken ya da bir oyuna girerken, etkinlik katılımını doğrularken, hazine kodu girerken. Konumun sürekli takip edilmez, uygulama arka plandayken konumuna bakılmaz.
-• Paylaştığın içerikler: akış gönderileri, yorumlar, tepkiler, özel mesajlar, oyun içi sohbet ve fısıltılar, etkinlik yorumları, mekân değerlendirmeleri, Kat Görevlisi ile yazışmaların.
+• Paylaştığın içerikler: akış gönderileri, yorumlar, tepkiler, özel mesajlar, oyun içi sohbet ve fısıltılar, etkinlik yorumları, mekân değerlendirmeleri, Moderatör ile yazışmaların.
 • Etkinlik bilgileri: kayıt olduğun, katılımını doğruladığın ve puanladığın etkinlikler; ekip kurarken kendi isteğinle paylaştığın iletişim bilgisi; Etkinlik Lideri başvurusundaki ad ve telefon numarası.
 • Oyun ve puan bilgileri: oynadığın oyunlar, sonuçlar, puan hareketleri, sıralama ve başarımlar.
 • Abonelik bilgisi: aboneliğinin var olup olmadığı ve bitiş tarihi. Ödeme ve kart bilgilerin bize hiç gelmez; ödemeyi App Store ya da Google Play alır.
@@ -13133,7 +13146,7 @@ Hizmet sağlayıcılarımızın sunucuları yurt dışında bulunabileceği içi
 • Arkadaş olmayanlarla özel mesajlar haftalık kapanır, arşivde 365 gün tutulup silinir.
 • Harita yoğunluk kayıtları (petek numarası) en çok 30 gün tutulur.
 • Bilgi Yarışması sohbetleri, Vampir–Köylü fısıltıları ve elenenler sohbeti 14 gün tutulur.
-• Bildirimler 60 gün tutulur. Kat Görevlisi yazışmaları görüşme bitince, 90 gün hareketsiz kalırsa kendiliğinden silinir.
+• Bildirimler 60 gün tutulur. Moderatör yazışmaları görüşme bitince, 90 gün hareketsiz kalırsa kendiliğinden silinir.
 • Şifre sıfırlamadaki bağlantı adresi kayıtları 1 gün içinde silinir.
 • Hesabını sildiğinde profilin, gönderilerin ve yorumların kalıcı olarak silinir. Telefon kimliğinin özeti, aynı telefondan yasak kaçırmak için yeniden hesap açılmasını önlemek amacıyla saklanmaya devam eder. Kanunen saklamamız gereken kayıtlar yasal süre boyunca tutulur.
 
@@ -14024,7 +14037,7 @@ begin
 end $$;
 
 -- Moderatör: ayrılmış rumuz kodunu seç (p_code boş = kodu bırak, yeniden rastgele rumuz al). Başka moderatörün
--- kullandığı kod seçilemez. Seçilen kod haftalık yenilemede değişmez; rumuz "Kat Görevlisi#41" olur.
+-- kullandığı kod seçilemez. Seçilen kod haftalık yenilemede değişmez; rumuz "Moderatör#41" olur.
 create or replace function public.admin_set_alias_code(p_code int)
 returns text language plpgsql security definer set search_path = public as $$
 declare
@@ -14048,7 +14061,7 @@ begin
     if exists (select 1 from public.profiles p where p.alias_no = p_code and p.id <> v.id) then
       raise exception 'alias_code_taken';
     end if;
-    update public.profiles set alias_no = p_code, alias = 'Kat Görevlisi#' || p_code,
+    update public.profiles set alias_no = p_code, alias = 'Moderatör#' || p_code,
                                alias_week = public.current_alias_week()
      where id = v.id returning alias into v_alias;
   end if;
@@ -14223,6 +14236,60 @@ begin
     coalesce(v_note || ' ', '') || 'İstersen Profil > avatarın yanındaki kalkan düğmesiyle yeniden doğrulama yapabilirsin.',
     jsonb_build_object('route', '/profile'));
 end $$;
+
+-- Web yönetim paneline giriş: panel, girişten hemen sonra bunu çağırır. Yalnızca moderatör hesabı için; oturum 7 gün
+-- geçerlidir. Telefondaki oturum kapanmaz.
+create or replace function public.admin_web_claim()
+returns void language plpgsql security definer set search_path = public as $$
+declare v_sid text := nullif(auth.jwt() ->> 'session_id', '');
+begin
+  if auth.uid() is null then raise exception 'not_authenticated'; end if;
+  if not exists (select 1 from public.profiles where id = auth.uid() and role = 'admin' and banned_at is null) then
+    raise exception 'forbidden';
+  end if;
+  if v_sid is null then raise exception 'not_authenticated'; end if;
+  delete from public.admin_web_sessions where expires_at < now();
+  insert into public.admin_web_sessions (session_id, user_id, expires_at)
+  values (v_sid::uuid, auth.uid(), now() + interval '7 days')
+  on conflict (session_id) do update set expires_at = excluded.expires_at
+   where public.admin_web_sessions.user_id = auth.uid();
+  perform public._audit('web_login', auth.uid(), '{}'::jsonb);
+end $$;
+
+-- Web panelden çıkış
+create or replace function public.admin_web_release()
+returns void language sql security definer set search_path = public as $$
+  delete from public.admin_web_sessions
+   where session_id::text = (auth.jwt() ->> 'session_id') and user_id = auth.uid();
+$$;
+
+-- Moderatör hesabı her yerde herkese "Moderatör" adıyla görünür (gerçek adı admin_real_name'de saklanır; yalnızca
+-- web panelde görünür). Moderatörlük kaldırılınca gerçek adı geri gelir ve web panel oturumları kapanır.
+alter table public.profiles add column if not exists admin_real_name text;
+create or replace function public._profile_staff_name()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.role = 'admin' then
+    if new.full_name is distinct from 'Moderatör' then
+      new.admin_real_name := new.full_name;
+      new.full_name := 'Moderatör';
+    end if;
+  elsif tg_op = 'UPDATE' and old.role = 'admin' then
+    new.full_name := coalesce(nullif(btrim(new.admin_real_name), ''),
+                              case when new.full_name = 'Moderatör' then 'Üye' else new.full_name end);
+    new.admin_real_name := null;
+    -- Ayrılmış rumuz kodu (#41, #1000) kişinin bir sonraki işleminde kendiliğinden bırakılır (_rotate_alias_if_needed)
+    delete from public.admin_web_sessions where user_id = new.id;
+  end if;
+  return new;
+end $$;
+drop trigger if exists profiles_staff_name on public.profiles;
+create trigger profiles_staff_name before insert or update of role, full_name on public.profiles
+  for each row execute function public._profile_staff_name();
+-- Mevcut moderatörler (ve eski "Kat Görevlisi#41" rumuzları)
+update public.profiles set role = role where role = 'admin' and full_name is distinct from 'Moderatör';
+update public.profiles set alias = 'Moderatör#' || alias_no
+ where alias like 'Kat Görevlisi#%' and alias_no is not null;
 
 -- Moderatör: onay bekleyen profil resimleri
 drop function if exists public.admin_list_photo_approvals();
@@ -14984,6 +15051,8 @@ grant execute on function public._profile_photo_slot_ok(text) to authenticated;
 grant execute on function public.admin_list_photo_approvals() to authenticated;
 grant execute on function public.admin_review_photo(uuid, text, boolean) to authenticated;
 grant execute on function public.admin_revoke_identity(uuid, text) to authenticated;
+grant execute on function public.admin_web_claim() to authenticated;
+grant execute on function public.admin_web_release() to authenticated;
 
 -- Profil resimleri (yalnızca doğrulanmış hesap): herkese açık okunan "profile-photos" kutusu; en çok 2 MB, jpg/png/webp.
 -- Dosya adı tahmin edilemez; adres yalnızca gerçek adın göründüğü yerlerde (arkadaşlara) verilir.

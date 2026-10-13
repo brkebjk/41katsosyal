@@ -7,6 +7,7 @@ import { KeyboardLift } from '@/components/KeyboardLift';
 import { OverlayPanel } from '@/components/OverlayPanel';
 import { KeyboardAwareScroll } from '@/components/KeyboardAwareScroll';
 import { Avatar } from '@/components/Avatar';
+import { isModeratorName, ModeratorMark } from '@/components/ModeratorMark';
 import { ChatBubble } from '@/components/ChatBubble';
 import { ContentActions, type ContentResult, type ContentTarget } from '@/components/ContentActions';
 import { FriendTag } from '@/components/FriendTag';
@@ -140,7 +141,7 @@ function PostDetailBody({
     is_mine: p.is_mine,
     is_hidden: p.is_hidden,
     is_friend: p.author_name !== null || !!p.sponsor_id,
-    profile: !p.sponsor_id && !p.event_id && p.alias !== 'Kat Görevlisi',
+    profile: !p.sponsor_id && !p.event_id && p.alias !== 'Moderatör',
   });
 
   return (
@@ -215,7 +216,7 @@ function PostDetailBody({
                             is_mine: c.is_mine,
                             is_hidden: c.is_hidden,
                             is_friend: c.author_name !== null || !!c.sponsor_id,
-                            profile: !c.sponsor_id && c.alias !== 'Kat Görevlisi',
+                            profile: !c.sponsor_id && c.alias !== 'Moderatör',
                           })
                         }
                       />
@@ -327,6 +328,7 @@ function CommentRow({
               </Text>
             </Pressable>
           )}
+          {isModeratorName(displayName(comment)) ? <ModeratorMark size={13} /> : null}
           {comment.author_name ? <FriendTag /> : null}
           <Text style={styles.commentTime}>{timeAgo(comment.created_at)}</Text>
           <View style={styles.flex} />

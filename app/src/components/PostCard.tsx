@@ -3,6 +3,7 @@ import { Image } from 'expo-image';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Avatar } from '@/components/Avatar';
+import { isModeratorName, ModeratorMark } from '@/components/ModeratorMark';
 import { ChatBubble } from '@/components/ChatBubble';
 import { FriendTag } from '@/components/FriendTag';
 import { ImageSlot } from '@/components/ImageSlot';
@@ -147,6 +148,7 @@ export function PostCard({
       <Text style={[styles.alias, sponsorId ? styles.aliasSponsor : null]} numberOfLines={1}>
         {name}
       </Text>
+      {isModeratorName(name) ? <ModeratorMark /> : null}
       {/* Doğrulanmış hesap: sarı tik (abone rozetinin önünde) */}
       {post.author_verified ? (
         <View accessibilityLabel="Doğrulanmış hesap" testID="post-verified-tick">

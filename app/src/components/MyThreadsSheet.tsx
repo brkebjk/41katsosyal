@@ -8,7 +8,7 @@ import { timeAgo } from '@/lib/labels';
 import { listMyThreads, type ThreadSummary } from '@/lib/modThreads';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
-/** Profil → Hesabım → Kat Görevlisi mesajlarım: açık yazışmalar; dokununca yazışma açılır. */
+/** Profil → Hesabım → Moderatör mesajlarım: açık yazışmalar; dokununca yazışma açılır. */
 export function MyThreadsSheet({ onClose }: { onClose: () => void }) {
   const [rows, setRows] = useState<ThreadSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,8 +39,8 @@ export function MyThreadsSheet({ onClose }: { onClose: () => void }) {
 
   return (
     <Sheet
-      title="Kat Görevlisi mesajlarım"
-      subtitle="Kat Görevlisinin sana yazdığı mesajlar. Görüşme bitirilince yazışma silinir."
+      title="Moderatör mesajlarım"
+      subtitle="Moderatörün sana yazdığı mesajlar. Görüşme bitirilince yazışma silinir."
       onClose={onClose}
     >
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -65,7 +65,7 @@ export function MyThreadsSheet({ onClose }: { onClose: () => void }) {
             </View>
             {t.last_body ? (
               <Text style={styles.body} numberOfLines={2}>
-                {`${t.last_from_admin ? 'Kat Görevlisi: ' : 'Sen: '}${t.last_body}`}
+                {`${t.last_from_admin ? 'Moderatör: ' : 'Sen: '}${t.last_body}`}
               </Text>
             ) : null}
             {t.unread ? <Text style={styles.badge}>Yeni mesaj</Text> : null}

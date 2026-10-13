@@ -292,7 +292,7 @@ export function MemberSheet({ member: initial, onClose, onChanged }: Props) {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Özel mesaj</Text>
         <Text style={styles.msgNote}>
-          Üye seni “Kat Görevlisi” olarak görür ve cevap yazabilir. Yazışma Mesajlar sekmesinde açılır.
+          Üye seni “Moderatör” olarak görür ve cevap yazabilir. Yazışma Mesajlar sekmesinde açılır.
         </Text>
         <TextField
           label="Başlık"

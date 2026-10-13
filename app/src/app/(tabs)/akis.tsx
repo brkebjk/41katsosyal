@@ -855,7 +855,7 @@ function postTarget(p: Post): ContentTarget {
     is_mine: p.is_mine,
     is_hidden: p.is_hidden,
     is_friend: p.author_name !== null || !!p.sponsor_id,
-    profile: !p.sponsor_id && !p.event_id && p.alias !== 'Kat Görevlisi',
+    profile: !p.sponsor_id && !p.event_id && p.alias !== 'Moderatör',
     can_thread: p.is_mine && !p.event_id && !p.sponsor_id && (p.thread?.length ?? 0) + 1 < THREAD_MAX,
   };
 }

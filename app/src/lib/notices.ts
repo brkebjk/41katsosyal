@@ -22,7 +22,7 @@ export type Notices = {
   modTreasures: number;
   /** Moderatör: onay bekleyen Konser & Festival etkinlikleri ve etkinlik görselleri */
   modApprovals: number;
-  /** Moderatör: cevap bekleyen Kat Görevlisi yazışmaları */
+  /** Moderatör: cevap bekleyen Moderatör yazışmaları */
   modMessages: number;
   /** Bildirim kutusunda (harita ekranı) okunmamış bildirim ve duyuru */
   notifications: number;

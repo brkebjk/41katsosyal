@@ -278,7 +278,7 @@ export async function shareEventToFeed(eventId: string, body?: string): Promise<
 export const MENTION_RE =
   /@(?:[A-Za-zÇĞİÖŞÜçğıöşüÂâÎîÛû]{0,30}#\d{1,5}|[A-Za-zÇĞİÖŞÜçğıöşü]+ [A-Za-zÇĞİÖŞÜçğıöşü]+ \d{3}(?:-[0-9a-f]{3})?)/g;
 
-/** Cevapta yazarı etiketleme metni: boşluklu rumuz (ör. “Kat Görevlisi#41”) yalnızca numarasıyla etiketlenir. */
+/** Cevapta yazarı etiketleme metni: boşluklu rumuz (ör. “Moderatör#41”) yalnızca numarasıyla etiketlenir. */
 export function mentionTag(alias: string): string {
   const m = /\s.*#(\d{1,5})$/.exec(alias);
   return m ? `@#${m[1]}` : `@${alias}`;

@@ -728,13 +728,13 @@ function ProfileScreen() {
         icon="person-circle"
         title="Hesabım"
         highlight
-        subtitle="Kat Görevlisi mesajları, ad değişikliği, kurtarma kelimeleri, engellenenler, hesap silme"
+        subtitle="Moderatör mesajları, ad değişikliği, kurtarma kelimeleri, engellenenler, hesap silme"
         open={open === 'account'}
         onToggle={() => setOpen((o) => (o === 'account' ? null : 'account'))}
       >
         <ListRow
           icon="shield-checkmark"
-          title="Kat Görevlisi mesajlarım"
+          title="Moderatör mesajlarım"
           subtitle="Moderatörle yazışmaların; cevap yazabilirsin"
           onPress={() => setOverlay('threads')}
         />
@@ -784,7 +784,7 @@ function ProfileScreen() {
               verified
                 ? 'Doğrulanmış hesabın adı nüfustaki addır; değiştirilemez.'
                 : isModerator
-                ? 'Moderatör olarak sınırsız değiştirebilirsin'
+                ? 'Herkes seni “Moderatör” olarak görür; buradaki ad yalnızca web panelde görünür'
                 : canRename
                   ? 'Yalnızca 1 kez değiştirebilirsin'
                   : 'Değiştirme hakkını kullandın. Yanlışlık varsa bize ulaş.'

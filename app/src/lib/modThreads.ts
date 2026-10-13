@@ -1,4 +1,4 @@
-// Kat Görevlisi (moderatör) ile yazışma. Moderatörün mesajı üyede bir yazışma açar; üye cevap yazabilir.
+// Moderatör (moderatör) ile yazışma. Moderatörün mesajı üyede bir yazışma açar; üye cevap yazabilir.
 // Moderatör görüşmeyi bitirince yazışma tamamen silinir. Hangi moderatörün yazdığı üyeye gösterilmez.
 
 import { callRpc, callRpcVoid, type Result } from '@/lib/rpc';
@@ -33,11 +33,11 @@ export type ThreadSummary = {
 export const THREAD_MAX = 1000;
 
 const TEXT: Record<string, string> = {
-  thread_not_found: 'Bu yazışma artık yok. Kat Görevlisi görüşmeyi sonlandırmış olabilir.',
+  thread_not_found: 'Bu yazışma artık yok. Moderatör görüşmeyi sonlandırmış olabilir.',
   invalid_body: 'Mesaj boş olamaz ve 1000 karakteri geçemez.',
-  wait_for_reply: 'Üst üste en çok 3 mesaj yazabilirsin. Kat Görevlisinin cevabını bekle.',
+  wait_for_reply: 'Üst üste en çok 3 mesaj yazabilirsin. Moderatörün cevabını bekle.',
   rate_limited: 'Biraz yavaş. Birkaç saniye sonra tekrar dene.',
-  thread_full: 'Bu yazışma çok uzadı. Kat Görevlisi yeni bir görüşme açabilir.',
+  thread_full: 'Bu yazışma çok uzadı. Moderatör yeni bir görüşme açabilir.',
   forbidden: 'Bunu yalnızca moderatör yapabilir.',
 };
 

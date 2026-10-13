@@ -7,7 +7,7 @@ import { adminListThreads, type ThreadSummary } from '@/lib/modThreads';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 /**
- * Moderatör: Kat Görevlisi yazışmaları. Cevap bekleyenler üstte ve vurgulu. Yeni yazışma, Üyeler sekmesinde üyeye
+ * Moderatör: Moderatör yazışmaları. Cevap bekleyenler üstte ve vurgulu. Yeni yazışma, Üyeler sekmesinde üyeye
  * “Mesaj gönder” ile açılır. `reloadKey` değişince liste yenilenir (yazışma kapatılınca).
  */
 export function ModMessagesTab({ onOpen, reloadKey }: { onOpen: (id: string) => void; reloadKey: number }) {
@@ -28,7 +28,7 @@ export function ModMessagesTab({ onOpen, reloadKey }: { onOpen: (id: string) => 
   return (
     <>
       <Text style={styles.muted}>
-        Üyeler seni yalnızca “Kat Görevlisi” olarak görür. Yeni yazışmayı Üyeler sekmesinde üyeye mesaj göndererek
+        Üyeler seni yalnızca “Moderatör” olarak görür. Yeni yazışmayı Üyeler sekmesinde üyeye mesaj göndererek
         açarsın. “Görüşmeyi bitir” deyince yazışma tamamen silinir.
       </Text>
       {error ? <Text style={styles.error}>{error}</Text> : null}

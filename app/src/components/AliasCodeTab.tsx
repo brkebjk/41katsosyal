@@ -16,7 +16,7 @@ const TEXT: Record<string, string> = {
 };
 
 /**
- * Moderatör paneli > Rumuz kodu: moderatörlere ayrılmış #41 ve #1000. Seçilen kodla rumuz “Kat Görevlisi#41” olur,
+ * Moderatör paneli > Rumuz kodu: moderatörlere ayrılmış #41 ve #1000. Seçilen kodla rumuz “Moderatör#41” olur,
  * haftalık yenilemede değişmez ve akışta @#41 ile etiketlenebilir. Başka moderatörün kullandığı kod seçilemez.
  */
 export function AliasCodeTab({ onNotice }: { onNotice: (n: Notice) => void }) {
@@ -42,7 +42,7 @@ export function AliasCodeTab({ onNotice }: { onNotice: (n: Notice) => void }) {
       code === null ? 'Kodu bırak' : `#${code} kodunu al`,
       code === null
         ? 'Kodun bırakılacak ve sana yeni, rastgele bir rumuz verilecek.'
-        : `Rumuzun “Kat Görevlisi#${code}” olacak ve haftalık yenilemede değişmeyecek. Elindeki diğer kod bırakılır.`,
+        : `Rumuzun “Moderatör#${code}” olacak ve haftalık yenilemede değişmeyecek. Elindeki diğer kod bırakılır.`,
       code === null ? 'Bırak' : 'Al',
     );
     if (!ok) return;
@@ -63,7 +63,7 @@ export function AliasCodeTab({ onNotice }: { onNotice: (n: Notice) => void }) {
   return (
     <View style={styles.wrap}>
       <Text style={styles.info}>
-        #41 ve #1000 yalnızca moderatörlere ayrılmıştır. Seçtiğin kodla rumuzun “Kat Görevlisi#41” gibi görünür; üyeler
+        #41 ve #1000 yalnızca moderatörlere ayrılmıştır. Seçtiğin kodla rumuzun “Moderatör#41” gibi görünür; üyeler
         seni akışta @#41 yazarak etiketleyebilir. Bir kodu aynı anda yalnızca bir moderatör kullanabilir.
       </Text>
       {error ? <Text style={styles.error}>{error}</Text> : null}

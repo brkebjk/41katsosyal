@@ -618,6 +618,11 @@ export const AUDIT_TEXT: Record<string, string> = {
   event_image_rejected: 'Etkinlik görselini reddetti',
   treasure_create: 'Hazine gizledi',
   treasure_remove: 'Hazineyi kaldırdı',
+  web_login: 'Web panele giriş yaptı',
+  identity_revoke: 'Hesap doğrulamasını kaldırdı',
+  photo_approve: 'Profil resmini onayladı',
+  photo_reject: 'Profil resmini reddetti',
+  alias_code: 'Rumuz kodunu değiştirdi',
 };
 
 // ---------------------------------------------------------------------------

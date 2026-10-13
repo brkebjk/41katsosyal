@@ -18,7 +18,7 @@ type Props = {
 };
 
 /**
- * Kat Görevlisi yazışması. Üye kendi yazışmasını görür ve cevap yazar; moderatör üyenin adını görür, cevap yazar ve
+ * Moderatör yazışması. Üye kendi yazışmasını görür ve cevap yazar; moderatör üyenin adını görür, cevap yazar ve
  * görüşmeyi bitirebilir (yazışma tamamen silinir). Açıkken 15 saniyede bir yenilenir.
  */
 export function ModThreadSheet({ threadId, onClose, onEnded }: Props) {
@@ -74,15 +74,15 @@ export function ModThreadSheet({ threadId, onClose, onEnded }: Props) {
   }
 
   const asAdmin = thread?.as_admin ?? false;
-  const otherName = asAdmin ? (thread?.member_name ?? 'Üye') : 'Kat Görevlisi';
+  const otherName = asAdmin ? (thread?.member_name ?? 'Üye') : 'Moderatör';
 
   return (
     <Sheet
-      title={thread?.title ?? 'Kat Görevlisi'}
+      title={thread?.title ?? 'Moderatör'}
       subtitle={
         asAdmin
-          ? `${thread?.member_name ?? ''}${thread?.member_alias ? ` · ${thread.member_alias}` : ''} ile yazışma. Üye seni yalnızca “Kat Görevlisi” olarak görür.`
-          : 'Kat Görevlisi ile yazışma. Görüşme bitince yazışma silinir.'
+          ? `${thread?.member_name ?? ''}${thread?.member_alias ? ` · ${thread.member_alias}` : ''} ile yazışma. Üye seni yalnızca “Moderatör” olarak görür.`
+          : 'Moderatör ile yazışma. Görüşme bitince yazışma silinir.'
       }
       onClose={onClose}
     >
@@ -105,7 +105,7 @@ export function ModThreadSheet({ threadId, onClose, onEnded }: Props) {
           <TextInput
             value={text}
             onChangeText={setText}
-            placeholder={asAdmin ? 'Üyeye cevap yaz' : 'Kat Görevlisine cevap yaz'}
+            placeholder={asAdmin ? 'Üyeye cevap yaz' : 'Moderatöre cevap yaz'}
             placeholderTextColor={colors.textMuted}
             selectionColor={colors.primary}
             multiline
@@ -132,7 +132,7 @@ export function ModThreadSheet({ threadId, onClose, onEnded }: Props) {
       ) : null}
       {sendError ? <Text style={styles.error}>{sendError}</Text> : null}
       {thread && !asAdmin ? (
-        <Text style={styles.note}>Kat Görevlisi cevap vermeden üst üste en çok 3 mesaj yazabilirsin.</Text>
+        <Text style={styles.note}>Moderatör cevap vermeden üst üste en çok 3 mesaj yazabilirsin.</Text>
       ) : null}
       {thread && asAdmin ? (
         <PrimaryButton label="Görüşmeyi bitir ve sil" variant="danger" onPress={() => void end()} disabled={busy} />
