@@ -1,69 +1,30 @@
-# Görev Test Rehberi – Web yönetim paneli (1. aşama) + "Moderatör" görünümü
+# Görev Test Rehberi – Kimlik doğrulama: NVİ bağlantı teşhisi
 
-## A. Supabase (her teslimatta)
-1. Supabase > **SQL Editor** > **+ New query**.
-2. `supabase/schema.sql` dosyasının tamamını yapıştır ve **Run**'a bas. Altta yeşil "Success" görmelisin.
-3. Hesap doğrulamayı henüz kurmadıysan: önceki rehberdeki Adım 2 ve 3. Kısaca:
-   - Edge Functions > **Secrets** > `IDENTITY_PEPPER`.
-   - `verify-identity` işlevini yayınla. Verify JWT **kapalı** olmalı.
-   - Uygulamada çıkan hata kodları: K1 = işlev yok, K2 = oturum, K3 = işlev hatası, K4 = internet, K5 = parola eksik, K6 = veritabanı güncel değil.
+## A. Güncelle (iki şey)
+1. **Veritabanı:** Supabase > **SQL Editor** > **+ New query** > `supabase/schema.sql` dosyasının tamamını yapıştır > **Run**. Yeşil "Success" görmelisin.
+2. **İşlev:**
+   - Supabase > **Edge Functions** > `verify-identity` > **Code** sekmesine gir.
+   - İçindeki kodun **tamamını sil**.
+   - Bilgisayarındaki `supabase/functions/verify-identity/index.ts` dosyasının tamamını yapıştır.
+   - **Deploy** düğmesine bas. Verify JWT kapalı kalsın.
 
-## B. Web paneli Cloudflare'de yayınla (bir kez)
+## B. Telefonda tekrar dene
+1. Bilgisayarda `app` klasöründe `npx expo start -c` çalıştır ve Expo Go ile aç.
+2. Profil > avatarın yanındaki kalkan > bilgilerini yaz > **Doğrula**.
+3. Yine "Nüfus kayıt servisine ulaşılamıyor" çıkarsa artık sonunda bir kod olacak (ör. **N-H403**). Bu kodu bana yaz.
+   - Bu hata artık günlük 5 deneme hakkından **sayılmaz**.
+4. Ayrıca şu ekranın fotoğrafını gönder:
+   - Supabase > **Edge Functions** > `verify-identity` > **Logs** sekmesi.
+   - Kırmızı "NVİ ..." satırı, NVİ'nin neden reddettiğini yazar.
+   - Bu satırlarda TC numarası yer almaz; içinde 11 haneli bir sayı geçerse *** ile gizlenir.
 
-> Cloudflare'de birbirine benzeyen iki kurulum ekranı var: **Workers** ve **Pages**. Bize **Pages** lazım.
-> Ekranda **"Deploy command"** diye bir kutu görürsen yanlış ekrandasın (Workers). Geri dön ve 3. adımdaki Pages bağlantısını kullan.
-
-**1. Giriş**
-- https://dash.cloudflare.com adresine gir (hesabın yoksa **Sign up** ile ücretsiz aç).
-
-**2. Workers & Pages sayfası**
-- Sol menüde **Compute (Workers)** ya da **Workers & Pages** yazan yere tıkla.
-- Sağ üstteki mavi **Create** ya da **Create application** düğmesine bas.
-
-**3. Pages'i seç**
-- Açılan sayfada ya üstte **Workers | Pages** diye iki sekme olur ya da sayfanın en altında küçük bir yazı olur: **"Looking to deploy Pages? Get started"**.
-- **Pages** sekmesine ya da **Get started** yazısına tıkla.
-- Sonra **Import an existing Git repository** (Var olan Git deposunu içe aktar) altındaki **Get started** düğmesine bas.
-
-**4. GitHub'ı bağla**
-- **Connect GitHub** düğmesine bas.
-- GitHub sayfası açılır: **Only select repositories** seç, listeden `41katsosyal` deposunu seç, **Install & Authorize** düğmesine bas.
-- Cloudflare'e dönünce depo listesinde `41katsosyal`'ı seç ve **Begin setup** düğmesine bas.
-
-**5. "Set up builds and deployments" sayfası** (kutuları şöyle doldur)
-
-| Ekrandaki kutunun adı | Ne yazacaksın / ne seçeceksin |
+| Kod | Anlamı |
 |---|---|
-| **Project name** | `kat41-panel` (adres bu ad olur: kat41-panel.pages.dev) |
-| **Production branch** | Açılır listeden **`claude/kind-goodall-dy5z7y`** seç. `main` **seçme**: panel kodu henüz orada değil. |
-| **Framework preset** | **None** |
-| **Build command** | `npm run build` |
-| **Build output directory** | `dist` |
-| **Root directory (advanced)** | Bu yazıya tıkla, açılan **Path** kutusuna `admin-web` yaz |
-| **Environment variables (advanced)** | Bu yazıya tıkla. Aşağıdaki 3 satırı **+ Add variable** ile tek tek ekle |
-
-Environment variables bölümü (her satırda solda **Variable name**, sağda **Value** kutusu vardır):
-
-| Variable name (sol kutu) | Value (sağ kutu) |
-|---|---|
-| `VITE_SUPABASE_URL` | Bilgisayarındaki `app/.env` dosyasında `EXPO_PUBLIC_SUPABASE_URL=` yazan satırın **eşittirden sonraki** kısmı (https://... ile başlar) |
-| `VITE_SUPABASE_ANON_KEY` | Aynı dosyada `EXPO_PUBLIC_SUPABASE_ANON_KEY=` satırının eşittirden sonraki kısmı (uzun bir anahtar) |
-| `NODE_VERSION` | `22` |
-
-> `app/.env` dosyasında `EXPO_PUBLIC_LOGIN_DOMAIN=` diye dolu bir satır varsa 4. değişkeni de ekle: `VITE_LOGIN_DOMAIN` = o satırın değeri. Yoksa ekleme.
-
-**6. Yayınla**
-- **Save and Deploy** düğmesine bas ve 1–3 dakika bekle.
-- Bitince **Success** ve `https://kat41-panel.pages.dev` gibi bir adres görünür. Panelin adresi budur.
-- Bu adresi tarayıcıda yer imlerine ekle, kimseyle paylaşma.
-
-**Hata çıkarsa**
-- Build sırasında kırmızı hata çıkarsa sayfadaki **View build log** / **Build log** ekranının fotoğrafını bana gönder.
-- Panel açılıyor ama "Sunucu adresi girilmemiş" yazıyorsa 5. adımdaki değişkenlerden biri eksik ya da yanlış yazılmış:
-  1. Projeye gir > **Settings** > **Environment variables** (ya da **Variables and Secrets**) bölümünden düzelt.
-  2. **Deployments** sekmesine geç, en üstteki yayının yanındaki **⋯** > **Retry deployment** ile yeniden yayınla.
-
-Sonraki teslimatlarda bir şey yapmana gerek yok: her gönderimde panel kendiliğinden güncellenir.
+| N-H403 (ya da H4xx) | NVİ, Supabase'in sunucusundan gelen isteği reddediyor (yurt dışı engeli olabilir) |
+| N-H5xx | NVİ servisinin kendisinde arıza var; daha sonra tekrar dene |
+| N-T | NVİ 15 saniyede cevap vermedi |
+| N-C | Bağlantı kurulamadı (ağ ya da sertifika sorunu) |
+| N-P | NVİ cevap verdi ama cevap beklenen biçimde değil |
 
 ## C. Panel testi
 1. Panel adresini bilgisayarda aç. Moderatör hesabının **uygulamadaki kullanıcı adı ve şifresiyle** gir.

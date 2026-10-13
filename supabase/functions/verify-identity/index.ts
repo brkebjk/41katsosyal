@@ -83,8 +83,18 @@ async function hmacHex(value: string): Promise<string> {
   return Array.from(sig, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** NVİ'ye sorar: true = uyuşuyor, false = uyuşmuyor, null = servise ulaşılamadı */
-async function askNvi(tc: string, ad: string, soyad: string, year: number): Promise<boolean | null> {
+/**
+ * NVİ'ye sorar. `match`: true = uyuşuyor, false = uyuşmuyor, null = servise ulaşılamadı. Ulaşılamadıysa `why` kısa
+ * nedendir (uygulamada ve Supabase > Edge Functions > Logs ekranında görünür; kimlik bilgisi içermez):
+ *   T = zaman aşımı, H<kod> = NVİ bir hata kodu döndü (ör. H403 = erişim engeli), C = bağlantı/sertifika hatası,
+ *   P = cevap anlaşılamadı.
+ */
+async function askNviOnce(
+  tc: string,
+  ad: string,
+  soyad: string,
+  year: number,
+): Promise<{ match: boolean | null; why: string }> {
   const body =
     '<?xml version="1.0" encoding="utf-8"?>' +
     '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ' +
@@ -105,15 +115,32 @@ async function askNvi(tc: string, ad: string, soyad: string, year: number): Prom
       body,
       signal: ctl.signal,
     });
-    if (!res.ok) return null;
     const text = await res.text();
+    if (!res.ok) {
+      console.error(`NVİ HTTP ${res.status}: ${text.slice(0, 300).replace(/\d{11}/g, '***')}`);
+      return { match: null, why: `H${res.status}` };
+    }
     const m = /<TCKimlikNoDogrulaResult>\s*(true|false)\s*<\/TCKimlikNoDogrulaResult>/i.exec(text);
-    return m ? m[1].toLowerCase() === 'true' : null;
-  } catch {
-    return null;
+    if (!m) {
+      console.error(`NVİ cevabı anlaşılamadı: ${text.slice(0, 300).replace(/\d{11}/g, '***')}`);
+      return { match: null, why: 'P' };
+    }
+    return { match: m[1].toLowerCase() === 'true', why: '' };
+  } catch (e) {
+    const timeout = ctl.signal.aborted;
+    console.error(`NVİ bağlantı hatası (${timeout ? 'zaman aşımı' : 'bağlantı'}): ${String(e).slice(0, 300)}`);
+    return { match: null, why: timeout ? 'T' : 'C' };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Geçici bir bağlantı sorununda bir kez daha dener */
+async function askNvi(tc: string, ad: string, soyad: string, year: number) {
+  const first = await askNviOnce(tc, ad, soyad, year);
+  if (first.match !== null || first.why.startsWith('H4')) return first;
+  await new Promise((r) => setTimeout(r, 1500));
+  return askNviOnce(tc, ad, soyad, year);
 }
 
 Deno.serve(async (req) => {
@@ -155,9 +182,13 @@ Deno.serve(async (req) => {
   if (start.data !== 'ok') return json({ result: start.data });
 
   // 4) NVİ'ye sor
-  const match = await askNvi(tc, ad, soyad, year);
-  if (match === null) return json({ result: 'nvi_unavailable' });
-  if (!match) return json({ result: 'mismatch' });
+  const nvi = await askNvi(tc, ad, soyad, year);
+  if (nvi.match === null) {
+    // Ulaşılamadıysa bu deneme günlük hakkından sayılmaz
+    await admin.rpc('service_identity_refund', { p_user: userId });
+    return json({ result: 'nvi_unavailable', detail: nvi.why });
+  }
+  if (!nvi.match) return json({ result: 'mismatch' });
 
   // 5) Hesabı doğrula; gerçek ad nüfustaki ad olur
   const finish = await admin.rpc('service_identity_finish', {

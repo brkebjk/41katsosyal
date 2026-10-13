@@ -14142,6 +14142,14 @@ begin
   return 'ok';
 end $$;
 
+-- NVİ'ye ulaşılamadıysa son deneme günlük haktan düşülmez (servis sorunu üyenin hakkını yemesin)
+create or replace function public.service_identity_refund(p_user uuid)
+returns void language sql security definer set search_path = public as $$
+  delete from public.identity_attempts
+   where id = (select max(id) from public.identity_attempts
+                where user_id = p_user and created_at > now() - interval '2 minutes');
+$$;
+
 -- NVİ "uyuşuyor" dediyse hesabı doğrular. p_full_name: nüfustaki ad soyad (Edge Function biçimlendirir).
 -- Döner: 'ok', 'already', 'used'.
 create or replace function public.service_identity_finish(p_user uuid, p_hash text, p_full_name text)
@@ -15046,6 +15054,7 @@ grant execute on function public.admin_draw_raffle(uuid) to authenticated;
 grant execute on function public.service_set_store_premium(uuid, timestamptz) to service_role;
 grant execute on function public.service_identity_start(uuid, text) to service_role;
 grant execute on function public.service_identity_finish(uuid, text, text) to service_role;
+grant execute on function public.service_identity_refund(uuid) to service_role;
 grant execute on function public.set_profile_photo(text) to authenticated;
 grant execute on function public._profile_photo_slot_ok(text) to authenticated;
 grant execute on function public.admin_list_photo_approvals() to authenticated;

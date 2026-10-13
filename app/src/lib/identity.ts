@@ -15,7 +15,7 @@ const RESULT_TEXT: Record<string, string> = {
   used: 'Bu kimlik bilgileriyle başka bir hesap doğrulanmış. Bir kişi yalnızca bir hesabı doğrulayabilir.',
   already: 'Hesabın zaten doğrulanmış.',
   not_allowed: 'Bu hesap doğrulanamaz.',
-  nvi_unavailable: 'Nüfus kayıt servisine şu an ulaşılamıyor. Biraz sonra tekrar dene.',
+  nvi_unavailable: 'Nüfus kayıt servisine şu an ulaşılamıyor. Bu deneme hakkından sayılmadı; biraz sonra tekrar dene.',
   not_configured:
     'Hesap doğrulama sunucuda yarım kurulmuş: Supabase > Edge Functions > Secrets bölümünde IDENTITY_PEPPER eksik ya da 32 karakterden kısa. (K5)',
   failed: 'Doğrulama kaydedilemedi: veritabanı güncel değil olabilir (schema.sql yeniden çalıştırılmalı). (K6)',
@@ -72,6 +72,10 @@ export async function verifyIdentity(input: IdentityInput): Promise<{ ok: boolea
     if (error) return { ok: false, error: await invokeErrorText(error) };
     const result = String((data as { result?: unknown } | null)?.result ?? '');
     if (result === 'ok') return { ok: true, error: null };
+    if (result === 'nvi_unavailable') {
+      const detail = String((data as { detail?: unknown }).detail ?? '');
+      return { ok: false, error: `${RESULT_TEXT.nvi_unavailable}${detail ? ` (N-${detail})` : ''}` };
+    }
     return { ok: false, error: RESULT_TEXT[result] ?? `Doğrulama yapılamadı. Biraz sonra tekrar dene. (${result || 'K0'})` };
   } catch {
     return { ok: false, error: 'Sunucuya ulaşılamadı. İnternet bağlantını kontrol edip tekrar dene. (K4)' };
