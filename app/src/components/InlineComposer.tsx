@@ -6,7 +6,7 @@ import { DialogHost } from '@/components/DialogHost';
 import { KeyboardLift } from '@/components/KeyboardLift';
 import { PlacePicker } from '@/components/PlacePicker';
 import { CloseX } from '@/components/CloseX';
-import { createPost, POST_MAX, THREAD_MAX } from '@/lib/feed';
+import { createPost, mentionTag, POST_MAX, THREAD_MAX } from '@/lib/feed';
 import type { Cell } from '@/lib/hex';
 import { notify } from '@/lib/dialog';
 import { findNearbyPlaces, type Place } from '@/lib/map';
@@ -80,7 +80,8 @@ export function InlineComposer({
 
   async function send() {
     if (!canSend) return;
-    const value = !thread && replyTo && !body.includes(`@${replyTo.alias}`) ? `@${replyTo.alias} ${body}` : body;
+    const tag = replyTo ? mentionTag(replyTo.alias) : '';
+    const value = !thread && replyTo && !body.includes(tag) ? `${tag} ${body}` : body;
     if (value.length > POST_MAX) return onError(`Gönderi en fazla ${POST_MAX} karakter olabilir.`);
     setBusy(true);
     const res = thread
@@ -202,7 +203,7 @@ export function InlineComposer({
                 style={styles.tag}
               >
                 <Ionicons name="return-down-forward" size={12} color={colors.primary} />
-                <Text style={styles.tagText} numberOfLines={1}>{`@${replyTo.alias}`}</Text>
+                <Text style={styles.tagText} numberOfLines={1}>{mentionTag(replyTo.alias)}</Text>
                 <Ionicons name="close" size={13} color={colors.textMuted} />
               </Pressable>
             ) : null}
@@ -226,7 +227,7 @@ export function InlineComposer({
               key={inputKey}
               value={text}
               onChangeText={setText}
-              placeholder="Birisini etiketlemek için @ ile rumuzunu yaz"
+              placeholder="Etiketlemek için @ ile rumuzunu ya da @#numarasını yaz"
               placeholderTextColor={colors.textMuted}
               selectionColor={colors.primary}
               multiline

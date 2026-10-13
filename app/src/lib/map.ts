@@ -88,7 +88,15 @@ export type OneShot =
   | { ok: true; lat: number; lon: number }
   | { ok: false; reason: 'declined' | 'denied' | 'unavailable' | 'timeout' | 'mocked' };
 
-export type LocationPurpose = 'post' | 'game' | 'event' | 'checkin' | 'locate' | 'cellfeed' | 'treasure';
+export type LocationPurpose =
+  | 'post'
+  | 'game'
+  | 'event'
+  | 'checkin'
+  | 'locate'
+  | 'cellfeed'
+  | 'treasure'
+  | 'gameseek';
 
 /** Akışta paylaşılabilecek en uzak mekânın, bulunduğun yere kuş uçuşu uzaklığı (metre). */
 export const NEARBY_MAX_METERS = 500;
@@ -123,6 +131,14 @@ const NOTICE: Record<LocationPurpose, { message: string; cancel: string }> = {
       'Hazinenin yanında olduğunu doğrulamak için konumuna şimdi bir kez bakacağım. Hazinenin peteğine en çok 1 ' +
       'petek uzaklıkta olmalısın.\n\n' +
       'Uygulama konumunu sürekli takip etmez. Sunucuya yalnızca bulunduğun peteğin numarası gider, tam konumun kaydedilmez.',
+    cancel: 'Vazgeç',
+  },
+  gameseek: {
+    message:
+      'Oyun arayanlar listesine yalnızca o peteğin içinde ya da hemen yanında olanlar adını yazdırabilir. Bunun için ' +
+      'konumuna şimdi bir kez bakacağım.\n\n' +
+      'Uygulama konumunu sürekli takip etmez. Sunucuya yalnızca bulunduğun peteğin numarası gider, tam konumun ' +
+      'kaydedilmez. Listede bu haftaki rumuzun gece yarısına kadar görünür.',
     cancel: 'Vazgeç',
   },
   cellfeed: {

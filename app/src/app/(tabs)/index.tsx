@@ -28,6 +28,7 @@ import {
   SEA,
   VENUE_COLOR,
 } from '@/components/HoneycombMap';
+import { GameSeekersSheet, SEEK_PURPLE } from '@/components/GameSeekersSheet';
 import { PresenceSheet, RenameCellSheet } from '@/components/MapSheets';
 import { NotificationBell, NotificationPanel } from '@/components/NotificationCenter';
 import { CellLeaders } from '@/components/CellLeaders';
@@ -50,7 +51,8 @@ import { confirmAction, notify } from '@/lib/dialog';
 import { eventCellMarks, listEvents, showsImageOnMap, type EventItem } from '@/lib/events';
 import { districtOf, hexDistance, isLand, type Cell } from '@/lib/hex';
 import { locateMyCell, myCellNow, nearCell, useMyCell } from '@/lib/myCell';
-import { formatWhen } from '@/lib/labels';
+import { cellFeedSummary } from '@/lib/gameSeek';
+import { formatWhen, timeAgo } from '@/lib/labels';
 import { getDensity, getMapStatus, type DensityCell, type MapStatus } from '@/lib/map';
 import { gameCellMarks, listOpenRooms, type OpenRoom } from '@/lib/rooms';
 import { isBackendReady } from '@/lib/supabase';
@@ -162,7 +164,7 @@ function MapScreen({ resetKey }: { resetKey: number }) {
   const [nowTick, setNowTick] = useState(() => Date.now());
   /** Alttaki filtre + renk açıklaması yüksekliği (harita düğmeleri bunun üstünde durur) */
   const [bottomH, setBottomH] = useState(120);
-  const [sheet, setSheet] = useState<'presence' | 'checkin' | 'rename' | null>(null);
+  const [sheet, setSheet] = useState<'presence' | 'seekers' | 'rename' | null>(null);
   const [, setNamesTick] = useState(0);
   /** Büyüteç menüsü ve seçilen türün peteklerinde 10 saniye zıplayan oklar */
   const [finderOpen, setFinderOpen] = useState(false);
@@ -232,7 +234,7 @@ function MapScreen({ resetKey }: { resetKey: number }) {
     const rms = await listOpenRooms();
     if (my !== seq.current) return;
     if (!rms.error) setRooms(rms.data);
-    // Mekânlar yalnızca petek penceresinde (etkinliklerin altında) görünür; haritada işaret yoktur
+    // Mekânlar petek penceresinde (etkinliklerin altında) listelenir; haritada peteğin altında küçük bir nokta olur
     const vns = await listMapVenues();
     if (my !== seq.current) return;
     if (!vns.error) setVenues(vns.data);
@@ -761,24 +763,12 @@ function MapScreen({ resetKey }: { resetKey: number }) {
                 <ScrollView contentContainerStyle={styles.cellMenuBody} nestedScrollEnabled>
                   <SelectedInfo cell={selected} level={levelOf(selected)} densityOpen={status.open} />
                   {!isSponsor ? (
-                    <Pressable
-                      onPress={() => void openCellFeed(selected)}
-                      accessibilityRole="button"
-                      accessibilityLabel="Petek akışına git"
-                      testID="map-cell-feed"
-                      style={({ pressed }) => [styles.feedBtn, pressed && styles.eventRowPressed]}
-                    >
-                      <Ionicons name="chatbubbles" size={20} color={colors.primaryText} />
-                      <View style={styles.flex1}>
-                        <Text style={styles.feedBtnTitle}>Petek akışı</Text>
-                        <Text style={styles.feedBtnSub}>
-                          {nearCell(myCell, selected)
-                            ? 'Yakınındasın: rumuzunla yazabilir, eski gönderileri görebilirsin.'
-                            : 'Peteğe en çok 1 petek yakınsan rumuzunla yazabilir ve okuyabilirsin.'}
-                        </Text>
-                      </View>
-                      <Ionicons name="chevron-forward" size={18} color={colors.primaryText} />
-                    </Pressable>
+                    <CellFeedButton
+                      key={`feed-${selected.q},${selected.r}`}
+                      cell={selected}
+                      near={nearCell(myCell, selected)}
+                      onOpen={() => void openCellFeed(selected)}
+                    />
                   ) : null}
                   <TreasureCellSection
                     key={`tr-${selected.q},${selected.r}`}
@@ -812,14 +802,14 @@ function MapScreen({ resetKey }: { resetKey: number }) {
                     </Pressable>
                     {!isSponsor ? (
                       <Pressable
-                        onPress={() => setSheet('checkin')}
+                        onPress={() => setSheet('seekers')}
                         accessibilityRole="button"
-                        accessibilityLabel="Buradayım, konumumu bildir"
-                        testID="map-checkin"
-                        style={({ pressed }) => [styles.cellAction, pressed && styles.eventRowPressed]}
+                        accessibilityLabel="Bu petekte oyun arayanlar"
+                        testID="map-seekers"
+                        style={({ pressed }) => [styles.cellAction, styles.seekAction, pressed && styles.eventRowPressed]}
                       >
-                        <Ionicons name="location" size={16} color={colors.primary} />
-                        <Text style={styles.cellActionText}>Buradayım</Text>
+                        <Ionicons name="game-controller" size={16} color="#FFFFFF" />
+                        <Text style={[styles.cellActionText, styles.seekActionText]}>Oyun arayanlar ?</Text>
                       </Pressable>
                     ) : null}
                   </View>
@@ -876,15 +866,17 @@ function MapScreen({ resetKey }: { resetKey: number }) {
         />
       ) : null}
       {sponsorMenu.nodes}
-      {(sheet === 'presence' || sheet === 'checkin') && selected ? (
+      {sheet === 'presence' && selected ? (
         <PresenceSheet
           key={`${selected.q},${selected.r}`}
           cell={selected}
           canCheckIn={!isSponsor}
-          autoCheckIn={sheet === 'checkin'}
           presenceOpen={status.presence_open ?? false}
           onClose={() => setSheet(null)}
         />
+      ) : null}
+      {sheet === 'seekers' && selected && !isSponsor ? (
+        <GameSeekersSheet key={`seek-${selected.q},${selected.r}`} cell={selected} onClose={() => setSheet(null)} />
       ) : null}
       {sheet === 'rename' && selected && isModerator ? (
         <RenameCellSheet cell={selected} onClose={() => setSheet(null)} />
@@ -1060,20 +1052,83 @@ function Legend({ densityOpen, open, onToggle }: { densityOpen: boolean; open: b
   );
 }
 
+/**
+ * Petek menüsündeki “Petek akışı”. Bu hafta petekte gönderi varsa solda yalnızca son gönderinin zamanı ve gönderi
+ * sayısı (içerik değil) görünür, sağda küçük akış düğmesi; gönderi yoksa tam genişlikte düğme.
+ */
+function CellFeedButton({ cell, near, onOpen }: { cell: Cell; near: boolean; onOpen: () => void }) {
+  const [sum, setSum] = useState<{ count: number; lastAt: string | null } | null>(null);
+  useEffect(() => {
+    let active = true;
+    void cellFeedSummary(cell).then((r) => {
+      if (active) setSum(r);
+    });
+    return () => {
+      active = false;
+    };
+  }, [cell]);
+
+  if (sum && sum.count > 0 && sum.lastAt) {
+    const ago = timeAgo(sum.lastAt);
+    const when = /(dk|sa|gün)$/.test(ago) ? `${ago} önce` : ago;
+    return (
+      <View style={styles.feedSplit} testID="map-cell-feed-summary">
+        <View style={styles.feedSummary}>
+          <Ionicons name="time-outline" size={18} color={colors.primary} />
+          <View style={styles.flex1}>
+            <Text style={styles.feedSummaryTitle} numberOfLines={1}>{`Son gönderi ${when}`}</Text>
+            <Text style={styles.feedSummarySub} numberOfLines={1}>{`Bu hafta ${sum.count} gönderi`}</Text>
+          </View>
+        </View>
+        <Pressable
+          onPress={onOpen}
+          accessibilityRole="button"
+          accessibilityLabel="Petek akışına git"
+          testID="map-cell-feed"
+          style={({ pressed }) => [styles.feedSmallBtn, pressed && styles.eventRowPressed]}
+        >
+          <Ionicons name="chatbubbles" size={18} color={colors.primaryText} />
+          <Text style={styles.feedSmallText}>Petek akışı</Text>
+        </Pressable>
+      </View>
+    );
+  }
+  return (
+    <Pressable
+      onPress={onOpen}
+      accessibilityRole="button"
+      accessibilityLabel="Petek akışına git"
+      testID="map-cell-feed"
+      style={({ pressed }) => [styles.feedBtn, pressed && styles.eventRowPressed]}
+    >
+      <Ionicons name="chatbubbles" size={20} color={colors.primaryText} />
+      <View style={styles.flex1}>
+        <Text style={styles.feedBtnTitle}>Petek akışı</Text>
+        <Text style={styles.feedBtnSub}>
+          {near
+            ? 'Yakınındasın: rumuzunla yazabilir, eski gönderileri görebilirsin.'
+            : 'Peteğe en çok 1 petek yakınsan rumuzunla yazabilir ve okuyabilirsin.'}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.primaryText} />
+    </Pressable>
+  );
+}
+
 function SelectedInfo({ level, densityOpen }: { cell: Cell; level: 0 | 1 | 2 | 3; densityOpen: boolean }) {
   if (!densityOpen) return null;
   return (
     <View style={styles.selected} testID="map-selected">
       <Ionicons
         name={level === 0 ? 'ellipse-outline' : 'flame-outline'}
-        size={18}
+        size={level === 0 ? 14 : 18}
         color={level === 0 ? colors.textMuted : colors.danger}
       />
       <View style={styles.selectedText}>
-        <Text style={[styles.selectedTitle, level > 0 && { color: colors.danger }]}>
+        <Text style={[styles.selectedTitle, level === 0 && styles.selectedTitleGray, level > 0 && { color: colors.danger }]}>
           {level === 0 ? 'Gri bölge' : LEVEL_NAME[level]}
         </Text>
-        <Text style={styles.selectedSub}>
+        <Text style={[styles.selectedSub, level === 0 && styles.selectedSubGray]}>
           {level === 0
             ? 'Bu bölge için gösterilecek kadar veri yok. Gri, “kimse yok” demek değildir.'
             : 'Bu bölgede bu hafta birçok üye hareket etti. Kimin olduğu gösterilmez.'}
@@ -1208,7 +1263,7 @@ function VenuesHere({
             testID="map-venue-row"
             style={({ pressed }) => [styles.eventRow, styles.venueMain, pressed && styles.eventRowPressed]}
           >
-            {v.image_path ? <Avatar index={1} size={30} uri={venueImageUrl(v.image_path)} /> : null}
+            {v.image_path ? <Avatar index={1} size={38} uri={venueImageUrl(v.image_path)} /> : null}
             <View style={styles.eventRowText}>
               <Text style={styles.eventRowTitle} numberOfLines={1}>
                 {v.name}
@@ -1261,7 +1316,7 @@ function InfoModal({ visible, onClose, status }: { visible: boolean; onClose: ()
               <ListRow
                 icon="add-circle-outline"
                 title="Haritaya nasıl katkı verilir?"
-                subtitle="Gönderine bir yer eklersen, bir oyuna girersen, bir etkinlikte kodunu doğrularsan ya da peteğe dokunup “Buradayım” dersen bulunduğun bölge haritadaki yoğunluğa sayılır. Kimin olduğu hiçbir zaman görünmez."
+                subtitle="Gönderine bir yer eklersen, bir oyuna girersen, bir etkinlikte kodunu doğrularsan ya da peteğin “Burada kim var?” penceresinden konumunu bildirirsen bulunduğun bölge haritadaki yoğunluğa sayılır. Kimin olduğu hiçbir zaman görünmez."
               />
               <ListRow
                 icon="eye-off-outline"
@@ -1460,7 +1515,29 @@ const styles = StyleSheet.create({
   },
   feedBtnTitle: { color: colors.primaryText, fontFamily: fonts.extra, fontSize: fontSizes.md },
   feedBtnSub: { color: colors.primaryText, fontSize: fontSizes.xs, lineHeight: 16, opacity: 0.85 },
-  eventThumb: { width: 56, height: 36, borderRadius: 6 },
+  feedSplit: { flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm },
+  feedSummary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surfaceAlt,
+  },
+  feedSummaryTitle: { color: colors.text, fontFamily: fonts.extra, fontSize: 13 },
+  feedSummarySub: { color: colors.textMuted, fontSize: 11.5 },
+  feedSmallBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.lg,
+    backgroundColor: colors.primary,
+  },
+  feedSmallText: { color: colors.primaryText, fontFamily: fonts.extra, fontSize: 13 },
+  eventThumb: { width: 68, height: 44, borderRadius: 8 },
   fChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1545,7 +1622,7 @@ const styles = StyleSheet.create({
   legendText: { color: colors.textMuted, fontSize: 10.5, fontFamily: fonts.semi },
   eventDot: { width: 11, height: 11, borderRadius: 6, backgroundColor: EVENT_COLOR },
   gameSwatch: { width: 11, height: 11, borderRadius: 4, backgroundColor: GAME_COLOR },
-  venueSwatch: { width: 11, height: 11, borderRadius: 3, borderWidth: 2.5, borderColor: VENUE_COLOR },
+  venueSwatch: { width: 8, height: 8, borderRadius: 4, backgroundColor: VENUE_COLOR },
   officialStar: { color: OFFICIAL_COLOR, fontSize: 15, lineHeight: 16 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   cellNameText: { color: colors.primary, fontFamily: fonts.black, fontSize: fontSizes.sm, flexShrink: 1 },
@@ -1561,39 +1638,44 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt,
   },
   cellActionText: { color: colors.text, fontFamily: fonts.semi, fontSize: 13 },
+  seekAction: { backgroundColor: SEEK_PURPLE },
+  seekActionText: { color: '#FFFFFF', fontFamily: fonts.extra },
   hereList: { gap: spacing.sm },
-  gamesTitle: { color: GAME_COLOR, fontFamily: fonts.extra, fontSize: fontSizes.sm },
-  venuesTitle: { color: colors.venue, fontFamily: fonts.extra, fontSize: fontSizes.sm },
+  gamesTitle: { color: GAME_COLOR, fontFamily: fonts.extra, fontSize: fontSizes.md },
+  venuesTitle: { color: colors.venue, fontFamily: fonts.extra, fontSize: fontSizes.md },
   venueLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   venueMain: { flex: 1 },
   venueRemove: { padding: 6 },
   eventsBox: {
-    gap: 4,
+    gap: 6,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
     paddingTop: spacing.sm,
   },
   eventsHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  eventsTitle: { color: EVENT_COLOR, fontFamily: fonts.extra, fontSize: fontSizes.sm },
-  eventsNone: { color: colors.textMuted, fontSize: 12 },
+  eventsTitle: { color: EVENT_COLOR, fontFamily: fonts.extra, fontSize: fontSizes.md },
+  eventsNone: { color: colors.textMuted, fontSize: 13 },
   eventRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: 6,
-    paddingHorizontal: spacing.sm,
+    gap: spacing.md,
+    minHeight: 58,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
     borderRadius: radii.md,
     backgroundColor: colors.surfaceAlt,
   },
   eventRowPressed: { opacity: 0.75 },
-  eventRowText: { flex: 1, gap: 1 },
-  eventRowTitle: { color: colors.text, fontFamily: fonts.semi, fontSize: 13 },
-  eventRowMeta: { color: colors.textMuted, fontSize: 11 },
+  eventRowText: { flex: 1, gap: 2 },
+  eventRowTitle: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },
+  eventRowMeta: { color: colors.textMuted, fontSize: 12.5 },
   eventsMore: { color: colors.textMuted, fontSize: 11, textAlign: 'center' },
   selected: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' },
   selectedText: { flex: 1, gap: 2 },
   selectedTitle: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.sm },
   selectedSub: { color: colors.textMuted, fontSize: 12, lineHeight: 17 },
+  selectedTitleGray: { fontSize: 11.5 },
+  selectedSubGray: { fontSize: 10.5, lineHeight: 14 },
   modalRoot: { flex: 1, justifyContent: 'center', padding: spacing.lg },
   backdrop: {
     position: 'absolute',

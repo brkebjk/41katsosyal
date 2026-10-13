@@ -4,7 +4,7 @@ import { Appearance } from 'react-native';
 // 41. Kat Sosyal tasarım ayarları: renkler, boşluklar, köşe yuvarlaklıkları.
 // Uygulamanın görünümünü değiştirmek istediğimizde sadece bu dosyaya dokunmamız yeterli.
 
-// Tema: Koyu (varsayılan), Açık ya da Sistem (telefonun ayarına uyar). Seçim telefonda saklanır ve uygulama
+// Tema: Açık (varsayılan), Koyu ya da Sistem (telefonun ayarına uyar). Seçim telefonda saklanır ve uygulama
 // AÇILIRKEN, ekranlar çizilmeden önce okunur (renkler ekranların stillerine açılışta yazıldığı için tema değişikliği
 // uygulama yeniden açılınca uygulanır). Harita katman renkleri iki temada da aynıdır (harita okunurluğu).
 export type ThemePref = 'dark' | 'light' | 'system';
@@ -13,9 +13,9 @@ const THEME_KEY = 'kat41_theme';
 function readThemePref(): ThemePref {
   try {
     const v = SecureStore.getItem(THEME_KEY);
-    return v === 'light' || v === 'dark' || v === 'system' ? v : 'dark';
+    return v === 'light' || v === 'dark' || v === 'system' ? v : 'light';
   } catch {
-    return 'dark';
+    return 'light';
   }
 }
 
@@ -25,6 +25,20 @@ export const themePref: ThemePref = readThemePref();
 /** Bu açılışta açık tema mı kullanılıyor? */
 export const isLight =
   themePref === 'light' || (themePref === 'system' && Appearance.getColorScheme() === 'light');
+
+/** Bu telefonda tema tercihi hiç seçildi mi? (ilk girişte bir kez sorulur) */
+export function hasThemePref(): boolean {
+  try {
+    return SecureStore.getItem(THEME_KEY) !== null;
+  } catch {
+    return true; // depo okunamıyorsa sorma
+  }
+}
+
+/** Bu tercihle uygulama açık temayla mı açılır? */
+export function prefIsLight(pref: ThemePref): boolean {
+  return pref === 'light' || (pref === 'system' && Appearance.getColorScheme() === 'light');
+}
 
 /** Tema tercihini kaydeder; uygulama yeniden açılınca uygulanır. */
 export function saveThemePref(pref: ThemePref): boolean {

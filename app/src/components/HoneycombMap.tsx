@@ -57,7 +57,7 @@ const DISTRICT_TEXT = isLight ? 'rgba(11, 31, 46, 0.85)' : 'rgba(244, 246, 251, 
 export const EVENT_COLOR = colors.event;
 /** Oyun katmanı: etkinlikten (turkuaz) ve yoğunluktan (pembe) ayrı bir açık mor. Etkinlikle aynı petekte çerçeve ikiye bölünür. */
 export const GAME_COLOR = colors.game;
-/** Mekân (sponsor) peteği: kalın çerçeve */
+/** Mekân (sponsor) peteği: peteğin alt kısmında küçük mercan nokta */
 export const VENUE_COLOR = colors.venue;
 /** 41. Kat Özel (moderatörün etkinliği ya da oyunu): altın sarısı petek ve yıldız */
 export const OFFICIAL_COLOR = '#FFC83D';
@@ -66,6 +66,8 @@ const SELECT_COLOR = '#FFB020';
 /** En yakın yakınlaşmada yazılan petek adlarının rengi (turkuaz; açık temada okunsun diye koyu turkuaz) */
 const NAME_COLOR = isLight ? '#0B7F76' : '#35D6C3';
 const MARKER_R = 10;
+/** Dokunulan peteğin üst yüzünün yükselme miktarı (ekran pikseli) */
+const LIFT_PX = 3;
 
 const MAX_ZOOM = 36; // kapsayıcı ölçeğin katı
 const TAP_SLOP = 8;
@@ -251,7 +253,7 @@ type Props = {
   eventCells?: readonly EventCellMark[];
   /** Açık oyun odası olan petekler (oyun odası kurulurken seçilen bölge). Aynı petekte etkinlik de varsa çerçeve iki renge bölünür. */
   gameCells?: readonly GameCellMark[];
-  /** Mekân (sponsor) olan petekler: kalın çerçeveyle ayrılır */
+  /** Mekân (sponsor) olan petekler: peteğin alt kısmındaki küçük noktayla ayrılır */
   venueCells?: readonly Cell[];
   /** 41. Kat Özel etkinlik ya da oyun olan petekler: altın sarısı boyanır, ortasında yıldız çıkar */
   officialCells?: readonly Cell[];
@@ -360,10 +362,15 @@ export function HoneycombMap({
     };
   }, [eventCells, gameCells]);
 
-  // Mekân petekleri (kalın çerçeve) ve 41. Kat Özel petekler (altın sarısı dolgu + yıldız)
-  const venuePath = useMemo(() => {
-    const list = (venueCells ?? []).filter((c) => isLand(c.q, c.r));
-    return list.length > 0 ? hexPath(list, HEX_INSET) : '';
+  // Mekân petekleri (peteğin alt kısmında küçük mercan nokta) ve 41. Kat Özel petekler (altın sarısı dolgu + yıldız)
+  const venueList = useMemo(() => {
+    const seen = new Set<string>();
+    return (venueCells ?? []).filter((c) => {
+      const k = `${c.q},${c.r}`;
+      if (!isLand(c.q, c.r) || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
   }, [venueCells]);
   const officialList = useMemo(() => {
     const seen = new Set<string>();
@@ -584,6 +591,14 @@ export function HoneycombMap({
     }
   }
   const nameSize = view ? Math.max(8, Math.min(13, (HEX_SIZE * SQ3 * view.scale) / 7.5)) : 10;
+  /** Yükselen (dokunulan) peteğin üstündeki işaretler (sayı, yıldız, büyüteç, mekân noktası, ad) yüzle birlikte kalkar */
+  const liftOf = (q: number, r: number) => (raised && raised.q === q && raised.r === r ? LIFT_PX : 0);
+  const raisedKey = raised ? `${raised.q},${raised.r}` : '';
+  const raisedMarks = {
+    official: raised !== null && officialList.some((o) => `${o.q},${o.r}` === raisedKey),
+    event: raised !== null && (eventCells ?? []).some((e) => `${e.q},${e.r}` === raisedKey),
+    game: raised !== null && (gameCells ?? []).some((g) => `${g.q},${g.r}` === raisedKey),
+  };
   const px = (n: number) => (view ? n / view.scale : 0);
   // Yakınlaşınca petek ızgarası (yalnızca ekrandaki parçalar); uzaklaşınca kara ilçe sınırlarından boyanır
   const showGrid = view ? HEX_SIZE * SQ3 * view.scale >= GRID_MIN_HEX_PX : false;
@@ -620,26 +635,6 @@ export function HoneycombMap({
                 />
               ) : null,
             )}
-            {raised && isLand(raised.q, raised.r) ? (
-              <G>
-                {/* Gölge ve yan yüz: petek yerden kalkmış gibi görünür */}
-                <G transform={`translate(0 ${px(9)})`}>
-                  <Path d={hexPath([raised], 1)} fill="rgba(0,0,0,0.55)" />
-                </G>
-                <G transform={`translate(0 ${px(4)})`}>
-                  <Path d={hexPath([raised], 1)} fill="#B8860B" stroke="#8A6200" strokeWidth={px(1.2)} />
-                </G>
-                <G transform={`translate(0 ${px(-3)})`}>
-                  <Path
-                    d={hexPath([raised], 1)}
-                    fill="rgba(255, 210, 90, 0.92)"
-                    stroke="#FFF4C2"
-                    strokeWidth={px(2.2)}
-                    strokeLinejoin="round"
-                  />
-                </G>
-              </G>
-            ) : null}
             {!plain && officialPath ? (
               <Path
                 d={officialPath}
@@ -648,9 +643,6 @@ export function HoneycombMap({
                 strokeWidth={px(2.4)}
                 strokeLinejoin="round"
               />
-            ) : null}
-            {!plain && venuePath ? (
-              <Path d={venuePath} fill="none" stroke={VENUE_COLOR} strokeWidth={px(4.6)} strokeLinejoin="round" />
             ) : null}
             {!plain && frames.event ? (
               <Path d={frames.event} fill="none" stroke={EVENT_COLOR} strokeWidth={px(2.2)} strokeLinejoin="round" />
@@ -677,6 +669,64 @@ export function HoneycombMap({
                 strokeLinejoin="round"
                 strokeLinecap="round"
               />
+            ) : null}
+            {raised && isLand(raised.q, raised.r) ? (
+              <G>
+                {/* Gölge ve yan yüz: petek yerden kalkmış gibi görünür */}
+                <G transform={`translate(0 ${px(9)})`}>
+                  <Path d={hexPath([raised], 1)} fill="rgba(0,0,0,0.55)" />
+                </G>
+                <G transform={`translate(0 ${px(4)})`}>
+                  <Path d={hexPath([raised], 1)} fill="#B8860B" stroke="#8A6200" strokeWidth={px(1.2)} />
+                </G>
+                <G transform={`translate(0 ${px(-LIFT_PX)})`}>
+                  <Path
+                    d={hexPath([raised], 1)}
+                    fill="rgba(255, 210, 90, 0.92)"
+                    stroke="#FFF4C2"
+                    strokeWidth={px(2.2)}
+                    strokeLinejoin="round"
+                  />
+                  {/* Peteğin kendi işaretleri (41. Kat Özel, etkinlik / oyun çerçevesi) de yükselen yüzle birlikte kalkar */}
+                  {!plain && raisedMarks.official ? (
+                    <Path
+                      d={hexPath([raised], HEX_INSET)}
+                      fill="rgba(255, 200, 61, 0.55)"
+                      stroke={OFFICIAL_COLOR}
+                      strokeWidth={px(2.4)}
+                      strokeLinejoin="round"
+                    />
+                  ) : null}
+                  {!plain && raisedMarks.event && raisedMarks.game ? (
+                    <>
+                      <Path
+                        d={hexHalfPath([raised], 'left', HEX_INSET)}
+                        fill="none"
+                        stroke={GAME_COLOR}
+                        strokeWidth={px(2.6)}
+                        strokeLinejoin="round"
+                        strokeLinecap="round"
+                      />
+                      <Path
+                        d={hexHalfPath([raised], 'right', HEX_INSET)}
+                        fill="none"
+                        stroke={EVENT_COLOR}
+                        strokeWidth={px(2.6)}
+                        strokeLinejoin="round"
+                        strokeLinecap="round"
+                      />
+                    </>
+                  ) : !plain && (raisedMarks.event || raisedMarks.game) ? (
+                    <Path
+                      d={hexPath([raised], HEX_INSET)}
+                      fill="none"
+                      stroke={raisedMarks.event ? EVENT_COLOR : GAME_COLOR}
+                      strokeWidth={px(2.2)}
+                      strokeLinejoin="round"
+                    />
+                  ) : null}
+                </G>
+              </G>
             ) : null}
             <Path
               d={OUTLINE_PATH}
@@ -732,7 +782,7 @@ export function HoneycombMap({
           {(plain ? [] : officialList).map((c) => {
             const p = cellCenter(c.q, c.r);
             const x = p.x * view.scale + view.tx;
-            const y = -p.y * view.scale + view.ty;
+            const y = -p.y * view.scale + view.ty - liftOf(c.q, c.r);
             if (x < -20 || y < -20 || x > size.w + 20 || y > size.h + 20) return null;
             // Sayı işareti olan petekte yıldız işaretin üstünde durur
             const hasMarker = markers.some((m) => m.q === c.q && m.r === c.r);
@@ -755,7 +805,7 @@ export function HoneycombMap({
           {(plain ? [] : treasureList).map((c) => {
             const p = cellCenter(c.q, c.r);
             const x = p.x * view.scale + view.tx;
-            const y = -p.y * view.scale + view.ty;
+            const y = -p.y * view.scale + view.ty - liftOf(c.q, c.r);
             if (x < -20 || y < -20 || x > size.w + 20 || y > size.h + 20) return null;
             // Sayı işareti ya da yıldız olan petekte büyüteç aşağı kayar
             // Petek ekranda küçükse büyüteç çizilmez (petek rengi yeter); büyüteç peteğin içine sığacak boyutta kalır
@@ -795,10 +845,29 @@ export function HoneycombMap({
               </G>
             );
           })}
+          {(plain ? [] : venueList).map((c) => {
+            const p = cellCenter(c.q, c.r);
+            const hexR = HEX_SIZE * view.scale;
+            const x = p.x * view.scale + view.tx;
+            const y = -p.y * view.scale + view.ty - liftOf(c.q, c.r) + hexR * 0.68;
+            if (x < -10 || y < -10 || x > size.w + 10 || y > size.h + 10) return null;
+            const r = Math.max(2.6, Math.min(5, hexR * 0.12));
+            return (
+              <Circle
+                key={`vn-${c.q},${c.r}`}
+                cx={x}
+                cy={y}
+                r={r}
+                fill={VENUE_COLOR}
+                stroke={SEA}
+                strokeWidth={Math.max(1, r * 0.35)}
+              />
+            );
+          })}
           {(plain ? [] : markers).map((m) => {
             const c = cellCenter(m.q, m.r);
             const x = c.x * view.scale + view.tx;
-            const y = -c.y * view.scale + view.ty;
+            const y = -c.y * view.scale + view.ty - liftOf(m.q, m.r);
             // ekranın dışındaki işaretler çizilmez
             if (x < -2 * MARKER_R - 4 || y < -MARKER_R || x > size.w + 2 * MARKER_R + 4 || y > size.h + MARKER_R)
               return null;
@@ -841,28 +910,22 @@ export function HoneycombMap({
             const two = parts.length > 1;
             return (
               <G key={`nm-${c.q},${c.r}`} opacity={o}>
-                {/* Önce koyu kontur (altta, yalnızca çizgi), sonra üstüne düz turkuaz yazı: kontur harfin rengini bozmaz */}
+                {/* Düz renk yazı: kontur ve gölge yok */}
                 {(two ? [parts[0], parts.slice(1).join('-')] : parts).map((t, i) => {
-                  const ty = y + (two ? (i === 0 ? -nameSize * 0.25 : nameSize * 0.95) : nameSize * 0.35);
+                  const ty =
+                    y - liftOf(c.q, c.r) + (two ? (i === 0 ? -nameSize * 0.25 : nameSize * 0.95) : nameSize * 0.35);
                   return (
-                    <G key={i}>
-                      <SvgText
-                        x={x}
-                        y={ty}
-                        fontSize={nameSize}
-                        fontFamily={fonts.extra}
-                        fill="none"
-                        stroke={SEA}
-                        strokeWidth={Math.max(2, nameSize * 0.28)}
-                        strokeLinejoin="round"
-                        textAnchor="middle"
-                      >
-                        {t}
-                      </SvgText>
-                      <SvgText x={x} y={ty} fontSize={nameSize} fontFamily={fonts.extra} fill={NAME_COLOR} textAnchor="middle">
-                        {t}
-                      </SvgText>
-                    </G>
+                    <SvgText
+                      key={i}
+                      x={x}
+                      y={ty}
+                      fontSize={nameSize}
+                      fontFamily={fonts.extra}
+                      fill={NAME_COLOR}
+                      textAnchor="middle"
+                    >
+                      {t}
+                    </SvgText>
                   );
                 })}
               </G>

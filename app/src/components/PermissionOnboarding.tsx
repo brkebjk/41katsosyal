@@ -1,15 +1,27 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { reloadAppAsync } from 'expo';
 import * as Location from 'expo-location';
 import * as SecureStore from 'expo-secure-store';
 import { useEffect, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { NotificationPrefsForm } from '@/components/NotificationPrefsForm';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { askNotificationPermission, syncEventReminders } from '@/lib/localNotify';
 import { ALL_ON, getNotifyPrefs, saveNotifyPrefs, type NotifyPrefs } from '@/lib/notifyPrefs';
-import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
+import {
+  colors,
+  fonts,
+  fontSizes,
+  hasThemePref,
+  isLight,
+  prefIsLight,
+  radii,
+  saveThemePref,
+  spacing,
+  type ThemePref,
+} from '@/theme';
 
 const flagKey = (userId: string) => `kat41_perm_onboard_v1_${userId.replace(/[^A-Za-z0-9_-]/g, '')}`;
 
@@ -32,9 +44,13 @@ async function markDone(userId: string): Promise<void> {
 /**
  * Kayıttan sonra / bu telefonda ilk girişte bir kez: önce bildirim türleri ve bildirim izni, sonra konum izni
  * (“uygulamayı kullanırken”). İkisi de atlanabilir; tercihler sonra Profil → Hesabım'dan değiştirilir.
+ * Uygulama indirildikten sonraki ilk girişte (telefonda hiç tema seçilmediyse) en sonda tema sorulur; varsayılan açık tema.
  */
 export function PermissionOnboarding({ userId }: { userId: string }) {
-  const [step, setStep] = useState<'checking' | 'notify' | 'location' | 'done'>('checking');
+  const [step, setStep] = useState<'checking' | 'notify' | 'location' | 'theme' | 'done'>('checking');
+  // Tema yalnızca bu telefonda hiç seçilmediyse sorulur (ilk kurulum)
+  const [askTheme] = useState(() => !hasThemePref());
+  const total = askTheme ? 3 : 2;
 
   useEffect(() => {
     let alive = true;
@@ -53,12 +69,19 @@ export function PermissionOnboarding({ userId }: { userId: string }) {
     setStep('done');
   }
 
+  function afterLocation() {
+    if (askTheme) setStep('theme');
+    else void finish();
+  }
+
   return (
     <View style={styles.root} testID="permission-onboarding">
       {step === 'notify' ? (
-        <NotifyStep onNext={() => setStep('location')} />
+        <NotifyStep total={total} onNext={() => setStep('location')} />
+      ) : step === 'location' ? (
+        <LocationStep total={total} onNext={afterLocation} />
       ) : (
-        <LocationStep onNext={() => void finish()} />
+        <ThemeStep total={total} onNext={() => void finish()} />
       )}
     </View>
   );
@@ -95,7 +118,7 @@ function Shell({
   );
 }
 
-function NotifyStep({ onNext }: { onNext: () => void }) {
+function NotifyStep({ total, onNext }: { total: number; onNext: () => void }) {
   const [prefs, setPrefs] = useState<NotifyPrefs>(ALL_ON);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -131,7 +154,7 @@ function NotifyStep({ onNext }: { onNext: () => void }) {
     <Shell
       icon="notifications"
       title="Hangi bildirimleri istersin?"
-      step="1 / 2"
+      step={`1 / ${total}`}
       footer={
         <>
           {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -149,7 +172,7 @@ function NotifyStep({ onNext }: { onNext: () => void }) {
   );
 }
 
-function LocationStep({ onNext }: { onNext: () => void }) {
+function LocationStep({ total, onNext }: { total: number; onNext: () => void }) {
   const [busy, setBusy] = useState(false);
 
   async function allow() {
@@ -169,7 +192,7 @@ function LocationStep({ onNext }: { onNext: () => void }) {
     <Shell
       icon="location"
       title="Konum izni"
-      step="2 / 2"
+      step={`2 / ${total}`}
       footer={
         <>
           <PrimaryButton label="Konum iznini ver" onPress={() => void allow()} loading={busy} />
@@ -193,6 +216,69 @@ function LocationStep({ onNext }: { onNext: () => void }) {
         <Bullet icon="flash" text="İzin verirsen her seferinde ayrıca “konumuna bakacağım” uyarısı görmezsin." />
       </View>
       <Text style={styles.small}>İzni istediğin zaman telefonunun ayarlarından kapatabilirsin.</Text>
+    </Shell>
+  );
+}
+
+const THEMES: { key: ThemePref; label: string; sub: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
+  { key: 'light', label: 'Açık', sub: 'Aydınlık zemin (varsayılan)', icon: 'sunny' },
+  { key: 'dark', label: 'Koyu', sub: 'Gece için koyu zemin', icon: 'moon' },
+  { key: 'system', label: 'Telefonun ayarı', sub: 'Telefon açıksa açık, koyuysa koyu', icon: 'phone-portrait' },
+];
+
+/** İlk kurulumda tema tercihi. Seçim telefonda saklanır; görünüm değişecekse uygulama bir kez yeniden başlar. */
+function ThemeStep({ total, onNext }: { total: number; onNext: () => void }) {
+  const [pick, setPick] = useState<ThemePref>('light');
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    if (busy) return;
+    setBusy(true);
+    saveThemePref(pick);
+    const changes = prefIsLight(pick) !== isLight;
+    onNext();
+    if (!changes) return;
+    try {
+      await reloadAppAsync('Tema seçildi');
+    } catch {
+      // yeniden başlatılamazsa tema uygulama bir sonraki açılışta görünür
+    }
+  }
+
+  return (
+    <Shell
+      icon="color-palette"
+      title="Hangi görünümü istersin?"
+      step={`${total} / ${total}`}
+      footer={<PrimaryButton label="Kaydet ve başla" onPress={() => void save()} loading={busy} />}
+    >
+      <Text style={styles.lead}>Bunu sonra Profil → Tercihler bölümünden istediğin zaman değiştirebilirsin.</Text>
+      <View style={styles.themeList}>
+        {THEMES.map((t) => {
+          const on = pick === t.key;
+          return (
+            <Pressable
+              key={t.key}
+              onPress={() => setPick(t.key)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: on }}
+              testID={`onboard-theme-${t.key}`}
+              style={[styles.themeRow, on && styles.themeRowOn]}
+            >
+              <Ionicons name={t.icon} size={22} color={on ? colors.primary : colors.textMuted} />
+              <View style={styles.themeText}>
+                <Text style={styles.themeLabel}>{t.label}</Text>
+                <Text style={styles.themeSub}>{t.sub}</Text>
+              </View>
+              <Ionicons
+                name={on ? 'radio-button-on' : 'radio-button-off'}
+                size={22}
+                color={on ? colors.primary : colors.textMuted}
+              />
+            </Pressable>
+          );
+        })}
+      </View>
     </Shell>
   );
 }
@@ -231,5 +317,20 @@ const styles = StyleSheet.create({
   bulletText: { flex: 1, color: colors.text, fontSize: fontSizes.sm, lineHeight: 19 },
   small: { color: colors.textMuted, fontSize: fontSizes.xs, textAlign: 'center' },
   footer: { gap: spacing.sm, paddingTop: spacing.sm },
+  themeList: { gap: spacing.sm },
+  themeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radii.lg,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  themeRowOn: { borderColor: colors.primary },
+  themeText: { flex: 1, gap: 2 },
+  themeLabel: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },
+  themeSub: { color: colors.textMuted, fontSize: fontSizes.xs },
   error: { color: colors.danger, fontSize: fontSizes.sm, textAlign: 'center' },
 });

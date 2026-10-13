@@ -265,8 +265,18 @@ export async function shareEventToFeed(eventId: string, body?: string): Promise<
   return callRpcVoid('share_event_to_feed', { p_event_id: eventId, p_body: body ?? null }, FEED_TEXT);
 }
 
-/** “@Sıfat Hayvan 123” biçimindeki etiketler (metinde renkli gösterilir). */
-export const MENTION_RE = /@[A-Za-zÇĞİÖŞÜçğıöşü]+ [A-Za-zÇĞİÖŞÜçğıöşü]+ \d{3}(?:-[0-9a-f]{3})?/g;
+/**
+ * Etiketler (metinde renkli gösterilir): “@Kaptan#145”, “@#145” ya da eski gönderilerdeki “@Sıfat Hayvan 123”.
+ * Büyük/küçük harf önemsizdir; sunucu yalnızca bu haftaki rumuz sahibine götürür.
+ */
+export const MENTION_RE =
+  /@(?:[A-Za-zÇĞİÖŞÜçğıöşüÂâÎîÛû]{0,30}#\d{1,5}|[A-Za-zÇĞİÖŞÜçğıöşü]+ [A-Za-zÇĞİÖŞÜçğıöşü]+ \d{3}(?:-[0-9a-f]{3})?)/g;
+
+/** Cevapta yazarı etiketleme metni: boşluklu rumuz (ör. “Kat Görevlisi#41”) yalnızca numarasıyla etiketlenir. */
+export function mentionTag(alias: string): string {
+  const m = /\s.*#(\d{1,5})$/.exec(alias);
+  return m ? `@#${m[1]}` : `@${alias}`;
+}
 
 export async function createComment(postId: string, body: string): Promise<Result> {
   return callRpcVoid('create_comment', { p_post_id: postId, p_body: body }, FEED_TEXT);

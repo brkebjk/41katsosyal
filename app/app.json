@@ -7,7 +7,12 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "backgroundColor": "#071622",
+    "backgroundColor": "#EEF3F7",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#EEF3F7"
+    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.kat41.app"
@@ -30,10 +35,14 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#071622",
+          "backgroundColor": "#EEF3F7",
           "image": "./assets/splash-icon.png",
           "imageWidth": 200,
-          "resizeMode": "contain"
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#071622",
+            "image": "./assets/splash-icon.png"
+          }
         }
       ],
       "expo-image",

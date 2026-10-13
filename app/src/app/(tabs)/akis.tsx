@@ -453,7 +453,7 @@ function FeedScreen() {
           ) : null}
           <View style={styles.hdrLogo}>
             {/* Logonun arkasında temaya uygun hafif ışık (kenarları tamamen saydam: köşe görünmez) */}
-            <SoftGlow width={150} height={96} color={colors.primary} opacity={isLight ? 0.22 : 0.3} />
+            <SoftGlow width={104} height={76} color={colors.primary} opacity={isLight ? 0.14 : 0.2} />
             {/* Yazısız logo (41 + kule); iki yandaki düğme sayısı eşit olduğu için tam ortada durur */}
             <ImageSlot name="logoMark" style={{ height: 72, aspectRatio: imageAspect.logoMark }} />
           </View>

@@ -50,7 +50,7 @@ export function Screen({
   floatingFooter = false,
 }: Props) {
   const [footH, setFootH] = useState(0);
-  const [titleBox, setTitleBox] = useState<{ w: number; h: number } | null>(null);
+  const [titleBox, setTitleBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   return (
     <View style={styles.root}>
       {/* Üstte hafif mor bir ışıma: akşam gökyüzü, kulenin üst katları */}
@@ -95,27 +95,40 @@ export function Screen({
                       ) : (
                         // Sekme başlıkları (Etkinlikler, Oyunlar, Profil…): arkasında kenarlara doğru yumuşakça kaybolan
                         // yuvarlak bir ışık (köşesiz), solda sarı çizgi
-                        <View
-                          style={styles.titleWrap}
-                          onLayout={(e) =>
-                            setTitleBox({
-                              w: Math.round(e.nativeEvent.layout.width),
-                              h: Math.round(e.nativeEvent.layout.height),
-                            })
-                          }
-                        >
-                          {/* Işık, başlığın ölçüsüne göre piksel olarak çizilir; kenarları tamamen saydamdır */}
+                        <View style={styles.titleWrap}>
+                          {/* Işık, başlık YAZISININ ölçüsüne ve yerine göre piksel olarak çizilir (yazının tam arkası);
+                              kenarları tamamen saydamdır */}
                           {titleBox ? (
-                            <SoftGlow
-                              width={titleBox.w + 70}
-                              height={titleBox.h + 34}
-                              color={colors.primary}
-                              color2={colors.accent}
-                              opacity={isLight ? 0.2 : 0.32}
-                            />
+                            <View
+                              pointerEvents="none"
+                              style={[
+                                styles.titleGlow,
+                                { left: titleBox.x, top: titleBox.y, width: titleBox.w, height: titleBox.h },
+                              ]}
+                            >
+                              <SoftGlow
+                                width={titleBox.w + 44}
+                                height={titleBox.h + 22}
+                                color={colors.primary}
+                                color2={colors.accent}
+                                opacity={isLight ? 0.12 : 0.18}
+                              />
+                            </View>
                           ) : null}
                           <View style={styles.titleBar} />
-                          <Text style={[styles.title, styles.titleLit]} accessibilityRole="header">
+                          <Text
+                            style={[styles.title, styles.titleLit]}
+                            accessibilityRole="header"
+                            onLayout={(e) => {
+                              const l = e.nativeEvent.layout;
+                              setTitleBox({
+                                x: Math.round(l.x),
+                                y: Math.round(l.y),
+                                w: Math.round(l.width),
+                                h: Math.round(l.height),
+                              });
+                            }}
+                          >
                             {title}
                           </Text>
                         </View>
@@ -175,6 +188,7 @@ const styles = StyleSheet.create({
     paddingRight: spacing.xxl,
     marginLeft: -4,
   },
+  titleGlow: { position: 'absolute' },
   titleBar: {
     position: 'absolute',
     left: 0,

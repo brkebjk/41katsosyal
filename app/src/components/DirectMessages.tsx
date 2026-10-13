@@ -10,7 +10,18 @@ import { KeyboardLift } from '@/components/KeyboardLift';
 import { OverlayPanel } from '@/components/OverlayPanel';
 import { DragGrab, DragScreen } from '@/components/Sheet';
 import { confirmAction, notify, notifyReportSent, showDialog } from '@/lib/dialog';
-import { blockDm, DM_MAX, DM_STREAK, listDms, reportDm, sendDm, viewDm, type DmThread, type DmView } from '@/lib/dm';
+import {
+  blockDm,
+  DM_MAX,
+  DM_STREAK,
+  listDms,
+  openDmByName,
+  reportDm,
+  sendDm,
+  viewDm,
+  type DmThread,
+  type DmView,
+} from '@/lib/dm';
 import { timeAgo } from '@/lib/labels';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
@@ -42,6 +53,26 @@ export function DmInbox({
   if (openId !== appliedOpen) {
     setAppliedOpen(openId);
     if (openId) setChatId(openId);
+  }
+  // “+”: alıcıyı rumuzla ya da (arkadaşsa) gerçek adla yazıp yeni yazışma açma
+  const [newOpen, setNewOpen] = useState(false);
+  const [newQuery, setNewQuery] = useState('');
+  const [newBusy, setNewBusy] = useState(false);
+  const [newError, setNewError] = useState<string | null>(null);
+  async function startNew() {
+    const q = newQuery.trim();
+    if (q.length < 2 || newBusy) return;
+    setNewBusy(true);
+    setNewError(null);
+    const res = await openDmByName(q);
+    setNewBusy(false);
+    if (res.error || !res.id) {
+      setNewError(res.error ?? 'Biraz sonra tekrar dene.');
+      return;
+    }
+    setNewOpen(false);
+    setNewQuery('');
+    setChatId(res.id);
   }
   const unreadRef = useRef(onUnread);
   useEffect(() => {
@@ -76,16 +107,71 @@ export function DmInbox({
               <Text style={styles.headerTitle} accessibilityRole="header">
                 Mesajlar
               </Text>
+              <Pressable
+                onPress={() => {
+                  setNewOpen((o) => !o);
+                  setNewError(null);
+                }}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Yeni mesaj"
+                style={[styles.newBtn, newOpen && styles.newBtnOn]}
+                testID="dm-new"
+              >
+                <Ionicons name={newOpen ? 'remove' : 'add'} size={24} color={newOpen ? colors.primaryText : colors.primary} />
+              </Pressable>
               <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Kapat">
                 <CloseX size={22} />
               </Pressable>
             </View>
-            <ScrollView contentContainerStyle={styles.listBody}>
+            <ScrollView contentContainerStyle={styles.listBody} keyboardShouldPersistTaps="handled">
+              {newOpen ? (
+                <View style={styles.newBox}>
+                  <Text style={styles.newTitle}>Yeni mesaj</Text>
+                  <Text style={styles.newHint}>
+                    Kişinin rumuzunu (ör. Kaptan#145 ya da #145) ya da arkadaşınsa gerçek adını yaz. Büyük/küçük harf
+                    önemli değil.
+                  </Text>
+                  <View style={styles.newRow}>
+                    <TextInput
+                      value={newQuery}
+                      onChangeText={(t) => {
+                        setNewQuery(t);
+                        if (newError) setNewError(null);
+                      }}
+                      onSubmitEditing={() => void startNew()}
+                      placeholder="Rumuz ya da arkadaşının adı"
+                      placeholderTextColor={colors.textMuted}
+                      autoFocus
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      returnKeyType="send"
+                      maxLength={60}
+                      style={styles.newInput}
+                      testID="dm-new-input"
+                    />
+                    <Pressable
+                      onPress={() => void startNew()}
+                      disabled={newQuery.trim().length < 2 || newBusy}
+                      accessibilityRole="button"
+                      accessibilityLabel="Yazışmayı aç"
+                      style={[styles.newGo, (newQuery.trim().length < 2 || newBusy) && styles.newGoOff]}
+                    >
+                      {newBusy ? (
+                        <ActivityIndicator color={colors.primaryText} size="small" />
+                      ) : (
+                        <Ionicons name="arrow-forward" size={20} color={colors.primaryText} />
+                      )}
+                    </Pressable>
+                  </View>
+                  {newError ? <Text style={styles.newError}>{newError}</Text> : null}
+                </View>
+              ) : null}
               <View style={styles.infoBox}>
                 <Ionicons name="information-circle" size={18} color={colors.primary} />
                 <Text style={styles.infoText}>
                   {subscribed
-                    ? 'Rumuz profilinden ya da arkadaş listenden yeni yazışma başlatabilirsin. '
+                    ? 'Yeni yazışma için sağ üstteki + düğmesine bas ya da rumuz profilinden, arkadaş listenden başlat. '
                     : 'Yeni yazışmayı aboneler başlatır; sana gelen mesajlara cevap verebilirsin. '}
                   Karşı taraf cevap verene kadar en çok {DM_STREAK} mesaj. Arkadaş olmayanların yazışması her Pazartesi
                   kapanır.
@@ -406,6 +492,47 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   infoText: { flex: 1, color: colors.textMuted, fontSize: 13, lineHeight: 19 },
+  newBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+  },
+  newBtnOn: { backgroundColor: colors.primary },
+  newBox: {
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+  },
+  newTitle: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },
+  newHint: { color: colors.textMuted, fontSize: 12, lineHeight: 17 },
+  newRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  newInput: {
+    flex: 1,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceAlt,
+    color: colors.text,
+    fontFamily: fonts.semi,
+    fontSize: fontSizes.md,
+  },
+  newGo: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+  },
+  newGoOff: { opacity: 0.45 },
+  newError: { color: colors.danger, fontSize: 13, lineHeight: 18 },
   loader: { paddingVertical: spacing.xl },
   empty: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xxl },
   muted: { color: colors.textMuted, fontSize: fontSizes.sm, textAlign: 'center', paddingVertical: spacing.md },

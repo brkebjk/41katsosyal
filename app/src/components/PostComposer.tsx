@@ -9,7 +9,7 @@ import { DialogHost } from '@/components/DialogHost';
 import { PlacePicker } from '@/components/PlacePicker';
 import { DragGrab, DragScreen } from '@/components/Sheet';
 import { CloseX } from '@/components/CloseX';
-import { createPost, POST_MAX } from '@/lib/feed';
+import { createPost, mentionTag, POST_MAX } from '@/lib/feed';
 import type { Place } from '@/lib/map';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
@@ -29,7 +29,7 @@ type Props = {
  * yoktur; kutunun içindeki yuvarlak gönder düğmesiyle paylaşılır.
  */
 export function PostComposer({ visible, alias, isSponsor = false, replyTo = null, onClose, onCreated }: Props) {
-  const [text, setText] = useState(replyTo ? `@${replyTo.alias} ` : '');
+  const [text, setText] = useState(replyTo ? `${mentionTag(replyTo.alias)} ` : '');
   const [place, setPlace] = useState<Place | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -117,11 +117,11 @@ export function PostComposer({ visible, alias, isSponsor = false, replyTo = null
               </View>
               {replyTo ? (
                 <Text style={styles.footnote}>
-                  {`@${replyTo.alias} etiketlendi; gönderin onun ekranında “senden bahsedildi” olarak işaretlenir.`}
+                  {`${mentionTag(replyTo.alias)} etiketlendi; gönderin onun ekranında “senden bahsedildi” olarak işaretlenir.`}
                 </Text>
               ) : (
                 <Text style={styles.footnote}>
-                  Birini etiketlemek için @ ile rumuzunu yaz (ör. @Neşeli Kartal 123).
+                  Birini etiketlemek için @ ile rumuzunu yaz (ör. @Kaptan#145 ya da kısaca @#145).
                 </Text>
               )}
               {error ? <Text style={styles.error}>{error}</Text> : null}

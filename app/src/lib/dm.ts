@@ -73,6 +73,24 @@ export async function openDm(target: {
   return { id: error ? null : (data ?? null), error };
 }
 
+/**
+ * Mesaj kutusundaki “+”: alıcıyı yazarak bulur. “Kaptan#145” / “#145” rumuzdur (bu haftaki); başka bir metin yalnızca
+ * arkadaşlarının gerçek adında aranır. Büyük/küçük harf önemsizdir. Eşleşme yoksa yazışma açılmaz.
+ */
+export async function openDmByName(query: string): Promise<{ id: string | null; error: string | null }> {
+  const { data, error } = await callRpc<string>(
+    'dm_open_by_name',
+    { p_query: query },
+    {
+      dm_target_not_found:
+        'Bu ada sahip kimse bulunamadı. Rumuzu “Kaptan#145” ya da “#145” biçiminde, gerçek adı ise yalnızca arkadaşların için tam yaz.',
+      dm_name_ambiguous: 'Bu adla birden çok arkadaşın var. Kişinin rumuzunu (ör. #145) yaz.',
+      ...DM_TEXT,
+    },
+  );
+  return { id: error ? null : (data ?? null), error };
+}
+
 export async function listDms(): Promise<{ data: DmThread[]; error: string | null }> {
   const { data, error } = await callRpc<DmThread[]>('dm_list', {}, DM_TEXT);
   return { data: (data ?? []).map((t) => ({ ...t, unread: Number(t.unread) || 0 })), error };

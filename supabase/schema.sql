@@ -1956,44 +1956,102 @@ update public.profiles set alias_week = public.current_alias_week() where alias_
 alter table public.profiles alter column alias_week set default public.current_alias_week();
 alter table public.profiles alter column alias_week set not null;
 
--- Yeni rastgele kimlik: "Sıfat Hayvan 123" rumuzu + hayvanla eşleşen avatar.
--- Avatar sırası hayvan sırasıyla aynıdır (1 martı ... 12 penguen).
-create or replace function public._new_identity(out o_alias text, out o_avatar int)
-language plpgsql volatile set search_path = public as $$
+-- Rumuz numarası: rumuz "Lakap#145" biçimindedir. Numara her hafta rumuzla birlikte yenilenir ve aynı anda iki
+-- kişide olmaz (tekil). Önce 1–999 arası kullanılır; hepsi doluysa 1001'den devam edilir. #41 ve #1000 moderatörlere
+-- ayrılmıştır (moderatör panelinden seçilir, üyelere hiç verilmez).
+alter table public.profiles add column if not exists alias_no int;
+create unique index if not exists profiles_alias_no_idx on public.profiles (alias_no) where alias_no is not null;
+
+create or replace function public._reserved_alias_nos()
+returns int[] language sql immutable as $$ select array[41, 1000]; $$;
+
+-- Lakaplar: gerçek hayattaki gibi, kimseyi kırmayacak, komik olmayan takma adlar (tek kelime, harflerden oluşur)
+create or replace function public._alias_words()
+returns text[] language sql immutable as $$
+  select array['Kaptan','Usta','Reis','Hoca','Gezgin','Kâşif','Yolcu','Bilge','Dost','Komşu','Yoldaş','Rehber',
+               'Ozan','Şair','Ressam','Mimar','Pilot','Denizci','Dağcı','Kampçı','Koşucu','Yüzücü','Satranççı',
+               'Okur','Yazar','Mucit','Şef','Gurme','Kahveci','Çaycı','Fotoğrafçı','Gitarist','Davulcu','Piyanist',
+               'Dansçı','Sinemasever','Kitapsever','Bahçıvan','Balıkçı','Sörfçü','Kayakçı','Bisikletçi','Gözlemci',
+               'Sanatçı','Tasarımcı','Gökbilimci','Mühendis','Gönüllü','Bilgin','Melodi','Ritim','Nota','Poyraz',
+               'Lodos','Rüzgâr','Fırtına','Yakamoz','Şafak','Dolunay','Yıldız','Bulut','Deniz','Ufuk','Çınar',
+               'Atlas','Pusula','Fener','Liman','Pınar','Vadi','Zirve','Kıyı','Meltem','Gökkuşağı','Tayfun','Işık',
+               'Umut','Cesur','Neşe','Sahilci','İskeleci','Vapurcu','Gececi','Sabahçı','Maceracı','Hayalperest',
+               'Düşünür'];
+$$;
+
+-- Yeni rastgele kimlik: lakap + boştaki bir numara ("Kaptan#145") ve rastgele avatar.
+-- p_exclude: kişinin şu anki numarası (yeni hafta aynı numara gelmesin). Numara seçimi kilitle tek tek yapılır.
+drop function if exists public._new_identity();
+create or replace function public._new_identity(p_exclude int default null, out o_alias text, out o_avatar int,
+                                                out o_no int)
+language plpgsql volatile security definer set search_path = public as $$
 declare
-  v_adj text[] := array['Gizemli','Neşeli','Sessiz','Cesur','Uykucu','Hızlı','Meraklı','Asi','Sakin','Şanslı','Yaramaz','Gece'];
-  v_ani text[] := array['Martı','Kaplan','Baykuş','Tilki','Yunus','Kartal','Panda','Ejderha','Kedi','Kurt','Ahtapot','Penguen'];
-  v_try int := 0;
+  w text[] := public._alias_words();
+  v_cnt int;
 begin
-  loop
-    o_avatar := 1 + floor(random() * 12)::int;
-    o_alias := v_adj[1 + floor(random() * 12)::int] || ' ' || v_ani[o_avatar] || ' '
-               || (100 + floor(random() * 900))::int::text;
-    exit when not exists (select 1 from public.profiles where alias = o_alias);
-    v_try := v_try + 1;
-    if v_try >= 30 then
-      o_alias := o_alias || '-' || substr(md5(random()::text), 1, 3);
-      exit;
-    end if;
-  end loop;
+  perform pg_advisory_xact_lock(hashtext('alias_no'));
+  o_avatar := 1 + floor(random() * 12)::int;
+  select n into o_no from generate_series(1, 999) n
+   where n <> all (public._reserved_alias_nos()) and n is distinct from p_exclude
+     and not exists (select 1 from public.profiles p where p.alias_no = n)
+   order by random() limit 1;
+  if o_no is null then
+    select count(*)::int into v_cnt from public.profiles;
+    select n into o_no from generate_series(1001, 1001 + v_cnt + 1000) n
+     where n <> all (public._reserved_alias_nos()) and n is distinct from p_exclude
+       and not exists (select 1 from public.profiles p where p.alias_no = n)
+     order by random() limit 1;
+  end if;
+  o_alias := w[1 + floor(random() * cardinality(w))::int] || '#' || o_no;
 end $$;
 
--- Yeni haftaya geçildiyse kişinin rumuzunu ve avatarını yeniler.
+-- Yeni haftaya geçildiyse kişinin rumuzunu, numarasını ve avatarını yeniler.
 -- Cron gerekmez: kişi uygulamayı açtığında ya da bir işlem yaptığında kendiliğinden çalışır.
--- Eski gönderiler değişmez, yazıldıkları haftanın rumuzuyla kalır.
+-- Eski gönderiler değişmez, yazıldıkları haftanın rumuzuyla kalır. Moderatörün seçtiği ayrılmış kod (#41, #1000) değişmez.
 create or replace function public._rotate_alias_if_needed(p_user uuid)
 returns void language plpgsql security definer set search_path = public as $$
 declare
   v_week date := public.current_alias_week();
   v_new record;
+  v_no int;
+  v_admin boolean;
 begin
-  -- Aynı anda iki istek gelirse yalnızca biri yeniler
-  perform 1 from public.profiles where id = p_user and alias_week < v_week for update;
+  -- Aynı anda iki istek gelirse yalnızca biri yeniler. Moderatörlüğü kaldırılan kişi ayrılmış kodu hemen bırakır.
+  select alias_no, role = 'admin' into v_no, v_admin from public.profiles
+   where id = p_user
+     and (alias_week < v_week or (alias_no = any (public._reserved_alias_nos()) and role <> 'admin'))
+   for update;
   if not found then return; end if;
-  select * into v_new from public._new_identity();
+  if v_admin and v_no = any (public._reserved_alias_nos()) then
+    update public.profiles set alias_week = v_week where id = p_user;
+    return;
+  end if;
+  select * into v_new from public._new_identity(v_no);
   update public.profiles
-     set alias = v_new.o_alias, avatar_index = v_new.o_avatar, alias_week = v_week
+     set alias = v_new.o_alias, avatar_index = v_new.o_avatar, alias_no = v_new.o_no, alias_week = v_week
    where id = p_user;
+end $$;
+
+-- Rumuzdan kişiyi bulur (etiket, rumuz profili, özel mesaj): "Kaptan#145", "kaptan#145", "@#145" ya da "#145".
+-- Büyük/küçük harf ve Türkçe harf farkı gözetilmez; lakap yazıldıysa numaranın şu anki sahibininkiyle tutmalıdır.
+-- Yalnızca BU HAFTAKİ rumuz sahibine götürür (geçen haftanın rumuzu başkasına ait olabilir).
+create or replace function public._alias_lookup(p_text text)
+returns uuid language plpgsql stable security definer set search_path = public as $$
+declare
+  v text := regexp_replace(btrim(coalesce(p_text, '')), '^@', '');
+  m text[];
+  v_id uuid;
+begin
+  m := regexp_match(v, '^([^#[:space:]]{0,30})#([0-9]{1,5})$');
+  if m is null then
+    -- Eski biçimdeki rumuz (yeni biçime geçmeden önce yazılmış): tam eşleşme
+    select p.id into v_id from public.profiles p where p.alias = v and p.alias_week = public.current_alias_week();
+    return v_id;
+  end if;
+  select p.id into v_id from public.profiles p
+   where p.alias_no = m[2]::int and p.alias_week = public.current_alias_week()
+     and (m[1] = '' or public._tr_fold(split_part(p.alias, '#', 1)) = public._tr_fold(m[1]));
+  return v_id;
 end $$;
 
 -- Giriş yapmış, banlı olmayan ve geçerli oturumdaki kullanıcı mı? (liste fonksiyonları ve okuma kuralları kullanır)
@@ -2175,8 +2233,8 @@ begin
 
   select * into v_id from public._new_identity();
 
-  insert into public.profiles (id, full_name, alias, avatar_index, username)
-  values (new.id, v_name, v_id.o_alias, v_id.o_avatar, v_username);
+  insert into public.profiles (id, full_name, alias, avatar_index, username, alias_no)
+  values (new.id, v_name, v_id.o_alias, v_id.o_avatar, v_username, v_id.o_no);
   insert into public.device_accounts (device_hash, user_id) values (v_hash, new.id)
   on conflict (device_hash) do nothing;
   -- Davet kodu (isteğe bağlı): geçerliyse davet kaydı açılır; geçersizse kayıt yine olur, yalnızca davet sayılmaz
@@ -2188,6 +2246,18 @@ begin
     on conflict do nothing;
   end if;
   return new;
+end $$;
+
+-- Rumuz biçimi değişti ("Lakap#145"): numarası olmayan hesaplara bir kez yeni rumuz verilir (eski gönderiler
+-- yazıldıkları rumuzla kalır).
+do $$
+declare r record; v_new record;
+begin
+  for r in select id from public.profiles where alias_no is null order by created_at loop
+    select * into v_new from public._new_identity(null);
+    update public.profiles set alias = v_new.o_alias, alias_no = v_new.o_no, alias_week = public.current_alias_week()
+     where id = r.id;
+  end loop;
 end $$;
 
 drop trigger if exists on_auth_user_created on auth.users;
@@ -2622,7 +2692,8 @@ drop function if exists public.create_post(text, text);
 drop function if exists public.create_post(text, text, uuid);
 drop function if exists public.create_post(text, text, uuid, int, int, int, int);
 -- Gönderi yaz. p_reply_to verilirse "cevap"tır: cevaplanan gönderinin yazarı etiketlenir (o hafta rumuzu ne olursa
--- olsun). Metindeki "@Sıfat Hayvan 123" biçimindeki rumuzlar da o anki sahiplerine etiket olur (en çok 5 kişi).
+-- olsun). Metindeki "@Lakap#145" ya da "@#145" biçimindeki rumuzlar da bu haftaki sahiplerine etiket olur (en çok 5 kişi;
+-- büyük/küçük harf önemsiz). Etiket yalnızca rumuzla yapılır.
 -- Etiketlenen kişinin kim olduğu yazara gösterilmez; yalnızca etiketlenen kişi kendi ekranında görür.
 -- p_cell_q/r: petek akışına yazılır (genel akışta görünmez). p_my_q/r: telefonun bir kez aldığı konumun peteği;
 -- yazılan peteğe en çok cell_feed_max_distance (1) petek uzaklıkta olmalı. Tam konum sunucuya gelmez.
@@ -2697,7 +2768,8 @@ begin
   -- Sponsor hesap gerçek adıyla yazar (rumuz yerine); bu bayrak yazıldığı anki durumu saklar
   insert into public.posts (alias, avatar_index, body, place_id, place_name, place_label, place_district, by_sponsor,
                             reply_to, cell_q, cell_r, thread_root, thread_no)
-  values (case when v.role::text = 'sponsor' then v.full_name when v.role = 'admin' then 'Kat Görevlisi' else v.alias end,
+  values (case when v.role::text = 'sponsor' then v.full_name when v.role = 'admin' and not v.alias_no = any (public._reserved_alias_nos())
+               then 'Kat Görevlisi' else v.alias end,
           v.avatar_index, v_body,
           v_place.id, v_place.name, v_place.cat_label, v_place.district, v.role::text = 'sponsor', p_reply_to,
           p_cell_q, p_cell_r, p_thread_of, v_no)
@@ -2710,9 +2782,8 @@ begin
     select distinct x.uid from (
       select v_reply_author as uid where v_reply_author is not null
       union all
-      select pr.id
-        from regexp_matches(v_body, '@([A-Za-zÇĞİÖŞÜçğıöşü]+ [A-Za-zÇĞİÖŞÜçğıöşü]+ [0-9]{3}(?:-[0-9a-f]{3})?)', 'g') as t(g)
-        join public.profiles pr on pr.alias = t.g[1]
+      select public._alias_lookup(t.g[1] || '#' || t.g[2])
+        from regexp_matches(v_body, '@([A-Za-zÇĞİÖŞÜçğıöşüÂâÎîÛû]{0,30})#([0-9]{1,5})', 'g') as t(g)
     ) x
     join public.profiles u on u.id = x.uid and u.banned_at is null
    where x.uid <> v.id
@@ -2761,7 +2832,8 @@ begin
   if public._has_shared_code(v_body) then raise exception 'contact_not_allowed'; end if;
   v_body := left(public._mask_profanity(v_body), 300);
   insert into public.comments (post_id, alias, avatar_index, body, by_sponsor)
-  values (p_post_id, case when v.role::text = 'sponsor' then v.full_name when v.role = 'admin' then 'Kat Görevlisi'
+  values (p_post_id, case when v.role::text = 'sponsor' then v.full_name when v.role = 'admin'
+                           and not v.alias_no = any (public._reserved_alias_nos()) then 'Kat Görevlisi'
                           else v.alias end, v.avatar_index, v_body,
           v.role::text = 'sponsor') returning id into v_id;
   insert into public.comment_authors (comment_id, author_id) values (v_id, v.id);
@@ -4310,10 +4382,9 @@ begin
       join public.posts p on p.id = c.post_id
      where c.id = p_comment and not c.by_sponsor
        and (v_admin or (not c.is_hidden and public._post_live(p.created_at, p.event_id)));
-  elsif p_alias is not null and char_length(btrim(p_alias)) between 3 and 60 then
+  elsif p_alias is not null and char_length(btrim(p_alias)) between 2 and 60 then
     -- Rumuz yalnızca bu haftaki sahibine götürür (geçen haftanın rumuzu başkasına ait olabilir)
-    select pr2.id into v_author from public.profiles pr2
-     where pr2.alias = btrim(p_alias) and pr2.alias_week = public.current_alias_week();
+    v_author := public._alias_lookup(p_alias);
   end if;
   if v_author is null then raise exception 'profile_not_found'; end if;
   select * into pr from public.profiles where id = v_author;
@@ -12348,10 +12419,9 @@ begin
     select case when f.requester_id = v.id then f.addressee_id else f.requester_id end into v_other
       from public.friendships f
      where f.id = p_friendship and f.status = 'accepted' and (f.requester_id = v.id or f.addressee_id = v.id);
-  elsif p_alias is not null and char_length(btrim(p_alias)) between 3 and 60 then
-    -- Paket 30: @rumuz etiketinden ya da rumuz profilinden (yalnızca bu haftaki rumuz)
-    select pr.id into v_other from public.profiles pr
-     where pr.alias = btrim(p_alias) and pr.alias_week = public.current_alias_week();
+  elsif p_alias is not null and char_length(btrim(p_alias)) between 2 and 60 then
+    -- Paket 30: @rumuz etiketinden ya da rumuz profilinden (yalnızca bu haftaki rumuz; "#145" de olur)
+    v_other := public._alias_lookup(p_alias);
   end if;
   if v_other is null then raise exception 'dm_target_not_found'; end if;
   if v_other = v.id then raise exception 'dm_self'; end if;
@@ -13877,6 +13947,220 @@ begin
   );
 end $$;
 
+-- Moderatör rumuz kodları (#41, #1000): kim kullanıyor? Moderatör panelinde seçilir.
+drop function if exists public.admin_alias_codes();
+create or replace function public.admin_alias_codes()
+returns table (code int, taken boolean, mine boolean, holder text)
+language plpgsql security definer set search_path = public as $$
+begin
+  perform public._require_admin();
+  return query
+    select c, exists (select 1 from public.profiles p where p.alias_no = c),
+           exists (select 1 from public.profiles p where p.alias_no = c and p.id = auth.uid()),
+           (select p.full_name from public.profiles p where p.alias_no = c)
+      from unnest(public._reserved_alias_nos()) as c
+     order by c;
+end $$;
+
+-- Moderatör: ayrılmış rumuz kodunu seç (p_code boş = kodu bırak, yeniden rastgele rumuz al). Başka moderatörün
+-- kullandığı kod seçilemez. Seçilen kod haftalık yenilemede değişmez; rumuz "Kat Görevlisi#41" olur.
+create or replace function public.admin_set_alias_code(p_code int)
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_new record;
+  v_alias text;
+begin
+  v := public._require_user();
+  perform public._require_admin();
+  perform pg_advisory_xact_lock(hashtext('alias_no'));
+  if p_code is null then
+    if v.alias_no = any (public._reserved_alias_nos()) then
+      select * into v_new from public._new_identity(v.alias_no);
+      update public.profiles set alias = v_new.o_alias, alias_no = v_new.o_no, alias_week = public.current_alias_week()
+       where id = v.id returning alias into v_alias;
+    else
+      v_alias := v.alias;
+    end if;
+  else
+    if p_code <> all (public._reserved_alias_nos()) then raise exception 'invalid_alias_code'; end if;
+    if exists (select 1 from public.profiles p where p.alias_no = p_code and p.id <> v.id) then
+      raise exception 'alias_code_taken';
+    end if;
+    update public.profiles set alias_no = p_code, alias = 'Kat Görevlisi#' || p_code,
+                               alias_week = public.current_alias_week()
+     where id = v.id returning alias into v_alias;
+  end if;
+  perform public._audit('alias_code', v.id, jsonb_build_object('code', p_code));
+  return v_alias;
+end $$;
+
+-- Mesaj kutusundaki "+": alıcıyı adla bulup yazışmayı açar. "Lakap#145" / "#145" biçimi rumuzdur (herkes, bu
+-- haftaki rumuz); diğer metinler yalnızca ARKADAŞLARIN gerçek adında aranır (büyük/küçük harf ve Türkçe harf
+-- önemsiz). Eşleşme yoksa ya da aynı adlı birden çok arkadaş varsa yazışma açılmaz.
+create or replace function public.dm_open_by_name(p_query text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  q text := btrim(regexp_replace(coalesce(p_query, ''), '\s+', ' ', 'g'));
+  v_fid uuid;
+  v_n int;
+begin
+  v := public._require_user();
+  if char_length(q) not between 2 and 60 then raise exception 'dm_target_not_found'; end if;
+  if q ~ '#[0-9]{1,5}$' then
+    return public.dm_open(p_alias => q);
+  end if;
+  select count(*)::int, min(f.id::text)::uuid into v_n, v_fid
+    from public.friendships f
+    join public.profiles o on o.id = case when f.requester_id = v.id then f.addressee_id else f.requester_id end
+   where f.status = 'accepted' and (f.requester_id = v.id or f.addressee_id = v.id)
+     and o.banned_at is null and public._tr_fold(o.full_name) = public._tr_fold(q);
+  if v_n = 0 then raise exception 'dm_target_not_found'; end if;
+  if v_n > 1 then raise exception 'dm_name_ambiguous'; end if;
+  return public.dm_open(p_friendship => v_fid);
+end $$;
+
+-- ---------------------------------------------------------------------
+-- Petek menüsü: petek akışı özeti ve "Oyun arayanlar"
+-- ---------------------------------------------------------------------
+
+-- Petek akışı özeti (petek menüsünde, akış düğmesinin solunda): yalnızca bu haftaki gönderi sayısı ve son gönderinin
+-- zamanı. İçerik ve yazar hiç gelmez; bu yüzden peteğe yakın olmayan da görebilir.
+create or replace function public.cell_feed_summary(p_q int, p_r int)
+returns table (post_count int, last_at timestamptz)
+language sql stable security definer set search_path = public as $$
+  select count(*)::int, max(p.created_at)
+    from public.posts p
+   where public._is_active_user()
+     and p.cell_q = p_q and p.cell_r = p_r
+     and p.thread_root is null and not p.is_hidden
+     and public._post_live(p.created_at, p.event_id);
+$$;
+
+-- Oyun arayanlar: yan yana oynanan bir oyun için oyun arkadaşı arayan üyeler (petek başına liste). Kayıt için peteğin
+-- içinde ya da hemen yanında olmak gerekir (telefonun bir kez aldığı konumun peteği; tam konum sunucuya gelmez).
+-- Kayıt İstanbul saatiyle gece yarısına kadar geçerlidir. Her üyenin aynı anda tek kaydı olur (yenisi eskisinin yerine
+-- geçer). Listede yalnızca bu haftaki rumuz görünür; gerçek ad hiç gelmez. Tablo doğrudan okunamaz.
+create table if not exists public.game_seekers (
+  user_id uuid primary key references public.profiles (id) on delete cascade,
+  id uuid not null default gen_random_uuid() unique,
+  cell_q int not null,
+  cell_r int not null,
+  game_type text not null references public.game_types (key) on delete cascade,
+  day date not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists game_seekers_cell_idx on public.game_seekers (cell_q, cell_r, day);
+alter table public.game_seekers enable row level security;
+revoke all on public.game_seekers from anon, authenticated;
+
+drop function if exists public.game_seek_list(int, int);
+create or replace function public.game_seek_list(p_q int, p_r int)
+returns table (id uuid, alias text, avatar_index int, game_type text, game_title text, created_at timestamptz,
+               is_mine boolean, is_friend boolean)
+language sql stable security definer set search_path = public as $$
+  select s.id, pr.alias, pr.avatar_index, s.game_type, gt.title, s.created_at, s.user_id = auth.uid(),
+         public._is_friend(s.user_id)
+    from public.game_seekers s
+    join public.profiles pr on pr.id = s.user_id
+    join public.game_types gt on gt.key = s.game_type
+   where public._is_active_user()
+     and s.cell_q = p_q and s.cell_r = p_r and s.day = public._map_day()
+     and pr.banned_at is null and pr.role = 'user'
+     and (s.user_id = auth.uid() or not public._blocked_between(auth.uid(), s.user_id))
+   order by (s.user_id = auth.uid()) desc, s.created_at desc
+   limit 100;
+$$;
+
+-- Oyun arayanlar listesinde seçilebilen oyunlar: açık olan ve yan yana oynanan oyunlar
+create or replace function public.game_seek_games()
+returns table (key text, title text)
+language sql stable security definer set search_path = public as $$
+  select gt.key, gt.title from public.game_types gt
+   where public._is_active_user() and gt.enabled and gt.presence_required and not gt.remote
+   order by gt.sort_order, gt.title;
+$$;
+
+-- Listeye adımı yazdır. p_q/p_r: listesi açılan petek; p_my_q/p_my_r: telefonun bulunduğu petek.
+create or replace function public.game_seek_join(p_q int, p_r int, p_my_q int, p_my_r int, p_game_type text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_id uuid;
+  v_last timestamptz;
+begin
+  v := public._require_writer(null);
+  if v.role::text <> 'user' then raise exception 'seek_not_allowed'; end if;
+  if not public._game_cell_given(p_my_q, p_my_r) then raise exception 'location_required'; end if;
+  if not public._game_cell_given(p_q, p_r) or not public._map_cell_ok(p_q, p_r) then raise exception 'invalid_cell'; end if;
+  if public._hex_dist(p_q, p_r, p_my_q, p_my_r) > greatest(0, public.setting_int('cell_feed_max_distance', 1)) then
+    raise exception 'seek_too_far';
+  end if;
+  if not exists (select 1 from public.game_types
+                  where key = p_game_type and enabled and presence_required and not remote) then
+    raise exception 'invalid_game';
+  end if;
+  -- Art arda basışlar ve sürekli yer değiştirme: kayıt en çok 10 saniyede bir değişir
+  select created_at into v_last from public.game_seekers where user_id = v.id for update;
+  if v_last is not null and v_last > now() - interval '10 seconds' then raise exception 'rate_limited'; end if;
+  -- Süresi geçmiş kayıtlar temizlenir
+  delete from public.game_seekers where day < public._map_day();
+  insert into public.game_seekers (user_id, cell_q, cell_r, game_type, day)
+  values (v.id, p_q, p_r, p_game_type, public._map_day())
+  on conflict (user_id) do update
+     set id = gen_random_uuid(), cell_q = excluded.cell_q, cell_r = excluded.cell_r,
+         game_type = excluded.game_type, day = excluded.day, created_at = now()
+  returning id into v_id;
+  return v_id;
+end $$;
+
+-- Listeden adımı sil
+create or replace function public.game_seek_leave()
+returns void language plpgsql security definer set search_path = public as $$
+declare v public.profiles;
+begin
+  v := public._require_user();
+  delete from public.game_seekers where user_id = v.id;
+end $$;
+
+-- Listedeki kişiye arkadaşlık isteği (kişinin kim olduğu isteği atana gösterilmez)
+create or replace function public.game_seek_friend_request(p_id uuid)
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  v_target uuid;
+  v_alias text;
+  v_avatar int;
+begin
+  perform public._require_user();
+  select s.user_id, pr.alias, pr.avatar_index into v_target, v_alias, v_avatar
+    from public.game_seekers s join public.profiles pr on pr.id = s.user_id
+   where s.id = p_id and s.day = public._map_day();
+  if not found then raise exception 'request_not_found'; end if;
+  return public._send_friend_request(v_target, v_alias, v_avatar);
+end $$;
+
+-- Listedeki kişiyi engelle (gönderi yazarını engellemekle aynı)
+create or replace function public.game_seek_block(p_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_target uuid;
+  v_alias text;
+begin
+  v := public._require_user();
+  select s.user_id, pr.alias into v_target, v_alias
+    from public.game_seekers s join public.profiles pr on pr.id = s.user_id
+   where s.id = p_id;
+  if not found then raise exception 'request_not_found'; end if;
+  if v_target = v.id then raise exception 'cannot_block_self'; end if;
+  insert into public.user_blocks (blocker_id, blocked_id, blocked_alias)
+  values (v.id, v_target, v_alias)
+  on conflict (blocker_id, blocked_id) do nothing;
+  delete from public.friendships
+   where (requester_id = v.id and addressee_id = v_target) or (requester_id = v_target and addressee_id = v.id);
+end $$;
+
 -- Davet puanı: ödüllenen davetler − harcanan
 create or replace function public._invite_balance(p_user uuid)
 returns int language sql stable security definer set search_path = public as $$
@@ -15091,5 +15375,15 @@ grant execute on function public.my_invite() to authenticated;
 grant execute on function public.redeem_invite_code(text) to authenticated;
 grant execute on function public.invite_buy(text) to authenticated;
 grant execute on function public.invite_use_cell_name(int, int, text) to authenticated;
+grant execute on function public.admin_alias_codes() to authenticated;
+grant execute on function public.dm_open_by_name(text) to authenticated;
+grant execute on function public.cell_feed_summary(int, int) to authenticated;
+grant execute on function public.game_seek_list(int, int) to authenticated;
+grant execute on function public.game_seek_games() to authenticated;
+grant execute on function public.game_seek_join(int, int, int, int, text) to authenticated;
+grant execute on function public.game_seek_leave() to authenticated;
+grant execute on function public.game_seek_friend_request(uuid) to authenticated;
+grant execute on function public.game_seek_block(uuid) to authenticated;
+grant execute on function public.admin_set_alias_code(int) to authenticated;
 
 notify pgrst, 'reload schema';

@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { AliasCodeTab } from '@/components/AliasCodeTab';
 import { AnnouncementsTab } from '@/components/AnnouncementsTab';
 import { EventApprovalsTab } from '@/components/EventApprovalsTab';
 import { TreasuresTab } from '@/components/TreasuresTab';
@@ -58,6 +59,7 @@ type Tab =
   | 'members'
   | 'announce'
   | 'venues'
+  | 'alias'
   | 'log';
 type Notice = { text: string; error: boolean };
 /** Üye sayfasında işlem yapılan üyenin güncel hali ve işlemin zamanı */
@@ -160,6 +162,7 @@ export default function ModeratorScreen() {
             { value: 'members', label: 'Üyeler', icon: 'people', badge: 0 },
             { value: 'announce', label: 'Duyuru', icon: 'megaphone', badge: 0 },
             { value: 'venues', label: 'Mekânlar', icon: 'storefront', badge: 0 },
+            { value: 'alias', label: 'Rumuz kodu', icon: 'pricetag', badge: 0 },
             { value: 'log', label: 'Günlük', icon: 'list', badge: 0 },
           ] as { value: Tab; label: string; icon: React.ComponentProps<typeof Ionicons>['name']; badge: number }[]
         ).map((t) => {
@@ -223,6 +226,8 @@ export default function ModeratorScreen() {
         <AnnouncementsTab onNotice={setNotice} />
       ) : tab === 'venues' ? (
         <VenuesTab onNotice={setNotice} />
+      ) : tab === 'alias' ? (
+        <AliasCodeTab onNotice={setNotice} />
       ) : (
         <LogTab />
       )}
