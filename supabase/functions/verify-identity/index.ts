@@ -93,7 +93,8 @@ type Answer = { match: boolean | null; why: string };
  * NVİ'ye bir SOAP isteği gönderir. `match`: true = uyuşuyor, false = uyuşmuyor, null = servise ulaşılamadı. Ulaşılamadıysa
  * `why` kısa nedendir (uygulamada ve Supabase > Edge Functions > Logs ekranında görünür; kimlik bilgisi içermez):
  *   T = zaman aşımı, H<kod> = NVİ bir hata kodu döndü (ör. H403 = erişim engeli), C = bağlantı/sertifika hatası,
- *   P = cevap anlaşılamadı.
+ *   W = NVİ'nin güvenlik duvarı isteği reddetti ("Request Rejected" sayfası; çoğunlukla yurt dışı sunucu engeli),
+ *   F = NVİ hata (SOAP fault) döndü, P = cevap anlaşılamadı.
  */
 async function soap(url: string, method: string, inner: string): Promise<Answer> {
   const body =
@@ -109,6 +110,10 @@ async function soap(url: string, method: string, inner: string): Promise<Answer>
       headers: {
         'Content-Type': 'text/xml; charset=utf-8',
         SOAPAction: `"http://tckimlik.nvi.gov.tr/WS/${method}"`,
+        // Güvenlik duvarı tarayıcı dışı istemcileri reddedebiliyor: sıradan bir istemci gibi görün
+        'User-Agent': 'Mozilla/5.0 (compatible; 41KatSosyal/1.0)',
+        Accept: 'text/xml, application/soap+xml, */*',
+        'Accept-Language': 'tr-TR,tr;q=0.9',
       },
       body,
       signal: ctl.signal,
@@ -121,6 +126,11 @@ async function soap(url: string, method: string, inner: string): Promise<Answer>
     const m = new RegExp(`<${method}Result>\\s*(true|false)\\s*</${method}Result>`, 'i').exec(text);
     if (!m) {
       console.error(`NVİ ${method} cevabı anlaşılamadı: ${text.slice(0, 300).replace(/\d{11}/g, '***')}`);
+      if (/request rejected|url was rejected|support id/i.test(text)) {
+        const id = /support id(?: is)?\s*:?\s*(\d{6,})/i.exec(text)?.[1];
+        return { match: null, why: `W${id ? id.slice(-6) : ''}` };
+      }
+      if (/<(?:soap:)?Fault>/i.test(text)) return { match: null, why: 'F' };
       return { match: null, why: 'P' };
     }
     return { match: m[1].toLowerCase() === 'true', why: '' };
