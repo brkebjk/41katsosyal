@@ -1354,7 +1354,7 @@ function InfoModal({ visible, onClose, status }: { visible: boolean; onClose: ()
               <ListRow
                 icon="location-outline"
                 title="Konum sürekli izlenmez"
-                subtitle="Konumuna yalnızca gönderiye yer eklerken ve bir oyuna girerken, her seferinde bir kez bakılır; öncesinde sana haber verilir. Tam konumun sunucuya gitmez ve kaydedilmez, yalnızca bölge numarası tutulur."
+                subtitle="Konumuna yalnızca gönderiye yer eklerken ve bir oyuna girerken, her seferinde bir kez bakılır; öncesinde sana haber verilir. Tam konumun kaydedilmez, yalnızca bölge numarası tutulur. Yan yana oyuna girerken kesin konum yalnızca oda sahibine ~100 metre yakınlık kontrolü için bir kez kullanılır."
               />
               <ListRow
                 icon="calendar-outline"

@@ -54,6 +54,7 @@ import {
   reportWhisper,
   sayAsDead,
   ROLES,
+  addTestBots,
   sceneFor,
   sendWhisper,
   startVampireGame,
@@ -594,6 +595,24 @@ function Game({ roomId }: { roomId: string }) {
           <PrimaryButton label="Oyuncu davet et" variant="ghost" onPress={() => setInviteOpen(true)} />
         ) : null}
 
+        {/* GEÇİCİ: moderatör tek telefonla test edebilsin diye deneme oyuncuları (botlar) */}
+        {me.is_admin ? (
+          <PrimaryButton
+            label="Deneme oyuncusu ekle (+3)"
+            variant="ghost"
+            onPress={() =>
+              void act('bots', () => addTestBots(roomId, 3), {
+                confirm: () =>
+                  confirmAction(
+                    'Deneme oyuncusu eklensin mi?',
+                    'Kendi kendine oynayan 3 deneme oyuncusu eklenir. Bu oda deneme odası olur: oyun bitince KİMSEYE puan, başarım ya da istatistik yazılmaz.',
+                    'Ekle',
+                  ),
+              })
+            }
+          />
+        ) : null}
+
         <View style={styles.infoLinks}>
           <InfoLink label="Nasıl oynanır?" onPress={() => setInfo('how')} testID="vv-how" />
           <InfoLink label="Puan kazanç tablosu" onPress={() => setInfo('points')} testID="vv-points" />
@@ -950,6 +969,11 @@ function Game({ roomId }: { roomId: string }) {
     >
       <BackBlocker enabled={blocking} onBack={requestLeave} />
       <Hero view={view} />
+      {view.test ? (
+        <InfoCard title="Deneme odası" tone="danger">
+          Bu odada deneme oyuncuları (botlar) var. Oyun bitince kimseye puan, başarım ya da istatistik yazılmaz.
+        </InfoCard>
+      ) : null}
       {connError ? <Text style={styles.warn}>Bağlantı koptu, yeniden deniyor…</Text> : null}
       {/* Uzaktan oda: sesli sohbet (sırayla konuşma, mikrofon, ses filtresi, oylamayla atma) */}
       {view.remote && (phase === 'lobby' || playing) && !me.left && myId ? (

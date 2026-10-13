@@ -58,7 +58,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "41. Kat Sosyal, gönderine yer eklerken yakınındaki mekânları listelemek ve bir oyuna girerken bulunduğun bölgeyi harita için bir kez almak üzere konumuna yalnızca uygulama açıkken bakar. Konumun sürekli takip edilmez ve tam konumun kaydedilmez.",
+          "locationWhenInUsePermission": "41. Kat Sosyal, gönderine yer eklerken yakınındaki mekânları listelemek ve bir oyuna girerken oda sahibine yakın olduğunu (yaklaşık 100 metre) kontrol etmek için konumuna yalnızca uygulama açıkken ve her seferinde bir kez bakar. Konumun sürekli takip edilmez ve odaya girenin kesin konumu kaydedilmez.",
           "isAndroidBackgroundLocationEnabled": false,
           "isIosBackgroundLocationEnabled": false
         }

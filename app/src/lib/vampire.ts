@@ -67,6 +67,8 @@ export type VvView = {
   mode: VvMode;
   /** Uzaktan oda: herkes kendi telefonundan, sesli sohbetle oynar (eski sunucuda gelmez) */
   remote?: boolean;
+  /** GEÇİCİ: deneme odası (botlar var; puan yazılmaz) */
+  test?: boolean;
   /** Oda kapandıysa nedeni: quit (sahibi ayrıldı), timeout (sahibinin bağlantısı koptu), inactive (kimse oynamadı) */
   close_reason: string | null;
   /** Otomatik oyunda bu aşamanın süresi (sn); öteki modlarda boş */
@@ -255,4 +257,9 @@ export function sceneFor(phase: VvPhase, winner: VvView['winner']): VampireImage
   if (phase === 'ended') return winner === 'vampire' ? 'win_vampires' : 'win_villagers';
   if (phase === 'dawn' || phase === 'vote' || phase === 'vote_result') return 'scene_day';
   return 'scene_night';
+}
+
+/** GEÇİCİ: moderatör, bekleme salonundaki odaya kendi kendine oynayan deneme oyuncuları ekler (oda puansız olur) */
+export async function addTestBots(roomId: string, count: number): Promise<Result> {
+  return callRpcVoid('admin_add_test_bots', { p_room_id: roomId, p_count: count });
 }

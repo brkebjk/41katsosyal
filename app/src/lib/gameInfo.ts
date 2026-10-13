@@ -74,7 +74,7 @@ export function gamePointsInfo(rules: PointRules, players?: number, extra: InfoI
     {
       icon: 'shield-checkmark',
       lead: 'Sınırlar.',
-      text: `Puan için oyun en az ${rules.gameMinPlayers} kişiyle oynanmalı. Günde en çok ${rules.gameDailyCap}, ayda en çok ${rules.gameMonthCap} oyundan puan alınır.`,
+      text: `Puan için oyun en az ${rules.gameMinPlayers} kişiyle oynanmalı. Yan yana oyunlarda günlük ya da aylık puan sınırı yoktur; uzaktan oyunlarda vardır.`,
     },
   );
   // Oyunun içindeyken (bekleme odası) ekran kalabalık olmasın diye Bilgi Yarışması satırı konmaz
@@ -189,7 +189,7 @@ export function roomRulesInfo(freeGames: number, subscriptionGames: number): Inf
       {
         icon: 'location',
         lead: 'Konum.',
-        text: 'Yan yana oynanan oyunlara girerken bulunduğun bölge bir kez alınır; konum izni vermeden girilemez. Sürekli takip yok, tam konum kaydedilmez.',
+        text: 'Yan yana oynanan oyunlara girerken konumuna bir kez bakılır: oda sahibine yaklaşık 100 metre (konum hatası dahil en çok 150 m) yakın olmalısın; konum izni vermeden girilemez. Sürekli takip yok. Odaya girenin kesin konumu kaydedilmez; oda sahibinin konumu yalnızca oda katılıma açıkken tutulur, sonra silinir.',
       },
       {
         icon: 'map',

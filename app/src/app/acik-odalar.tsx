@@ -193,7 +193,7 @@ export default function OpenRoomsScreen() {
               ],
               ['Son sıra', 'En az 1 puan alır.'],
               ['Puan için en az', `${rules.gameMinPlayers} oyuncu (moderatör sayılmaz)`],
-              ['Sınır', `Günde ${rules.gameDailyCap}, ayda ${rules.gameMonthCap} oyundan puan`],
+              ['Sınır', 'Yan yana oyunda günlük/aylık puan sınırı yok'],
               ['Oyundan ayrılan', 'Puan almaz (elenmiş sayılır)'],
               ['Başarım ödülü', '5 Vampir görevini bitirenin puanları kalıcı 1,25 kat'],
             ].map(([k, v], i) => (

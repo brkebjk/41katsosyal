@@ -212,7 +212,7 @@ function LocationStep({ total, onNext }: { total: number; onNext: () => void }) 
         />
         <Bullet
           icon="lock-closed"
-          text="Tam konumun sunucuya gitmez ve kaydedilmez; yalnızca bulunduğun peteğin numarası kullanılır."
+          text="Tam konumun kaydedilmez; çoğu yerde yalnızca bulunduğun peteğin numarası kullanılır. Yalnızca yan yana oyuna girerken, oda sahibine ~100 metre yakın olduğunu kontrol etmek için kesin konumun bir kez kullanılır."
         />
         <Bullet icon="flash" text="İzin verirsen her seferinde ayrıca “konumuna bakacağım” uyarısı görmezsin." />
       </View>

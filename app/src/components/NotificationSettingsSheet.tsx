@@ -125,7 +125,8 @@ export function NotificationSettingsSheet({ onClose }: { onClose: () => void }) 
         action={perms && !perms.location ? { label: 'İzin ver', onPress: () => void allowLocation() } : null}
       />
       <Text style={styles.muted}>
-        Konumuna yalnızca sen bir şey yaparken bir kez bakılır; tam konumun sunucuya gitmez. İzinleri telefonunun
+        Konumuna yalnızca sen bir şey yaparken bir kez bakılır; tam konumun kaydedilmez (yan yana oyuna girerken yalnızca
+        ~100 metre yakınlık kontrolü için bir kez kullanılır). İzinleri telefonunun
         ayarlarından istediğin zaman kapatabilirsin.
       </Text>
     </Sheet>

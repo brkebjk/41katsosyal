@@ -9,7 +9,8 @@
 //  - Akışta yalnızca bulunduğun yerin 500 metre çevresindeki (kuş uçuşu) mekânlar paylaşılabilir.
 //  - Konum izni verilmemişse, konum alınmadan hemen önce “Konumunu 1 kez isteyeceğim” uyarısı gösterilir.
 //    İzin (“uygulamayı kullanırken”) verildiyse uyarı atlanır; ilkeler izin ekranında anlatılır.
-//  - Ham konum (enlem/boylam) sunucuya gönderilmez ve hiçbir yerde saklanmaz; telefon yalnızca bulunduğu
+//  - Ham konum (enlem/boylam) sunucuya gönderilmez ve hiçbir yerde saklanmaz (TEK İSTİSNA: yan yana oyuna girerken
+//    ~100 metre yakınlık kontrolü; bkz. requireGameLocation); telefon yalnızca bulunduğu
 //    peteğin numarasını (q, r) çıkarır.
 //  - Ayrı bir “haritaya katkı izni” yoktur: gönderiye yer eklemek ve oyuna girmek zaten üyenin bilerek yaptığı işlemlerdir
 //    ve her konum isteğinden önce harita için de sayılacağı yazılı olarak bildirilir. Yer eklemeyen / “Şimdi değil” diyen
@@ -85,7 +86,7 @@ export async function placesNearCell(cell: Cell): Promise<{ data: Place[]; error
 // ---------------------------------------------------------------------------------------------
 
 export type OneShot =
-  | { ok: true; lat: number; lon: number }
+  | { ok: true; lat: number; lon: number; acc: number | null }
   | { ok: false; reason: 'declined' | 'denied' | 'unavailable' | 'timeout' | 'mocked' };
 
 export type LocationPurpose =
@@ -112,10 +113,13 @@ const NOTICE: Record<LocationPurpose, { message: string; cancel: string }> = {
   },
   game: {
     message:
-      'Bu oyun yan yana oturularak oynanır. Oyunu açmadan / oyuna girmeden önce bulunduğun bölgeyi bir kez alacağım. ' +
-      'Konum izni vermezsen bu oyuna girilemez.\n\n' +
-      'Uygulama konumunu sürekli takip etmez, arka planda hiçbir şey izlenmez. Sunucuya yalnızca bölge numarası ' +
-      'gider, tam konumun kaydedilmez. Bu bölge, kimse görünmeden haritadaki yoğunluğa sayılır.',
+      'Bu oyun yan yana oturularak oynanır. Oyunu açmadan / oyuna girmeden önce konumuna bir kez bakacağım: odaya ' +
+      'girenler oda sahibine yaklaşık 100 metre (telefonun konum hatasıyla en çok 150 metre) yakın olmalı. Konum izni ' +
+      'vermezsen bu oyuna girilemez.\n\n' +
+      'Uygulama konumunu sürekli takip etmez, arka planda hiçbir şey izlenmez. Kesin konumun yalnızca bu yakınlık ' +
+      'kontrolü için sunucuya bir kez gider: odaya girenin konumu hiç kaydedilmez; oda sahibinin konumu yalnızca oda ' +
+      'katılıma açıkken tutulur, oyun başlayınca ya da oda kapanınca silinir. Bulunduğun bölge (petek), kimse ' +
+      'görünmeden haritadaki yoğunluğa sayılır.',
     cancel: 'Vazgeç',
   },
   event: {
@@ -236,13 +240,16 @@ export async function requestOneTimeLocation(purpose: LocationPurpose): Promise<
     if (!perm.granted) return { ok: false, reason: 'denied' };
     if (!(await Location.hasServicesEnabledAsync())) return { ok: false, reason: 'unavailable' };
     const fix = await Promise.race([
-      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      // Yan yana oyunda ~100 metrelik yakınlık kontrolü için daha hassas konum istenir
+      Location.getCurrentPositionAsync({
+        accuracy: purpose === 'game' ? Location.Accuracy.High : Location.Accuracy.Balanced,
+      }),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), FIX_TIMEOUT_MS)),
     ]);
     if (!fix) return { ok: false, reason: 'timeout' };
     // Android, “sahte konum” uygulamalarının verdiği konumları işaretler; bunlar kabul edilmez
     if (fix.mocked === true) return { ok: false, reason: 'mocked' };
-    return { ok: true, lat: fix.coords.latitude, lon: fix.coords.longitude };
+    return { ok: true, lat: fix.coords.latitude, lon: fix.coords.longitude, acc: fix.coords.accuracy ?? null };
   } catch {
     return { ok: false, reason: 'unavailable' };
   }
@@ -330,7 +337,13 @@ export async function findNearbyPlaces(): Promise<NearbyResult | null> {
 // Oyunu açarken / oyuna girerken (yan yana oynanan oyunlar)
 // ---------------------------------------------------------------------------------------------
 
-export type GameLocation = { ok: true; cell: Cell } | { ok: false; message: string };
+/**
+ * Yan yana oyun için alınan konum: petek + kesin konum. Kesin konum yalnızca odaya girerken oda sahibine ~100 metre
+ * yakınlık kontrolü için sunucuya bir kez gider; katılanınki hiç saklanmaz, oda sahibininki oda katılıma açıkken tutulur.
+ */
+export type GameCell = Cell & { lat: number; lon: number; acc: number | null };
+
+export type GameLocation = { ok: true; cell: GameCell } | { ok: false; message: string };
 
 /**
  * Yan yana oynanan bir oyunu açmadan / oyuna girmeden önce çağrılır: “1 kez isteyeceğim” uyarısı, izin, tek seferlik
@@ -352,7 +365,7 @@ export async function requireGameLocation(): Promise<GameLocation> {
               : 'Telefonunun konum özelliği kapalı görünüyor. Konumu açıp tekrar dene.';
     return { ok: false, message };
   }
-  return { ok: true, cell: cellOf(fix.lon, fix.lat) };
+  return { ok: true, cell: { ...cellOf(fix.lon, fix.lat), lat: fix.lat, lon: fix.lon, acc: fix.acc } };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -363,7 +376,9 @@ export async function requireGameLocation(): Promise<GameLocation> {
  * Etkinlikte kodu doğrularken çağrılır (sunucu “konum gerekli” dediğinde): “1 kez isteyeceğim” uyarısı, izin, tek
  * seferlik konum. Yalnızca bölge numarası (petek) sunucuya gider; ham konum saklanmaz ve haritaya sayılmaz.
  */
-export async function requireEventLocation(): Promise<GameLocation> {
+export type EventLocation = { ok: true; cell: Cell } | { ok: false; message: string };
+
+export async function requireEventLocation(): Promise<EventLocation> {
   const fix = await requestOneTimeLocation('event');
   if (!fix.ok) {
     const message =

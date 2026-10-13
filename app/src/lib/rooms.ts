@@ -5,7 +5,7 @@
 // böylece kimse oda sahibinin yanında oturmadan odaya katılamaz.
 
 import type { Cell } from '@/lib/hex';
-import { requireGameLocation } from '@/lib/map';
+import { requireGameLocation, type GameCell } from '@/lib/map';
 import { callRpc, callRpcVoid, type Result } from '@/lib/rpc';
 import { supabase } from '@/lib/supabase';
 
@@ -56,6 +56,8 @@ export type OpenRoom = {
   place_note: string | null;
   /** Uzaktan oda: herkes kendi telefonundan, sesli sohbetle oynar; listeden kodsuz katılınır */
   remote?: boolean;
+  /** GEÇİCİ: deneme odası (botlu, puansız) */
+  is_test?: boolean;
 };
 
 /** Oda açarken seçilen yer: haritadan seçilen petek ve adres tarifi. */
@@ -95,7 +97,7 @@ const ROOM_TEXT: Record<string, string> = {
   invalid_cell: 'Haritadan oyunun oynanacağı bölgeyi (peteği) seçmelisin.',
   invalid_place_note: 'Adres tarifi 3 ile 120 karakter arasında olmalı.',
   room_too_far:
-    'Bu odanın kurulduğu bölgeden uzaktasın. Yan yana oynanan oyunlara yalnızca o bölgede ya da yanındaki bölgelerde girilebilir.',
+    'Oda sahibinden uzaktasın. Yan yana oyunlara yalnızca oda sahibine yaklaşık 100 metre yakınken girilebilir (konum hatası dahil en çok 150 m). Kapalı mekândaysan pencereye yaklaşıp tekrar dene.',
   event_not_found: 'Bu etkinlik bulunamadı ya da iptal edildi.',
   event_over: 'Etkinlik bitti; etkinlik odası açılamaz.',
   event_needs_verified: 'Etkinlik odası için en az 4 kişinin katılımını kodla doğrulaması gerekiyor.',
@@ -145,6 +147,15 @@ export async function listOpenRooms(gameType?: string): Promise<{ data: OpenRoom
   return { data: error ? [] : (data ?? []), error };
 }
 
+/** Yan yana oyun: kesin konum (varsa) ~100 metre yakınlık kontrolü için eklenir; sunucu katılanınkini saklamaz */
+function addPrecise(args: Record<string, unknown>, cell: Cell | GameCell) {
+  if ('lat' in cell && typeof cell.lat === 'number' && typeof cell.lon === 'number') {
+    args.p_lat = cell.lat;
+    args.p_lng = cell.lon;
+    if (typeof cell.acc === 'number') args.p_acc = Math.round(cell.acc);
+  }
+}
+
 /** Kullanıcının yazdığı oda kodunu temizler: harf ve rakam kalır, büyük harfe çevrilir. */
 export function cleanRoomCode(text: string): string {
   return text
@@ -169,6 +180,7 @@ export async function joinRoom(
   if (cell) {
     args.p_cell_q = cell.q;
     args.p_cell_r = cell.r;
+    addPrecise(args, cell);
   }
   const { data, error } = await callRpc<string>('join_room', args, ROOM_TEXT);
   if (error) return { roomId: null, error, needsLocation: error === ROOM_TEXT.location_required };
@@ -250,6 +262,7 @@ export async function createRoom(
   if (cell) {
     args.p_cell_q = cell.q;
     args.p_cell_r = cell.r;
+    addPrecise(args, cell);
   }
   if (place) {
     args.p_place_q = place.cell.q;

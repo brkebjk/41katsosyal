@@ -40,6 +40,12 @@ export function RoomRow({ room, isModerator, onPress }: Props) {
             {`Etkinlik: ${room.event_title} · yalnızca doğrulanmış katılımcılar`}
           </Text>
         ) : null}
+        {room.is_test ? (
+          <View style={styles.foot}>
+            <Ionicons name="construct-outline" size={14} color={colors.danger} />
+            <Text style={[styles.meta, { color: colors.danger }]}>Deneme odası · puan verilmez</Text>
+          </View>
+        ) : null}
         {room.remote ? (
           <View style={styles.foot}>
             <Ionicons name="headset" size={14} color={colors.primary} />
