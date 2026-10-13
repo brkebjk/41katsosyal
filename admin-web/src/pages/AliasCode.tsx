@@ -5,7 +5,7 @@ import { Button, Card, Empty, errText, type Notice } from '../ui';
 
 type Code = { code: number; taken: boolean; mine: boolean; holder: string | null };
 
-/** Rumuz kodum: moderatörlere ayrılmış #41 ve #1000 (akışta @#41 ile etiketlenir) */
+/** Rumuz kodum: moderatörlere ayrılmış #41 ve #1000 (akışta @41 ile etiketlenir) */
 export function AliasCodePage({ onNotice }: { onNotice: (n: Notice) => void }) {
   const [rows, setRows] = useState<Code[] | null>(null);
 
@@ -35,7 +35,7 @@ export function AliasCodePage({ onNotice }: { onNotice: (n: Notice) => void }) {
   return (
     <section>
       <h2>Rumuz kodum</h2>
-      <p className="muted small">Seçtiğin kodla rumuzun “Moderatör#41” olur; üyeler seni akışta @#41 yazarak etiketleyebilir.</p>
+      <p className="muted small">Seçtiğin kodla rumuzun “Moderatör#41” olur; üyeler seni akışta @41 yazarak etiketleyebilir.</p>
       {rows === null ? (
         <Empty>Yükleniyor…</Empty>
       ) : (

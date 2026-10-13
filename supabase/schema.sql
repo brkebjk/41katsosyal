@@ -2744,12 +2744,44 @@ begin
   return v;
 end $$;
 
+-- Etiket biçimleri: "@Lakap#145", "@#145" ya da kısaca "@145". Bir harf/rakamdan hemen sonra gelen @ etiket sayılmaz.
+-- Grup 1: etiketin tamamı, grup 2: lakap (yazıldıysa), grup 3: numara
+create or replace function public._mention_re()
+returns text language sql immutable set search_path = public as $$
+  select '(?<![A-Za-z0-9ÇĞİÖŞÜçğıöşüÂâÎîÛû_#@])(@(?:([A-Za-zÇĞİÖŞÜçğıöşüÂâÎîÛû]{0,30})#)?([0-9]{1,5}))(?![0-9])';
+$$;
+
+-- Gönderi metnindeki etiketleri bu haftaki sahibinin rumuzuyla yazar: "@145" ve "@#145" → "@Kaptan#145" (lakap küçük
+-- harfle yazıldıysa da doğru haliyle). Sahibi bulunamayan etiket olduğu gibi kalır. Metin 500 karakteri aşacaksa
+-- metin değiştirilmez (etiket yine çalışır).
+create or replace function public._expand_mentions(p_body text)
+returns text language plpgsql stable security definer set search_path = public as $$
+declare
+  v_out text := coalesce(p_body, '');
+  t record;
+  v_alias text;
+  n int := 0;
+begin
+  for t in select distinct g[1] as tok, coalesce(g[2], '') as lakap, g[3] as num
+             from regexp_matches(v_out, public._mention_re(), 'g') as m(g) loop
+    n := n + 1;
+    exit when n > 10;
+    select p.alias into v_alias from public.profiles p where p.id = public._alias_lookup(t.lakap || '#' || t.num);
+    -- Boşluklu (eski biçim) rumuz akışta etiket olarak tanınmaz: "@#145" biçimi korunur
+    if v_alias is null or v_alias ~ '\s' or v_alias !~ ('#' || t.num || '$') then continue; end if;
+    v_out := regexp_replace(v_out,
+      '(?<![A-Za-z0-9ÇĞİÖŞÜçğıöşüÂâÎîÛû_#@])' || t.tok || '(?![0-9])', '@' || v_alias, 'g');
+  end loop;
+  if char_length(v_out) > 500 then return p_body; end if;
+  return v_out;
+end $$;
+
 drop function if exists public.create_post(text);
 drop function if exists public.create_post(text, text);
 drop function if exists public.create_post(text, text, uuid);
 drop function if exists public.create_post(text, text, uuid, int, int, int, int);
 -- Gönderi yaz. p_reply_to verilirse "cevap"tır: cevaplanan gönderinin yazarı etiketlenir (o hafta rumuzu ne olursa
--- olsun). Metindeki "@Lakap#145" ya da "@#145" biçimindeki rumuzlar da bu haftaki sahiplerine etiket olur (en çok 5 kişi;
+-- olsun). Metindeki "@Lakap#145", "@#145" ya da "@145" biçimindeki rumuzlar da bu haftaki sahiplerine etiket olur (en çok 5 kişi;
 -- büyük/küçük harf önemsiz). Etiket yalnızca rumuzla yapılır.
 -- Etiketlenen kişinin kim olduğu yazara gösterilmez; yalnızca etiketlenen kişi kendi ekranında görür.
 -- p_cell_q/r: petek akışına yazılır (genel akışta görünmez). p_my_q/r: telefonun bir kez aldığı konumun peteği;
@@ -2820,6 +2852,8 @@ begin
   end if;
   -- Kod paylaşımı (oda, arkadaş, etkinlik, mekân, hazine) yazma sınırından sonra bakılır (kod tahmini yapılamasın)
   if public._has_shared_code(v_body) then raise exception 'contact_not_allowed'; end if;
+  -- Etiketler akışta rumuzla görünür: "@145" → "@Kaptan#145"
+  v_body := public._expand_mentions(v_body);
   -- Ağır küfürler ***** olarak kaydedilir
   v_body := left(public._mask_profanity(v_body), 500);
   -- Sponsor hesap gerçek adıyla yazar (rumuz yerine); bu bayrak yazıldığı anki durumu saklar
@@ -2838,8 +2872,8 @@ begin
     select distinct x.uid from (
       select v_reply_author as uid where v_reply_author is not null
       union all
-      select public._alias_lookup(t.g[1] || '#' || t.g[2])
-        from regexp_matches(v_body, '@([A-Za-zÇĞİÖŞÜçğıöşüÂâÎîÛû]{0,30})#([0-9]{1,5})', 'g') as t(g)
+      select public._alias_lookup(coalesce(t.g[2], '') || '#' || t.g[3])
+        from regexp_matches(v_body, public._mention_re(), 'g') as t(g)
     ) x
     join public.profiles u on u.id = x.uid and u.banned_at is null
    where x.uid <> v.id

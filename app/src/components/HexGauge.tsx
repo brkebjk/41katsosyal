@@ -18,6 +18,9 @@ type Props = {
   testID?: string;
 };
 
+/** Hakkı biten göstergenin çerçevesi: açık kırmızı */
+const EMPTY_STROKE = '#F4A3A3';
+
 const TONES = {
   yellow: { top: '#FFC94D', bottom: '#E88A00', stroke: colors.primary, plusBg: colors.primary, plusText: colors.primaryText },
   purple: { top: '#C3AEFF', bottom: '#7C5CFF', stroke: colors.accent, plusBg: colors.accent, plusText: '#FFFFFF' },
@@ -53,7 +56,8 @@ export function HexGauge({
   const unlimited = remaining === null;
   const ratio = unlimited ? 1 : limit && limit > 0 ? Math.min(1, Math.max(0, remaining / limit)) : 0;
   const empty = !unlimited && remaining <= 0;
-  const stroke = empty ? colors.alert : t.stroke;
+  // Hak bitince çerçeve yumuşak, açık bir kırmızı olur (göz yormasın)
+  const stroke = empty ? EMPTY_STROKE : t.stroke;
   const cx = W / 2;
   const cy = H / 2;
   const r = 30;

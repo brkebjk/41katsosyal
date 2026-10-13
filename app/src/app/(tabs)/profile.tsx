@@ -246,6 +246,9 @@ function ProfileScreen() {
     }
   }
   const canRename = !verified && (isModerator || (nameLeft ?? 0) > 0);
+  // Profil resmi yüklediyse: bir sonraki değişiklik hakkına kalan gün (+ düğmesinin yerinde küçük yazı)
+  const nextPhotoAt = verified && !isModerator ? nextPhotoChangeAt(profile.photo_changed_at) : null;
+  const photoDays = nextPhotoAt ? Math.max(1, Math.ceil((nextPhotoAt.getTime() - now) / 86_400_000)) : 0;
 
   const openText = (doc: AppTextKey) => router.push({ pathname: '/belge', params: { doc } });
 
@@ -481,12 +484,18 @@ function ProfileScreen() {
             <Pressable
               onPress={() => void onAvatar()}
               accessibilityRole="button"
-              accessibilityLabel="Profil resmi ekle"
+              accessibilityLabel={
+                photoDays ? `Yeni profil resmi ${photoDays} gün sonra eklenebilir` : 'Profil resmi ekle'
+              }
               testID="profile-photo-add"
               hitSlop={6}
               style={({ pressed }) => [styles.photoAdd, pressed && styles.pressed]}
             >
-              <Ionicons name={verified && profile.photo_path ? 'camera' : 'add'} size={20} color={colors.primaryText} />
+              {photoDays ? (
+                <Text style={styles.photoDays} numberOfLines={1}>{`${photoDays} gün`}</Text>
+              ) : (
+                <Ionicons name="add" size={16} color={colors.primaryText} />
+              )}
             </Pressable>
             <Pressable
               onPress={() => router.push('/ayricaliklar')}
@@ -498,7 +507,7 @@ function ProfileScreen() {
               {subscribed ? (
                 <Text style={styles.vipText}>VIP</Text>
               ) : (
-                <Ionicons name="gift" size={22} color={colors.primaryText} />
+                <Ionicons name="gift" size={16} color={colors.primaryText} />
               )}
             </Pressable>
           </View>
@@ -520,35 +529,39 @@ function ProfileScreen() {
           </View>
         </View>
         <View style={styles.realNameRow}>
-          <Text style={styles.realName} numberOfLines={1}>
-            {profile.full_name.toLocaleUpperCase('tr-TR')}
-          </Text>
-          {/* Adın sonunda: hesap doğrulama (doğrulanmışsa sarı tik) */}
-          <Pressable
-            onPress={() =>
-              verified
-                ? void notify(
-                    'Doğrulanmış hesap',
-                    'Hesabın NVİ kimlik doğrulama servisiyle doğrulandı. Akışta rumuzunun yanında sarı tik görünür.',
-                    { icon: 'checkmark-circle', tone: 'success' },
-                  )
-                : setOverlay('identity')
-            }
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={verified ? 'Doğrulanmış hesap' : 'Hesabı doğrula'}
-            testID="profile-verify"
-            style={({ pressed }) => [!verified && styles.verifyBtn, pressed && styles.pressed]}
-          >
-            {verified ? (
-              <Ionicons name="checkmark-circle" size={22} color={colors.highlight} />
-            ) : (
-              <>
-                <Ionicons name="shield-checkmark-outline" size={14} color={colors.highlight} />
-                <Text style={styles.verifyBtnText}>Doğrula</Text>
-              </>
-            )}
-          </Pressable>
+          <View style={styles.realNameBox}>
+            <Text style={styles.realName} numberOfLines={1}>
+              {profile.full_name.toLocaleUpperCase('tr-TR')}
+            </Text>
+            {/* Adın sağında (adı kaydırmaz): hesap doğrulama (doğrulanmışsa sarı tik) */}
+            <View style={styles.verifyAnchor} pointerEvents="box-none">
+              <Pressable
+                onPress={() =>
+                  verified
+                    ? void notify(
+                        'Doğrulanmış hesap',
+                        'Hesabın NVİ kimlik doğrulama servisiyle doğrulandı. Akışta rumuzunun yanında sarı tik görünür.',
+                        { icon: 'checkmark-circle', tone: 'success' },
+                      )
+                    : setOverlay('identity')
+                }
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={verified ? 'Doğrulanmış hesap' : 'Hesabı doğrula'}
+                testID="profile-verify"
+                style={({ pressed }) => [!verified && styles.verifyBtn, pressed && styles.pressed]}
+              >
+                {verified ? (
+                  <Ionicons name="checkmark-circle" size={20} color={colors.highlight} />
+                ) : (
+                  <>
+                    <Ionicons name="shield-checkmark-outline" size={11} color={colors.highlight} />
+                    <Text style={styles.verifyBtnText}>Doğrula</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          </View>
         </View>
         {verified &&
         profile.photo_status === 'pending' &&
@@ -1038,14 +1051,14 @@ const styles = StyleSheet.create({
   gaugeSpace: { width: 60, height: 68 },
   gaugeLabel: { color: colors.textMuted, fontFamily: fonts.semi, fontSize: fontSizes.xs },
   giftVip: { backgroundColor: '#1A1200', borderColor: colors.primary },
-  vipText: { color: colors.primary, fontFamily: fonts.black, fontSize: 13, letterSpacing: 0.5 },
+  vipText: { color: colors.primary, fontFamily: fonts.black, fontSize: 10, letterSpacing: 0.3 },
   gift: {
     position: 'absolute',
-    top: -6,
-    right: -10,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    top: -4,
+    right: -6,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: colors.primary,
     borderWidth: 3,
     borderColor: colors.bg,
@@ -1092,28 +1105,32 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.lg + 2,
     textAlign: 'center',
   },
-  realNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  realNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  // Ad tam ortada durur; doğrulama düğmesi adın hemen sağına asılır (adı sola itmez)
+  realNameBox: { maxWidth: '72%', justifyContent: 'center' },
+  verifyAnchor: { position: 'absolute', left: '100%', top: 0, bottom: 0, marginLeft: 6, justifyContent: 'center' },
   photoNote: { color: colors.textMuted, fontSize: 11.5, textAlign: 'center' },
   photoNoteBad: { color: colors.danger },
   verifyBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    gap: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: colors.highlight,
     backgroundColor: colors.surface,
   },
-  verifyBtnText: { color: colors.highlight, fontFamily: fonts.extra, fontSize: 11.5 },
+  verifyBtnText: { color: colors.highlight, fontFamily: fonts.extra, fontSize: 10 },
+  photoDays: { color: colors.primaryText, fontFamily: fonts.extra, fontSize: 7.5, letterSpacing: -0.2 },
   photoAdd: {
     position: 'absolute',
     bottom: 0,
-    right: -6,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    right: -4,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: colors.primary,
     borderWidth: 3,
     borderColor: colors.bg,

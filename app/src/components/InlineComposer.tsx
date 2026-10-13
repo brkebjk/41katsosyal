@@ -228,7 +228,7 @@ export function InlineComposer({
               key={inputKey}
               value={text}
               onChangeText={setText}
-              placeholder="Etiketlemek için @ ile rumuzunu ya da @#numarasını yaz"
+              placeholder="Etiketlemek için @ ve rumuz numarasını yaz (ör. @145)"
               placeholderTextColor={colors.textMuted}
               selectionColor={colors.primary}
               multiline

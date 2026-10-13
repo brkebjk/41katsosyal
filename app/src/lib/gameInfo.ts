@@ -146,6 +146,11 @@ export function quizInfo(rules: PointRules, enabled: boolean): InfoContent {
         text: 'Uzaktan maçlardan ay boyunca kazanılan puana göre. Ayın ilk 3’üne 1 aylık abonelik hediye (moderatör onayıyla).',
       },
       {
+        icon: 'shield-checkmark-outline',
+        lead: 'Ödüller yalnızca doğrulanmış hesaba.',
+        text: 'Hesabını doğrulamayan üyeler Solo / Hafta ve Çoklu / Ay sıralamalarında yer alır ama ödül (can, abonelik) alamaz; ödül sıradaki doğrulanmış üyeye geçer. Hesabını Profil sekmesinden doğrulayabilirsin.',
+      },
+      {
         icon: 'shield-checkmark',
         lead: 'Puan sınırı.',
         text: `Bilgi Yarışması'ndan günde en çok ${rules.quizDailyPoints}, ayda en çok ${rules.quizMonthPoints} puan alınır. Yanlış cevap puan düşürmez. Seviye 4'te kazandığın puan ve bu sınırlar ${String(LEVEL_QUIZ_MULT).replace('.', ',')} katına çıkar.`,

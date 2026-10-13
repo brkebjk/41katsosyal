@@ -121,7 +121,7 @@ export function PostComposer({ visible, alias, isSponsor = false, replyTo = null
                 </Text>
               ) : (
                 <Text style={styles.footnote}>
-                  Birini etiketlemek için @ ile rumuzunu yaz (ör. @Kaptan#145 ya da kısaca @#145).
+                  Birini etiketlemek için @ ve rumuz numarasını yaz (ör. @145); akışta rumuzuyla (@Kaptan#145) görünür.
                 </Text>
               )}
               {error ? <Text style={styles.error}>{error}</Text> : null}

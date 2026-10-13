@@ -1029,11 +1029,12 @@ function PointsPopup({ lobby, onClose }: { lobby: QuizLobby | null; onClose: () 
         rows={[
           ['Solo / Hafta ilk 3', `sonraki hafta ${lobby?.champion_lives ?? 10} can`],
           ['Çoklu / Ay ilk 3', '1 aylık abonelik'],
+          ['Hesabı doğrulanmamış üye', 'ödül alamaz (sıradaki doğrulanmış üyeye geçer)'],
         ]}
       />
       <Text style={styles.ptableNote}>
         Solo / Hafta sıralamasında haftanın bütün doğruları toplanır; yalnızca en az 5 doğrulu (puan getiren) koşular
-        sayılır. Bilgi Yarışması puanları genel puanına eklenir ama petek sıralamasına sayılmaz. Sıralama ödüllerini yalnızca hesabını doğrulamış üyeler alır; doğrulamayanın ödülü sıradaki doğrulanmış üyeye geçer.
+        sayılır. Bilgi Yarışması puanları genel puanına eklenir ama petek sıralamasına sayılmaz.
       </Text>
     </Popup>
   );
@@ -1404,7 +1405,7 @@ const styles = StyleSheet.create({
   },
   heroTitle: { flexShrink: 1, color: '#F2FAFF', fontFamily: fonts.black, fontSize: fontSizes.lg, letterSpacing: 0.5 },
   onlineCount: {
-    color: colors.success,
+    color: '#4ADE80',
     fontFamily: fonts.black,
     fontSize: fontSizes.md,
     fontVariant: ['tabular-nums'],
@@ -1434,10 +1435,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: radii.pill,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    // Koyu başlık kartının üstünde: açık/koyu temada hep okunur sabit renkler
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
-  onlineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.success },
-  onlineText: { color: colors.text, fontSize: 12, fontFamily: fonts.semi },
+  onlineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4ADE80' },
+  onlineText: { color: '#F2FAFF', fontSize: 12, fontFamily: fonts.semi },
   modes: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.sm },
   modeCol: { alignItems: 'center', gap: 4 },
   circle: {
