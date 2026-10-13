@@ -77,6 +77,7 @@ function buildSections(
           ? 'Puanların hemen hesabına yazılır; ancak sıralama tablosu haftada bir (pazartesi 00:00) güncellenir. Ay bittiğinde “Geçen ay” tablosu kesin sonuçları gösterir ve kazananlar bu kesin tabloya göre belirlenir.'
           : 'Sıralama tablosu puanlarla birlikte anında güncellenir. Ay bittiğinde “Geçen ay” tablosu kesin sonuçları gösterir ve kazananlar bu tabloya göre belirlenir.',
         'Dönem sonunda Genel puan sıralamasındaki ilk 3 üye kazanır. Her dönemde 3 kazanan vardır.',
+        'Hediye alabilmek için o ay en az bir etkinliğe katılmış ya da en az bir yan yana oyun oynamış olmak gerekir. Yalnızca uzaktan oynayan üye hediye alamaz; hediye şartı sağlayan sıradaki üyeye geçer.',
         'Puanlar eşitse o puana önce ulaşan üye öne geçer.',
         'Oyun sıralamaları hediyeye dahil değildir; yalnızca görseldir.',
       ],
@@ -86,6 +87,8 @@ function buildSections(
   sections.push({
     title: 'Puanlar nasıl kazanılır',
     lines: [
+      'Oyunlarda masadaki ya da odadaki oyuncu sayısı arttıkça puan çarpanı yükselir; yalnızca 1. değil, 2., 3. ve sonraki sıralar da puan kazanır. Arkadaşlarını davet ettikçe herkes daha çok puan alır.',
+      'Uzaktan oyun (sesli sohbetle): aynı sonucun yan yana oyundaki puanının yarısını verir ve günlük/aylık puan sınırı yan yana oyundan düşüktür. Uzaktan oyun oyun hakkından yemez; yan yana oyun iki kat puan verir ve oyun hakkından yer.',
       `Etkinlik açmak: +${rules.eventCreate} puan (ayda en fazla ${rules.eventCreateMonthEvents} etkinlik).`,
       `Etkinliğe katılıp kodu yazmak: kalabalık etkinlik daha çok puan getirir (${attendTiersText(rules)}); 41. Kat Özel etkinliklerde her basamağa +${rules.eventAttendOfficialBonus} puan eklenir. Etkinlik kalabalıklaştıkça daha önce puan alanlara da aradaki fark yazılır. Katılabileceğin etkinlik sayısında sınır yoktur; ancak puan, etkinlikte en az ${rules.eventMinAttendees} kişinin katılımı kodla ve bölge bilgisiyle doğrulanınca eklenir.`,
       `Etkinliğine gelen katılımcılar: kişi başı +${rules.hostPerAttendee} puan (bir etkinlikte en fazla ${rules.hostAttendeeCap} kişi, ayda en fazla ${rules.hostMonthCap} puan).`,

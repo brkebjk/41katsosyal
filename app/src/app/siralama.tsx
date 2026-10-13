@@ -57,6 +57,8 @@ type BoardRow = {
   is_me: boolean;
   /** Geçerli oyun şampiyonu ünvanı (varsa) */
   title: string | null;
+  /** Aylık hediye şartı (o ay etkinlik katılımı ya da yan yana oyun); false ise "şart eksik" işareti görünür */
+  eligible?: boolean;
 };
 
 export default function LeaderboardScreen() {
@@ -162,10 +164,12 @@ export default function LeaderboardScreen() {
 
   const levelName = (level: number) => levels.find((l) => l.level === level)?.name ?? `Seviye ${level}`;
   const me = rows.find((r) => r.is_me) ?? null;
-  const podium = rows.filter((r) => r.place <= 3).slice(0, 3);
-  const rest = rows.filter((r) => !podium.includes(r));
-  const thisMonth = period === 'this';
   const giftOn = contestOn(contest);
+  // Hediye programı açıkken ödül şartını sağlamayanlar işaretlenir (yalnızca uzaktan oynayan ilk 3 hediye alamaz)
+  const shown = giftOn ? rows : rows.map((r) => ({ ...r, eligible: undefined }));
+  const podium = shown.filter((r) => r.place <= 3).slice(0, 3);
+  const rest = shown.filter((r) => !podium.includes(r));
+  const thisMonth = period === 'this';
   const weekly = thisMonth && info?.weekly === true;
 
   return (
@@ -626,6 +630,7 @@ function Podium({ rows, unit = 'puan' }: { rows: BoardRow[]; unit?: string }) {
               {r.full_name}
             </Text>
             <TitleBadge label={r.title} center />
+            {r.eligible === false ? <Text style={styles.noPrize}>Ödül şartı eksik</Text> : null}
             <Text style={styles.podiumPoints}>
               {fmtPts(r.points)} {unit}
             </Text>
@@ -668,6 +673,7 @@ function RankLine({
           {subscribed ? <Ionicons name="star" size={14} color={colors.primary} /> : null}
         </View>
         <TitleBadge label={row.title} />
+        {row.eligible === false ? <Text style={styles.noPrize}>Ödül şartı eksik</Text> : null}
         <Text style={styles.level}>{detail}</Text>
       </View>
       <Text style={styles.points}>{fmtPts(row.points)}</Text>
@@ -676,6 +682,7 @@ function RankLine({
 }
 
 const styles = StyleSheet.create({
+  noPrize: { color: colors.danger, fontSize: 10.5, fontFamily: fonts.semi, textAlign: 'center' },
   prizeBtn: {
     width: 58,
     height: 58,

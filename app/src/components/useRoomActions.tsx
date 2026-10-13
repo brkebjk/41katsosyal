@@ -16,6 +16,8 @@ import {
   createRoom,
   getJoinMaxDistance,
   getRoom,
+  joinRemoteRoom,
+  joinRoom,
   joinRoomWithLocation,
   type OpenRoom,
   type RoomMode,
@@ -106,10 +108,43 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
       openGameScreen(room.id, room.game_type);
       return;
     }
+    // Uzaktan oda: kod gerekmez, listeden katılınır
+    if (room.remote) {
+      void joinRemote(room);
+      return;
+    }
     // Katılım kodu girilmeden önce güvenlik uyarısı
     void confirmMeetupSafety('game').then((ok) => {
       if (ok) setCodeRoom(room);
     });
+  }
+
+  async function joinRemote(room: OpenRoom) {
+    if (lock.current) return;
+    const ok = await showDialog<boolean>({
+      title: 'Uzaktan odaya katıl',
+      message: `${room.host_name} odasında herkes kendi telefonundan, sesli sohbetle oynar. Sabah tartışmasında sırayla konuşulur. Uzaktan oyun oyun hakkından yemez; puanı yan yana oyunun yarısıdır.`,
+      icon: 'headset',
+      buttons: [
+        { label: 'Katıl', value: true, style: 'primary' },
+        { label: 'Vazgeç', value: false, style: 'ghost' },
+      ],
+      cancelValue: false,
+    });
+    if (!ok) return;
+    lock.current = true;
+    try {
+      await leaveDone.current;
+      const res = await joinRemoteRoom(room.id);
+      if (res.error || !res.roomId) {
+        await notify('Odaya katılınamadı', res.error ?? 'Biraz sonra tekrar dene.', { tone: 'danger', icon: 'alert-circle' });
+        return;
+      }
+      onChanged?.();
+      openGameScreen(res.roomId, room.game_type);
+    } finally {
+      lock.current = false;
+    }
   }
 
   /** Kod penceresinden: yazılan kodla, dokunulan odaya katılmayı dener. Hata yazısı ya da (başarıda) boş döner. */
@@ -155,10 +190,12 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
    * Ben Yöneticiyim (geceyi/oylamayı oda sahibi ilerletir). Moderatör ayrıca oynayıp oynamayacağını seçer:
    * oynarsa oyuncudur, oynamazsa anlatıcı olur. Vazgeçilirse boş döner.
    */
-  async function askVampireMode(): Promise<RoomMode | null> {
+  async function askVampireMode(remote = false): Promise<RoomMode | null> {
     const quota = isModerator
       ? ''
-      : ` Üyeler ayda ${limits.freeGames} oda açabilir (abone: ${limits.subscriptionGames}). Başlamadan odayı kapatırsan hakkın geri verilir.`;
+      : remote
+        ? ' Uzaktan oda oyun hakkından yemez.'
+        : ` Üyeler ayda ${limits.freeGames} oda açabilir (abone: ${limits.subscriptionGames}). Başlamadan odayı kapatırsan hakkın geri verilir.`;
     const first = await showDialog<'auto' | 'host' | null>({
       title: 'Vampir–Köylü nasıl oynansın?',
       message: `Otomatik Oyun: yönetici gerekmez; gece, tartışma ve oylama süreleri dolunca oyun kendiliğinden ilerler.\n\nBen Yöneticiyim: geceyi ve oylamayı sen başlatıp bitirirsin.\n\nİkisinde de sen de oynarsın.${quota}`,
@@ -210,6 +247,39 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
     lock.current = true;
     try {
       await leaveDone.current;
+      // Nerede oynanacak? Yan yana (aynı masada; 2 kat puan, oyun hakkından yer) ya da uzaktan (sesli sohbetle)
+      const where = await showDialog<'side' | 'remote' | null>({
+        title: 'Nasıl oynanacak?',
+        message:
+          'Yan yana: aynı masada oturursunuz. Puan iki katıdır, oyun hakkından yer.\n\nUzaktan: herkes kendi telefonundan, sesli sohbetle oynar; sabah tartışmasında sırayla konuşulur. Oyun hakkından yemez, puanı yarıdır.',
+        icon: 'people',
+        buttons: [
+          { label: 'Yan yana', value: 'side', style: 'primary' },
+          { label: 'Uzaktan (sesli)', value: 'remote', style: 'ghost' },
+          { label: 'Vazgeç', value: null, style: 'ghost' },
+        ],
+        cancelValue: null,
+      });
+      if (!where) return;
+      if (where === 'remote') {
+        const rmode = await askVampireMode(true);
+        if (!rmode) return;
+        const created = await createRoom('vampire_villager', rmode, undefined, undefined, undefined, true);
+        if (created.error || !created.room) {
+          await notify('Oda açılamadı', created.error ?? 'Biraz sonra tekrar dene.', {
+            tone: 'danger',
+            icon: 'alert-circle',
+          });
+          return;
+        }
+        if (rmode !== 'narrator') {
+          const joined = await joinRoom(created.room.code);
+          if (joined.error) await notify('Odaya girilemedi', joined.error, { tone: 'danger', icon: 'alert-circle' });
+        }
+        onChanged?.();
+        openGameScreen(created.room.id, 'vampire_villager');
+        return;
+      }
       const mode = await askVampireMode();
       if (!mode) return;
       // Yan yana oynanan oyunu açarken (oyuncu olarak girecekse) konum izni zorunludur; izin yoksa oda hiç açılmaz.

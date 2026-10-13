@@ -54,6 +54,8 @@ export type OpenRoom = {
   place_r: number | null;
   /** Oda sahibinin yazdığı adres tarifi (ör. “Cafe Nova'nın üst katı”) */
   place_note: string | null;
+  /** Uzaktan oda: herkes kendi telefonundan, sesli sohbetle oynar; listeden kodsuz katılınır */
+  remote?: boolean;
 };
 
 /** Oda açarken seçilen yer: haritadan seçilen petek ve adres tarifi. */
@@ -80,6 +82,9 @@ export type LeftRoom = { room_id: string; game: string; result: 'closed' | 'remo
 
 const ROOM_TEXT: Record<string, string> = {
   premium_required: 'Bu odaya katılmak için abonelik gerekiyor.',
+  room_closed: 'Bu oda artık katılıma açık değil.',
+  kicked_from_room: 'Bu odadan oylamayla çıkarıldın; yeniden giremezsin.',
+  remote_not_allowed: 'Uzaktan oda yalnızca Vampir–Köylü için ve etkinlik dışında açılabilir.',
   quota_exceeded: 'Bu ayki oyun başlatma hakkını kullandın. Hak her ay başında yenilenir.',
   room_not_found: 'Bu kodla bir oda bulunamadı. Kodu kontrol edip tekrar dene.',
   wrong_code: 'Bu kod bu odanın kodu değil. Kodu oda sahibinden tekrar sor.',
@@ -187,6 +192,12 @@ export async function joinRoomWithLocation(
   return joinRoom(code, listedRoomId, loc.cell);
 }
 
+/** Uzaktan odaya listeden kodsuz katılır (yalnızca bekleme salonundaki uzaktan Vampir–Köylü odası) */
+export async function joinRemoteRoom(roomId: string): Promise<{ roomId: string | null; error: string | null }> {
+  const { data, error } = await callRpc<string>('join_remote_room', { p_room_id: roomId }, ROOM_TEXT);
+  return { roomId: error ? null : (data ?? null), error };
+}
+
 /**
  * Odadan ayrılır. Oda sahibiysen oda kapanır; oyun başlamışsa oyuncu elenir ve geri dönemez.
  * (Yan yana oynanan oyunlarda bu kural geçerlidir; çekilişte bekleme salonundan çıkılır.)
@@ -230,8 +241,10 @@ export async function createRoom(
   cell?: Cell,
   place?: RoomPlace,
   eventId?: string,
+  remote = false,
 ): Promise<{ room: CreatedRoom | null; error: string | null }> {
   const args: Record<string, unknown> = { p_game_type: gameType };
+  if (remote) args.p_remote = true;
   if (eventId) args.p_event_id = eventId;
   if (mode) args.p_mode = mode;
   if (cell) {

@@ -13,6 +13,7 @@ import { InfoLink, InfoModal } from '@/components/InfoModal';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { RoleCard } from '@/components/RoleCard';
 import { useSafetyMenu } from '@/components/SafetyMenu';
+import { VoicePanel } from '@/components/VoicePanel';
 import { Screen } from '@/components/Screen';
 import { SectionHeader } from '@/components/SectionHeader';
 import { DeadChat, RoleGallery } from '@/components/VampireExtras';
@@ -29,6 +30,7 @@ import {
   useElapsedSeconds,
   type PickOption,
 } from '@/components/VampireParts';
+import { useAuth } from '@/lib/auth';
 import { confirmAction, notify, showDialog } from '@/lib/dialog';
 import { fmtPts } from '@/lib/labels';
 import { VAMPIRE_RANK_ITEM, type InfoItem } from '@/lib/gameInfo';
@@ -132,6 +134,7 @@ export default function VampireScreen() {
 
 function Game({ roomId }: { roomId: string }) {
   const { width } = useWindowDimensions();
+  const myId = useAuth().profile?.id ?? null;
   const [view, setView] = useState<VvView | null>(null);
   /** Görünümün sunucudan alındığı an (ms); geri sayım bu andan itibaren akıtılır */
   const [viewAt, setViewAt] = useState(0);
@@ -948,6 +951,10 @@ function Game({ roomId }: { roomId: string }) {
       <BackBlocker enabled={blocking} onBack={requestLeave} />
       <Hero view={view} />
       {connError ? <Text style={styles.warn}>Bağlantı koptu, yeniden deniyor…</Text> : null}
+      {/* Uzaktan oda: sesli sohbet (sırayla konuşma, mikrofon, ses filtresi, oylamayla atma) */}
+      {view.remote && (phase === 'lobby' || playing) && !me.left && myId ? (
+        <VoicePanel roomId={roomId} myId={myId} />
+      ) : null}
       {playing || phase === 'lobby' ? (
         <Pressable
           onPress={() => setSoundOn(!sound)}

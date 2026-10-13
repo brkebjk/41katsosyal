@@ -13,6 +13,8 @@ export type RankRow = {
   is_me: boolean;
   /** Geçerli oyun şampiyonu ünvanı (varsa). Ünvan yalnızca gerçek adın göründüğü yerlerde gösterilir. */
   title: string | null;
+  /** Aylık hediye şartı: o ay en az bir etkinlik katılımı ya da yan yana oyun (eski sunucuda gelmez) */
+  eligible?: boolean;
 };
 
 /** 'this' = bu ay, 'last' = geçen ay. Sıralama her ay sıfırdan başlar. */
@@ -218,6 +220,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   event_team: 'Ekip bonusu',
   event_reversal: 'İptal edilen etkinlik (geri alındı)',
   game_play: 'Oyun oynadın',
+  game_remote: 'Uzaktan oyun oynadın',
   quiz_play: 'Bilgi Yarışması',
   game_win: 'Oyun kazandın (eski kural)',
   admin: 'Moderatör puanı',

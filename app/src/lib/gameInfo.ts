@@ -229,6 +229,11 @@ export const HOW_TO_PLAY: Record<string, InfoItem[]> = {
       text: 'Sabah kimin öldüğü açıklanır. Masada konuşursunuz, sonra herkes oy verip bir kişiyi köyden çıkarır.',
     },
     {
+      icon: 'headset',
+      lead: 'Uzaktan oyna.',
+      text: 'Odayı “Uzaktan (sesli)” açarsan herkes kendi telefonundan oynar. Sabah herkes sırayla 30 sn konuşur; mikrofonunu kapatabilir, ses filtresiyle sesini değiştirebilirsin. Ses kaydedilmez. Uzaktan oyun hak yemez, puanı yarıdır.',
+    },
+    {
       icon: 'trophy',
       lead: 'Kazanmak.',
       text: 'Bütün vampirler elenirse köylüler, vampirler köylülere eşit olursa vampirler kazanır.',

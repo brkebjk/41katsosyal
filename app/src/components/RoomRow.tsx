@@ -18,7 +18,7 @@ type Props = {
 export function RoomRow({ room, isModerator, onPress }: Props) {
   // Başkasının odasında "Katıl" kod sorar; kod listede görünmez, oda sahibinden öğrenilir.
   const label = room.is_mine ? 'Senin odan' : room.joined ? 'Odaya dön' : isModerator ? 'Aç' : 'Katıl';
-  const needsCode = label === 'Katıl';
+  const needsCode = label === 'Katıl' && !room.remote;
   const district = room.place_q !== null && room.place_r !== null ? districtOf(room.place_q, room.place_r) : null;
   const where = [district, room.place_note].filter(Boolean).join(' · ');
   return (
@@ -39,6 +39,14 @@ export function RoomRow({ room, isModerator, onPress }: Props) {
           <Text style={styles.meta} numberOfLines={1}>
             {`Etkinlik: ${room.event_title} · yalnızca doğrulanmış katılımcılar`}
           </Text>
+        ) : null}
+        {room.remote ? (
+          <View style={styles.foot}>
+            <Ionicons name="headset" size={14} color={colors.primary} />
+            <Text style={[styles.meta, styles.where]} numberOfLines={2}>
+              Uzaktan · sesli sohbetle · kodsuz katılınır
+            </Text>
+          </View>
         ) : null}
         {where ? (
           <View style={styles.foot}>

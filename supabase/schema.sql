@@ -261,6 +261,17 @@ update public.game_types set presence_required = false where key = 'raffle';
 alter table public.game_types add column if not exists remote boolean not null default false;
 alter table public.game_types add column if not exists uses_quota boolean not null default true;
 alter table public.game_rooms add column if not exists host_seen_at timestamptz not null default now();
+-- Uzaktan oda (Vampir–Köylü): herkes kendi telefonundan, sesli sohbetle oynar. Konum, bölge ve yakınlık aranmaz.
+-- Puanı yan yana oyunun yarısıdır ve ayrı (daha düşük) günlük/aylık sınırı vardır (kaynak: game_remote).
+alter table public.game_rooms add column if not exists remote boolean not null default false;
+-- Uzaktan odada oylamayla atılanlar: aynı odaya geri giremez. Doğrudan okunamaz (yalnızca sunucu fonksiyonları).
+create table if not exists public.room_bans (
+  room_id uuid not null references public.game_rooms (id) on delete cascade,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (room_id, user_id)
+);
+alter table public.room_bans enable row level security;
 -- Odanın haritadaki bölgesi (petek) ve adres tarifi. Yan yana oynanan oyunu açan kişi haritadan peteği seçer ve
 -- "Adres Tarifi" yazar (ör. "Kent Meydanı Kafe, 2. kat"); açık odalar listesinde ve haritada petek sayfasında görünür.
 -- Eski odalarda boştur. Kod GİZLİ kalır (bkz. room_codes); bu alanlar kodu açığa çıkarmaz.
@@ -2347,6 +2358,10 @@ begin
   return new;
 end $$;
 
+-- TEMEL İLKE (bütün yan yana ve uzaktan oyunlarda korunur): masadaki / odadaki oyuncu sayısı arttıkça puan çarpanı
+-- yükselir ve yalnızca 1. değil, 2., 3. ve sonraki sıralar da puan kazanır (en az 1). Böylece oyuncular arkadaş
+-- gruplarını uygulamaya davet etmeye teşvik edilir. Uzaktan oyun aynı formülün yarısını alır; yeni oyunlar da bu
+-- formülü (_game_results / _game_top_points) kullanmalıdır.
 -- Bir oyunun sonucu: oyuncu sayısına ve BİTİRDİĞİ SIRAYA göre puan.
 --   puan = en az 1, en çok `üst sınır` (yan yana oyunda pts_game_top_cap = 12, Bilgi Yarışması'nda pts_quiz_top_cap = 3)
 --   en iyi puan (1. sıra) = oyuncu sayısı kadar (üst sınıra kadar); sıra ilerledikçe doğrusal azalır:
@@ -2418,7 +2433,9 @@ end $$;
 -- Çekilişte 1, diğer oyunlarda en az 2 üye (moderatör sayılmaz) katılmışsa sayılır. Oyundan ayrılan ya da atılan sayılmaz.
 -- Kazananı belli olmayan Vampir–Köylü (oda sahibi erken bitirdi) oynanmış sayılmaz ve puan vermez.
 -- Puan: _game_results (oyuncu sayısı ve sıra). Yan yana oyunda en az pts_game_min_players (4), Bilgi Yarışması'nda
--- pts_quiz_min_players (2) kişi gerekir. Günlük ve aylık üst sınırlar iki tür için ayrıdır (quiz_play, game_play).
+-- pts_quiz_min_players (2) kişi gerekir. Günlük ve aylık üst sınırlar türlere göre ayrıdır (quiz_play, game_play,
+-- game_remote). Uzaktan oyun yan yana oyunun yarısı kadar puan verir ve sınırları daha düşüktür: yalnızca uzaktan
+-- oynayarak aylık sıralamada öne geçilemez (aylık ödül için ayrıca etkinlik katılımı ya da yan yana oyun şartı vardır).
 create or replace function public.record_game_plays()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare
@@ -2426,13 +2443,18 @@ declare
   v_min int := case when new.game_type = 'raffle' then 1 else 2 end;
   v_title text;
   v_today timestamptz := date_trunc('day', now() at time zone 'Europe/Istanbul') at time zone 'Europe/Istanbul';
-  v_src text := case when new.game_type = 'quiz' then 'quiz_play' else 'game_play' end;
+  v_src text := case when new.game_type = 'quiz' then 'quiz_play'
+                     when new.remote then 'game_remote' else 'game_play' end;
   v_min_pts int := case when new.game_type = 'quiz' then public.setting_int('pts_quiz_min_players', 2)
                         else public.setting_int('pts_game_min_players', 4) end;
   v_daily int := case when new.game_type = 'quiz' then public.setting_int('pts_quiz_daily_cap', 3)
+                      when new.remote then public.setting_int('pts_remote_daily_cap', 2)
                       else public.setting_int('pts_game_daily_cap', 5) end;
   v_month int := case when new.game_type = 'quiz' then public.setting_int('pts_quiz_month_cap', 10)
+                      when new.remote then public.setting_int('pts_remote_month_cap', 6)
                       else public.setting_int('pts_game_month_cap', 12) end;
+  -- Uzaktan oyunun puanı yan yana oyunun bu yüzdesidir (varsayılan %50, en çok %80)
+  v_remote_pct int := least(80, greatest(10, public.setting_int('pts_remote_pct', 50)));
   v_rated boolean;
   v_pts numeric;
   v_ach jsonb;
@@ -2504,13 +2526,18 @@ begin
       if new.event_id is not null and new.game_type not in ('raffle', 'quiz') then
         v_pts := round(v_pts * 1.25 * 2) / 2.0;
       end if;
+      -- Uzaktan oyun: puan yan yana oyunun yarısı (0,5'e yuvarlanır, en az 0,5)
+      if new.remote then
+        v_pts := greatest(0.5, round(v_pts * v_remote_pct / 100.0 * 2) / 2.0);
+      end if;
       insert into public.point_events (user_id, amount, reason, source, room_id)
       values (g.user_id, v_pts,
               coalesce(v_title, new.game_type) || ': ' || g.best_rank || '. sıra, ' || g.players || ' oyuncu'
                 || (case when new.game_type <> 'quiz' and g.players > 4 then ' (kalabalık çarpanı)' else '' end)
                 || (case when v_mult then ' · Vampir ödülü ×1,25' else '' end)
                 || (case when new.event_id is not null and new.game_type not in ('raffle', 'quiz')
-                         then ' · Etkinlik oyunu ×1,25' else '' end),
+                         then ' · Etkinlik oyunu ×1,25' else '' end)
+                || (case when new.remote then ' · Uzaktan (%' || v_remote_pct || ')' else '' end),
               v_src, new.id);
       -- Aylık oyun sıralaması ve şampiyon ünvanı, hesaba yazılan bu puanlardan hesaplanır (hak sınırları herkes için aynı)
       insert into public.game_play_log (user_id, game_type, room_id, points, won)
@@ -2542,10 +2569,15 @@ begin
   end if;
   v_awarded := coalesce((select sum(pe.amount) from public.point_events pe
                           where pe.room_id = p_room_id and pe.user_id = auth.uid()
-                            and pe.source in ('game_play', 'quiz_play')), 0)::numeric;
+                            and pe.source in ('game_play', 'quiz_play', 'game_remote')), 0)::numeric;
   v_min := case when r.game_type = 'quiz' then public.setting_int('pts_quiz_min_players', 2)
                 else public.setting_int('pts_game_min_players', 4) end;
-  return query select g.best_rank, g.players, g.points, v_awarded,
+  -- Uzaktan oyunda oyunun puan değeri de yarıya iner (kullanıcıya gösterilen değer yazılanla tutarlı olsun)
+  return query select g.best_rank, g.players,
+    (case when r.remote
+          then greatest(0.5, round(g.points * least(80, greatest(10, public.setting_int('pts_remote_pct', 50))) / 100.0 * 2) / 2.0)
+          else g.points end)::numeric,
+    v_awarded,
     (case when v_awarded > 0 then 'ok' when g.players < v_min then 'too_few' else 'cap' end)::text;
 end $$;
 
@@ -3452,13 +3484,18 @@ begin
 
   -- Yan yana oynanan oyuna girerken telefonun bulunduğu petek (bir kez) bildirilmek zorunda; bildirilmezse
   -- 'location_required' ile reddedilir ve uygulama konumu sorup tekrar dener. Ham konum sunucuya gelmez.
-  if public._game_needs_location(v_room.game_type) and not public._game_cell_given(p_cell_q, p_cell_r) then
+  if public._game_needs_location(v_room.game_type) and not v_room.remote
+     and not public._game_cell_given(p_cell_q, p_cell_r) then
     raise exception 'location_required';
+  end if;
+  -- Oylamayla atılan kişi aynı odaya geri giremez
+  if exists (select 1 from public.room_bans b where b.room_id = v_room.id and b.user_id = v.id) then
+    raise exception 'kicked_from_room';
   end if;
   -- Oda bir bölgede açıldıysa katılan kişi de o bölgenin yakınında (en çok game_join_max_cell_distance petek) görünmeli.
   -- Telefonun bildirdiği petek kaba bir kontroldür (tam konum değil); asıl koruma koddur: kodu yalnızca oda sahibi söyler.
   -- Çekilişe haritanın her yerinden katılınabilir (Paket 24); diğer yan yana oyunlarda yakınlık aranır
-  if v_room.place_q is not null and v.role <> 'admin' and v_room.game_type <> 'raffle'
+  if v_room.place_q is not null and v.role <> 'admin' and v_room.game_type <> 'raffle' and not v_room.remote
      and public._game_cell_given(p_cell_q, p_cell_r)
      and public.setting_int('game_join_max_cell_distance', 1) >= 0
      and public._hex_dist(p_cell_q, p_cell_r, v_room.place_q, v_room.place_r)
@@ -3470,7 +3507,7 @@ begin
   values (v_room.id, v.id, v.full_name);
 
   -- Petek Kocaeli içindeyse kimse görünmeden haritadaki yoğunluğa sayılır (aynı odada bir kez)
-  if public._game_cell_given(p_cell_q, p_cell_r)
+  if public._game_cell_given(p_cell_q, p_cell_r) and not v_room.remote
      and exists (select 1 from public.game_types where key = v_room.game_type and presence_required)
      and public._map_cell_ok(p_cell_q, p_cell_r) then
     perform public._map_cleanup();
@@ -3479,6 +3516,21 @@ begin
     on conflict do nothing;
   end if;
   return v_room.id;
+end $$;
+
+-- Uzaktan oda: açık odalar listesinden KODSUZ katılınır (oyuncular yan yana olmadığı için kod paylaşılamaz).
+-- Yalnızca bekleme salonundaki uzaktan Vampir–Köylü odası; diğer bütün kurallar join_room'daki gibidir.
+create or replace function public.join_remote_room(p_room_id uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v_code text;
+begin
+  perform public._require_user();
+  select c.code into v_code
+    from public.game_rooms r join public.room_codes c on c.room_id = r.id
+   where r.id = p_room_id and r.remote and r.status = 'lobby' and r.game_type = 'vampire_villager';
+  if v_code is null then raise exception 'room_closed'; end if;
+  return public.join_room(v_code, p_room_id, null, null);
 end $$;
 
 -- Odadan ayrıl. Yan yana oynanan oyunlarda: bekleme salonundaysan listeden çıkarsın, oyun başlamışsa
@@ -3549,6 +3601,7 @@ begin
    where gr.host_id = v.id and (gr.status <> 'cancelled' or gr.started_at is not null)
      and gr.created_at >= public._month_start()
      and exists (select 1 from public.game_types gt where gt.key = gr.game_type and gt.uses_quota)
+     and not gr.remote -- uzaktan oda oyun hakkından düşmez (yalnızca yan yana oyun düşer)
      and not exists (select 1 from public.sponsor_credits sc where sc.room_id = gr.id);
   v_credit := public._free_sponsor_credit(v.id);
   select sc.created_at + make_interval(days => greatest(1, public.setting_int('sponsor_credit_valid_days', 30)))
@@ -3980,10 +4033,13 @@ exception when duplicate_object then null; end $$;
 drop function if exists public.create_room(text, uuid);
 drop function if exists public.create_room(text, uuid, text);
 drop function if exists public.create_room(text, uuid, text, int, int);
+drop function if exists public.create_room(text, uuid, text, int, int, int, int, text);
+-- p_remote: uzaktan oda (yalnızca Vampir–Köylü, etkinlik dışı): konum, bölge ve adres tarifi istenmez; oyuncular
+-- sesli sohbetle oynar. Oyun hakkı yan yana odayla aynı şekilde harcanır.
 create or replace function public.create_room(p_game_type text, p_event_id uuid default null, p_mode text default null,
                                               p_cell_q int default null, p_cell_r int default null,
                                               p_place_q int default null, p_place_r int default null,
-                                              p_place_note text default null)
+                                              p_place_note text default null, p_remote boolean default false)
 returns public.created_room language plpgsql security definer set search_path = public as $$
 declare
   v public.profiles;
@@ -4002,6 +4058,10 @@ declare
 begin
   v := public._require_writer(null);
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
+  p_remote := coalesce(p_remote, false);
+  if p_remote and (p_game_type <> 'vampire_villager' or p_event_id is not null) then
+    raise exception 'remote_not_allowed';
+  end if;
   perform public._sweep_live_rooms();
   -- Paket 27: etkinlik oyunu / etkinlik çekilişi. Yalnızca etkinliği açan kişi (ya da moderatör) açar; en az
   -- pts_event_min_attendees (4) doğrulanmış katılımcı gerekir. Oyun: etkinlik "oyunlu" olmalı, başlamış olmalı, en az 4
@@ -4077,13 +4137,15 @@ begin
     -- Oyun hakkı: çekiliş ve uzaktan oyun (Bilgi Yarışması) hakkı harcamaz.
     -- Önce varsa sponsor koduyla kazanılan EK hak harcanır (süresi dolabilir); yoksa aylık hak. Sponsor hakkıyla açılan
     -- oda aylık sayıma girmez. Puan sınırları (günlük/aylık oyun puanı) oda sayısına bakmaz, bu yüzden değişmez.
-    if p_event_id is null and exists (select 1 from public.game_types where key = p_game_type and uses_quota) then
+    -- Uzaktan oda oyun hakkından düşmez: yan yana oyun iki kat puan verdiği için değerlidir (abonelik hakkı artırır)
+    if p_event_id is null and not p_remote and exists (select 1 from public.game_types where key = p_game_type and uses_quota) then
       v_credit := public._free_sponsor_credit(v.id);
       if v_credit is null
          and (select count(*) from public.game_rooms gr
                where gr.host_id = v.id and (status <> 'cancelled' or started_at is not null)
                  and gr.created_at >= public._month_start() and gr.event_id is null
                  and exists (select 1 from public.game_types gt where gt.key = gr.game_type and gt.uses_quota)
+                 and not gr.remote
                  and not exists (select 1 from public.sponsor_credits sc where sc.room_id = gr.id))
              >= v_limit then
         raise exception 'quota_exceeded';
@@ -4093,14 +4155,14 @@ begin
 
   -- Yan yana oynanan oyunu açarken de (oyuncu olarak girecekse) petek bildirilmek zorunda; konum verilmeden oda açılmaz.
   -- Yalnızca anlatıcı olan moderatör oyuncu sayılmaz, konum istenmez.
-  if public._game_needs_location(p_game_type)
+  if public._game_needs_location(p_game_type) and not p_remote
      and coalesce(v_mode, '') <> 'narrator'
      and not public._game_cell_given(p_cell_q, p_cell_r) then
     raise exception 'location_required';
   end if;
 
   -- Bölge ve adres tarifi: Kocaeli karasındaki bir petek + en az 3 karakterlik tarif. Oda sahibi o bölgeye yakın olmalı.
-  v_needs_place := public.setting_bool('game_place_required')
+  v_needs_place := public.setting_bool('game_place_required') and not p_remote
                    and exists (select 1 from public.game_types where key = p_game_type and presence_required);
   if v_needs_place then
     if p_place_q is null or p_place_r is null or not public._map_cell_ok(p_place_q, p_place_r) then
@@ -4113,11 +4175,11 @@ begin
     end if;
   end if;
 
-  insert into public.game_rooms (game_type, event_id, host_id, config, place_q, place_r, place_note)
+  insert into public.game_rooms (game_type, event_id, host_id, config, place_q, place_r, place_note, remote)
   values (p_game_type, p_event_id, v.id,
           case when v_mode is null then '{}'::jsonb else jsonb_build_object('mode', v_mode) end,
           case when v_needs_place then p_place_q end, case when v_needs_place then p_place_r end,
-          case when v_needs_place then v_note end)
+          case when v_needs_place then v_note end, p_remote)
   returning * into v_room;
   if v_credit is not null then
     update public.sponsor_credits set room_id = v_room.id where id = v_credit;
@@ -4608,7 +4670,7 @@ create or replace function public.list_open_rooms(p_game_type text default null)
 returns table (
   id uuid, game_type text, game_title text, host_name text, is_official boolean,
   is_mine boolean, player_count int, joined boolean, event_title text, created_at timestamptz, host_title text,
-  place_q int, place_r int, place_note text
+  place_q int, place_r int, place_note text, remote boolean
 )
 language plpgsql security definer set search_path = public as $$
 begin
@@ -4625,7 +4687,7 @@ begin
          e.title,
          r.created_at,
          public._title_join((select array_agg(t.label order by t.sort_order) from ct t where t.user_id = r.host_id)),
-         r.place_q, r.place_r, r.place_note
+         r.place_q, r.place_r, r.place_note, r.remote
     from public.game_rooms r
     join public.game_types gt on gt.key = r.game_type
     join public.profiles h on h.id = r.host_id
@@ -4940,8 +5002,20 @@ begin
     end if;
 
   elsif v_phase = 'dawn' then
-    -- Sabah: masadakiler konuşur, süre bitince oylama kendiliğinden başlar
-    if v_age >= coalesce((v_t->>'discuss')::int, 120) then perform public._vv_go_vote(p_room_id); end if;
+    -- Sabah: masadakiler konuşur, süre bitince oylama kendiliğinden başlar.
+    -- Uzaktan odada sırayla sesli konuşulur: herkesin sırası bitince (en az 20 sn sonra) oylama başlar; en geç
+    -- (hayatta olan oyuncu × konuşma süresi + 15 sn) ya da ayarlı tartışma süresi, hangisi uzunsa.
+    if r.remote then
+      if (v_age >= 20 and public._voice_turns_done(p_room_id))
+         or v_age >= greatest(coalesce((v_t->>'discuss')::int, 120),
+                              (select count(*)::int from public.room_players rp
+                                where rp.room_id = p_room_id and rp.left_at is null and rp.is_alive)
+                              * public._voice_turn_secs() + 15) then
+        perform public._vv_go_vote(p_room_id);
+      end if;
+    elsif v_age >= coalesce((v_t->>'discuss')::int, 120) then
+      perform public._vv_go_vote(p_room_id);
+    end if;
 
   elsif v_phase = 'vote' then
     select count(*)::int into v_pending
@@ -5776,8 +5850,10 @@ begin
       'is_moderator', (v_host_role = 'admin'),
       'is_me', (r.host_id = v.id)),
     'mode', v_mode,
+    'remote', r.remote,
     'close_reason', r.state->>'close_reason',
-    'phase_limit', (case when v_mode = 'auto' and r.status = 'playing'
+    -- Uzaktan odada sabahın süresi konuşma sırasına bağlıdır (sesli sohbet panelinde sıra ve süre görünür)
+    'phase_limit', (case when v_mode = 'auto' and r.status = 'playing' and not (r.remote and v_phase = 'dawn')
                          then (r.state->'timers'->>(case v_phase when 'reveal' then 'reveal' when 'night' then 'night'
                                                      when 'dawn' then 'discuss' when 'vote' then 'vote'
                                                      when 'vote_result' then 'result' else 'none' end))::int
@@ -5817,15 +5893,28 @@ drop function if exists public.my_active_rooms();
 -- "points" o ayki puandır, "level" ise toplam puana göre seviyedir. O ay puanı olmayan listede yoktur.
 -- "title" üyenin geçerli oyun şampiyonu ünvanıdır (varsa); gerçek ad gösterilen her yerde yanında görünür.
 -- Tabloyu yenileyebildiği için "volatile"dır (PostgREST'te salt okunur işlemde çalışmaz).
+-- Aylık ödül şartı: o ay en az bir etkinlik katılımı ya da yan yana oyun puanı olmalı (yalnızca uzaktan oynayan ilk 3
+-- hediyesini alamaz; hediye sıradaki şartı sağlayan üyeye geçer). Sıralamada "eligible" sütunu bunu gösterir.
+create or replace function public._prize_eligible(p_user uuid, p_from timestamptz, p_to timestamptz)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.point_events pe
+                  where pe.user_id = p_user and pe.created_at >= p_from and pe.created_at < p_to
+                    and pe.source in ('event_attend', 'game_play') and pe.amount > 0);
+$$;
+
 drop function if exists public.get_monthly_leaderboard(int);
 drop function if exists public.get_monthly_leaderboard(int, int);
 create or replace function public.get_monthly_leaderboard(p_limit int default 100, p_months_ago int default 0)
-returns table (place bigint, full_name text, points numeric, level int, is_premium boolean, is_me boolean, title text)
+returns table (place bigint, full_name text, points numeric, level int, is_premium boolean, is_me boolean, title text,
+               eligible boolean)
 language plpgsql volatile security definer set search_path = public as $$
 #variable_conflict use_column
 declare
   v_ago int := greatest(0, least(coalesce(p_months_ago, 0), 24));
   v_lim int := greatest(1, least(coalesce(p_limit, 100), 500));
+  v_lstart timestamp := date_trunc('month', (now() at time zone 'Europe/Istanbul') - make_interval(months => v_ago));
+  v_from timestamptz := v_lstart at time zone 'Europe/Istanbul';
+  v_to timestamptz := (v_lstart + interval '1 month') at time zone 'Europe/Istanbul';
 begin
   if not public._is_active_user() then return; end if;
 
@@ -5837,7 +5926,8 @@ begin
            coalesce((select max(l.level) from public.levels l where l.min_points <= pr.points), 1),
            (pr.premium_until is not null and pr.premium_until > now()),
            (pr.id = auth.uid()),
-           public._title_join((select array_agg(c.label order by c.sort_order) from ct c where c.user_id = pr.id))
+           public._title_join((select array_agg(c.label order by c.sort_order) from ct c where c.user_id = pr.id)),
+           public._prize_eligible(pr.id, v_from, v_to)
       from public.rank_snapshots s
       join public.profiles pr on pr.id = s.user_id
      where s.kind = 'points' and pr.banned_at is null and pr.role = 'user'
@@ -5870,7 +5960,8 @@ begin
      where pr.banned_at is null and pr.role = 'user'
   )
   select t.place, t.fname, t.pts, t.lvl, t.prem, t.me,
-         public._title_join((select array_agg(c.label order by c.sort_order) from ct c where c.user_id = t.uid))
+         public._title_join((select array_agg(c.label order by c.sort_order) from ct c where c.user_id = t.uid)),
+         public._prize_eligible(t.uid, v_from, v_to)
     from t
    where t.place <= v_lim or t.me
    order by t.place, t.fname;
@@ -15093,6 +15184,337 @@ insert into public.app_settings (key, value, description) values
    'Kimlik doğrulama açık mı? (true yapınca doğrulama düğmeleri görünür ve sıralama ödülleri yalnızca doğrulanmış üyelere verilir. Çalışan bir doğrulama yöntemi bağlanmadan AÇMA)')
 on conflict (key) do nothing;
 
+-- ---- Sesli sohbet (uzaktan odalar) ------------------------------------------------------------------------------
+-- Ses Agora üzerinden taşınır; KAYDEDİLMEZ, sunucumuza ses gelmez. Burada yalnızca kimin odada olduğu, konuşma sırası,
+-- mikrofon/filtre durumu ve aylık dakika sayacı tutulur. Kurallar:
+--   * Yalnızca uzaktan Vampir–Köylü odasında. Oyuncular sırayla konuşur: sabah tartışmasında (dawn) hayatta olan her
+--     oyuncu voice_turn_seconds (30) saniye konuşur, sonra sıradakine geçilir. Mikrofonunu kapatan, uygulamayı arka plana
+--     alan ya da telefon çağrısı gelen kişinin sırası atlanır. Anlatıcı (oynamayan moderatör) her zaman konuşabilir.
+--   * Konuşma sırası sunucuda belirlenir; uygulama yalnızca sırası gelenin mikrofonunu açar.
+--   * Oylamayla atma: odadaki oyuncuların yarısından fazlası bir kişiyi atmak isterse kişi odadan çıkar ve geri giremez.
+--   * Aylık kişi-dakika sınırı (voice_month_minutes) dolunca sesli sohbet o ay kapanır (ücret çıkmasın).
+create sequence if not exists public.voice_uid_seq start 1000;
+
+create table if not exists public.room_voice_members (
+  room_id uuid not null references public.game_rooms (id) on delete cascade,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  agora_uid bigint not null default nextval('public.voice_uid_seq'),
+  mic_on boolean not null default true,
+  filter_on boolean not null default false,
+  away boolean not null default false,
+  last_ping timestamptz,
+  joined_at timestamptz not null default now(),
+  primary key (room_id, user_id)
+);
+alter table public.room_voice_members enable row level security;
+
+create table if not exists public.room_voice_turns (
+  room_id uuid primary key references public.game_rooms (id) on delete cascade,
+  phase_key text not null,
+  speakers uuid[] not null default '{}',
+  idx int not null default 0,
+  turn_ends_at timestamptz
+);
+alter table public.room_voice_turns enable row level security;
+
+create table if not exists public.room_kick_votes (
+  room_id uuid not null references public.game_rooms (id) on delete cascade,
+  target_id uuid not null references public.profiles (id) on delete cascade,
+  voter_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (room_id, target_id, voter_id)
+);
+alter table public.room_kick_votes enable row level security;
+
+create table if not exists public.voice_usage (
+  month date primary key,
+  minutes int not null default 0
+);
+alter table public.voice_usage enable row level security;
+
+create or replace function public._voice_month()
+returns date language sql stable as $$
+  select date_trunc('month', now() at time zone 'Europe/Istanbul')::date;
+$$;
+
+-- Bu ay ses kotası kaldı mı?
+create or replace function public._voice_budget_ok()
+returns boolean language sql stable security definer set search_path = public as $$
+  select public.setting_bool('voice_enabled')
+     and coalesce((select minutes from public.voice_usage where month = public._voice_month()), 0)
+         < greatest(0, public.setting_int('voice_month_minutes', 9000));
+$$;
+
+create or replace function public._voice_turn_secs()
+returns int language sql stable set search_path = public as $$
+  select least(120, greatest(10, public.setting_int('voice_turn_seconds', 30)));
+$$;
+
+-- Oyuncu sesli sohbete katılabilir mi? (odada etkin oyuncu, ya da anlatıcı / odaya bakan moderatör)
+create or replace function public._voice_allowed(r public.game_rooms, p_user uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select r.remote and r.game_type = 'vampire_villager' and r.status in ('lobby', 'playing')
+     and not exists (select 1 from public.room_bans b where b.room_id = r.id and b.user_id = p_user)
+     and (exists (select 1 from public.room_players rp
+                   where rp.room_id = r.id and rp.user_id = p_user and rp.left_at is null)
+          or r.host_id = p_user
+          or exists (select 1 from public.profiles p where p.id = p_user and p.role = 'admin' and p.banned_at is null));
+$$;
+
+-- Anlatıcı mı? (oynamayan moderatör: sıra beklemeden konuşur)
+create or replace function public._voice_is_narrator(r public.game_rooms, p_user uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select r.host_id = p_user and public._vv_mode(r) = 'narrator';
+$$;
+
+-- Konuşma sırasını ilerletir ve şu an konuşanı döndürür (yoksa boş). Odayı kilitlemez (yalnızca sıra satırını).
+create or replace function public._voice_turn_tick(p_room_id uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  t public.room_voice_turns;
+  v_key text;
+  v_secs int := public._voice_turn_secs();
+  v_sp uuid;
+  v_ok boolean;
+  n int := 0;
+begin
+  select * into r from public.game_rooms where id = p_room_id;
+  if not found or not r.remote or r.status <> 'playing' or coalesce(r.state->>'phase', '') <> 'dawn' then
+    return null;
+  end if;
+  v_key := 'dawn:' || coalesce(r.state->>'round', '0');
+  insert into public.room_voice_turns (room_id, phase_key) values (p_room_id, '')
+  on conflict (room_id) do nothing;
+  select * into t from public.room_voice_turns where room_id = p_room_id for update;
+  if t.phase_key <> v_key then
+    -- Yeni sabah: hayatta olan oyuncular rastgele (ama tur boyunca sabit) bir sırayla konuşur
+    update public.room_voice_turns
+       set phase_key = v_key, idx = 0, turn_ends_at = now() + make_interval(secs => v_secs),
+           speakers = coalesce((select array_agg(rp.user_id order by md5(p_room_id::text || v_key || rp.user_id::text))
+                                  from public.room_players rp
+                                 where rp.room_id = p_room_id and rp.left_at is null and rp.is_alive), '{}')
+     where room_id = p_room_id
+     returning * into t;
+  end if;
+  loop
+    n := n + 1;
+    exit when n > 64 or t.idx >= coalesce(array_length(t.speakers, 1), 0);
+    v_sp := t.speakers[t.idx + 1];
+    -- Konuşabilir mi: odada, hayatta, sesli sohbete bağlı (son 60 sn), mikrofonu açık, uygulama önde
+    select (rp.left_at is null and rp.is_alive) and coalesce(m.mic_on and not m.away and m.last_ping > now() - interval '60 seconds', false)
+      into v_ok
+      from public.room_players rp
+      left join public.room_voice_members m on m.room_id = rp.room_id and m.user_id = rp.user_id
+     where rp.room_id = p_room_id and rp.user_id = v_sp;
+    if coalesce(v_ok, false) and t.turn_ends_at > now() then
+      exit;
+    end if;
+    -- Süresi doldu ya da konuşamıyor: sıradakine geç
+    t.idx := t.idx + 1;
+    t.turn_ends_at := now() + make_interval(secs => v_secs);
+  end loop;
+  update public.room_voice_turns set idx = t.idx, turn_ends_at = t.turn_ends_at where room_id = p_room_id;
+  if t.idx >= coalesce(array_length(t.speakers, 1), 0) then return null; end if;
+  return t.speakers[t.idx + 1];
+end $$;
+
+-- Sabah konuşmaları bitti mi? (Otomatik Oyun'da sabah bunun üzerine oylamaya geçer)
+create or replace function public._voice_turns_done(p_room_id uuid)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare
+  t public.room_voice_turns;
+begin
+  perform public._voice_turn_tick(p_room_id);
+  select * into t from public.room_voice_turns where room_id = p_room_id;
+  return found and t.idx >= coalesce(array_length(t.speakers, 1), 0);
+end $$;
+
+-- Odanın sesli sohbet durumu (oyun ekranı birkaç saniyede bir okur)
+create or replace function public.voice_state(p_room_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+  t public.room_voice_turns;
+  v_sp uuid;
+  v_active int;
+begin
+  v := public._require_user();
+  select * into r from public.game_rooms where id = p_room_id;
+  if not found or not public._voice_allowed(r, v.id) then
+    return jsonb_build_object('allowed', false);
+  end if;
+  v_sp := public._voice_turn_tick(p_room_id);
+  select * into t from public.room_voice_turns where room_id = p_room_id;
+  select count(*)::int into v_active from public.room_players rp where rp.room_id = p_room_id and rp.left_at is null;
+  return jsonb_build_object(
+    'allowed', true,
+    'enabled', public._voice_budget_ok(),
+    'kick_enabled', public.setting_bool('voice_kick_enabled'),
+    'phase', r.state->>'phase',
+    'narrator', case when public._vv_mode(r) = 'narrator' then r.host_id end,
+    'speaker', v_sp,
+    'turn_ends_at', case when v_sp is not null then t.turn_ends_at end,
+    'turn_seconds', public._voice_turn_secs(),
+    'queue', case when v_sp is not null
+                  then to_jsonb(t.speakers[t.idx + 2 : coalesce(array_length(t.speakers, 1), 0)]) else '[]'::jsonb end,
+    'can_speak', (v_sp = v.id) or public._voice_is_narrator(r, v.id),
+    'players_active', v_active,
+    'members', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'user_id', rp.user_id, 'name', rp.display_name, 'alive', rp.is_alive,
+               'connected', coalesce(m.last_ping > now() - interval '60 seconds', false),
+               'mic_on', coalesce(m.mic_on, false), 'filter_on', coalesce(m.filter_on, false),
+               'away', coalesce(m.away, false), 'agora_uid', m.agora_uid,
+               'kick_votes', (select count(*) from public.room_kick_votes k
+                               join public.room_players vp on vp.room_id = k.room_id and vp.user_id = k.voter_id
+                                and vp.left_at is null
+                              where k.room_id = p_room_id and k.target_id = rp.user_id)::int,
+               'my_kick_vote', exists (select 1 from public.room_kick_votes k
+                                        where k.room_id = p_room_id and k.target_id = rp.user_id and k.voter_id = v.id),
+               'kickable', rp.user_id <> r.host_id and rp.user_id <> v.id
+                           and not exists (select 1 from public.profiles p where p.id = rp.user_id and p.role = 'admin'))
+             order by rp.joined_at)
+        from public.room_players rp
+        left join public.room_voice_members m on m.room_id = rp.room_id and m.user_id = rp.user_id
+       where rp.room_id = p_room_id and rp.left_at is null), '[]'::jsonb)
+  );
+end $$;
+
+-- Mikrofon / filtre / arka plan durumunu bildirir (herkes görür). Boş bırakılan değer değişmez.
+create or replace function public.voice_set(p_room_id uuid, p_mic boolean default null, p_filter boolean default null,
+                                            p_away boolean default null)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+begin
+  v := public._require_user();
+  select * into r from public.game_rooms where id = p_room_id;
+  if not found or not public._voice_allowed(r, v.id) then raise exception 'forbidden'; end if;
+  insert into public.room_voice_members (room_id, user_id) values (p_room_id, v.id) on conflict do nothing;
+  update public.room_voice_members
+     set mic_on = coalesce(p_mic, mic_on), filter_on = coalesce(p_filter, filter_on), away = coalesce(p_away, away)
+   where room_id = p_room_id and user_id = v.id;
+  perform public._voice_turn_tick(p_room_id);
+end $$;
+
+-- Konuşan kişi sözünü erken bitirir: sıra hemen sıradakine geçer
+create or replace function public.voice_yield(p_room_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+begin
+  v := public._require_user();
+  if public._voice_turn_tick(p_room_id) = v.id then
+    update public.room_voice_turns
+       set idx = idx + 1, turn_ends_at = now() + make_interval(secs => public._voice_turn_secs())
+     where room_id = p_room_id;
+    perform public._voice_turn_tick(p_room_id);
+  end if;
+end $$;
+
+-- Sesli sohbete bağlı olan telefon dakikada bir bildirir: dakika sayacı (kota) ve "bağlı" işareti.
+-- Döner: stop = true ise uygulama sesli sohbetten çıkar (kota doldu ya da artık odada değil).
+create or replace function public.voice_ping(p_room_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+  v_last timestamptz;
+begin
+  v := public._require_user();
+  select * into r from public.game_rooms where id = p_room_id;
+  if not found or not public._voice_allowed(r, v.id) then return jsonb_build_object('stop', true, 'reason', 'not_member'); end if;
+  if not public._voice_budget_ok() then return jsonb_build_object('stop', true, 'reason', 'budget'); end if;
+  insert into public.room_voice_members (room_id, user_id) values (p_room_id, v.id) on conflict do nothing;
+  select last_ping into v_last from public.room_voice_members where room_id = p_room_id and user_id = v.id for update;
+  update public.room_voice_members set last_ping = now() where room_id = p_room_id and user_id = v.id;
+  -- Dakika sayacı: aynı kişi için en çok dakikada bir artar
+  if v_last is null or v_last < now() - interval '50 seconds' then
+    insert into public.voice_usage (month, minutes) values (public._voice_month(), 1)
+    on conflict (month) do update set minutes = public.voice_usage.minutes + 1;
+  end if;
+  return jsonb_build_object('stop', false);
+end $$;
+
+-- Ses anahtarı için bilgi (yalnızca voice-token Edge Function'ı çağırır). Sesin kendisi buradan geçmez.
+create or replace function public.service_voice_token(p_user uuid, p_room_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  v_uid bigint;
+begin
+  select * into r from public.game_rooms where id = p_room_id;
+  if not found or not public._voice_allowed(r, p_user) then return jsonb_build_object('result', 'forbidden'); end if;
+  if exists (select 1 from public.profiles p where p.id = p_user and (p.banned_at is not null or p.role::text = 'sponsor')) then
+    return jsonb_build_object('result', 'forbidden');
+  end if;
+  if not public._voice_budget_ok() then return jsonb_build_object('result', 'budget'); end if;
+  insert into public.room_voice_members (room_id, user_id) values (p_room_id, p_user) on conflict do nothing;
+  select agora_uid into v_uid from public.room_voice_members where room_id = p_room_id and user_id = p_user;
+  return jsonb_build_object('result', 'ok', 'uid', v_uid, 'channel', 'room-' || p_room_id::text);
+end $$;
+
+-- Oylamayla atma: oyuncu bir kişiyi atmak için oy verir / oyunu geri alır. Odadaki etkin oyuncuların (atılacak kişi
+-- hariç) yarısından fazlası isterse kişi odadan çıkarılır ve geri giremez. Oda sahibi ve moderatör atılamaz.
+-- Döner: { kicked, votes, needed }
+create or replace function public.room_vote_kick(p_room_id uuid, p_target uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+  v_votes int;
+  v_eligible int;
+  v_needed int;
+begin
+  v := public._require_writer(null);
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found or not r.remote or r.status not in ('lobby', 'playing') then raise exception 'room_not_found'; end if;
+  if not public.setting_bool('voice_kick_enabled') then raise exception 'kick_disabled'; end if;
+  if not exists (select 1 from public.room_players rp where rp.room_id = p_room_id and rp.user_id = v.id and rp.left_at is null) then
+    raise exception 'forbidden';
+  end if;
+  if p_target = v.id or p_target = r.host_id
+     or exists (select 1 from public.profiles p where p.id = p_target and p.role = 'admin')
+     or not exists (select 1 from public.room_players rp where rp.room_id = p_room_id and rp.user_id = p_target and rp.left_at is null) then
+    raise exception 'not_kickable';
+  end if;
+  if exists (select 1 from public.room_kick_votes where room_id = p_room_id and target_id = p_target and voter_id = v.id) then
+    delete from public.room_kick_votes where room_id = p_room_id and target_id = p_target and voter_id = v.id;
+  else
+    insert into public.room_kick_votes (room_id, target_id, voter_id) values (p_room_id, p_target, v.id);
+  end if;
+  select count(*)::int into v_eligible from public.room_players rp
+   where rp.room_id = p_room_id and rp.left_at is null and rp.user_id <> p_target;
+  select count(*)::int into v_votes from public.room_kick_votes k
+    join public.room_players rp on rp.room_id = k.room_id and rp.user_id = k.voter_id and rp.left_at is null
+   where k.room_id = p_room_id and k.target_id = p_target;
+  v_needed := v_eligible / 2 + 1;
+  if v_eligible >= 2 and v_votes >= v_needed then
+    insert into public.room_bans (room_id, user_id) values (p_room_id, p_target) on conflict do nothing;
+    delete from public.room_kick_votes where room_id = p_room_id and (target_id = p_target or voter_id = p_target);
+    delete from public.room_voice_members where room_id = p_room_id and user_id = p_target;
+    perform public._room_remove_player(p_room_id, p_target, 'kicked');
+    perform public._notify(p_target, 'system', 'Odadan çıkarıldın',
+      'Uzaktan oyundaki oyuncuların çoğunluğu seni odadan çıkarmak için oy verdi. Bu odaya yeniden giremezsin.', '{}'::jsonb);
+    return jsonb_build_object('kicked', true, 'votes', v_votes, 'needed', v_needed);
+  end if;
+  return jsonb_build_object('kicked', false, 'votes', v_votes, 'needed', v_needed);
+end $$;
+
+-- Uzaktan oyun puanı ve sesli sohbet ayarları
+insert into public.app_settings (key, value, description) values
+  ('pts_remote_pct', '50', 'Uzaktan oyunun puanı, aynı sonucun yan yana oyundaki puanının yüzde kaçı? (10–80; varsayılan 50)'),
+  ('pts_remote_daily_cap', '2', 'Günde en çok kaç uzaktan oyundan puan alınır'),
+  ('pts_remote_month_cap', '6', 'Ayda en çok kaç uzaktan oyundan puan alınır'),
+  ('voice_enabled', 'true', 'Uzaktan odalarda sesli sohbet açık mı?'),
+  ('voice_turn_seconds', '30', 'Sesli sohbette her oyuncunun konuşma süresi (saniye, 10–120)'),
+  ('voice_month_minutes', '9000', 'Ayda en çok kaç kişi-dakika sesli sohbet (ses sağlayıcının ücretsiz kotası 10.000; dolunca sesli sohbet o ay kapanır)'),
+  ('voice_kick_enabled', 'true', 'Uzaktan odalarda oylamayla oyuncu atma açık mı?')
+on conflict (key) do nothing;
+
 -- ---- GEÇİCİ: Yazı düzenleme modu ---------------------------------------------------------------------------------
 -- Moderatör uygulamadaki sabit yazıları (düğme, başlık, açıklama) düzeltir; düzeltmeler herkeste görünür. Düzeltmeler
 -- koda işlenince bu bölüm ve tablo kaldırılacak. Yalnızca moderatör yazar; her değişiklik işlem günlüğüne düşer.
@@ -15409,6 +15831,12 @@ grant execute on function public.report_content(text, uuid, text) to authenticat
 grant execute on function public.register_for_event(uuid) to authenticated;
 grant execute on function public.cancel_event_registration(uuid) to authenticated;
 grant execute on function public.join_room(text, uuid, int, int) to authenticated;
+grant execute on function public.join_remote_room(uuid) to authenticated;
+grant execute on function public.voice_state(uuid) to authenticated;
+grant execute on function public.voice_set(uuid, boolean, boolean, boolean) to authenticated;
+grant execute on function public.voice_yield(uuid) to authenticated;
+grant execute on function public.voice_ping(uuid) to authenticated;
+grant execute on function public.room_vote_kick(uuid, uuid) to authenticated;
 grant execute on function public.get_room_code(uuid) to authenticated;
 grant execute on function public.leave_all_rooms() to authenticated;
 grant execute on function public.room_heartbeat(uuid) to authenticated;
@@ -15435,7 +15863,7 @@ grant execute on function public.request_event_close(uuid, text) to authenticate
 grant execute on function public.admin_list_close_requests(text) to authenticated;
 grant execute on function public.admin_resolve_close_request(uuid, boolean, text) to authenticated;
 grant execute on function public.my_notice_counts() to authenticated;
-grant execute on function public.create_room(text, uuid, text, int, int, int, int, text) to authenticated;
+grant execute on function public.create_room(text, uuid, text, int, int, int, int, text, boolean) to authenticated;
 grant execute on function public.set_room_status(uuid, text) to authenticated;
 grant execute on function public.list_feed(timestamptz, int, boolean, text, boolean, int, int, int, int, boolean, uuid) to authenticated;
 grant execute on function public.feed_districts() to authenticated;
@@ -15644,6 +16072,7 @@ grant execute on function public.service_set_store_premium(uuid, timestamptz) to
 grant execute on function public.service_identity_start(uuid, text) to service_role;
 grant execute on function public.service_identity_finish(uuid, text, text) to service_role;
 grant execute on function public.service_identity_refund(uuid) to service_role;
+grant execute on function public.service_voice_token(uuid, uuid) to service_role;
 grant execute on function public.set_profile_photo(text) to authenticated;
 grant execute on function public._profile_photo_slot_ok(text) to authenticated;
 grant execute on function public.admin_list_photo_approvals() to authenticated;

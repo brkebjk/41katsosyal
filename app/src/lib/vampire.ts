@@ -65,6 +65,8 @@ export type VvView = {
   /** Odanın sahibi (oyuncu listesinde yoksa, ör. anlatıcı moderatör, ayrıca gösterilir) */
   host: { id: string; name: string; is_moderator: boolean; is_me: boolean };
   mode: VvMode;
+  /** Uzaktan oda: herkes kendi telefonundan, sesli sohbetle oynar (eski sunucuda gelmez) */
+  remote?: boolean;
   /** Oda kapandıysa nedeni: quit (sahibi ayrıldı), timeout (sahibinin bağlantısı koptu), inactive (kimse oynamadı) */
   close_reason: string | null;
   /** Otomatik oyunda bu aşamanın süresi (sn); öteki modlarda boş */
