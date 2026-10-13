@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { isBackendReady, loginEmail, supabase } from './supabase';
+import { configProblem, isBackendReady, loginEmail, supabase } from './supabase';
 import { Button, NoticeBar, type Notice } from './ui';
 import { ApprovalsPage } from './pages/Approvals';
 import { LogPage } from './pages/Log';
@@ -78,9 +78,10 @@ export function App() {
       <div className="center">
         <div className="login card">
           <h1>41. Kat Yönetim</h1>
-          <p className="error">
-            Sunucu adresi girilmemiş. Cloudflare Pages ayarlarında VITE_SUPABASE_URL ve VITE_SUPABASE_ANON_KEY
-            tanımlanmalı.
+          <p className="error">{configProblem ?? 'Sunucu bağlantısı kurulamadı.'}</p>
+          <p className="muted small">
+            Değeri düzelttikten sonra Cloudflare'de Deployments sekmesinde en üstteki yayının yanındaki ⋯ menüsünden
+            “Retry deployment” seç.
           </p>
         </div>
       </div>

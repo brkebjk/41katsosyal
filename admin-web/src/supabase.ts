@@ -2,16 +2,39 @@
 // (moderatör olmayan biri paneli açsa bile hiçbir veriyi göremez ve hiçbir işlem yapamaz).
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const url = import.meta.env.VITE_SUPABASE_URL;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+/** Cloudflare'e değer yapıştırılırken gelebilecek boşluk ve tırnakları temizler */
+function clean(v: string | undefined): string {
+  return (v ?? '').trim().replace(/^["']|["']$/g, '').trim();
+}
 
-export const isBackendReady = Boolean(url && anonKey);
+const url = clean(import.meta.env.VITE_SUPABASE_URL).replace(/\/+$/, '');
+const anonKey = clean(import.meta.env.VITE_SUPABASE_ANON_KEY);
 
-export const supabase: SupabaseClient | null = isBackendReady
-  ? createClient(url as string, anonKey as string, {
+/** Ayar sorunu varsa ekranda gösterilecek açıklama (yoksa boş) */
+export let configProblem: string | null = null;
+
+function makeClient(): SupabaseClient | null {
+  if (!url || !anonKey) {
+    configProblem =
+      'Sunucu adresi ya da anahtarı girilmemiş. Cloudflare > projen > Settings > Variables and Secrets bölümünde VITE_SUPABASE_URL ve VITE_SUPABASE_ANON_KEY tanımlanmalı.';
+    return null;
+  }
+  if (!/^https:\/\/[^\s/]+$/.test(url)) {
+    configProblem = `VITE_SUPABASE_URL değeri geçersiz görünüyor (“${url.slice(0, 60)}”). https://xxxx.supabase.co biçiminde olmalı; sonunda / ya da başka bir şey olmamalı.`;
+    return null;
+  }
+  try {
+    return createClient(url, anonKey, {
       auth: { persistSession: true, autoRefreshToken: true, storageKey: 'kat41-admin' },
-    })
-  : null;
+    });
+  } catch (e) {
+    configProblem = `Sunucu bağlantısı kurulamadı: ${String(e)}`;
+    return null;
+  }
+}
+
+export const supabase: SupabaseClient | null = makeClient();
+export const isBackendReady = supabase !== null;
 
 const LOGIN_DOMAIN = import.meta.env.VITE_LOGIN_DOMAIN || 'uye.kat41sosyal.app';
 

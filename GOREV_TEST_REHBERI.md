@@ -26,6 +26,22 @@
 | N-C | Bağlantı kurulamadı (ağ ya da sertifika sorunu) |
 | N-P | NVİ cevap verdi ama cevap beklenen biçimde değil |
 
+## Web panel açılmıyorsa
+Panel artık boş beyaz sayfa göstermez; sorun neyse ekrana yazar. Önce Cloudflare'in yeni sürümü yayınlamasını bekle (2–3 dakika), sonra sırayla şunlara bak:
+
+1. **Cloudflare > Workers & Pages > projen (kat41-panel) > Deployments** sekmesi. En üstteki satırın durumu ne?
+   - **Failed / Başarısız:** satıra tıkla, **View details / Build log** ekranının fotoğrafını gönder.
+   - **In progress / Building:** bitmesini bekle.
+   - **Success:** 2. adıma geç.
+2. Satırdaki adrese tıkla (…pages.dev). Ekranda ne yazıyor?
+   - **"Sunucu adresi ya da anahtarı girilmemiş"** ya da **"VITE_SUPABASE_URL değeri geçersiz"**:
+     1. **Settings** > **Variables and Secrets** (ya da Environment variables) bölümünde değerleri düzelt.
+     2. Adres `https://xxxx.supabase.co` biçiminde olmalı; sonunda / olmamalı.
+     3. Sonra **Deployments** > en üstteki satırın **⋯** menüsü > **Retry deployment**.
+   - **"Panel açılırken hata oluştu"** ya da **"Panel açılamadı"**: ekranın fotoğrafını gönder.
+   - **Tarayıcı "Bu siteye ulaşılamıyor" diyorsa:** proje yeni kurulduysa adresin açılması 5–10 dakika sürebilir; bekleyip yenile.
+   - **Giriş ekranı geldiyse** panel çalışıyor demektir: moderatör hesabının kullanıcı adı ve şifresiyle gir.
+
 ## C. Panel testi
 1. Panel adresini bilgisayarda aç. Moderatör hesabının **uygulamadaki kullanıcı adı ve şifresiyle** gir.
    - Moderatör olmayan bir hesapla girmeyi dene: "Bu hesap moderatör değil" yazmalı ve içeri alınmamalı.

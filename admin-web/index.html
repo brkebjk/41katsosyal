@@ -7,7 +7,20 @@
     <title>41. Kat Yönetim</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <p id="boot" style="font: 15px system-ui, sans-serif; padding: 24px; color: #4d6779">Panel yükleniyor…</p>
+    </div>
+    <script>
+      // Panelin kodu hiç çalışamazsa (eski tarayıcı, yükleme hatası) ekranda nedeni yazsın
+      window.addEventListener('error', function (e) {
+        var el = document.getElementById('boot');
+        if (el) el.textContent = 'Panel açılamadı: ' + (e.message || 'bilinmeyen hata') + '. Bu ekranın fotoğrafını gönder.';
+      });
+      setTimeout(function () {
+        var el = document.getElementById('boot');
+        if (el) el.textContent = 'Panel 15 saniyedir açılamadı. İnternet bağlantını kontrol et ve sayfayı yenile; düzelmezse bu ekranın fotoğrafını gönder.';
+      }, 15000);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
