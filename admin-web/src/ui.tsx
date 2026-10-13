@@ -83,3 +83,42 @@ export function when(iso: string | null | undefined): string {
 export function isActive(iso: string | null | undefined): boolean {
   return Boolean(iso && Date.parse(iso) > Date.now());
 }
+
+/** Metni dosya olarak bilgisayara indirir */
+export function downloadFile(name: string, content: string, mime = 'application/json') {
+  const blob = new Blob([content], { type: `${mime};charset=utf-8` });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/** Satırları Excel'in açabildiği CSV metnine çevirir (Türkçe karakterler için başta BOM) */
+export function toCsv(rows: Record<string, unknown>[], columns: { key: string; label: string }[]): string {
+  const esc = (v: unknown) => {
+    const s = v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+    return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const head = columns.map((c) => esc(c.label)).join(';');
+  const body = rows.map((r) => columns.map((c) => esc(r[c.key])).join(';'));
+  return `﻿${[head, ...body].join('\r\n')}`;
+}
+
+/** Bugünün tarihi dosya adları için: 2026-10-13-1405 */
+export function stamp(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+/** Sunucu hata metnini kısa Türkçe açıklamaya çevirir */
+export function errText(e: { message?: string } | null | undefined, fallback = 'İşlem yapılamadı.'): string {
+  const m = e?.message ?? '';
+  if (m.includes('forbidden')) return 'Bu işlem için yetkin yok.';
+  if (m.includes('request_not_found')) return 'Kayıt artık yok; liste yenileniyor.';
+  return m ? `${fallback} (${m.slice(0, 120)})` : fallback;
+}

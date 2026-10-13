@@ -5,14 +5,14 @@ import { Card } from '../ui';
 
 type Counts = Record<string, number | undefined>;
 
-const ITEMS: { key: string; label: string; page: string | null }[] = [
+const ITEMS: { key: string; label: string; page: string }[] = [
   { key: 'mod_reports', label: 'Açık şikayet', page: 'reports' },
   { key: 'mod_approvals', label: 'Onay bekleyen (etkinlik, görsel, profil resmi)', page: 'approvals' },
-  { key: 'mod_close_requests', label: 'Etkinlik kapatma isteği (uygulamada)', page: null },
-  { key: 'mod_leader_apps', label: 'Etkinlik lideri başvurusu (uygulamada)', page: null },
-  { key: 'mod_messages', label: 'Cevap bekleyen üye mesajı (uygulamada)', page: null },
-  { key: 'mod_cell_candidates', label: 'Petek adı adayı (uygulamada)', page: null },
-  { key: 'mod_treasures', label: 'Hazine bildirimi (uygulamada)', page: null },
+  { key: 'mod_close_requests', label: 'Etkinlik kapatma isteği', page: 'close' },
+  { key: 'mod_leader_apps', label: 'Etkinlik lideri başvurusu', page: 'leaders' },
+  { key: 'mod_messages', label: 'Cevap bekleyen üye mesajı', page: 'messages' },
+  { key: 'mod_cell_candidates', label: 'Yeni petek adı adayı', page: 'cells' },
+  { key: 'mod_treasures', label: 'Yeni bulunan hazine', page: 'treasures' },
 ];
 
 /** Özet: moderatörün yapılacak işleri */
@@ -38,8 +38,8 @@ export function OverviewPage({ onGo }: { onGo: (page: string) => void }) {
             <Card key={i.key} className={n > 0 ? 'stat stat-on' : 'stat'}>
               <div className="stat-n">{counts ? n : '…'}</div>
               <div className="stat-l">{i.label}</div>
-              {i.page && n > 0 ? (
-                <button className="link" onClick={() => onGo(i.page as string)}>
+              {n > 0 ? (
+                <button className="link" onClick={() => onGo(i.page)}>
                   Aç →
                 </button>
               ) : null}
@@ -56,10 +56,6 @@ export function OverviewPage({ onGo }: { onGo: (page: string) => void }) {
           ) : null}
         </Card>
       </div>
-      <p className="muted small">
-        “(uygulamada)” yazanlar şimdilik mobil uygulamadaki Moderatör ekranından yapılır; sonraki aşamalarda buraya
-        taşınacak.
-      </p>
     </section>
   );
 }

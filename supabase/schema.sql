@@ -7145,14 +7145,7 @@ end $$;
 
 -- Girişten hemen sonra çağrılır: bu oturum hesabın tek geçerli oturumu olur. Önceki telefondaki oturum,
 -- bir sonraki isteğinde 'session_replaced' alır ve uygulama orada çıkış yapar.
-create or replace function public.claim_session()
-returns void language plpgsql security definer set search_path = public as $$
-declare v_sid text := nullif(auth.jwt() ->> 'session_id', '');
-begin
-  if auth.uid() is null then raise exception 'not_authenticated'; end if;
-  if v_sid is null then return; end if;
-  update public.profiles set active_session = v_sid::uuid where id = auth.uid() and banned_at is null;
-end $$;
+-- claim_session: "Web paneli 2" bölümünde (girişin trafik kaydıyla birlikte)
 
 -- Hesap durumu: oturum geçerli mi, kurtarma kelimeleri kurulmuş mu, ad değiştirme hakkı kaldı mı?
 -- session: 'ok' | 'replaced' (başka telefondan girildi) | 'banned' | 'none'
@@ -14031,7 +14024,7 @@ begin
   return query
     select c, exists (select 1 from public.profiles p where p.alias_no = c),
            exists (select 1 from public.profiles p where p.alias_no = c and p.id = auth.uid()),
-           (select p.full_name from public.profiles p where p.alias_no = c)
+           (select coalesce(p.admin_real_name, p.full_name) from public.profiles p where p.alias_no = c)
       from unnest(public._reserved_alias_nos()) as c
      order by c;
 end $$;
@@ -14774,6 +14767,455 @@ revoke all on public.account_recovery, public.recovery_failures, public.device_a
 
 revoke all on all sequences in schema public from anon, authenticated;
 
+-- ---------------------------------------------------------------------
+-- Web paneli 2: trafik kayıtları (5651), veri saklama ve imha, ayar değişikliği kaydı, yedekleme
+-- ---------------------------------------------------------------------
+
+-- Trafik kayıtları (5651 sayılı Kanun, yer sağlayıcı yükümlülüğü): kim, ne zaman, hangi IP adresinden giriş yaptı ya da
+-- içerik ekledi. İçeriğin kendisi burada tutulmaz. Hesap silinse de yasal süre boyunca (varsayılan 2 yıl) saklanır;
+-- yalnızca mahkeme / savcılık talebinde web panelden okunur. Kimse değiştiremez ya da silemez (yalnızca süre dolunca imha).
+create table if not exists public.traffic_log (
+  id bigint generated always as identity primary key,
+  user_id uuid,
+  username text,
+  action text not null,
+  object_id uuid,
+  ip text,
+  user_agent text,
+  created_at timestamptz not null default now()
+);
+create index if not exists traffic_log_user_idx on public.traffic_log (user_id, created_at desc);
+create index if not exists traffic_log_time_idx on public.traffic_log (created_at desc);
+create index if not exists traffic_log_ip_idx on public.traffic_log (ip, created_at desc);
+alter table public.traffic_log enable row level security;
+revoke all on public.traffic_log from anon, authenticated;
+
+-- İsteğin geldiği IP adresi (Supabase'in ilettiği başlıktan; yoksa boş)
+create or replace function public._client_ip()
+returns text language plpgsql stable set search_path = public as $$
+declare h json;
+begin
+  begin
+    h := current_setting('request.headers', true)::json;
+  exception when others then return null;
+  end;
+  if h is null then return null; end if;
+  return left(nullif(btrim(coalesce(split_part(h ->> 'x-forwarded-for', ',', 1), h ->> 'cf-connecting-ip',
+                                    h ->> 'x-real-ip', '')), ''), 64);
+end $$;
+
+create or replace function public._traffic(p_action text, p_object uuid default null, p_user uuid default null)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_user uuid := coalesce(p_user, auth.uid());
+  v_ua text;
+begin
+  if v_user is null then return; end if;
+  begin
+    v_ua := left(current_setting('request.headers', true)::json ->> 'user-agent', 200);
+  exception when others then v_ua := null;
+  end;
+  insert into public.traffic_log (user_id, username, action, object_id, ip, user_agent)
+  values (v_user, (select username from public.profiles where id = v_user), left(p_action, 40), p_object,
+          public._client_ip(), v_ua);
+end $$;
+
+-- İçerik eklenince trafik kaydı (tetikleyici). Argümanlar: kullanıcı sütunu, işlem adı, nesne sütunu.
+create or replace function public._traffic_trigger()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare j jsonb := to_jsonb(new);
+begin
+  perform public._traffic(tg_argv[1], nullif(j ->> tg_argv[2], '')::uuid, nullif(j ->> tg_argv[0], '')::uuid);
+  return null;
+end $$;
+
+do $$
+declare r record;
+begin
+  for r in select * from (values
+      ('post_authors', 'author_id', 'post', 'post_id'),
+      ('comment_authors', 'author_id', 'comment', 'comment_id'),
+      ('dm_messages', 'sender_id', 'dm', 'id'),
+      ('event_comments', 'user_id', 'event_comment', 'id'),
+      ('venue_reviews', 'user_id', 'venue_review', 'id'),
+      ('game_rooms', 'host_id', 'game_room', 'id'),
+      ('quiz_chat', 'user_id', 'quiz_chat', 'id'),
+      ('vv_whispers', 'from_user', 'vv_whisper', 'id'),
+      ('events', 'created_by', 'event', 'id'),
+      ('problem_reports', 'user_id', 'problem_report', 'id')
+    ) as t(tbl, ucol, act, ocol)
+  loop
+    if to_regclass('public.' || r.tbl) is not null then
+      execute format('drop trigger if exists traffic_log_ins on public.%I', r.tbl);
+      execute format('create trigger traffic_log_ins after insert on public.%I for each row '
+                     'execute function public._traffic_trigger(%L, %L, %L)', r.tbl, r.ucol, r.act, r.ocol);
+    end if;
+  end loop;
+end $$;
+
+-- Ayar ve seviye tablolarındaki her değişiklik moderatör işlem günlüğüne yazılır (eski ve yeni değerle)
+create or replace function public._audit_table_change()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then return null; end if;  -- sunucu içi (kurulum) değişiklikleri yazılmaz
+  insert into public.admin_audit_log (admin_id, action, target_user, detail)
+  values (auth.uid(), 'table_' || lower(tg_op), null,
+          jsonb_build_object('table', tg_table_name,
+                             'old', case when tg_op <> 'INSERT' then to_jsonb(old) end,
+                             'new', case when tg_op <> 'DELETE' then to_jsonb(new) end));
+  return null;
+end $$;
+drop trigger if exists app_settings_audit on public.app_settings;
+create trigger app_settings_audit after insert or update or delete on public.app_settings
+  for each row execute function public._audit_table_change();
+drop trigger if exists levels_audit on public.levels;
+create trigger levels_audit after insert or update or delete on public.levels
+  for each row execute function public._audit_table_change();
+
+-- Saklama süreleri (gün). Web panel > Veri saklama ve Ayarlar'dan değiştirilebilir.
+insert into public.app_settings (key, value, description) values
+  ('retention_traffic_days', '730', 'Trafik kayıtları (IP, zaman) kaç gün saklanır? 5651: en az 365, en çok 730.'),
+  ('retention_audit_days', '730', 'Moderatör işlem günlüğü kaç gün saklanır?'),
+  ('retention_dm_days', '365', 'Son mesajından bu yana bu kadar gün geçen özel yazışmalar silinir.'),
+  ('retention_reports_days', '730', 'Sonuçlanmış şikayet ve sorun bildirimleri kaç gün saklanır?')
+on conflict (key) do nothing;
+
+-- Süresi dolan kayıtları imha eder (KVKK: gereğinden uzun saklama yok). Aynı anda tek temizlik çalışır.
+-- Döner: her kategoride silinen kayıt sayısı.
+create or replace function public._retention_purge()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  d_traffic int := least(730, greatest(365, public.setting_int('retention_traffic_days', 730)));
+  d_audit int := greatest(180, public.setting_int('retention_audit_days', 730));
+  d_dm int := greatest(30, public.setting_int('retention_dm_days', 365));
+  d_rep int := greatest(90, public.setting_int('retention_reports_days', 730));
+  n_traffic int; n_audit int; n_dm int; n_rep int; n_prob int; n_att int; n_sess int;
+begin
+  if not pg_try_advisory_xact_lock(hashtext('retention_purge')) then return '{}'::jsonb; end if;
+  delete from public.traffic_log where created_at < now() - make_interval(days => d_traffic);
+  get diagnostics n_traffic = row_count;
+  delete from public.admin_audit_log where created_at < now() - make_interval(days => d_audit);
+  get diagnostics n_audit = row_count;
+  delete from public.dm_threads where last_at < now() - make_interval(days => d_dm);
+  get diagnostics n_dm = row_count;
+  delete from public.reports where status <> 'open' and created_at < now() - make_interval(days => d_rep);
+  get diagnostics n_rep = row_count;
+  delete from public.problem_reports where status = 'closed' and created_at < now() - make_interval(days => d_rep);
+  get diagnostics n_prob = row_count;
+  delete from public.identity_attempts where created_at < now() - interval '30 days';
+  get diagnostics n_att = row_count;
+  delete from public.admin_web_sessions where expires_at < now();
+  get diagnostics n_sess = row_count;
+  delete from public.game_seekers where day < public._map_day();
+  perform public._feed_purge();
+  return jsonb_build_object('traffic', n_traffic, 'audit', n_audit, 'dm_threads', n_dm, 'reports', n_rep,
+                            'problems', n_prob, 'identity_attempts', n_att, 'web_sessions', n_sess);
+end $$;
+
+-- Giriş (oturum bu telefona geçince): trafik kaydı + ara sıra imha işi
+create or replace function public.claim_session()
+returns void language plpgsql security definer set search_path = public as $$
+declare v_sid text := nullif(auth.jwt() ->> 'session_id', '');
+begin
+  if auth.uid() is null then raise exception 'not_authenticated'; end if;
+  perform public._traffic('login');
+  if random() < 0.05 then perform public._retention_purge(); end if;
+  if v_sid is null then return; end if;
+  update public.profiles set active_session = v_sid::uuid where id = auth.uid() and banned_at is null;
+end $$;
+
+-- Web panel > Veri saklama: her kategorinin kayıt sayısı, en eski kaydı ve saklama süresi
+create or replace function public.admin_retention_status()
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  perform public._require_admin();
+  return jsonb_build_object(
+    'traffic', jsonb_build_object('count', (select count(*) from public.traffic_log),
+                                  'oldest', (select min(created_at) from public.traffic_log),
+                                  'days', public.setting_int('retention_traffic_days', 730)),
+    'audit', jsonb_build_object('count', (select count(*) from public.admin_audit_log),
+                                'oldest', (select min(created_at) from public.admin_audit_log),
+                                'days', public.setting_int('retention_audit_days', 730)),
+    'dm', jsonb_build_object('count', (select count(*) from public.dm_messages),
+                             'threads', (select count(*) from public.dm_threads),
+                             'oldest', (select min(created_at) from public.dm_messages),
+                             'days', public.setting_int('retention_dm_days', 365)),
+    'posts', jsonb_build_object('count', (select count(*) from public.posts),
+                                'oldest', (select min(created_at) from public.posts),
+                                'days', public.setting_int('feed_archive_days', 365)),
+    'reports', jsonb_build_object('count', (select count(*) from public.reports),
+                                  'oldest', (select min(created_at) from public.reports),
+                                  'days', public.setting_int('retention_reports_days', 730)),
+    'notifications', jsonb_build_object('count', (select count(*) from public.notifications),
+                                        'oldest', (select min(created_at) from public.notifications),
+                                        'days', 60),
+    'members', jsonb_build_object('count', (select count(*) from public.profiles),
+                                  'verified', (select count(*) from public.profiles where identity_verified_at is not null))
+  );
+end $$;
+
+-- Web panel > Veri saklama > "Şimdi temizle"
+create or replace function public.admin_run_retention()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v jsonb;
+begin
+  perform public._require_admin();
+  v := public._retention_purge();
+  perform public._audit('retention_purge', null, v);
+  return v;
+end $$;
+
+-- Web panel > Trafik kayıtları: adli talep için arama (üye, kullanıcı adı, IP, tarih aralığı). Her arama günlüğe yazılır.
+drop function if exists public.admin_traffic_search(text, timestamptz, timestamptz, int);
+create or replace function public.admin_traffic_search(p_query text default null, p_from timestamptz default null,
+                                                       p_to timestamptz default null, p_limit int default 500)
+returns table (id bigint, created_at timestamptz, user_id uuid, username text, full_name text, action text,
+               object_id uuid, ip text, user_agent text)
+language plpgsql security definer set search_path = public as $$
+#variable_conflict use_column
+declare q text := nullif(btrim(coalesce(p_query, '')), '');
+begin
+  perform public._require_admin();
+  perform public._audit('traffic_search', null, jsonb_build_object('query', q, 'from', p_from, 'to', p_to));
+  return query
+    select t.id, t.created_at, t.user_id, t.username, coalesce(pr.admin_real_name, pr.full_name), t.action,
+           t.object_id, t.ip, t.user_agent
+      from public.traffic_log t
+      left join public.profiles pr on pr.id = t.user_id
+     where (p_from is null or t.created_at >= p_from)
+       and (p_to is null or t.created_at < p_to)
+       and (q is null or t.ip = q or t.username = lower(q) or t.user_id::text = q
+            or public._tr_fold(coalesce(pr.full_name, '')) like '%' || public._tr_fold(q) || '%'
+            or public._tr_fold(coalesce(pr.alias, '')) = public._tr_fold(q))
+     order by t.created_at desc
+     limit greatest(1, least(coalesce(p_limit, 500), 5000));
+end $$;
+
+-- ---- Yedekleme --------------------------------------------------------------------------------------------------
+-- Yedek: public şemasındaki bütün tablolar tek bir JSON'da. Giriş hesapları (e-posta, şifre) yedeğe GİRMEZ ve geri
+-- yüklemede hiçbir giriş hesabına dokunulmaz. Bu fonksiyonları yalnızca sunucu (Edge Function `admin-backup`,
+-- veritabanına doğrudan bağlanarak) çalıştırır; uygulama ya da web sayfası doğrudan çağıramaz.
+
+-- Tablolar, birbirine bağlılık sırasına göre (önce bağlanılan tablo). Döngü varsa kalanlar ada göre eklenir.
+create or replace function public._backup_tables()
+returns text[] language plpgsql stable set search_path = public as $$
+declare
+  v_all text[];
+  v_done text[] := '{}';
+  v_progress boolean := true;
+  t text;
+begin
+  select array_agg(c.relname::text order by c.relname) into v_all
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relkind = 'r'
+     and c.relname not in ('admin_web_sessions');
+  while v_progress loop
+    v_progress := false;
+    foreach t in array v_all loop
+      if t = any (v_done) then continue; end if;
+      if not exists (
+        select 1 from pg_constraint k
+          join pg_class src on src.oid = k.conrelid join pg_namespace sn on sn.oid = src.relnamespace
+          join pg_class ref on ref.oid = k.confrelid join pg_namespace rn on rn.oid = ref.relnamespace
+         where k.contype = 'f' and sn.nspname = 'public' and src.relname = t
+           and rn.nspname = 'public' and ref.relname <> t
+           and ref.relname <> all (v_done) and ref.relname = any (v_all)) then
+        v_done := v_done || t;
+        v_progress := true;
+      end if;
+    end loop;
+  end loop;
+  foreach t in array v_all loop
+    if t <> all (v_done) then v_done := v_done || t; end if;
+  end loop;
+  return v_done;
+end $$;
+
+create or replace function public.admin_backup_export(p_admin uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  t text;
+  v_tables jsonb := '{}'::jsonb;
+  v_rows jsonb;
+  v_counts jsonb := '{}'::jsonb;
+begin
+  if not exists (select 1 from public.profiles where id = p_admin and role = 'admin' and banned_at is null) then
+    raise exception 'forbidden';
+  end if;
+  foreach t in array public._backup_tables() loop
+    execute format('select coalesce(jsonb_agg(to_jsonb(x)), ''[]''::jsonb) from public.%I x', t) into v_rows;
+    v_tables := v_tables || jsonb_build_object(t, v_rows);
+    v_counts := v_counts || jsonb_build_object(t, jsonb_array_length(v_rows));
+  end loop;
+  insert into public.admin_audit_log (admin_id, action, detail)
+  values (p_admin, 'backup_export', jsonb_build_object('tables', (select count(*) from jsonb_object_keys(v_tables))));
+  return jsonb_build_object('format', '41kat-yedek-v1', 'created_at', now(), 'by', p_admin,
+                            'counts', v_counts, 'tables', v_tables);
+end $$;
+
+-- Yedeği geri yükler. Tek işlemdir: bir şey ters giderse hiçbir şey değişmez. Kurallar:
+--  * İçerik (gönderiler, oyunlar, etkinlikler, puanlar, ayarlar…) yedekteki hâline döner; yedekten sonra eklenenler silinir.
+--  * Giriş hesaplarına (auth) hiç dokunulmaz. Yedekten sonra açılan hesaplar kalır; yalnızca o tarihten sonraki
+--    içerikleri gider ve bir sonraki girişlerinde yeni rumuz alırlar.
+--  * Yedekten sonra SİLİNEN hesaplar geri GELMEZ (KVKK: silinen kişinin verisi geri yüklenmez); onlara bağlı kayıtlar atlanır.
+--  * İşlem günlüğü ve trafik kayıtları silinmez (yasal kayıt); yedekteki eksik satırlar eklenir.
+--  * Resim dosyaları yedekte yoktur (Storage'da durur); yalnızca dosya yolları geri gelir.
+create or replace function public.admin_backup_restore(p_data jsonb, p_admin uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_tables text[] := public._backup_tables();
+  -- Yasal kayıtlar: silinmez, yalnızca eksik satırlar eklenir
+  v_keep text[] := array['admin_audit_log', 'traffic_log'];
+  -- Hesap tabloları: yalnızca yedekte bulunan kişilerin satırları değişir (sonradan açılan hesapların satırı kalır)
+  v_account jsonb := '{"profiles": "id", "device_accounts": "user_id", "account_recovery": "user_id",
+                       "identity_verifications": "user_id"}'::jsonb;
+  t text;
+  v_rows jsonb;
+  v_cols text;
+  v_pk text;
+  v_set text;
+  v_where text;
+  v_fk record;
+  v_n int;
+  v_counts jsonb := '{}'::jsonb;
+  v_deleted jsonb := '{}'::jsonb;
+  v_backup_users uuid[];
+  v_kept_users int;
+  v_sessions jsonb;
+  c record;
+begin
+  if p_data ->> 'format' is distinct from '41kat-yedek-v1' or jsonb_typeof(p_data -> 'tables') <> 'object' then
+    raise exception 'invalid_backup';
+  end if;
+  if not exists (select 1 from public.profiles where id = p_admin and role = 'admin' and banned_at is null) then
+    raise exception 'forbidden';
+  end if;
+  perform pg_advisory_xact_lock(hashtext('backup_restore'));
+
+  select coalesce(array_agg((r ->> 'id')::uuid), '{}') into v_backup_users
+    from jsonb_array_elements(coalesce(p_data -> 'tables' -> 'profiles', '[]'::jsonb)) r;
+  if cardinality(v_backup_users) = 0 then raise exception 'backup_has_no_members'; end if;
+  select count(*) into v_kept_users from public.profiles p where p.id <> all (v_backup_users);
+
+  -- Panel oturumları geri yüklemeden sonra korunur
+  select coalesce(jsonb_agg(to_jsonb(s)), '[]'::jsonb) into v_sessions from public.admin_web_sessions s;
+
+  -- Sonradan açılan hesapların rumuzu yedekteki biriyle çakışmasın: bir sonraki girişte yeni rumuz alırlar
+  update public.profiles
+     set alias = 'Üye#' || id::text, alias_no = null, alias_week = alias_week - 7
+   where id <> all (v_backup_users);
+
+  -- Tetikleyicileri kapat (puan, bildirim, trafik kaydı yeniden çalışmasın)
+  foreach t in array v_tables loop
+    execute format('alter table public.%I disable trigger user', t);
+  end loop;
+
+  -- 1) Sondan başa: yedekte OLMAYAN satırları sil (yedekten sonra eklenenler). Yedekte hiç bulunmayan tablo
+  --    (yedekten sonra eklenmiş yeni özellik) olduğu gibi kalır.
+  for i in reverse cardinality(v_tables) .. 1 loop
+    t := v_tables[i];
+    v_rows := p_data -> 'tables' -> t;
+    if t = any (v_keep) or v_rows is null or jsonb_typeof(v_rows) <> 'array' then continue; end if;
+    select string_agg(format('%I', a.attname), ', ' order by array_position(ix.indkey::int2[], a.attnum))
+      into v_pk
+      from pg_index ix join pg_attribute a on a.attrelid = ix.indrelid and a.attnum = any (ix.indkey)
+     where ix.indrelid = ('public.' || t)::regclass and ix.indisprimary;
+    if v_pk is null then
+      execute format('delete from public.%I', t);
+    else
+      execute format('delete from public.%1$I d where (%2$s) not in (select %2$s from '
+                     'jsonb_populate_recordset(null::public.%1$I, $1)) %3$s', t, v_pk,
+                     case when v_account ? t then format('and d.%I = any ($2)', v_account ->> t) else '' end)
+        using v_rows, v_backup_users;
+    end if;
+    get diagnostics v_n = row_count;
+    if v_n > 0 then v_deleted := v_deleted || jsonb_build_object(t, v_n); end if;
+  end loop;
+
+  -- 2) Baştan sona: yedekteki satırları yaz (varsa güncelle). Yalnızca bugün de var olan sütunlar; bağlandığı
+  --    kayıt yoksa (ör. sonradan silinen hesap) satır atlanır.
+  foreach t in array v_tables loop
+    v_rows := p_data -> 'tables' -> t;
+    if v_rows is null or jsonb_typeof(v_rows) <> 'array' or jsonb_array_length(v_rows) = 0 then continue; end if;
+    select string_agg(format('%I', a.attname), ', ' order by a.attnum),
+           string_agg(format('%1$I = excluded.%1$I', a.attname), ', ' order by a.attnum)
+             filter (where a.attidentity <> 'a')
+      into v_cols, v_set
+      from pg_attribute a
+     where a.attrelid = ('public.' || t)::regclass and a.attnum > 0 and not a.attisdropped
+       and a.attgenerated = ''
+       and (v_rows -> 0) ? a.attname::text;
+    if v_cols is null then continue; end if;
+    select string_agg(format('%I', a.attname), ', ' order by array_position(ix.indkey::int2[], a.attnum))
+      into v_pk
+      from pg_index ix join pg_attribute a on a.attrelid = ix.indrelid and a.attnum = any (ix.indkey)
+     where ix.indrelid = ('public.' || t)::regclass and ix.indisprimary;
+    v_where := 'true';
+    for v_fk in
+      select (select array_agg(a.attname::text order by x.ord) from unnest(k.conkey) with ordinality x(n, ord)
+                join pg_attribute a on a.attrelid = k.conrelid and a.attnum = x.n) as cols,
+             (select array_agg(a.attname::text order by x.ord) from unnest(k.confkey) with ordinality x(n, ord)
+                join pg_attribute a on a.attrelid = k.confrelid and a.attnum = x.n) as refcols,
+             rn.nspname::text as refschema, ref.relname::text as reftable
+        from pg_constraint k
+        join pg_class ref on ref.oid = k.confrelid join pg_namespace rn on rn.oid = ref.relnamespace
+       where k.contype = 'f' and k.conrelid = ('public.' || t)::regclass and k.confrelid <> k.conrelid
+    loop
+      v_where := v_where || ' and (' ||
+        (select string_agg(format('x.%I is null', col), ' or ') from unnest(v_fk.cols) col) ||
+        format(' or exists (select 1 from %I.%I r where ', v_fk.refschema, v_fk.reftable) ||
+        (select string_agg(format('r.%I = x.%I', v_fk.refcols[i2], v_fk.cols[i2]), ' and ')
+           from generate_subscripts(v_fk.cols, 1) i2) || '))';
+    end loop;
+    execute format('insert into public.%1$I (%2$s) overriding system value select %2$s '
+                   'from jsonb_populate_recordset(null::public.%1$I, $1) x where %3$s %4$s',
+                   t, v_cols, v_where,
+                   case when t = any (v_keep) or v_pk is null then 'on conflict do nothing'
+                        when v_set is null then format('on conflict (%s) do nothing', v_pk)
+                        else format('on conflict (%s) do update set %s', v_pk, v_set) end)
+      using v_rows;
+    get diagnostics v_n = row_count;
+    v_counts := v_counts || jsonb_build_object(t, v_n);
+  end loop;
+
+  -- Yedekten sonra silinen hesapların gönderi ve yorumları da geri gelmez (hesap silinince içerikleri de silinir)
+  delete from public.posts p
+   where exists (select 1 from jsonb_array_elements(coalesce(p_data -> 'tables' -> 'post_authors', '[]'::jsonb)) a
+                  where (a ->> 'post_id')::uuid = p.id
+                    and not exists (select 1 from public.profiles pr where pr.id = (a ->> 'author_id')::uuid));
+  delete from public.comments cm
+   where exists (select 1 from jsonb_array_elements(coalesce(p_data -> 'tables' -> 'comment_authors', '[]'::jsonb)) a
+                  where (a ->> 'comment_id')::uuid = cm.id
+                    and not exists (select 1 from public.profiles pr where pr.id = (a ->> 'author_id')::uuid));
+
+  -- 3) Otomatik numaraları en büyük değere getir, tetikleyicileri aç
+  for c in
+    select cl.relname::text as tbl, a.attname::text as col,
+           pg_get_serial_sequence(format('public.%I', cl.relname), a.attname) as seq
+      from pg_attribute a join pg_class cl on cl.oid = a.attrelid join pg_namespace n on n.oid = cl.relnamespace
+     where n.nspname = 'public' and cl.relkind = 'r' and a.attnum > 0 and not a.attisdropped
+       and pg_get_serial_sequence(format('public.%I', cl.relname), a.attname) is not null
+  loop
+    execute format('select setval(%L, greatest(coalesce((select max(%I) from public.%I), 0), 1))',
+                   c.seq, c.col, c.tbl);
+  end loop;
+  foreach t in array v_tables loop
+    execute format('alter table public.%I enable trigger user', t);
+  end loop;
+
+  -- 4) Panel oturumlarını geri koy
+  insert into public.admin_web_sessions
+  select * from jsonb_populate_recordset(null::public.admin_web_sessions, v_sessions) s
+   where exists (select 1 from public.profiles p where p.id = s.user_id)
+  on conflict do nothing;
+
+  insert into public.admin_audit_log (admin_id, action, detail)
+  values (p_admin, 'backup_restore', jsonb_build_object('backup_created_at', p_data ->> 'created_at',
+                                                        'kept_new_accounts', v_kept_users, 'deleted', v_deleted,
+                                                        'rows', v_counts));
+  return jsonb_build_object('ok', true, 'kept_new_accounts', v_kept_users, 'deleted', v_deleted, 'rows', v_counts);
+end $$;
+
 revoke execute on all functions in schema public from public, anon, authenticated;
 
 -- RLS kurallarının içinde kullanılan yardımcılar
@@ -15062,6 +15504,9 @@ grant execute on function public.admin_review_photo(uuid, text, boolean) to auth
 grant execute on function public.admin_revoke_identity(uuid, text) to authenticated;
 grant execute on function public.admin_web_claim() to authenticated;
 grant execute on function public.admin_web_release() to authenticated;
+grant execute on function public.admin_retention_status() to authenticated;
+grant execute on function public.admin_run_retention() to authenticated;
+grant execute on function public.admin_traffic_search(text, timestamptz, timestamptz, int) to authenticated;
 
 -- Profil resimleri (yalnızca doğrulanmış hesap): herkese açık okunan "profile-photos" kutusu; en çok 2 MB, jpg/png/webp.
 -- Dosya adı tahmin edilemez; adres yalnızca gerçek adın göründüğü yerlerde (arkadaşlara) verilir.

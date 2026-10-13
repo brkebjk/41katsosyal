@@ -2,26 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { configProblem, isBackendReady, loginEmail, supabase } from './supabase';
 import { Button, NoticeBar, type Notice } from './ui';
-import { ApprovalsPage } from './pages/Approvals';
-import { LogPage } from './pages/Log';
-import { MembersPage } from './pages/Members';
-import { OverviewPage } from './pages/Overview';
-import { ProblemsPage } from './pages/Problems';
-import { ReportsPage } from './pages/Reports';
-
-type Page = 'overview' | 'reports' | 'members' | 'approvals' | 'problems' | 'log';
-
-const NAV: { value: Page; label: string }[] = [
-  { value: 'overview', label: 'Özet' },
-  { value: 'reports', label: 'Şikayetler' },
-  { value: 'members', label: 'Üyeler' },
-  { value: 'approvals', label: 'Onaylar' },
-  { value: 'problems', label: 'Sorun bildirimleri' },
-  { value: 'log', label: 'İşlem günlüğü' },
-];
-
-/** Sonraki aşamalarda eklenecek bölümler (şimdilik mobil uygulamadaki moderatör ekranından yapılır) */
-const SOON = ['Akış ve mesajlar', 'Duyurular', 'Etkinlikler ve çekilişler', 'Yarışma soruları', 'Harita araçları', 'Ayarlar'];
+import { ALL_PAGES, NAV_GROUPS, pageLabel, renderPage, type Page } from './pages';
 
 type Gate = 'loading' | 'out' | 'in';
 
@@ -29,10 +10,12 @@ export function App() {
   const [gate, setGate] = useState<Gate>('loading');
   const [page, setPage] = useState<Page>(() => {
     const h = window.location.hash.replace('#', '') as Page;
-    return NAV.some((n) => n.value === h) ? h : 'overview';
+    return ALL_PAGES.includes(h) ? h : 'overview';
   });
   const [notice, setNotice] = useState<Notice>(null);
   const [focusMember, setFocusMember] = useState<string | null>(null);
+  // Telefonda menü kapalı başlar (üstteki ☰ ile açılır)
+  const [menuOpen, setMenuOpen] = useState(false);
 
   /** Oturum varsa web panel oturumunu sunucuya kaydeder (yalnızca moderatör hesabı geçer) */
   const claim = useCallback(async (): Promise<string | null> => {
@@ -62,8 +45,17 @@ export function App() {
   }, [claim]);
 
   useEffect(() => {
-    window.location.hash = page;
+    if (window.location.hash !== `#${page}`) window.location.hash = page;
   }, [page]);
+  // Tarayıcının geri / ileri düğmesi
+  useEffect(() => {
+    const onHash = () => {
+      const h = window.location.hash.replace('#', '') as Page;
+      if (ALL_PAGES.includes(h)) setPage(h);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
 
   async function logout() {
     if (!supabase) return;
@@ -108,50 +100,46 @@ export function App() {
   const openMember = (id: string) => {
     setFocusMember(id);
     setPage('members');
+    window.scrollTo({ top: 0 });
   };
 
   return (
     <div className="shell">
-      <aside className="side">
+      <header className="topbar">
+        <button className="menu-btn" onClick={() => setMenuOpen((o) => !o)} aria-label="Menü">
+          {menuOpen ? '✕' : '☰'}
+        </button>
+        <span className="topbar-title">{pageLabel(page)}</span>
+      </header>
+      <aside className={`side ${menuOpen ? 'side-open' : ''}`}>
         <div className="brand">41. Kat Yönetim</div>
         <nav>
-          {NAV.map((n) => (
-            <button
-              key={n.value}
-              className={`nav ${page === n.value ? 'nav-on' : ''}`}
-              onClick={() => setPage(n.value)}
-            >
-              {n.label}
-            </button>
-          ))}
-        </nav>
-        <div className="soon">
-          <div className="soon-title">Yakında</div>
-          {SOON.map((s) => (
-            <div key={s} className="soon-item">
-              {s}
+          {NAV_GROUPS.map((g) => (
+            <div key={g.title} className="nav-group">
+              <div className="nav-title">{g.title}</div>
+              {g.items.map((n) => (
+                <button
+                  key={n.value}
+                  className={`nav ${page === n.value ? 'nav-on' : ''}`}
+                  onClick={() => {
+                    setPage(n.value);
+                    setMenuOpen(false);
+                    window.scrollTo({ top: 0 });
+                  }}
+                >
+                  {n.label}
+                </button>
+              ))}
             </div>
           ))}
-        </div>
+        </nav>
         <Button kind="ghost" onClick={() => void logout()}>
           Çıkış yap
         </Button>
       </aside>
       <main className="main">
         <NoticeBar notice={notice} onClose={() => setNotice(null)} />
-        {page === 'overview' ? (
-          <OverviewPage onGo={(p) => setPage(p as Page)} />
-        ) : page === 'reports' ? (
-          <ReportsPage onNotice={setNotice} onMember={openMember} />
-        ) : page === 'members' ? (
-          <MembersPage onNotice={setNotice} focusId={focusMember} onFocusDone={() => setFocusMember(null)} />
-        ) : page === 'approvals' ? (
-          <ApprovalsPage onNotice={setNotice} />
-        ) : page === 'problems' ? (
-          <ProblemsPage onNotice={setNotice} onMember={openMember} />
-        ) : (
-          <LogPage />
-        )}
+        {renderPage(page, { onNotice: setNotice, onMember: openMember, onGo: setPage, focusMember, clearFocus: () => setFocusMember(null) })}
       </main>
     </div>
   );

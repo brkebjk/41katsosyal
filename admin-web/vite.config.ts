@@ -22,4 +22,5 @@ export default defineConfig({
     ],
   },
   server: { fs: { allow: [here('..')] } },
+  build: { chunkSizeWarningLimit: 1500 },
 });
