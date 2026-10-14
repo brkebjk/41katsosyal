@@ -233,6 +233,8 @@ export type Tile = {
   check?: boolean | null;
   voice?: { speaking: boolean; micOff: boolean; filter: boolean; away: boolean; offline: boolean } | null;
   kick?: { votes: number; need: number | null; mine: boolean; secsLeft: number | null } | null;
+  /** Konuşanın avatarında kırmızı ünlem: dokununca sesi şikâyet et */
+  alert?: boolean;
 };
 
 const GAP = 6;
@@ -241,18 +243,18 @@ const EXTRA = 56;
 const MAX_AVATAR = 84;
 
 /** Oyuncu sayısına ve alana göre en büyük avatarın sığdığı sütun sayısı */
+/** Her satırda hep 4 avatar (Köpekbalığı Kafesi ile aynı düzen); kaydırmadan sığacak en büyük boyut */
 function fit(n: number, w: number, h: number): { cols: number; size: number } {
-  let best = { cols: Math.min(4, Math.max(1, n)), size: 26 };
-  for (let cols = 2; cols <= 8; cols++) {
-    const rows = Math.ceil(n / cols);
-    const tileW = (w - GAP * (cols - 1)) / cols;
-    const byW = tileW - 10;
-    const byH = (h - GAP * (rows - 1)) / rows - EXTRA;
-    const size = Math.floor(Math.min(byW, byH, MAX_AVATAR));
-    if (size > best.size) best = { cols, size };
-  }
-  return best;
+  const cols = 4;
+  const rows = Math.max(1, Math.ceil(n / cols));
+  const tileW = (w - GAP * (cols - 1)) / cols;
+  const byW = tileW - 10;
+  const byH = (h - GAP * (rows - 1)) / rows - EXTRA;
+  return { cols, size: Math.max(26, Math.floor(Math.min(byW, byH, MAX_AVATAR))) };
 }
+
+/** Avatar boyutu oyun boyunca sabit kalsın (aynı oda, aynı oyuncu sayısı için en küçük boyut) */
+const stickySize = new Map<string, number>();
 
 export function PlayerGrid({
   tiles,
@@ -260,19 +262,32 @@ export function PlayerGrid({
   accent = G.red,
   onPress,
   onLongPress,
+  onAlert,
+  stickyKey,
 }: {
   tiles: Tile[];
   selected?: string | null;
   accent?: string;
   onPress?: (t: Tile) => void;
   onLongPress?: (t: Tile) => void;
+  onAlert?: (t: Tile) => void;
+  /** Boyutu sabitlemek için (oda kimliği) */
+  stickyKey?: string;
 }) {
   const [box, setBox] = useState<{ w: number; h: number } | null>(null);
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
     if (!box || Math.abs(box.w - width) > 1 || Math.abs(box.h - height) > 1) setBox({ w: width, h: height });
   };
-  const { cols, size } = box ? fit(tiles.length, box.w, box.h) : { cols: 4, size: 0 };
+  const fitted = box ? fit(tiles.length, box.w, box.h) : { cols: 4, size: 0 };
+  const cols = fitted.cols;
+  let size = fitted.size;
+  if (stickyKey && size > 0) {
+    const k = `${stickyKey}:${tiles.length}`;
+    const prev = stickySize.get(k);
+    if (prev !== undefined && prev < size) size = prev;
+    else stickySize.set(k, size);
+  }
   const tileW = box ? Math.floor((box.w - GAP * (cols - 1)) / cols) : 0;
 
   return (
@@ -290,6 +305,7 @@ export function PlayerGrid({
                 accent={accent}
                 onPress={onPress}
                 onLongPress={onLongPress}
+                onAlert={onAlert}
               />
             ))}
           </View>
@@ -307,6 +323,7 @@ function PlayerTile({
   accent,
   onPress,
   onLongPress,
+  onAlert,
 }: {
   tile: Tile;
   width: number;
@@ -315,6 +332,7 @@ function PlayerTile({
   accent: string;
   onPress?: (t: Tile) => void;
   onLongPress?: (t: Tile) => void;
+  onAlert?: (t: Tile) => void;
 }) {
   const p = tile.p;
   const dead = !p.is_alive;
@@ -380,6 +398,18 @@ function PlayerTile({
           ) : null}
         </View>
 
+        {/* Konuşan oyuncu: kırmızı ünlem, dokununca ses şikâyeti */}
+        {tile.alert && onAlert ? (
+          <Pressable
+            onPress={() => onAlert(tile)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Sesi şikâyet et"
+            style={styles.alertBtn}
+          >
+            <Text style={styles.alertText}>!</Text>
+          </Pressable>
+        ) : null}
         {/* Sağ üst: anlatıcı işareti ya da oda sahibi yıldızı */}
         {tile.check !== undefined && tile.check !== null ? (
           <View style={[styles.corner, styles.cornerTR, { backgroundColor: tile.check ? G.green : 'rgba(0,0,0,0.6)' }]}>
@@ -440,6 +470,22 @@ function PlayerTile({
 }
 
 const styles = StyleSheet.create({
+  alertBtn: {
+    position: 'absolute',
+    top: -6,
+    left: -6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E5383B',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    zIndex: 30,
+    elevation: 30,
+  },
+  alertText: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 14, lineHeight: 16 },
   glass: {
     gap: 8,
     padding: 12,

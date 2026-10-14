@@ -89,7 +89,13 @@ export function ReportsPage({ onNotice, onMember }: { onNotice: (n: Notice) => v
             </div>
             <p className="muted small">Nedenler: {[...new Set(g.reasons)].join(', ')}</p>
             {g.type === 'sk_voice' ? (
-              <VoiceClip id={g.targetId} />
+              <>
+                <VoiceClip id={g.targetId} />
+                <p className="muted small">
+                  Haklı: konuşanın mikrofonu 7 gün (tekrarında 30 gün) kapanır. Haksız: şikâyet edenin haksız şikâyet
+                  sayısı artar; her 3 haksız şikâyette 30 gün ses şikâyeti yapamaz ve 7 gün mikrofon kullanamaz.
+                </p>
+              </>
             ) : g.content ? (
               <div className={`quote ${g.content.is_hidden ? 'quote-hidden' : ''}`}>
                 <div className="muted small">

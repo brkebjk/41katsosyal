@@ -542,6 +542,8 @@ export type Seat = {
   label?: { text: string; color: string } | null;
   /** Ölüyse nasıl elendi */
   deadLabel?: string | null;
+  /** Ölü avatarın üstündeki simge (🤿 gece, ⛓️ kafes, 🔱 zıpkın, 🚪 ayrıldı) */
+  deadIcon?: string;
   /** Köpekbalığıysan: takım arkadaşın */
   ally?: boolean;
   /** Çerçeve rengi: takım arkadaşı yeşil, bilinmeyen sarı, rolü açığa çıkan rakip kırmızı (ince) */
@@ -556,6 +558,8 @@ export type Seat = {
   thinking?: boolean;
   /** Şu an bas-konuş sesi çalınan kişi: avatar öne çıkar, büyür */
   speaking?: boolean;
+  /** Konuşanın avatarında kırmızı ünlem: dokununca sesi şikâyet et */
+  alert?: boolean;
 };
 
 /**
@@ -576,19 +580,21 @@ const EXTRA = 60;
 const MAX_AVATAR = 108;
 const MIN_AVATAR = 26;
 
-/** Ekranı kaydırmadan bütün avatarlar sığsın: en büyük avatarı veren sütun sayısı seçilir */
+/** Her satırda hep 4 avatar; kaydırmadan sığacak en büyük boyut */
+const COLS = 4;
 function fit(n: number, w: number, h: number): { cols: number; size: number } {
-  let best = { cols: Math.min(4, Math.max(1, n)), size: 0 };
-  for (let cols = 2; cols <= 6; cols++) {
-    const rows = Math.ceil(n / cols);
-    const tileW = (w - GAP * (cols - 1)) / cols;
-    const byW = tileW - 10;
-    const byH = (h - GAP * (rows - 1)) / rows - EXTRA;
-    const size = Math.floor(Math.min(byW, byH, MAX_AVATAR));
-    if (size > best.size) best = { cols, size };
-  }
-  return { cols: best.cols, size: Math.max(MIN_AVATAR, best.size) };
+  const rows = Math.max(1, Math.ceil(n / COLS));
+  const tileW = (w - GAP * (COLS - 1)) / COLS;
+  const byW = tileW - 10;
+  const byH = (h - GAP * (rows - 1)) / rows - EXTRA;
+  return { cols: COLS, size: Math.max(MIN_AVATAR, Math.floor(Math.min(byW, byH, MAX_AVATAR))) };
 }
+
+/**
+ * Avatar boyutu oyun boyunca sabit kalsın: aynı oda ve aynı oyuncu sayısı için şimdiye kadarki en küçük boyut
+ * kullanılır (aşama değişip alttaki alan büyüyüp küçülse de avatarlar yer ve boyut değiştirmez).
+ */
+const stickySize = new Map<string, number>();
 
 export function SeatGrid({
   seats,
@@ -597,8 +603,12 @@ export function SeatGrid({
   light,
   onPress,
   onLongPress,
+  onAlert,
   mark,
+  stickyKey,
 }: {
+  /** Boyutu sabitlemek için (oda kimliği) */
+  stickyKey?: string;
   seats: Seat[];
   selected?: string | null;
   accent: string;
@@ -607,6 +617,8 @@ export function SeatGrid({
   onPress?: (s: Seat) => void;
   /** Avatara basılı tutunca (ör. ses mesajını şikâyet et) */
   onLongPress?: (s: Seat) => void;
+  /** Konuşanın avatarındaki kırmızı ünleme dokununca */
+  onAlert?: (s: Seat) => void;
   /** Rol yeteneğinin seçilen avatara atılan simgesi */
   mark?: SeatMark | null;
 }) {
@@ -615,7 +627,15 @@ export function SeatGrid({
     const { width, height } = e.nativeEvent.layout;
     if (!box || Math.abs(box.w - width) > 1 || Math.abs(box.h - height) > 1) setBox({ w: width, h: height });
   };
-  const { cols, size } = box ? fit(seats.length, box.w, box.h) : { cols: 4, size: 0 };
+  const fitted = box ? fit(seats.length, box.w, box.h) : { cols: COLS, size: 0 };
+  const cols = fitted.cols;
+  let size = fitted.size;
+  if (stickyKey && size > 0) {
+    const k = `${stickyKey}:${seats.length}`;
+    const prev = stickySize.get(k);
+    if (prev !== undefined && prev < size) size = prev;
+    else stickySize.set(k, size);
+  }
   const tileW = box ? Math.floor((box.w - GAP * (cols - 1)) / cols) : 0;
   // Tabeladaki okun yönü: oy verenin avatarından oy verilenin avatarına (ızgaradaki konumlarından hesaplanır;
   // satırlar ortalandığı için eksik son satırın kayması da hesaba katılır)
@@ -652,6 +672,7 @@ export function SeatGrid({
               arrow={angleOf(s.p.id, s.sign?.target)}
               onPress={onPress}
               onLongPress={onLongPress}
+              onAlert={onAlert}
             />
           ))}
           {mark && center.has(mark.to) ? (
@@ -684,6 +705,7 @@ function SeatTile({
   arrow,
   onPress,
   onLongPress,
+  onAlert,
 }: {
   seat: Seat;
   width: number;
@@ -695,6 +717,7 @@ function SeatTile({
   arrow: number | null;
   onPress?: (s: Seat) => void;
   onLongPress?: (s: Seat) => void;
+  onAlert?: (s: Seat) => void;
 }) {
   const p = seat.p;
   const dead = !p.is_alive;
@@ -796,7 +819,7 @@ function SeatTile({
           </View>
           {dead ? (
             <View style={[styles.deadMark, { borderRadius: size / 2 }]}>
-              <Text style={{ fontSize: Math.round(size * 0.42) }}>{p.left ? '🚪' : p.revealed ? '⛓️' : '🤿'}</Text>
+              <Text style={{ fontSize: Math.round(size * 0.42) }}>{seat.deadIcon ?? (p.left ? '🚪' : '🤿')}</Text>
             </View>
           ) : null}
         </View>
@@ -832,7 +855,8 @@ function SeatTile({
             )}
           </View>
         ) : null}
-        {p.marshal ? (
+        {/* Komutan işareti yalnızca rol ikonu görünmüyorsa (rolü açıklanan kişinin ikonu zaten avatarda) */}
+        {p.marshal && !seat.roleEmoji ? (
           <View style={[styles.badge, styles.badgeLeft]}>
             <Text style={styles.badgeText}>🎖️</Text>
           </View>
@@ -842,6 +866,18 @@ function SeatTile({
           </View>
         ) : null}
         {seat.thinking && !dead ? <Thinking size={size} /> : null}
+        {/* Konuşan oyuncu: kırmızı ünlem, dokununca ses şikâyeti */}
+        {seat.alert && onAlert ? (
+          <Pressable
+            onPress={() => onAlert(seat)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Sesi şikâyet et"
+            style={styles.alertBtn}
+          >
+            <Text style={styles.alertText}>!</Text>
+          </Pressable>
+        ) : null}
         {/* Olay balonu: avatarın üstünde simge ve kelime */}
         {seat.event ? (
           <View style={styles.eventWrap} pointerEvents="none">
@@ -964,6 +1000,71 @@ function FlyingMark({ mark, from, to, size }: {
         <Text style={[styles.markText, { fontSize: Math.round(size * 0.8), lineHeight: size }]}>{mark.icon}</Text>
       </Animated.View>
     </Animated.View>
+  );
+}
+
+/**
+ * Atma oylaması bandı (iki oyunda): "⑤ atılsın mı · At 3/5 · 24 sn" ve AT / KALSIN düğmeleri. Atılmak istenen kişi
+ * ve oy veremeyenler (elenenler) yalnızca durumu görür.
+ */
+export function KickBar({
+  targetSeat,
+  targetName,
+  yes,
+  need,
+  left,
+  mine,
+  canVote,
+  isTarget,
+  busy,
+  onVote,
+  inline,
+}: {
+  /** Ekranın akışı içinde (üstte asılı değil) */
+  inline?: boolean;
+  targetSeat?: number;
+  targetName: string;
+  yes: number;
+  need: number;
+  left: number;
+  mine: boolean;
+  canVote: boolean;
+  isTarget: boolean;
+  busy: boolean;
+  onVote: (yes: boolean) => void;
+}) {
+  return (
+    <View style={[styles.kickBar, inline && styles.kickInline]} accessibilityLiveRegion="polite">
+      <View style={styles.flex}>
+        <RichLine
+          align="left"
+          chip={18}
+          style={styles.kickText}
+          text={`🚪 ${targetSeat ? seatTag(targetSeat) : ''} ${targetName} ${isTarget ? 'seni atmak için oylama var' : 'atılsın mı?'}`}
+        />
+        <Text style={styles.kickText}>{`At ${yes} / ${need} · ${left} sn`}</Text>
+      </View>
+      {canVote && !isTarget ? (
+        <>
+          <Pressable
+            onPress={() => onVote(true)}
+            disabled={busy || mine}
+            accessibilityRole="button"
+            style={[styles.kickBtn, mine && styles.kickBtnOn]}
+          >
+            <Text style={[styles.kickBtnText, mine && styles.kickBtnTextOn]}>{mine ? '✓ AT' : 'AT'}</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => onVote(false)}
+            disabled={busy || !mine}
+            accessibilityRole="button"
+            style={[styles.kickBtn, !mine && styles.kickBtnOn]}
+          >
+            <Text style={[styles.kickBtnText, !mine && styles.kickBtnTextOn]}>KALSIN</Text>
+          </Pressable>
+        </>
+      ) : null}
+    </View>
   );
 }
 
@@ -1633,6 +1734,52 @@ const styles = StyleSheet.create({
   markText: { textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 6 },
   dim: { opacity: 0.38 },
   signSlot: { height: 28, justifyContent: 'flex-start', alignItems: 'center', marginTop: 0, maxWidth: '100%' },
+  alertBtn: {
+    position: 'absolute',
+    top: -6,
+    right: -8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E5383B',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    zIndex: 30,
+    elevation: 30,
+  },
+  alertText: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 14, lineHeight: 16 },
+  kickBar: {
+    position: 'absolute',
+    top: 34,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 8,
+    borderRadius: 14,
+    backgroundColor: 'rgba(122, 16, 32, 0.94)',
+    borderWidth: 1.5,
+    borderColor: '#FF8A98',
+    zIndex: 35,
+    elevation: 35,
+  },
+  kickInline: { position: 'relative', top: 0 },
+  kickText: { color: '#FFFFFF', fontFamily: fonts.extra, fontSize: 13 },
+  kickBtn: {
+    paddingHorizontal: 12,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  kickBtnOn: { backgroundColor: '#FFFFFF' },
+  kickBtnText: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 13 },
+  kickBtnTextOn: { color: '#7A1020' },
   thinkWrap: { position: 'absolute', top: '18%', left: 0, right: 0, alignItems: 'center' },
   thinkText: {
     color: '#FFB703',
@@ -1640,7 +1787,7 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.85)',
     textShadowRadius: 6,
   },
-  eventWrap: { position: 'absolute', top: -16, left: -40, right: -40, alignItems: 'center' },
+  eventWrap: { position: 'absolute', top: -30, left: -40, right: -40, alignItems: 'center' },
   event: {
     paddingHorizontal: 7,
     height: 20,
@@ -1785,9 +1932,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(10, 15, 30, 0.35)',
   },
   seatNo: {
+    // Avatarın üst ortasında
     position: 'absolute',
-    top: -4,
-    left: -6,
+    top: -8,
+    left: '50%',
+    marginLeft: -13,
     minWidth: 26,
     height: 26,
     paddingHorizontal: 4,
@@ -1798,7 +1947,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#FFB703',
   },
-  seatNoSmall: { minWidth: 20, height: 20, borderRadius: 10, top: -3, left: -4 },
+  seatNoSmall: { minWidth: 20, height: 20, borderRadius: 10, top: -6, marginLeft: -10 },
   seatNoText: { color: '#FFB703', fontFamily: fonts.black, fontSize: 14 },
   seatNoTextSmall: { fontSize: 11 },
   votesIn: {

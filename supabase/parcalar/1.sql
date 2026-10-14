@@ -3313,6 +3313,8 @@ begin
   -- Köpekbalığı Kafesi ses mesajı: yalnızca o mesajı dinleyebilen kişi (kendi mesajı hariç) bildirebilir.
   -- Bildirilen mesaj 10 dakikada silinmez; moderatör bakana kadar en çok 14 gün saklanır.
   if p_type = 'sk_voice' then
+    -- Haksız şikâyetleri yüzünden şikâyet hakkı kapanan kişi ses mesajı şikâyet edemez
+    if v.report_banned_until is not null and v.report_banned_until > now() then raise exception 'report_banned'; end if;
     if not exists (select 1 from public.sk_voice_clips c where c.id = p_id and c.user_id <> v.id
                     and public._sk_clip_visible(c, v.id)) then
       raise exception 'target_not_found';
@@ -5886,6 +5888,8 @@ begin
       perform public._room_lobby_tick(p_room_id);
       select * into r from public.game_rooms where id = p_room_id;
     end if;
+    perform public._kick_tick(p_room_id);
+    select * into r from public.game_rooms where id = p_room_id;
   end if;
 
   v_is_admin := (v.role = 'admin');
@@ -5999,6 +6003,10 @@ begin
     'rematch', r.config ? 'rematch_of',
     'rematch_left', case when r.status = 'lobby' and r.state ? 'rematch_until'
                          then greatest(0, ceil(extract(epoch from (r.state->>'rematch_until')::timestamptz - now()))::int) end,
+    -- Oyuncu atma oylaması ve kişinin mikrofon / şikâyet yasağı
+    'kick', public._kick_state(r.id, v.id),
+    'mic_banned', v.mic_banned_until is not null and v.mic_banned_until > now(),
+    'report_banned', v.report_banned_until is not null and v.report_banned_until > now(),
     'next_room', case when r.status = 'finished' then r.state->>'next_room' end,
     'next_note', case when r.status = 'finished' then r.state->>'rematch' end,
     'round', v_round,
@@ -6770,17 +6778,3 @@ update public.app_settings set description = 'Yan yana oyunlarda 1. sıranın al
  where key = 'pts_game_top_cap';
 update public.app_settings set description = 'Puan: KODLA doğrulanmış katılım, 4–9 kişilik etkinlik (kalabalık etkinlik daha çok puan getirir)'
  where key = 'pts_event_attend';
-
--- ---------------------------------------------------------------------
--- 5d) Harita ve yer seçme
---     Ham konum sunucuya HİÇ gelmez: telefon bulunduğu peteğin numarasını (q, r) hesaplar, yalnızca onu yollar.
--- ---------------------------------------------------------------------
-
--- İlçenin son sıfırlanma anı: o ilçenin haftalık gününün (reset_dow) en son 00:00'ı (Türkiye saati)
-create or replace function public._district_reset_at(p_dow int)
-returns timestamptz language sql stable as $$
-  select (date_trunc('day', now() at time zone 'Europe/Istanbul')
-          - make_interval(days => ((extract(isodow from now() at time zone 'Europe/Istanbul')::int
-                                    - greatest(1, least(coalesce(p_dow, 1), 7)) + 7) % 7)))
-         at time zone 'Europe/Istanbul';
-$$;

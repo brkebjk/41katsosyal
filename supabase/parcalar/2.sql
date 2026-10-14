@@ -1,6 +1,20 @@
 -- PARÇA 2 / 3 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+-- ---------------------------------------------------------------------
+-- 5d) Harita ve yer seçme
+--     Ham konum sunucuya HİÇ gelmez: telefon bulunduğu peteğin numarasını (q, r) hesaplar, yalnızca onu yollar.
+-- ---------------------------------------------------------------------
+
+-- İlçenin son sıfırlanma anı: o ilçenin haftalık gününün (reset_dow) en son 00:00'ı (Türkiye saati)
+create or replace function public._district_reset_at(p_dow int)
+returns timestamptz language sql stable as $$
+  select (date_trunc('day', now() at time zone 'Europe/Istanbul')
+          - make_interval(days => ((extract(isodow from now() at time zone 'Europe/Istanbul')::int
+                                    - greatest(1, least(coalesce(p_dow, 1), 7)) + 7) % 7)))
+         at time zone 'Europe/Istanbul';
+$$;
+
 -- Harita açık mı, eşikler neler? (district_resets: ilçe adı ve haftalık sıfırlanma günü, 1 = Pazartesi)
 create or replace function public.map_status()
 returns jsonb language plpgsql stable security definer set search_path = public as $$
@@ -5890,6 +5904,8 @@ begin
     if exists (select 1 from public.reports where id = p_report_id) then return; end if;
     raise exception 'report_not_found';
   end if;
+  -- Ses mesajı şikâyeti: haklıysa konuşana, haksızsa şikâyet edene yaptırım
+  perform public._voice_report_verdict(p_report_id, p_status = 'resolved');
   -- Şikayet edene sonuç bildirimi
   perform public._notify((select reporter_id from public.reports where id = p_report_id), 'system',
     case when p_status = 'resolved' then 'Şikayetin sonuçlandı' else 'Şikayetin incelendi' end,
@@ -6709,81 +6725,3 @@ Başvurunu [E-POSTA ADRESİ] adresine ya da [ADRES] adresine yazılı olarak ile
 
 Son güncelleme: [TARİH]$legal$::text)
  where key = 'legal_kvkk' and value = '"KVKK aydınlatma metni henüz eklenmedi."'::jsonb;
-update public.app_settings set value = to_jsonb($legal$41. Kat Sosyal'e hoş geldin! Bu sözleşme, uygulamayı kullanırken senin ve bizim hak ve sorumluluklarımızı anlatır. Hesap oluşturarak bu sözleşmeyi kabul etmiş olursun.
-
-## 1. Taraflar
-Bu sözleşme, [VERİ SORUMLUSUNUN ADI / UNVANI] ("41. Kat Sosyal", "biz") ile uygulamaya üye olan kişi ("üye", "sen") arasındadır.
-
-## 2. Üyelik
-• Üye olmak için 18 yaşını doldurmuş olmalısın. [AVUKAT DEĞERLENDİRMESİ: yaş sınırı]
-• Gerçek adını doğru yazmalısın. Gerçek adını yalnızca bir kez değiştirebilirsin; "41. Kat", "Moderatör" ve "Yönetici" içeren adlar kullanılamaz.
-• Her telefondan yalnızca bir hesap açılabilir ve bir kişi yalnızca bir hesap kullanabilir.
-• Hesabına aynı anda tek telefondan girilebilir; başka bir telefondan girildiğinde önceki oturum kapanır.
-
-## 3. Hesap güvenliği
-• Şifren ve 12 kurtarma kelimen yalnızca sende kalmalıdır; kimseyle paylaşma.
-• E-posta adresi tutmadığımız için şifreni ve kurtarma kelimelerini birlikte kaybedersen hesabına erişimi geri getiremeyebiliriz.
-• Hesabında gerçekleşen işlemlerden sen sorumlusun.
-
-## 4. Rumuz ve anonimlik
-Akışta yalnızca sistemin her hafta verdiği rumuzla görünürsün. Anonimlik sana kuralları çiğneme hakkı vermez: şikayet incelemesi ya da yasal zorunluluk durumunda moderatör içeriğin sahibini görebilir.
-
-## 5. Topluluk kuralları
-Şunlar kesinlikle yasaktır:
-• Hakaret, taciz, tehdit, nefret söylemi ve ayrımcılık,
-• Başkasının kişisel bilgilerini (adres, telefon, fotoğraf gibi) izinsiz paylaşmak,
-• Müstehcen, şiddet içeren ya da yasa dışı içerik paylaşmak,
-• Akışta ve sohbetlerde bağlantı (link), reklam ve spam paylaşmak,
-• Başka bir kişiyi, moderatörü ya da 41. Kat Sosyal'i taklit etmek,
-• Uygulamanın güvenliğini aşmaya çalışmak, otomatik araç kullanmak.
-
-## 6. Puanlar, sıralama ve hile
-• Puanların, seviyelerin ve başarımların parasal bir değeri yoktur; satılamaz, devredilemez, paraya çevrilemez.
-• Birden fazla hesap kullanmak, sahte konum kullanmak, katılım ya da oyun kodlarını orada olmayan kişilerle paylaşmak, aynı kişilerle anlaşarak yapay puan toplamak hiledir.
-• Hile tespit edilirse ilgili puanlar geri alınabilir, hesap sıralamadan çıkarılabilir, susturulabilir ya da kalıcı olarak yasaklanabilir.
-• Puan kuralları ve sınırları uygulama içinde açıklanır ve zaman zaman değişebilir.
-
-## 7. Etkinlikler ve buluşmalar
-• Üyelerin açtığı etkinliklerin düzenleyeni o etkinliğin içeriğinden, güvenliğinden ve doğruluğundan sorumludur. 41. Kat Sosyal bu etkinliklerin düzenleyeni değildir.
-• Etkinlik ücretleri uygulama üzerinden tahsil edilmez; ödeme etkinlik yerinde, düzenleyenle aranızda yapılır.
-• Yaş sınırı olan etkinliklere katılırken yaşını doğru beyan etmekten sen sorumlusun.
-• Tanımadığın kişilerle buluşurken kalabalık ve herkese açık yerleri tercih et, kişisel güvenliğine dikkat et.
-• Etkinliği kuralları çiğneyerek kullanan (sahte etkinlik, kod satışı gibi) üyenin etkinlikleri kaldırılabilir ve puanları geri alınabilir.
-
-## 8. Oyunlar
-Yan yana oynanan oyunlarda oyun ekranından ayrılan, uygulamayı kapatan ya da bağlantısı kopan oyuncu oyundan çıkarılır. Oyun içi sohbet ve fısıltılarda da topluluk kuralları geçerlidir.
-
-## 9. Mekânlar ve sponsorlar
-Anlaşmalı mekânların sunduğu ayrıcalıklar ve kodlar mekânın sorumluluğundadır. Mekân değerlendirmelerinin dürüst ve kendi deneyimine dayalı olması gerekir.
-
-## 10. Abonelik
-• Abonelik, App Store ya da Google Play üzerinden satın alınır; ödeme, otomatik yenileme, iptal ve iade işlemleri ilgili mağazanın kurallarına tabidir.
-• Aboneliğini mağaza hesabındaki abonelik ayarlarından istediğin zaman iptal edebilirsin; iptal, mevcut dönemin sonunda geçerli olur.
-• Abonelik puan, seviye ya da sıralamada avantaj sağlamaz.
-
-## 11. Hediye programı
-Sıralamaya bağlı hediye programı yürütülürse, kuralları uygulama içinde ayrıca duyurulur.
-
-## 12. Moderasyon ve yaptırımlar
-Kurallara aykırı içerikler gizlenebilir ya da silinebilir; üyeye uyarı verilebilir, geçici olarak susturulabilir ya da hesabı kalıcı olarak yasaklanabilir. Yasaklanan bir hesabın telefonundan yeni hesap açılamaz. Yaptırıma itiraz için bize ulaşabilirsin.
-
-## 13. Fikri haklar
-Uygulamanın adı, logosu, tasarımı ve yazılımı 41. Kat Sosyal'e aittir. Paylaştığın içeriklerin sorumluluğu sana aittir; bu içerikleri uygulamada göstermemiz için bize ücretsiz ve sınırlı bir kullanım izni vermiş olursun.
-
-## 14. Sorumluluğun sınırı
-Uygulamayı kesintisiz ve hatasız sunmak için çalışırız ancak bunu garanti edemeyiz. Üyelerin paylaştığı içeriklerden, üyeler arasındaki buluşma ve anlaşmalardan, kanunun izin verdiği ölçüde sorumlu değiliz.
-
-## 15. Hesabın silinmesi
-Hesabını Profil bölümünden istediğin zaman silebilirsin. Silme işlemi kalıcıdır; gönderilerin, yorumların ve puanların geri getirilemez.
-
-## 16. Değişiklikler
-Bu sözleşmeyi güncelleyebiliriz. Önemli değişiklikleri uygulama içinde duyururuz; değişiklikten sonra uygulamayı kullanmaya devam etmen, yeni metni kabul ettiğin anlamına gelir.
-
-## 17. Uygulanacak hukuk
-Bu sözleşmeye Türkiye Cumhuriyeti hukuku uygulanır. Uyuşmazlıklarda [KOCAELİ] mahkemeleri ve icra daireleri yetkilidir; tüketici olarak kanuni haklarını kullanma hakkın saklıdır.
-
-## 18. İletişim
-[E-POSTA ADRESİ]
-
-Son güncelleme: [TARİH]$legal$::text)
- where key = 'legal_terms' and value = '"Kullanıcı sözleşmesi metni henüz eklenmedi."'::jsonb;

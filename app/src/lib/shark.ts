@@ -100,6 +100,15 @@ export type SkLog = {
   winner?: SkWinner;
 };
 
+/** Oyuncu atma oylaması (iki oyunda ortak) */
+export type KickState = {
+  poll: { target: string; starter: string; yes: number; need: number; left: number; mine: boolean } | null;
+  /** Bu odada kalan oylama başlatma hakkın */
+  starts_left: number;
+  /** Şu an oylama açılabilir mi (bekleme odası ya da tartışma) */
+  open: boolean;
+};
+
 export type SkVote = { from: string; to: string | null; weight: number };
 
 export type SkView = {
@@ -116,6 +125,11 @@ export type SkView = {
   match?: boolean;
   /** Eşleştirme lobisinde "Hazırım" diyenlerin kimlikleri */
   lobby_ready?: string[] | null;
+  /** Oyuncu atma oylaması (bekleme odasında ve tartışmada) */
+  kick?: KickState;
+  /** Mikrofonun yaptırım yüzünden kapalı mı / ses şikâyeti hakkın kapalı mı */
+  mic_banned?: boolean;
+  report_banned?: boolean;
   /** Biten oyundan sonra açılan yeni el bekleme odası mı */
   rematch?: boolean;
   /** Yeni el geri sayımı (sn); boş = geri sayım yok */
@@ -257,6 +271,9 @@ const call = (fn: string, roomId: string, extra: Record<string, unknown> = {}): 
   callRpcVoid(fn, { p_room_id: roomId, ...extra }, TEXT);
 
 export const startShark = (roomId: string) => call('sk_start', roomId);
+/** Oyuncu atma oylaması başlat / oy ver (iki oyunda ortak) */
+export const kickStart = (roomId: string, target: string) => call('room_kick_start', roomId, { p_target: target });
+export const kickVote = (roomId: string, yes: boolean) => call('room_kick_vote', roomId, { p_yes: yes });
 /** Moderatör: deneme odasında kendi rolünü seç (boş = rastgele) */
 export const sharkPickRole = (roomId: string, role: SkRole | null) => call('sk_pick_role', roomId, { p_role: role });
 export const sharkReady = (roomId: string) => call('sk_ready', roomId);
@@ -301,6 +318,12 @@ const VOICE_TEXT: Record<string, string> = {
   voice_closed: 'Şu an konuşamazsın. Dalışta yalnızca köpekbalıkları konuşur, elenenler konuşamaz.',
   invalid_audio: 'Ses kaydı okunamadı, tekrar dene.',
   invalid_role: 'Böyle bir rol yok.',
+  kick_closed: 'Atma oylaması yalnızca bekleme odasında ve tartışmada açılır.',
+  not_kickable: 'Bu oyuncu için atma oylaması açılamaz.',
+  kick_poll_open: 'Şu an başka bir atma oylaması sürüyor.',
+  kick_poll_limit: 'Bu odada atma oylaması başlatma hakkın bitti.',
+  mic_banned: 'Mikrofonun bir süreliğine kapatıldı.',
+  report_banned: 'Haksız şikâyetlerin yüzünden bir süre ses şikâyeti yapamazsın.',
   audio_too_big: 'Ses kaydı çok büyük çıktı, daha kısa konuşup tekrar dene.',
   voice_quota: 'Bu tartışmadaki 15 saniyelik konuşma hakkın doldu. Bir sonraki tartışmada yine konuşabilirsin.',
   rate_limited: 'Biraz bekle, art arda çok hızlı ses gönderiyorsun.',

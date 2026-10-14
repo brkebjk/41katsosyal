@@ -56,7 +56,7 @@ export default function SharkGuideScreen() {
             çubuğu dalışın kalan süresidir. Seçimini bir avatara dokunup alttaki düğmeyle onaylarsın.
           </Step>
           <Step n="3" title="☀️ Plaj (gündüz)">
-            Güneş açar; dalışta maskesi kırılanlar (ölenler) açıklanır. Konuşun, savunun, ipuçlarını paylaşın. Zıpkıncı
+            Güneş açar; dalışta maskesi kırılanlar (ölenler) açıklanır, rolleri gizli kalır. Konuşun, savunun, ipuçlarını paylaşın. Zıpkıncı
             zıpkın atabilir, Komutan kimliğini açabilir.
           </Step>
           <Step n="4" title="⛓️ Kafes oylaması">

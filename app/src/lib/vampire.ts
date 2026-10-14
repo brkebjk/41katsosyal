@@ -3,7 +3,7 @@
 // kişiye özel hazırlanmış görünümü okur ve oyuncunun seçimini sunucuya gönderir.
 
 import type { VampireImageKey } from '@/lib/images';
-import type { SkClip } from '@/lib/shark';
+import type { KickState, SkClip } from '@/lib/shark';
 import { callRpc, callRpcVoid, type Result } from '@/lib/rpc';
 
 export type VvRole = 'villager' | 'vampire' | 'doctor' | 'detective';
@@ -52,6 +52,10 @@ export type VvView = {
   voice?: SkClip[];
   /** Bu tartışmada kalan bas-konuş süresi (ms; her tartışmada en çok 15 sn) */
   voice_left_ms?: number;
+  /** Oyuncu atma oylaması */
+  kick?: KickState;
+  mic_banned?: boolean;
+  report_banned?: boolean;
   /** Eşleştirme (uzaktan) lobisi */
   match?: boolean;
   /** "Hazırım" diyenler (eşleştirme lobisi ve yeni el bekleme odası) */

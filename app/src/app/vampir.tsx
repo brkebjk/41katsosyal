@@ -81,7 +81,8 @@ import {
   type VvView,
   type VvWhisper,
 } from '@/lib/vampire';
-import { reportVoiceClip } from '@/lib/shark';
+import { kickStart, kickVote, reportVoiceClip } from '@/lib/shark';
+import { KickBar } from '@/components/SharkStage';
 import { colors, fonts, fontSizes, spacing } from '@/theme';
 
 const POLL_MS = 2500;
@@ -189,6 +190,7 @@ function Game({ roomId }: { roomId: string }) {
   const [sheet, setSheet] = useState<'whispers' | 'role' | 'dead' | null>(null);
   /** Avatara dokunulunca açılan menü (fısılda, odadan atma oyu) */
   const [menuFor, setMenuFor] = useState<VvPlayer | null>(null);
+  const [playersOpen, setPlayersOpen] = useState(false);
   /** Fısıltı listesi en son açıldığında bana gelmiş fısıltı sayısı (yenisi gelince düğme yanar) */
   const [seenIncoming, setSeenIncoming] = useState(0);
 
@@ -267,7 +269,7 @@ function Game({ roomId }: { roomId: string }) {
   // Saniyede bir sayan saat: otomatik oyunun geri sayımı ve elle bitirme düğmesinin bekleme süresi
   const elapsed = useElapsedSeconds(
     viewAt,
-    live && view !== null && (view.status === 'playing' || (view.rematch_left ?? null) !== null),
+    live && view !== null && (view.status === 'playing' || (view.rematch_left ?? null) !== null || !!view.kick?.poll),
   );
 
   // ---- Sesler: gece/gündüz geçişi, ölüm, oylama, sonuç, son saniyeler, fısıltı -------------------------
@@ -711,6 +713,7 @@ function Game({ roomId }: { roomId: string }) {
       check: checkFor(p),
       voice: voiceFor(p),
       kick: kickFor(p),
+      alert: view.remote === true && !p.is_me && clipQueue.speaking?.from === p.id,
     };
   });
 
@@ -724,6 +727,22 @@ function Game({ roomId }: { roomId: string }) {
         onPress: () => {
           setMenuFor(null);
           setCompose({ replyTo: null, to: p.id });
+        },
+      });
+    }
+    // Atma oylaması (bekleme odasında ve sabah tartışmasında; aynı anda tek oylama, kişi başı 2 hak)
+    const kk = view?.kick;
+    if (
+      kk && kk.open && !kk.poll && kk.starts_left > 0 && !p.is_me && !p.left &&
+      me.is_player && !me.left && (phase === 'lobby' || me.is_alive)
+    ) {
+      opts.push({
+        label: `Atma oylaması başlat (${kk.starts_left} hak)`,
+        icon: 'exit-outline',
+        destructive: true,
+        onPress: () => {
+          setMenuFor(null);
+          void act('kick', () => kickStart(roomId, p.id));
         },
       });
     }
@@ -1389,7 +1408,19 @@ function Game({ roomId }: { roomId: string }) {
               <Ionicons name={sound ? 'volume-high' : 'volume-mute'} size={19} color={sound ? G.text : G.faint} />
             </Pressable>
           ) : null}
-          {phase === 'lobby' || playing ? safety.button : null}
+          {/* Kırmızı düğme: oyuncu listesi (atma oylaması, ses şikâyeti) ve oyunu bildir */}
+          {phase === 'lobby' || playing ? (
+            <Pressable
+              onPress={() => setPlayersOpen(true)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Oyuncular ve şikâyet"
+              style={({ pressed }) => [styles.playersBtn, pressed && styles.pressed]}
+              testID="vv-players"
+            >
+              <Ionicons name="people" size={20} color="#FFFFFF" />
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.body}>
@@ -1418,6 +1449,11 @@ function Game({ roomId }: { roomId: string }) {
               accent={phase === 'night' && role ? ROLES[role].color : G.red}
               onPress={pressTile}
               onLongPress={longPressTile}
+              stickyKey={roomId}
+              onAlert={(t) => {
+                const c = clipQueue.speaking;
+                if (c && c.from === t.p.id) void reportClip(c.id, t.p.name);
+              }}
             />
           )}
 
@@ -1439,6 +1475,23 @@ function Game({ roomId }: { roomId: string }) {
             </Pressable>
           ) : null}
 
+          {/* Atma oylaması */}
+          {view.kick?.poll ? (
+            <View>
+              <KickBar
+                inline
+                targetName={nameOf(view.kick.poll.target)}
+                yes={view.kick.poll.yes}
+                need={view.kick.poll.need}
+                left={Math.max(0, Math.ceil(view.kick.poll.left - elapsed))}
+                mine={view.kick.poll.mine}
+                canVote={me.is_player && !me.left && (phase === 'lobby' || me.is_alive)}
+                isTarget={view.kick.poll.target === myPid}
+                busy={busy === 'kickvote'}
+                onVote={(yes) => void act('kickvote', () => kickVote(roomId, yes))}
+              />
+            </View>
+          ) : null}
           {/* Uzaktan oda: bas-konuş (sabahta ve oylamada herkes, gece yalnızca vampirler kendi aralarında) */}
           {view.remote && playing && me.is_player && !me.left ? (
             <>
@@ -1465,12 +1518,15 @@ function Game({ roomId }: { roomId: string }) {
                 roomId={roomId}
                 canTalk={
                   me.is_alive &&
+                  !view.mic_banned &&
                   (view.voice_left_ms ?? 15000) >= 500 &&
                   (phase === 'dawn' || phase === 'vote' || phase === 'vote_result' || (phase === 'night' && me.role === 'vampire'))
                 }
                 leftMs={view.voice_left_ms ?? 15000}
                 closedText={
-                  !me.is_alive
+                  view.mic_banned
+                    ? '🔇 Mikrofonun bir süreliğine kapatıldı'
+                    : !me.is_alive
                     ? '🔇 Elendin, konuşamazsın'
                     : phase === 'night' && me.role !== 'vampire'
                       ? '🔇 Gece herkes susar'
@@ -1539,6 +1595,34 @@ function Game({ roomId }: { roomId: string }) {
       {safety.isOpen ? safety.nodes : null}
       {inviteOpen && phase === 'lobby' && me.is_host ? (
         <InviteSheet roomId={roomId} onClose={() => setInviteOpen(false)} />
+      ) : null}
+      {playersOpen ? (
+        <ActionSheet
+          title="Oyuncular"
+          subtitle="Bir oyuncuya dokun: atma oylaması başlat ya da sesini şikâyet et."
+          options={[
+            ...view.players
+              .filter((p) => !p.is_me)
+              .map((p) => ({
+                label: `${p.name}${p.left ? ' (ayrıldı)' : !p.is_alive ? ' (elendi)' : ''}`,
+                icon: 'person-circle-outline' as const,
+                onPress: () => {
+                  setPlayersOpen(false);
+                  if (menuOptions(p).length > 0) setMenuFor(p);
+                  else void notify(p.name, 'Şu an bu oyuncu için yapılabilecek bir şey yok.', { icon: null });
+                },
+              })),
+            {
+              label: 'Oyunu bildir',
+              icon: 'flag-outline' as const,
+              onPress: () => {
+                setPlayersOpen(false);
+                safety.open();
+              },
+            },
+          ]}
+          onClose={() => setPlayersOpen(false)}
+        />
       ) : null}
       {menuFor && menuOpts.length > 0 ? (
         <ActionSheet title={menuFor.name} options={menuOpts} onClose={() => setMenuFor(null)} />
@@ -1695,6 +1779,17 @@ const HERO_TITLE: Record<VvView['phase'], string> = {
 };
 
 const styles = StyleSheet.create({
+  kickWrap: { height: 64 },
+  playersBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#D9304F',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
   speaking: {
     alignSelf: 'center',
     paddingHorizontal: 12,

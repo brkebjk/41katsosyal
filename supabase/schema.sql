@@ -3310,6 +3310,8 @@ begin
   -- Köpekbalığı Kafesi ses mesajı: yalnızca o mesajı dinleyebilen kişi (kendi mesajı hariç) bildirebilir.
   -- Bildirilen mesaj 10 dakikada silinmez; moderatör bakana kadar en çok 14 gün saklanır.
   if p_type = 'sk_voice' then
+    -- Haksız şikâyetleri yüzünden şikâyet hakkı kapanan kişi ses mesajı şikâyet edemez
+    if v.report_banned_until is not null and v.report_banned_until > now() then raise exception 'report_banned'; end if;
     if not exists (select 1 from public.sk_voice_clips c where c.id = p_id and c.user_id <> v.id
                     and public._sk_clip_visible(c, v.id)) then
       raise exception 'target_not_found';
@@ -5883,6 +5885,8 @@ begin
       perform public._room_lobby_tick(p_room_id);
       select * into r from public.game_rooms where id = p_room_id;
     end if;
+    perform public._kick_tick(p_room_id);
+    select * into r from public.game_rooms where id = p_room_id;
   end if;
 
   v_is_admin := (v.role = 'admin');
@@ -5996,6 +6000,10 @@ begin
     'rematch', r.config ? 'rematch_of',
     'rematch_left', case when r.status = 'lobby' and r.state ? 'rematch_until'
                          then greatest(0, ceil(extract(epoch from (r.state->>'rematch_until')::timestamptz - now()))::int) end,
+    -- Oyuncu atma oylaması ve kişinin mikrofon / şikâyet yasağı
+    'kick', public._kick_state(r.id, v.id),
+    'mic_banned', v.mic_banned_until is not null and v.mic_banned_until > now(),
+    'report_banned', v.report_banned_until is not null and v.report_banned_until > now(),
     'next_room', case when r.status = 'finished' then r.state->>'next_room' end,
     'next_note', case when r.status = 'finished' then r.state->>'rematch' end,
     'round', v_round,
@@ -12671,6 +12679,8 @@ begin
     if exists (select 1 from public.reports where id = p_report_id) then return; end if;
     raise exception 'report_not_found';
   end if;
+  -- Ses mesajı şikâyeti: haklıysa konuşana, haksızsa şikâyet edene yaptırım
+  perform public._voice_report_verdict(p_report_id, p_status = 'resolved');
   -- Şikayet edene sonuç bildirimi
   perform public._notify((select reporter_id from public.reports where id = p_report_id), 'system',
     case when p_status = 'resolved' then 'Şikayetin sonuçlandı' else 'Şikayetin incelendi' end,
@@ -15798,6 +15808,11 @@ update public.app_settings set description = 'KULLANILMIYOR: yan yana oyunlarda 
 -- yazılmaz (botlarla puan toplanamaz). Botlar şifresiz hesaplardır; kimse onlarla giriş yapamaz.
 -- Kaldırırken: bu bölüm, profiles.is_bot ve bot hesapları (auth.users, kimlikleri b0700000-…) silinir.
 alter table public.profiles add column if not exists is_bot boolean not null default false;
+-- Ses şikâyeti kuralları: haksız şikâyet sayacı, şikâyet ve mikrofon yasağı, haklı bulunan ses ihlali sayısı
+alter table public.profiles add column if not exists unjust_reports int not null default 0;
+alter table public.profiles add column if not exists voice_strikes int not null default 0;
+alter table public.profiles add column if not exists report_banned_until timestamptz;
+alter table public.profiles add column if not exists mic_banned_until timestamptz;
 
 do $$
 declare i int;
@@ -16309,7 +16324,7 @@ begin
     if v_list is not null then perform public._sk_note(p_room_id, x.user_id, v_list); end if;
   end loop;
 
-  -- Ölümler
+  -- Ölümler (gece maskesi kırılanın rolü açıklanmaz: köpekbalıklarının kimi avladığı anlaşılmasın)
   update public.room_players set is_alive = false, out_at = now()
    where room_id = p_room_id and is_alive and user_id = any (v_dead);
 
@@ -17083,6 +17098,7 @@ begin
     perform public._sk_bots_act(p_room_id);
     if r.status = 'playing' then perform public._sk_auto_tick(p_room_id); end if;
     if r.status = 'lobby' then perform public._room_lobby_tick(p_room_id); end if;
+    perform public._kick_tick(p_room_id);
     select * into r from public.game_rooms where id = p_room_id;
   end if;
 
@@ -17165,6 +17181,10 @@ begin
     'rematch', r.config ? 'rematch_of',
     'rematch_left', case when r.status = 'lobby' and r.state ? 'rematch_until'
                          then greatest(0, ceil(extract(epoch from (r.state->>'rematch_until')::timestamptz - now()))::int) end,
+    -- Oyuncu atma oylaması ve kişinin mikrofon / şikâyet yasağı
+    'kick', public._kick_state(r.id, v.id),
+    'mic_banned', v.mic_banned_until is not null and v.mic_banned_until > now(),
+    'report_banned', v.report_banned_until is not null and v.report_banned_until > now(),
     'next_room', case when r.status = 'finished' then r.state->>'next_room' end,
     'next_note', case when r.status = 'finished' then r.state->>'rematch' end,
     'close_reason', r.state->>'close_reason',
@@ -17382,6 +17402,8 @@ begin
   if v.muted_until is not null and v.muted_until > now() then raise exception 'muted'; end if;
   if char_length(v_audio) < 100 or v_audio !~ '^[A-Za-z0-9+/=]+$' then raise exception 'invalid_audio'; end if;
   if p_duration_ms is null or p_duration_ms not between 300 and 6000 then raise exception 'invalid_audio'; end if;
+  -- Mikrofon yasağı (haklı bulunan ses şikâyeti ya da tekrarlanan haksız şikâyet)
+  if v.mic_banned_until is not null and v.mic_banned_until > now() then raise exception 'mic_banned'; end if;
   -- Boyut: en çok 240 bin karakter ve bildirilen süreyle orantılı (yüksek kaliteli kayda da yer var). Bildirilenden uzun
   -- ses gönderilse bile dinleyenin telefonu çalmayı bildirilen sürenin sonunda keser.
   if char_length(v_audio) > least(240000, 12000 + p_duration_ms * 40) then raise exception 'audio_too_big'; end if;
@@ -18218,6 +18240,238 @@ insert into public.app_settings (key, value, description) values
   ('rematch_seconds', '45', 'Oyun bitince açılan yeni el bekleme odasında "Hazırım" geri sayımı, saniye')
 on conflict (key) do nothing;
 
+-- ---- Ses şikâyeti yaptırımları ------------------------------------------------------------------------------------
+-- Moderatör ses mesajı şikâyetini "sonuçlandı" (haklı) ya da "reddedildi" (haksız) diye kapatır:
+--   Haklı: konuşanın mikrofonu 7 gün kapanır; ikinci ve sonraki ihlallerde 30 gün.
+--   Haksız: şikâyet edenin haksız şikâyet sayısı artar; her 3 haksız şikâyette 30 gün ses şikâyeti yapamaz ve 7 gün
+--   mikrofon kullanamaz. (Sayılar ayarlardan değiştirilebilir.)
+create or replace function public._voice_report_verdict(p_report_id uuid, p_just boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  rp public.reports;
+  v_speaker uuid;
+  v_n int;
+begin
+  select * into rp from public.reports where id = p_report_id;
+  if not found or rp.target_type <> 'sk_voice' then return; end if;
+  if p_just then
+    select c.user_id into v_speaker from public.sk_voice_clips c where c.id = rp.target_id;
+    if v_speaker is null then return; end if;
+    update public.profiles
+       set voice_strikes = voice_strikes + 1,
+           mic_banned_until = greatest(coalesce(mic_banned_until, now()), now())
+             + make_interval(days => case when voice_strikes >= 1 then public.setting_int('voice_ban_days_repeat', 30)
+                                          else public.setting_int('voice_ban_days_first', 7) end)
+     where id = v_speaker
+     returning voice_strikes into v_n;
+    perform public._notify(v_speaker, 'system', 'Mikrofonun kapatıldı',
+      'Oyunda gönderdiğin bir ses mesajı kurallara aykırı bulundu. Bir süre bas-konuş kullanamazsın.', '{}'::jsonb);
+  else
+    update public.profiles set unjust_reports = unjust_reports + 1 where id = rp.reporter_id
+     returning unjust_reports into v_n;
+    if v_n % greatest(1, public.setting_int('unjust_report_limit', 3)) = 0 then
+      update public.profiles
+         set report_banned_until = now() + make_interval(days => public.setting_int('report_ban_days', 30)),
+             mic_banned_until = greatest(coalesce(mic_banned_until, now()), now())
+               + make_interval(days => public.setting_int('unjust_mic_ban_days', 7))
+       where id = rp.reporter_id;
+      perform public._notify(rp.reporter_id, 'system', 'Şikâyet hakkın kapatıldı',
+        'Yaptığın ses şikâyetleri birkaç kez haksız bulundu. Bir süre ses şikâyeti yapamaz ve bas-konuş kullanamazsın.',
+        '{}'::jsonb);
+    end if;
+  end if;
+end $$;
+
+insert into public.app_settings (key, value, description) values
+  ('voice_ban_days_first', '7', 'Haklı bulunan ilk ses şikâyetinde konuşanın mikrofon yasağı (gün)'),
+  ('voice_ban_days_repeat', '30', 'Haklı bulunan sonraki ses şikâyetlerinde mikrofon yasağı (gün)'),
+  ('unjust_report_limit', '3', 'Kaç haksız ses şikâyetinde şikâyet edene yaptırım uygulanır'),
+  ('report_ban_days', '30', 'Haksız şikâyet yaptırımı: ses şikâyeti yasağı (gün)'),
+  ('unjust_mic_ban_days', '7', 'Haksız şikâyet yaptırımı: mikrofon yasağı (gün)'),
+  ('kick_poll_seconds', '30', 'Oyuncu atma oylamasının süresi (sn)'),
+  ('kick_poll_per_player', '2', 'Bir oyuncu bir odada en çok kaç atma oylaması başlatabilir')
+on conflict (key) do nothing;
+
+-- ---- Oyuncu atma oylaması (iki oyunda, yan yana ve uzaktan) ----------------------------------------------------------
+-- Yalnızca bekleme odasında ve tartışmada (Köpekbalığı plajı, Vampir–Köylü sabahı) başlatılır. Aynı anda tek oylama
+-- açık olur; kişi başı odada en çok 2 oylama. 30 sn içinde oy verebilecek oyuncuların (yaşayan, odada olan, atılmak
+-- istenen hariç) yarısından fazlası "At" derse oyuncu atılır: oyundaysa elenmiş sayılır (rolü açıklanır, puan almaz),
+-- bekleme odasındaysa çıkarılır; o odaya geri giremez. Moderatör ve (sahipliği devredilemeyen odada) oda sahibi atılamaz.
+create table if not exists public.room_kick_polls (
+  room_id uuid primary key references public.game_rooms (id) on delete cascade,
+  target_id uuid not null references public.profiles (id) on delete cascade,
+  starter_id uuid not null references public.profiles (id) on delete cascade,
+  phase_key text not null,
+  ends_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+alter table public.room_kick_polls enable row level security;
+create table if not exists public.room_kick_poll_log (
+  room_id uuid not null references public.game_rooms (id) on delete cascade,
+  starter_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create index if not exists room_kick_poll_log_idx on public.room_kick_poll_log (room_id, starter_id);
+alter table public.room_kick_poll_log enable row level security;
+
+-- Oylama açılabilecek an: bekleme odası ya da tartışma. Döner: anahtar (o tura özel) ya da boş
+create or replace function public._kick_window(r public.game_rooms)
+returns text language sql stable set search_path = public as $$
+  select case when r.status = 'lobby' then 'lobby'
+              when r.status = 'playing' and r.game_type = 'shark_cage' and r.state->>'phase' = 'day'
+                then 'day:' || coalesce(r.state->>'round', '0')
+              when r.status = 'playing' and r.game_type = 'vampire_villager' and r.state->>'phase' = 'dawn'
+                then 'dawn:' || coalesce(r.state->>'round', '0') end;
+$$;
+
+-- Oy verebilecekler: odada olan (oyundaysa yaşayan) oyuncular, atılmak istenen hariç
+create or replace function public._kick_voters(p_room_id uuid, p_target uuid)
+returns int language sql stable security definer set search_path = public as $$
+  select count(*)::int from public.room_players rp
+    join public.game_rooms r on r.id = rp.room_id
+   where rp.room_id = p_room_id and rp.left_at is null and rp.user_id <> p_target
+     and (r.status = 'lobby' or rp.is_alive);
+$$;
+
+create or replace function public._kick_yes(p_room_id uuid, p_target uuid, p_key text)
+returns int language sql stable security definer set search_path = public as $$
+  select count(*)::int from public.room_kick_votes k
+    join public.room_players rp on rp.room_id = k.room_id and rp.user_id = k.voter_id and rp.left_at is null
+    join public.game_rooms r on r.id = k.room_id
+   where k.room_id = p_room_id and k.target_id = p_target and k.phase_key = p_key
+     and (r.status = 'lobby' or rp.is_alive);
+$$;
+
+-- Açık oylamayı sonuçlandırır: çoğunluk olunca hemen, süre dolunca ya da tartışma bitince
+create or replace function public._kick_tick(p_room_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  k public.room_kick_polls;
+  v_yes int;
+  v_need int;
+begin
+  select * into k from public.room_kick_polls where room_id = p_room_id;
+  if not found then return; end if;
+  select * into r from public.game_rooms where id = p_room_id for update;
+  select * into k from public.room_kick_polls where room_id = p_room_id for update;
+  if not found then return; end if;
+  -- Test odasında moderatörün başlattığı oylamaya botlar "At" der (tek telefonla deneme)
+  if coalesce((r.config->>'test')::boolean, false)
+     and exists (select 1 from public.profiles p where p.id = k.starter_id and p.role = 'admin') then
+    insert into public.room_kick_votes (room_id, target_id, voter_id, phase_key)
+    select p_room_id, k.target_id, rp.user_id, k.phase_key
+      from public.room_players rp join public.profiles p on p.id = rp.user_id and p.is_bot
+     where rp.room_id = p_room_id and rp.left_at is null and rp.user_id <> k.target_id
+    on conflict (room_id, target_id, voter_id) do update set phase_key = excluded.phase_key;
+  end if;
+  v_yes := public._kick_yes(p_room_id, k.target_id, k.phase_key);
+  v_need := public._kick_voters(p_room_id, k.target_id) / 2 + 1;
+  if public._kick_window(r) is distinct from k.phase_key
+     or not exists (select 1 from public.room_players rp
+                     where rp.room_id = p_room_id and rp.user_id = k.target_id and rp.left_at is null) then
+    delete from public.room_kick_polls where room_id = p_room_id;
+    delete from public.room_kick_votes where room_id = p_room_id and phase_key = k.phase_key;
+    return;
+  end if;
+  if v_yes >= v_need then
+    delete from public.room_kick_polls where room_id = p_room_id;
+    delete from public.room_kick_votes where room_id = p_room_id and (target_id = k.target_id or voter_id = k.target_id);
+    insert into public.room_bans (room_id, user_id) values (p_room_id, k.target_id) on conflict do nothing;
+    perform public._room_remove_player(p_room_id, k.target_id, 'kicked');
+    perform public._notify(k.target_id, 'system', 'Odadan çıkarıldın',
+      'Odadaki oyuncuların çoğunluğu seni oyundan çıkarmak için oy verdi. Bu odaya yeniden giremezsin.', '{}'::jsonb);
+    return;
+  end if;
+  if now() >= k.ends_at then
+    delete from public.room_kick_polls where room_id = p_room_id;
+    delete from public.room_kick_votes where room_id = p_room_id and target_id = k.target_id and phase_key = k.phase_key;
+  end if;
+end $$;
+
+-- Atma oylaması başlat (başlatan "At" demiş sayılır)
+create or replace function public.room_kick_start(p_room_id uuid, p_target uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+  v_key text;
+begin
+  v := public._require_writer(null);
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found or r.game_type not in ('shark_cage', 'vampire_villager') then raise exception 'room_not_found'; end if;
+  perform public._kick_tick(p_room_id);
+  v_key := public._kick_window(r);
+  if v_key is null then raise exception 'kick_closed'; end if;
+  if not exists (select 1 from public.room_players rp where rp.room_id = p_room_id and rp.user_id = v.id and rp.left_at is null
+                   and (r.status = 'lobby' or rp.is_alive)) then
+    raise exception 'forbidden';
+  end if;
+  if p_target = v.id
+     or exists (select 1 from public.profiles p where p.id = p_target and p.role = 'admin')
+     or not exists (select 1 from public.room_players rp where rp.room_id = p_room_id and rp.user_id = p_target and rp.left_at is null)
+     or (p_target = r.host_id and not (r.remote or r.config ? 'rematch_of' or coalesce((r.config->>'match')::boolean, false))) then
+    raise exception 'not_kickable';
+  end if;
+  if exists (select 1 from public.room_kick_polls where room_id = p_room_id) then raise exception 'kick_poll_open'; end if;
+  if (select count(*) from public.room_kick_poll_log where room_id = p_room_id and starter_id = v.id)
+     >= greatest(1, public.setting_int('kick_poll_per_player', 2)) then
+    raise exception 'kick_poll_limit';
+  end if;
+  insert into public.room_kick_poll_log (room_id, starter_id) values (p_room_id, v.id);
+  insert into public.room_kick_polls (room_id, target_id, starter_id, phase_key, ends_at)
+  values (p_room_id, p_target, v.id, v_key,
+          now() + make_interval(secs => greatest(10, public.setting_int('kick_poll_seconds', 30))));
+  insert into public.room_kick_votes (room_id, target_id, voter_id, phase_key) values (p_room_id, p_target, v.id, v_key)
+  on conflict (room_id, target_id, voter_id) do update set phase_key = excluded.phase_key, created_at = now();
+  perform public._kick_tick(p_room_id);
+end $$;
+
+-- Açık oylamada "At" (true) / "Kalsın" (false)
+create or replace function public.room_kick_vote(p_room_id uuid, p_yes boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+  k public.room_kick_polls;
+begin
+  v := public._require_writer(null);
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found then raise exception 'room_not_found'; end if;
+  select * into k from public.room_kick_polls where room_id = p_room_id;
+  if not found then raise exception 'kick_closed'; end if;
+  if v.id = k.target_id
+     or not exists (select 1 from public.room_players rp where rp.room_id = p_room_id and rp.user_id = v.id and rp.left_at is null
+                      and (r.status = 'lobby' or rp.is_alive)) then
+    raise exception 'forbidden';
+  end if;
+  if coalesce(p_yes, false) then
+    insert into public.room_kick_votes (room_id, target_id, voter_id, phase_key) values (p_room_id, k.target_id, v.id, k.phase_key)
+    on conflict (room_id, target_id, voter_id) do update set phase_key = excluded.phase_key, created_at = now();
+  else
+    delete from public.room_kick_votes where room_id = p_room_id and target_id = k.target_id and voter_id = v.id;
+  end if;
+  perform public._kick_tick(p_room_id);
+end $$;
+
+-- Görünüm için: açık oylama { target, starter, yes, need, left (sn), mine } ve bu odada kalan başlatma hakkı
+create or replace function public._kick_state(p_room_id uuid, p_user uuid)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'poll', (select jsonb_build_object(
+                'target', k.target_id, 'starter', k.starter_id,
+                'yes', public._kick_yes(p_room_id, k.target_id, k.phase_key),
+                'need', public._kick_voters(p_room_id, k.target_id) / 2 + 1,
+                'left', greatest(0, ceil(extract(epoch from k.ends_at - now()))::int),
+                'mine', exists (select 1 from public.room_kick_votes kv
+                                 where kv.room_id = p_room_id and kv.target_id = k.target_id and kv.voter_id = p_user
+                                   and kv.phase_key = k.phase_key))
+               from public.room_kick_polls k where k.room_id = p_room_id),
+    'starts_left', greatest(0, public.setting_int('kick_poll_per_player', 2)
+                      - (select count(*)::int from public.room_kick_poll_log l where l.room_id = p_room_id and l.starter_id = p_user)),
+    'open', (select public._kick_window(r) is not null from public.game_rooms r where r.id = p_room_id));
+$$;
+
 revoke execute on all functions in schema public from public, anon, authenticated;
 
 -- RLS kurallarının içinde kullanılan yardımcılar
@@ -18275,6 +18529,8 @@ grant execute on function public.sk_view(uuid) to authenticated;
 grant execute on function public.sk_history(uuid) to authenticated;
 grant execute on function public.sk_pick_role(uuid, text) to authenticated;
 grant execute on function public.room_lobby_ready(uuid, boolean) to authenticated;
+grant execute on function public.room_kick_start(uuid, uuid) to authenticated;
+grant execute on function public.room_kick_vote(uuid, boolean) to authenticated;
 grant execute on function public.sk_start(uuid) to authenticated;
 grant execute on function public.sk_ready(uuid) to authenticated;
 grant execute on function public.sk_night_action(uuid, text, uuid) to authenticated;

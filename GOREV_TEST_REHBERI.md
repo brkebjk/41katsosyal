@@ -1,4 +1,4 @@
-# Görev Test Rehberi – Yeni el, eşleştirme, bas-konuş (iki oyun)
+# Görev Test Rehberi – Rol ikonları, atma oylaması, ses şikâyeti kuralları
 
 ## A. Supabase'i güncelle
 Şema `supabase/parcalar/` klasöründe 3 parça.
@@ -7,50 +7,47 @@
 3. Yeni sorgu aç > `3.sql` > Run.
 - Sıra önemli: 1, 2, 3. "Run and enable RLS" çıkarsa onu seç.
 
-## B. Küçük düzeltmeler
-1. **Oda yeri ekranı:** Yan yana oda açarken "oda nerede kurulacak" ekranı artık hemen açılır. Telefonun son 2 dakikadaki konumu kullanılır.
-2. **Bas-konuş:**
-   - Sen basılı tutarken çalan ses kısılır (hoparlörden mikrofona geri dönmez).
-   - Düğme turuncu oldu.
-3. **Yazışma penceresi:** Genel sekmesinde oyunun akışı renkli satırlarla yazar.
-   - Örnekler: "🌙 2. gece başladı", "🦈 2. gece ③ avlandı", "⛓️ ⑤ kafese girdi", "🔱 zıpkın".
-   - Sana özel gece sonuçların 🔒 ile görünür.
-4. **Sağ üstteki kırmızı düğme (Köpekbalığı):** Oyuncu listesi avatarlarla açılır. Oyuncuya dokununca "Ses mesajını şikâyet et" çıkar.
-5. **112:** Uzaktan oyunda güvenlik menüsünde 112 yok.
+## B. Rol ikonları (Köpekbalığı)
+- 14 rolün görseli şu yerlerde görünür:
+  - avatarın içinde, alt ortada,
+  - rol çarkında ve rol kartında,
+  - sıralama tablosunda ve oyuncu listesinde,
+  - rehber tablosunda ve giriş ekranındaki kartlarda,
+  - üst tabelada ve yazışmadaki olay akışında.
+- Rolünü açıklayan Komutan'ın avatarında yalnızca rol ikonu görünür; sol alttaki 🎖️ kalktı.
 
-## C. Oyun bitince yeni el (iki oyunda, moderatör + botlarla dene)
-1. Oyun bitince tablo görünür. 10 saniye sonra (ya da **Bekleme odasına geç** ile) herkes yeni bekleme odasına geçer.
-2. Bekleme odasında **🔁 YENİ EL · 45 sn** geri sayar. **HAZIRIM**'a bas.
-3. Süre dolunca hazır diyenlerle yeni el başlar.
-   - Hazır demeyen odadan çıkar.
-   - Hazır diyen 6'dan azsa (Vampir–Köylü'de oyunun alt sınırı) oda normal bekleme odası olarak kalır.
-4. Oyun hakkı:
-   - Yan yana oyunda her yeni el oda sahibinin aylık oyun hakkından 1 düşer.
-   - Hakkı biten oda sahibinin yerine hakkı olan ilk oyuncu oda sahibi olur.
-   - Kimsenin hakkı yoksa "yeni el açılamadı" yazar.
-5. Bekleme odasında ya da başlamış uzaktan oyunda oda sahibi çıkarsa oda kapanmaz, sahiplik devredilir. Bu iki oyunda da böyle.
-6. "Oyunlara dön" ile çıkan kişi yeni bekleme odasından da çıkar.
+## C. Avatar düzeni (iki oyun)
+- Her satırda hep 4 avatar var; bekleme odasında da.
+- Kişi arttıkça avatarlar küçülür ama hep tek ekrana sığar.
+- Oyun sırasında avatarların boyu ve yeri değişmez.
+- Oyuncu numarası avatarın üst ortasında.
 
-## D. Uzaktan oyun ve odalar
-1. **Özel uzaktan oda yok:**
-   - Köpekbalığı giriş ekranındaki düğme kaldırıldı.
-   - Vampir–Köylü "Oda oluştur > Uzaktan eşleş" eşleştirme ekranını açar.
-2. **Vampir–Köylü eşleştirmesi:**
-   - Harita açılır, 🧛 maskeli avatar dolaşır.
-   - Moderatör "+3 deneme oyuncusu" ile dener.
-3. **Oda ID'si:**
-   - Uzaktan lobide herkes oda ID'sini görür. Arkadaşın Oyunlar > **Kodla katıl** ile ID'yi yazıp girer.
-   - Eşleşme arayanlar boş yer olan lobilere (biten oyundan sonra açılan uzaktan bekleme odaları dahil) yerleşir.
-4. **Açık odalar listesi:**
-   - Yan yana odalar görünür, ama içeri yalnızca oda ID'sini bilen girer.
-   - Etkinlik oyunlarının üstünde mavi **ETKİNLİK OYUNU** etiketi var.
-   - Uzaktan lobilere listeden doğrudan girilir.
-5. Moderatör deneme için hâlâ uzaktan oda açabilir.
+## D. Yazışma ve ses
+- Yazışmada her mesajın başında yazanın numarası var, senin mesajında da ("③ Sen").
+- Baloncuk pencere açıkken de görünür; tekrar basınca pencere kapanır. Pencerenin dışına dokununca da kapanır.
+- Bas-konuşa basılı tutarken bütün oyun sesleri susar. O sırada gelen ses mesajı duraklar, bırakınca kaldığı yerden çalar.
+- Uzaktan oda açmak kimse için yok (moderatör dahil); uzaktan oyun yalnızca **Uzaktan Eşleş** ile başlar.
 
-## E. Vampir–Köylü uzaktan bas-konuş (2 telefon)
-1. Sabahta ve oylamada **BASILI TUT, KONUŞ** ile herkes konuşur. Gece yalnızca vampirler kendi aralarında konuşur.
-2. Her tartışmada toplam 15 sn konuşma hakkı var.
-   - Sabah süresi artık sabit sayaçla biter. Eski "sırayla konuşma" kalktı.
-3. Konuşanın avatarında konuşuyor işareti, üstte yeşil "🔊 Ad konuşuyor" çıkar.
-4. Şikâyet: avatara dokun > "Ses mesajını şikâyet et", ya da yeşil yazıya uzun bas.
-5. Eski sesli oda (Agora) kodda duruyor, kullanılmıyor. Onunla birlikte "odadan atma oylaması" da şimdilik görünmüyor.
+## E. Atma oylaması (iki oyun, yan yana ve uzaktan)
+1. Ne zaman açılır: yalnızca bekleme odasında ve tartışmada (Köpekbalığı plajı, Vampir sabahı).
+2. Nasıl başlatılır:
+   - Köpekbalığı: sağ üstteki kırmızı 👥 düğmesi > oyuncu > **Atma oylaması başlat**.
+   - Vampir–Köylü: 👥 listesinden oyuncuyu seç ya da avatara dokun.
+3. Üstte kırmızı bant çıkar: "⑤ atılsın mı · At 1/4 · 30 sn". Diğerleri **AT** ya da **KALSIN** der.
+4. Oyuncuların yarısından fazlası "At" derse oyuncu atılır.
+   - Oyundaysa elenir, rolü açıklanır.
+   - O odaya geri giremez.
+5. Sınırlar: aynı anda tek oylama açık olur, kişi başı odada 2 hak. Moderatör atılamaz.
+6. Deneme: moderatör deneme odasında oylama başlatırsa botlar "At" der.
+
+## F. Ses şikâyeti
+1. Uzaktan oyunda konuşanın avatarında kırmızı **!** çıkar. Dokununca ses şikâyet edilir.
+   - Oyuncu listesinden de şikâyet edilebilir.
+2. Web panel > Şikâyetler > ses mesajı:
+   - **Haklı:** konuşanın mikrofonu 7 gün kapanır, tekrarında 30 gün.
+   - **Haksız:** şikâyet edenin sayacı artar. 3 haksız şikâyette 30 gün ses şikâyeti yapamaz ve 7 gün mikrofon kullanamaz.
+3. Mikrofonu kapalı olan kişinin düğmesinde "🔇 Mikrofonun bir süreliğine kapatıldı" yazar.
+
+## G. Gece ölenler
+- Gece maskesi kırılanın rolü açıklanmaz (iki oyunda da).
+- Rol yalnızca kafese atılınca, zıpkınla vurulunca ya da oyundan ayrılınca açıklanır.
