@@ -373,7 +373,7 @@ const TEXT: Record<string, string> = {
   game_not_available: 'Bilgi Yarışması şu an kapalı.',
   sponsor_not_allowed: 'Mekân hesapları yarışmaya katılamaz.',
   quiz_no_questions: 'Yeterli soru yok. Moderatör yeni sorular eklediğinde oynayabilirsin.',
-  quiz_daily_limit: 'Bugünkü 25 oyun hakkın bitti. Yarın yine bekleriz!',
+  quiz_daily_limit: 'Bugünkü oyun hakkın bitti. Yarın yine bekleriz!',
   quiz_solo_limit: 'Bugünkü oyun sınırına ulaştın. Yarın tekrar dene.',
   match_not_found: 'Bu maç artık yok.',
   answer_closed: 'Bu sorunun süresi doldu.',

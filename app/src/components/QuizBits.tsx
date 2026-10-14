@@ -57,6 +57,8 @@ export function LivesBar({
   const left = nextAt ? Date.parse(nextAt) - (now + offsetMs) : null;
   const dayLeft = Math.max(0, dailyGames - gamesToday);
   const dayRatio = dailyGames > 0 ? Math.min(1, gamesToday / dailyGames) : 1;
+  // Günlük oyun sınırı kaldırıldı (sunucuda çok büyük bir sayı): kutu “sınırsız” yazar
+  const noDayLimit = dailyGames >= 1000;
   // İki kutu yan yana: solda canlar (dolma sayacıyla), sağda günlük oyun limiti (kalan oyun)
   return (
     <View style={styles.lives} testID="quiz-lives">
@@ -91,6 +93,13 @@ export function LivesBar({
         </Text>
       </View>
       )}
+      {noDayLimit ? (
+        <View style={[styles.lifeBox, styles.lifeBoxDay]} accessibilityLabel="Oyun sayısı sınırsız">
+          <Text style={styles.boxLabel}>OYUN SAYISI</Text>
+          <Text style={styles.dayValue}>∞</Text>
+          <Text style={styles.livesSub}>Sınırsız · aylık puan hedefi var</Text>
+        </View>
+      ) : (
       <View
         style={[styles.lifeBox, styles.lifeBoxDay, dayLeft === 0 && styles.lifeBoxDone]}
         accessibilityLabel={`Günlük limit: ${dayLeft} oyun kaldı`}
@@ -105,6 +114,7 @@ export function LivesBar({
         </View>
         <Text style={styles.livesSub}>{dayLeft === 0 ? 'Bugünlük bitti, yarın yenilenir' : 'oyun hakkın kaldı'}</Text>
       </View>
+      )}
     </View>
   );
 }

@@ -83,7 +83,7 @@ export type Quota = {
   is_moderator: boolean;
   /** Sponsor (mekân) hesap: oyun oynamaz, etkinlik sınırsız */
   is_sponsor?: boolean;
-  /** Sponsor koduyla kazanılmış, henüz kullanılmamış 1 ek oda hakkı var mı? */
+  /** Girilmiş, henüz kullanılmamış (süresi dolmamış) mekân kodu var mı? */
   sponsor_credit?: boolean;
   sponsor_credit_until?: string | null;
   is_premium: boolean;

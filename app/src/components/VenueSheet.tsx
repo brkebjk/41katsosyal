@@ -215,8 +215,8 @@ export function VenueSheet({ venueId, isModerator, onClose }: Props) {
               />
             ) : venue.needs_visit ? (
               <Text style={styles.hint}>
-                Puan vermek için önce bu mekânın oyun hakkı kodunu bir kez kullanmış olman gerekir. Kodu
-                mekândan isteyip Oyunlar sekmesindeki hak göstergesine yazabilirsin.
+                Puan vermek için önce bu mekânın kodunu bir kez kullanmış olman gerekir. Kodu mekândan isteyip
+                Oyunlar sekmesindeki göstergenin “+”sına yazabilirsin.
               </Text>
             ) : null}
 

@@ -9,7 +9,8 @@ import { colors, fonts, radii, spacing } from '@/theme';
  * 1. sıranın puanı nasıl büyür. Hücreler yan yana dizilir, böylece tablo uzayıp ekranı kaplamaz.
  */
 export function PointsTable({ data }: { data: PointsTableData }) {
-  const { size, actual, minPlayers, rows, ladder } = data;
+  const { size, actual, minPlayers, rows, ladder, sideMult } = data;
+  const side = (n: number) => Math.round(n * sideMult * 2) / 2;
   const tooFew = actual !== null && actual < minPlayers;
   const caption =
     actual === null
@@ -20,11 +21,17 @@ export function PointsTable({ data }: { data: PointsTableData }) {
   return (
     <View style={styles.wrap} testID="points-table">
       <Text style={styles.caption}>{caption}</Text>
+      <Text style={styles.legend}>{`Büyük sayı uzaktan oyunun puanı · altındaki yan yana (×${sideMult})`}</Text>
       <View style={styles.grid} accessibilityRole="list">
         {rows.map((r) => (
-          <View key={r.place} style={styles.cell} accessibilityLabel={`${r.place}. sıra ${r.points} puan`}>
+          <View
+            key={r.place}
+            style={styles.cell}
+            accessibilityLabel={`${r.place}. sıra uzaktan ${r.points} puan, yan yana ${side(r.points)} puan`}
+          >
             <Text style={styles.place}>{r.place}. sıra</Text>
             <Text style={styles.points}>{r.points}</Text>
+            <Text style={styles.sidePoints}>{`🏖️ ${side(r.points)}`}</Text>
           </View>
         ))}
       </View>
@@ -63,6 +70,8 @@ const styles = StyleSheet.create({
   },
   place: { color: colors.textMuted, fontSize: 11 },
   points: { color: colors.highlight, fontFamily: fonts.black, fontSize: 16 },
+  sidePoints: { color: colors.success, fontFamily: fonts.extra, fontSize: 11 },
+  legend: { color: colors.textMuted, fontSize: 11, lineHeight: 15 },
   ladder: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   step: {
     flexGrow: 1,

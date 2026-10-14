@@ -7,7 +7,7 @@ export type LevelPerk = 'game_plus1' | 'event_plus1' | 'quiz_mult' | 'unlimited_
 export const LEVEL_QUIZ_MULT = 1.2;
 
 const PERK_TEXT: Record<LevelPerk, string> = {
-  game_plus1: '+1 oyun hakkı',
+  game_plus1: 'Sınırsız oyun',
   event_plus1: '+1 etkinlik hakkı',
   quiz_mult: `Bilgi Yarışması puanı ×${String(LEVEL_QUIZ_MULT).replace('.', ',')}`,
   unlimited_lives: 'Bilgi Yarışması’nda sınırsız can',
@@ -22,7 +22,6 @@ export function perkText(perk: string | null | undefined): string {
 export const LEVEL_RULES: string[] = [
   'Seviyen toplam puanına göre belirlenir ve düşmez. Yalnızca bulunduğun seviyenin ödülünü alırsın; önceki seviyelerin ödülleri birikmez.',
   'Ödüller her ayın başında, aylık puan sıralaması sıfırlanırken yeniden verilir.',
-  'Haklar biriktirilemez: o ay kullanmadığın oyun ya da etkinlik hakkı ay sonunda silinir, sonraki aya geçmez.',
-  `Seviye 4 çarpanı (×${String(LEVEL_QUIZ_MULT).replace('.', ',')}) Bilgi Yarışması’ndan kazandığın puana ve günlük, aylık, özel oda puan sınırlarına birlikte uygulanır.`,
-  'Sınırsız can, Bilgi Yarışması’ndaki günlük oyun sınırını kaldırmaz.',
+  'Haklar biriktirilemez: o ay kullanmadığın etkinlik hakkı ay sonunda silinir, sonraki aya geçmez.',
+  `Seviye 4 çarpanı (×${String(LEVEL_QUIZ_MULT).replace('.', ',')}) Bilgi Yarışması’ndan kazandığın puana, aylık puan hedefine ve özel oda puan sınırına birlikte uygulanır.`,
 ];

@@ -392,7 +392,7 @@ const styles = StyleSheet.create({
     borderRadius: BUBBLE / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#48CAE4',
+    backgroundColor: '#34D399',
     borderWidth: 3,
     borderColor: '#FFFFFF',
     shadowColor: '#000000',

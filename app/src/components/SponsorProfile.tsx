@@ -27,7 +27,7 @@ const STATUS_TEXT: Record<SponsorCode['status'], string> = {
 };
 
 /**
- * Mekân (sponsor) hesabının profil gövdesi: mekân bilgisi, puanı ve oyun hakkı kodları.
+ * Mekân (sponsor) hesabının profil gövdesi: mekân bilgisi, puanı ve mekân bonusu kodları.
  * Sponsor hesaplar puan toplamaz, sıralamada yer almaz; bu yüzden puan/seviye alanları gösterilmez.
  */
 export function SponsorProfile({ fullName }: { fullName: string }) {
@@ -54,7 +54,7 @@ export function SponsorProfile({ fullName }: { fullName: string }) {
     if (busy || !panel?.venue) return;
     const ok = await confirmAction(
       'Yeni kod oluşturulsun mu?',
-      `Kod ${panel.valid_hours ?? 24} saat geçerli olur ve tek bir üyeye bir ek oyun odası hakkı verir. Bu ayki kod hakkından 1 düşer.`,
+      `Kod ${panel.valid_hours ?? 24} saat geçerli olur ve tek bir üyeye mekân bonusu verir (mekânında açtığı yan yana oyunda herkese +%25 puan). Bu ayki kod hakkından 1 düşer.`,
       'Kod oluştur',
     );
     if (!ok) return;
@@ -67,7 +67,7 @@ export function SponsorProfile({ fullName }: { fullName: string }) {
     }
     void load();
     try {
-      await Share.share({ message: `${fullName} oyun hakkı kodu: ${res.data.code}` });
+      await Share.share({ message: `${fullName} mekân bonusu kodu: ${res.data.code}` });
     } catch {
       // Paylaşım açılamadıysa kod listede görünüyor
     }
@@ -75,7 +75,7 @@ export function SponsorProfile({ fullName }: { fullName: string }) {
 
   async function onShare(code: string) {
     try {
-      await Share.share({ message: `${fullName} oyun hakkı kodu: ${code}` });
+      await Share.share({ message: `${fullName} mekân bonusu kodu: ${code}` });
     } catch {
       // Kod ekranda zaten görünüyor
     }
@@ -152,8 +152,8 @@ export function SponsorProfile({ fullName }: { fullName: string }) {
           </Panel>
 
           <Panel
-            title="Oyun hakkı kodları"
-            hint="Müşterine bir kod ver; kodu giren üye bir ek oyun odası hakkı kazanır. Kodlar tek kullanımlıktır."
+            title="Mekân bonusu kodları"
+            hint="Müşterine bir kod ver; kodu giren üye birkaç saat içinde mekânında açtığı yan yana oyunda herkese +%25 puan kazandırır. Kodlar tek kullanımlıktır."
           >
             <ListRow
               icon="ticket-outline"

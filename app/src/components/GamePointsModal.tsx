@@ -12,10 +12,12 @@ type Props = {
   players?: number;
   /** Oyuna özel ek satırlar */
   extra?: InfoItem[];
+  /** Köpekbalığı Kafesi / Vampir–Köylü: puan için en az oyuncu ayrı ayardır */
+  party?: boolean;
 };
 
 /** “Oyun puanı nasıl hesaplanır?” penceresi. Sayılar açılırken sunucu ayarlarından okunur. */
-export function GamePointsModal({ visible, onClose, players, extra }: Props) {
+export function GamePointsModal({ visible, onClose, players, extra, party }: Props) {
   const [rules, setRules] = useState<PointRules>(DEFAULT_RULES);
   useEffect(() => {
     if (!visible) return;
@@ -27,7 +29,8 @@ export function GamePointsModal({ visible, onClose, players, extra }: Props) {
       active = false;
     };
   }, [visible]);
-  const info = gamePointsInfo(rules, players, extra);
+  const min = party ? rules.partyMinPlayers : undefined;
+  const info = gamePointsInfo(rules, players, extra, min);
   return (
     <InfoModal
       visible={visible}
@@ -36,7 +39,7 @@ export function GamePointsModal({ visible, onClose, players, extra }: Props) {
       icon={info.icon}
       items={info.items}
       note={info.note}
-      top={<PointsTable data={pointsTable(rules, players)} />}
+      top={<PointsTable data={pointsTable(rules, players, min)} />}
     />
   );
 }

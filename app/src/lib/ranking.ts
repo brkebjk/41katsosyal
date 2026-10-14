@@ -271,6 +271,22 @@ export type PointRules = {
   quizMaxLives: number;
   quizLifeMinutes: number;
   quizDailyGames: number;
+  /** Yan yana oyunun puan çarpanı (uzaktan oyunun kaç katı) */
+  sideMult: number;
+  /** Her oyunun aylık puan hedefi (sınırı): uzaktan / yan yana */
+  remoteMonthPoints: number;
+  sideMonthPoints: number;
+  /** Mekân kodu ile mekânda oynanan yan yana oyunun puanı (yüzde; 125 = +%25) */
+  venueBonusPct: number;
+  /** Köpekbalığı Kafesi ve Vampir–Köylü puan için en az oyuncu */
+  partyMinPlayers: number;
+  /** Mekân kodu kaç saat geçerli */
+  sponsorCreditHours: number;
+  /** Etkinlik puanlama: puan veren / 5 ve 4 yıldız alan düzenleyen / düzenleyenin aylık puanlama sınırı */
+  eventRate: number;
+  eventRated5: number;
+  eventRated4: number;
+  eventRatedMonthCap: number;
   /** 1 ise oyun şampiyonu ünvanları açık */
   titlesEnabled: number;
   /** Ünvan için bir oyunda o ay puan getiren en az oyun sayısı */
@@ -278,18 +294,18 @@ export type PointRules = {
 };
 
 export const DEFAULT_RULES: PointRules = {
-  eventCreate: 15,
-  eventCreateMonthEvents: 1,
+  eventCreate: 50,
+  eventCreateMonthEvents: 2,
   paidEvents: 0,
-  eventAttend: 30,
-  eventAttend10: 35,
-  eventAttend20: 40,
-  eventAttend40: 50,
-  eventAttendOfficialBonus: 10,
+  eventAttend: 100,
+  eventAttend10: 120,
+  eventAttend20: 140,
+  eventAttend40: 170,
+  eventAttendOfficialBonus: 30,
   eventMinAttendees: 4,
-  hostPerAttendee: 10,
+  hostPerAttendee: 25,
   hostAttendeeCap: 25,
-  hostMonthCap: 250,
+  hostMonthCap: 1000,
   pairCooldownDays: 30,
   eventCategoryDaily: 1,
   eventHostDays: 2,
@@ -298,15 +314,25 @@ export const DEFAULT_RULES: PointRules = {
   gameMinPlayers: 4,
   gameDailyCap: 5,
   gameMonthCap: 15,
-  quizWinBase: 100,
+  quizWinBase: 300,
   quizSolo5: 100,
   quizSolo8: 120,
   quizSolo12: 150,
-  quizDailyPoints: 10,
-  quizMonthPoints: 125,
+  quizDailyPoints: 100000,
+  quizMonthPoints: 250,
   quizMaxLives: 5,
   quizLifeMinutes: 30,
-  quizDailyGames: 25,
+  quizDailyGames: 100000,
+  sideMult: 7,
+  remoteMonthPoints: 250,
+  sideMonthPoints: 1750,
+  venueBonusPct: 125,
+  partyMinPlayers: 5,
+  sponsorCreditHours: 6,
+  eventRate: 15,
+  eventRated5: 12,
+  eventRated4: 6,
+  eventRatedMonthCap: 300,
   titlesEnabled: 1,
   titleMinPlays: 5,
 };
@@ -341,6 +367,16 @@ const RULE_KEYS: Record<string, keyof PointRules> = {
   quiz_max_lives: 'quizMaxLives',
   quiz_life_minutes: 'quizLifeMinutes',
   quiz_daily_games: 'quizDailyGames',
+  pts_side_mult: 'sideMult',
+  pts_remote_month_points: 'remoteMonthPoints',
+  pts_side_month_points: 'sideMonthPoints',
+  pts_venue_bonus_pct: 'venueBonusPct',
+  pts_party_min_players: 'partyMinPlayers',
+  sponsor_credit_valid_hours: 'sponsorCreditHours',
+  pts_event_rate: 'eventRate',
+  pts_event_rated_5: 'eventRated5',
+  pts_event_rated_4: 'eventRated4',
+  pts_event_rated_month_cap: 'eventRatedMonthCap',
   titles_enabled: 'titlesEnabled',
   title_min_plays: 'titleMinPlays',
 };
@@ -352,7 +388,7 @@ export function quizPts(v: number): string {
 
 /** Bilgi Yarışması puan kuralının tek satırlık özeti (puan bilgi ekranları için) */
 export function quizRuleSummary(r: PointRules): string {
-  return `Solo Maraton: 5 doğru +${quizPts(r.quizSolo5)}, 8 doğru +${quizPts(r.quizSolo8)}, 12 doğru +${quizPts(r.quizSolo12)}. Uzaktan kazanana 2 kişide +${quizPts(r.quizWinBase * 1.25)}, 5 kişide +${quizPts(r.quizWinBase * 2)}. Günde en çok ${r.quizDailyPoints}, ayda en çok ${r.quizMonthPoints} puan; günde en çok ${r.quizDailyGames} oyun.`;
+  return `Solo Maraton: 5 doğru +${quizPts(r.quizSolo5)}, 8 doğru +${quizPts(r.quizSolo8)}, 12 doğru +${quizPts(r.quizSolo12)}. Uzaktan kazanana 2 kişide +${quizPts(r.quizWinBase * 1.25)}, 5 kişide +${quizPts(r.quizWinBase * 2)}. Oyun sayısı sınırsız; aylık puan hedefi ${r.quizMonthPoints} puan.`;
 }
 
 export async function getPointRules(): Promise<PointRules> {
@@ -366,6 +402,50 @@ export async function getPointRules(): Promise<PointRules> {
     if (field && Number.isFinite(n) && n >= 0 && n <= 100000) out[field] = n;
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Aylık puan hedefleri (giriş ekranlarındaki hedef çubukları, Oyunlar'daki "Kalan hedef")
+// ---------------------------------------------------------------------------
+
+export type GoalGame = 'shark_cage' | 'vampire_villager';
+
+export type GameGoals = {
+  remote_cap: number;
+  side_cap: number;
+  side_mult: number;
+  venue_pct: number;
+  party_min_players: number;
+  /** Bilgi Yarışması: bu ay kazanılan / aylık hedef (seviye çarpanı dahil) */
+  quiz: { earned: number; cap: number };
+  /** Bu ay her oyundan uzaktan ve yan yana kazanılan */
+  games: Record<GoalGame, { remote: number; side: number }>;
+  /** Bu ay etkinliklerden kazanılan (sınırsız) */
+  events: number;
+};
+
+export async function getMyGameGoals(): Promise<GameGoals | null> {
+  const { data } = await callRpc<GameGoals>('my_game_goals', {});
+  if (!data || typeof data !== 'object') return null;
+  const n = (x: unknown) => (Number.isFinite(Number(x)) ? Number(x) : 0);
+  const g = (k: GoalGame) => ({ remote: n(data.games?.[k]?.remote), side: n(data.games?.[k]?.side) });
+  return {
+    remote_cap: n(data.remote_cap),
+    side_cap: n(data.side_cap),
+    side_mult: n(data.side_mult) || 1,
+    venue_pct: n(data.venue_pct) || 100,
+    party_min_players: n(data.party_min_players),
+    quiz: { earned: n(data.quiz?.earned), cap: n(data.quiz?.cap) },
+    games: { shark_cage: g('shark_cage'), vampire_villager: g('vampire_villager') },
+    events: n(data.events),
+  };
+}
+
+/** Bir oyunun bu ay kalan puan hedefi (uzaktan + yan yana) */
+export function goalLeft(goals: GameGoals, game: GoalGame | 'quiz'): number {
+  if (game === 'quiz') return Math.max(0, goals.quiz.cap - goals.quiz.earned);
+  const e = goals.games[game];
+  return Math.max(0, goals.remote_cap - e.remote) + Math.max(0, goals.side_cap - e.side);
 }
 
 // ---------------------------------------------------------------------------

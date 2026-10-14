@@ -1,5 +1,5 @@
-// Sponsorlu mekânlar: mekân profili, puan/yorum, sponsor oyun hakkı kodları ve moderatör işlemleri.
-// Hepsi sunucudaki fonksiyonları (RPC) çağırır. Sponsor kodu yalnızca EK oda hakkı verir; puan vermez.
+// Sponsorlu mekânlar: mekân profili, puan/yorum, mekân bonusu kodları ve moderatör işlemleri.
+// Hepsi sunucudaki fonksiyonları (RPC) çağırır. Sponsor kodu o mekânda açılan yan yana oyuna mekân bonusu verir.
 
 import { callRpc, callRpcVoid, type Result } from '@/lib/rpc';
 
@@ -114,7 +114,7 @@ const VENUE_TEXT: Record<string, string> = {
   invalid_body: 'Yorum en fazla 300 karakter olabilir.',
   review_not_found: 'Silinecek bir değerlendirmen yok.',
   credit_pending:
-    'Kullanmadığın bir oyun hakkın var. Önce onunla bir oda aç, sonra yeni kod girebilirsin (hak biriktirilemez).',
+    'Kullanılmamış bir mekân kodun var. Önce o mekânda yan yana oda aç ya da süresinin dolmasını bekle; sonra yeni kod girebilirsin.',
   venue_daily_limit: 'Bu mekânın kodunu bugün zaten kullandın. Yarın tekrar kullanabilirsin.',
   too_many_attempts: 'Çok fazla yanlış deneme yaptın. 10 dakika sonra tekrar dene.',
   not_a_sponsor: 'Bu hesap sponsor (mekân) hesabı değil.',

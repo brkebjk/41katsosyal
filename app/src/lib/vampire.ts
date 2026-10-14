@@ -90,6 +90,8 @@ export type VvView = {
   rematch?: boolean;
   /** Yeni el geri sayımı (sn); boş = yok */
   rematch_left?: number | null;
+  /** Eşleştirme lobisinde başlama geri sayımı (sn); boş = yok */
+  match_left?: number | null;
   /** Oyun bitince açılan bekleme odası */
   next_room?: string | null;
   next_note?: string | null;

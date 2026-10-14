@@ -18,6 +18,8 @@ import {
 
 import { Text } from '@/components/AppText';
 import { Avatar } from '@/components/Avatar';
+import { Image } from 'expo-image';
+import { AVATAR_COUNT, avatarImages } from '@/lib/images';
 import { KeyboardLift } from '@/components/KeyboardLift';
 import { RoleIcon } from '@/components/RoleIcon';
 import { isRoleKey, roleInfo } from '@/lib/roles';
@@ -600,18 +602,33 @@ const GAP = 4;
  * satırın üstüne biner (yer kaplamaz). Kutucuk yüksekliği hep avatar + EXTRA'dır; dokununca, oy verince ya da yazı
  * değişince hiçbir şey kaymaz.
  */
-const EXTRA = 60;
-const MAX_AVATAR = 120;
-const MIN_AVATAR = 26;
+/** Kare kutucuğun üstünde numara rozetine yer (rozet kutunun üst kenarına biner) */
+const TOP_PAD = 10;
+/** Kutucuğun altındaki satır: oy tabelası ya da durum yazısı */
+const SLOT_H = 24;
+const EXTRA = TOP_PAD + SLOT_H;
+const MAX_AVATAR = 160;
+const MIN_AVATAR = 30;
 
-/** Her satırda hep 4 avatar; kaydırmadan sığacak en büyük boyut */
+/** Her satırda hep 4 kare kutucuk; kaydırmadan sığacak en büyük boyut */
 const COLS = 4;
 function fit(n: number, w: number, h: number): { cols: number; size: number } {
   const rows = Math.max(1, Math.ceil(n / COLS));
   const tileW = (w - GAP * (COLS - 1)) / COLS;
-  const byW = tileW - 8;
+  const byW = tileW - 2;
   const byH = (h - GAP * (rows - 1)) / rows - EXTRA;
   return { cols: COLS, size: Math.max(MIN_AVATAR, Math.floor(Math.min(byW, byH, MAX_AVATAR))) };
+}
+
+/** Kutucuğu tam dolduran avatar görseli (ileride profil fotoğrafı) */
+function SquareAvatar({ index, size }: { index: number; size: number }) {
+  const safe = Math.min(Math.max(Math.round(index) || 1, 1), AVATAR_COUNT);
+  const src = avatarImages[safe - 1];
+  return (
+    <View style={{ width: size, height: size, backgroundColor: '#1C2541' }}>
+      {src ? <Image source={src} contentFit="cover" style={{ width: size, height: size }} /> : null}
+    </View>
+  );
 }
 
 /**
@@ -636,8 +653,8 @@ export function SeatGrid({
   /** Boyutu sabitlemek için (oda kimliği) */
   stickyKey?: string;
   /**
-   * Bekleme odası: bu kadar numaralı kutucuk çizilir, oyuncular koltuk numaralarındaki kutucukta durur; boş kutucuğa
-   * dokununca oraya geçilir (onEmptyPress). Verilmezse yalnızca oyuncular sırayla dizilir.
+   * Bu kadar numaralı kutucuk çizilir, oyuncular koltuk numaralarındaki kutucukta durur (bekleme odası ve oyun);
+   * bekleme odasında boş kutucuğa dokununca oraya geçilir (onEmptyPress). Verilmezse yalnızca oyuncular dizilir.
    */
   slots?: number;
   onEmptyPress?: (seatNo: number) => void;
@@ -659,7 +676,7 @@ export function SeatGrid({
     const { width, height } = e.nativeEvent.layout;
     if (!box || Math.abs(box.w - width) > 1 || Math.abs(box.h - height) > 1) setBox({ w: width, h: height });
   };
-  // Kutucuklar: bekleme odasında 1..slots (boşlar null), oyunda yalnızca oyuncular
+  // Kutucuklar: 1..slots (boşlar null); oyunda da aynı düzen kalır, verilmezse yalnızca oyuncular
   const items: (Seat | null)[] = slots
     ? Array.from({ length: Math.max(slots, ...seats.map((x) => x.p.seat)) }, (_, i) => seats.find((x) => x.p.seat === i + 1) ?? null)
     : seats;
@@ -720,7 +737,6 @@ export function SeatGrid({
               onPress={onPress}
               onLongPress={onLongPress}
               onAlert={onAlert}
-              boxed={!!slots}
             />
             ),
           )}
@@ -728,11 +744,11 @@ export function SeatGrid({
             <FlyingMark
               key={`${mark.to}|${mark.icon}|${mark.kind}`}
               mark={mark}
-              // Avatarın ortasının biraz üstü (kutucuğun üstünden: boşluk 4 + çerçevenin %42'si)
-              to={{ x: center.get(mark.to)!.x, y: center.get(mark.to)!.y + 4 + (size + 8) * 0.42 }}
+              // Kutucuğun ortasının biraz üstü
+              to={{ x: center.get(mark.to)!.x, y: center.get(mark.to)!.y + TOP_PAD + size * 0.42 }}
               from={
                 mark.from && center.has(mark.from) && mark.from !== mark.to
-                  ? { x: center.get(mark.from)!.x, y: center.get(mark.from)!.y + 4 + (size + 8) / 2 }
+                  ? { x: center.get(mark.from)!.x, y: center.get(mark.from)!.y + TOP_PAD + size / 2 }
                   : null
               }
               size={Math.max(24, Math.min(46, Math.round(size * 0.5)))}
@@ -744,7 +760,7 @@ export function SeatGrid({
   );
 }
 
-/** Bekleme odasında boş kutucuk: numarası yazmaz (biri oturunca belirir); dokununca oraya geçilir */
+/** Boş kutucuk: numarası yazmaz (biri oturunca belirir); bekleme odasında dokununca oraya geçilir */
 function EmptySlot({
   seatNo,
   width,
@@ -758,29 +774,19 @@ function EmptySlot({
   light: boolean;
   onPress?: (seatNo: number) => void;
 }) {
-  const outer = size + 8;
   return (
     <Pressable
       onPress={onPress ? () => onPress(seatNo) : undefined}
       disabled={!onPress}
       accessibilityRole="button"
       accessibilityLabel={`${seatNo}. kutucuk boş${onPress ? ', buraya geç' : ''}`}
-      style={({ pressed }) => [
-        styles.tile,
-        { width, height: size + EXTRA },
-        light ? styles.slotBoxLight : styles.slotBox,
-        pressed && styles.pressed,
-      ]}
+      style={({ pressed }) => [styles.tile, { width, height: size + EXTRA }, pressed && styles.pressed]}
       testID={`slot-${seatNo}`}
     >
-      <View
-        style={[
-          styles.emptyRing,
-          { width: outer, height: outer, borderRadius: outer / 2, marginTop: 4 },
-          light && styles.emptyRingLight,
-        ]}
-      >
-        {onPress ? <Ionicons name="add" size={Math.round(size * 0.32)} color={light ? 'rgba(11,19,43,0.35)' : 'rgba(255,255,255,0.4)'} /> : null}
+      <View style={[styles.emptyBox, { width: size, height: size, marginTop: TOP_PAD }, light && styles.emptyBoxLight]}>
+        {onPress ? (
+          <Ionicons name="add" size={Math.round(size * 0.3)} color={light ? 'rgba(11,19,43,0.35)' : 'rgba(255,255,255,0.45)'} />
+        ) : null}
       </View>
     </Pressable>
   );
@@ -797,10 +803,7 @@ function SeatTile({
   onPress,
   onLongPress,
   onAlert,
-  boxed,
 }: {
-  /** Bekleme odasında kutucuk içinde */
-  boxed?: boolean;
   seat: Seat;
   width: number;
   size: number;
@@ -837,10 +840,16 @@ function SeatTile({
   useEffect(() => {
     Animated.spring(talk, { toValue: speaking ? 1.38 : 1, friction: 5, useNativeDriver: NATIVE }).start();
   }, [speaking, talk]);
+  // Çerçeve rengi: seçili (vurgu), konuşan (yeşil), olay rengi; yoksa takım ilişkisi (takım arkadaşı yeşil, rakip
+  // kırmızı, sen mavi), bilinmeyen soluk beyaz
   const ring = selected
     ? accent
-    : (seat.frame ?? (p.is_me ? '#48CAE4' : light ? 'rgba(11,19,43,0.35)' : 'rgba(255,255,255,0.5)'));
-  const nameColor = dead ? (light ? 'rgba(11,19,43,0.45)' : 'rgba(255,255,255,0.45)') : light ? '#0B132B' : '#FFFFFF';
+    : speaking
+      ? '#34D399'
+      : seat.event
+        ? seat.event.color
+        : (seat.frame ?? (p.is_me ? '#48CAE4' : light ? 'rgba(11,19,43,0.3)' : 'rgba(255,255,255,0.3)'));
+  const thick = selected || speaking || !!seat.event || !!seat.frame || p.is_me;
   const label = [
     `${p.seat} numara`,
     p.name,
@@ -854,14 +863,14 @@ function SeatTile({
   ]
     .filter(Boolean)
     .join(', ');
-  const outer = size + 8;
-  const small = size < 44;
+  const small = size < 56;
+  const stripH = Math.max(15, Math.round(size * 0.19));
   const lineText = dead ? (seat.deadLabel ?? 'Elendi') : (seat.label?.text ?? null);
   const lineColor = dead
     ? light
       ? '#9B1C2E'
       : '#FF8A98'
-    : (seat.label?.color ?? (light ? '#24324F' : 'rgba(255,255,255,0.7)'));
+    : (seat.label?.color ?? (light ? '#24324F' : 'rgba(255,255,255,0.75)'));
   return (
     <Pressable
       onPress={onPress ? () => onPress(seat) : undefined}
@@ -874,62 +883,65 @@ function SeatTile({
       style={[
         styles.tile,
         { width, height: size + EXTRA },
-        boxed && (light ? styles.slotBoxLight : styles.slotBox),
         (seat.event || speaking) && styles.tileTop,
         speaking && styles.tileTalk,
         seat.dim && styles.dim,
       ]}
     >
       <Animated.View
-        style={{ width: outer, height: outer, marginTop: 4, transform: [{ scale: Animated.multiply(pop, talk) }] }}
+        style={{ width: size, height: size, marginTop: TOP_PAD, transform: [{ scale: Animated.multiply(pop, talk) }] }}
       >
         {selected ? (
           <Animated.View
             style={[
               styles.selGlow,
               {
-                width: outer + 10,
-                height: outer + 10,
-                borderRadius: (outer + 10) / 2,
+                width: size + 10,
+                height: size + 10,
+                borderRadius: 18,
                 borderColor: accent,
                 opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }),
-                transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1.06] }) }],
+                transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1.04] }) }],
               },
             ]}
           />
         ) : null}
+        {/* Kare kutucuk: avatar görseli kutuyu tam doldurur, altta rumuz şeridi */}
         <View
           style={[
-            styles.ring,
-            {
-              borderRadius: outer / 2,
-              borderColor: speaking ? '#34D399' : seat.event ? seat.event.color : ring,
-              borderWidth: selected || seat.event || speaking ? 3 : 2,
-            },
+            styles.squareBox,
+            { borderColor: ring, borderWidth: thick ? 3 : 1.5 },
             seat.ally && styles.allyGlow,
           ]}
         >
           <View style={dead ? styles.deadAvatar : undefined}>
-            <Avatar index={p.avatar ?? 1} size={size} />
+            <SquareAvatar index={p.avatar ?? 1} size={size} />
           </View>
           {dead ? (
-            <View style={[styles.deadMark, { borderRadius: size / 2 }]}>
-              <Text style={{ fontSize: Math.round(size * 0.42) }}>{seat.deadIcon ?? (p.left ? '🚪' : '🦈')}</Text>
+            <View style={styles.deadMark}>
+              <Text style={{ fontSize: Math.round(size * 0.36) }}>{seat.deadIcon ?? (p.left ? '🚪' : '🦈')}</Text>
             </View>
           ) : null}
+          <View style={[styles.nameStrip, { height: stripH }]}>
+            <Text
+              style={[styles.stripText, { fontSize: Math.max(9, Math.min(13, Math.round(size * 0.115))) }, dead && styles.nameDead]}
+              numberOfLines={1}
+            >
+              {p.is_me ? `${shortName(p.name)} (sen)` : shortName(p.name)}
+            </Text>
+          </View>
         </View>
-        {/* Koltuk numarası: büyük ve belirgin */}
+        {/* Koltuk numarası: kutucuğun en üst ortasında */}
         <View style={[styles.seatNo, small && styles.seatNoSmall]}>
           <Text style={[styles.seatNoText, small && styles.seatNoTextSmall]}>{p.seat}</Text>
         </View>
-        {/* Köpekbalıklarının toplam av oyu */}
+        {/* Köpekbalıklarının (vampirlerin) toplam av oyu */}
         {seat.huntIn ? (
           <View style={[styles.votesIn, styles.huntIn]}>
             <Text style={styles.huntInIcon}>🦈</Text>
             <Text style={styles.votesInText}>{seat.huntIn}</Text>
           </View>
         ) : null}
-        {/* Aldığı kafes oyu */}
         {seat.votesIn ? (
           <View style={styles.votesIn}>
             <Text style={styles.votesInText}>{seat.votesIn}</Text>
@@ -937,31 +949,30 @@ function SeatTile({
           </View>
         ) : null}
         {seat.badge && !dead ? (
-          <View style={styles.badge}>
+          <View style={[styles.badge, { bottom: stripH + 2 }]}>
             <Text style={styles.badgeText}>{seat.badge}</Text>
           </View>
         ) : null}
+        {/* Rol ikonu: kutucuğun orta alt kısmında, rumuz şeridinin hemen üstünde */}
         {seat.roleEmoji ? (
-          <View style={styles.roleBadge} pointerEvents="none">
+          <View style={[styles.roleBadge, { bottom: stripH + 2 }]} pointerEvents="none">
             {seat.roleEmoji.role ? (
-              <RoleIcon role={seat.roleEmoji.role} size={Math.max(20, Math.round(size * 0.34))} framed />
+              <RoleIcon role={seat.roleEmoji.role} size={Math.max(18, Math.round(size * 0.27))} framed />
             ) : (
               <Text style={styles.badgeText}>{seat.roleEmoji.emoji}</Text>
             )}
           </View>
         ) : null}
-        {/* Komutan işareti yalnızca rol ikonu görünmüyorsa (rolü açıklanan kişinin ikonu zaten avatarda) */}
         {p.marshal && !seat.roleEmoji ? (
-          <View style={[styles.badge, styles.badgeLeft]}>
+          <View style={[styles.badge, styles.badgeLeft, { bottom: stripH + 2 }]}>
             <Text style={styles.badgeText}>🎖️</Text>
           </View>
         ) : seat.marked ? (
-          <View style={[styles.badge, styles.badgeLeft]}>
+          <View style={[styles.badge, styles.badgeLeft, { bottom: stripH + 2 }]}>
             <Text style={styles.badgeText}>📍</Text>
           </View>
         ) : null}
         {seat.thinking && !dead ? <Thinking size={size} /> : null}
-        {/* Konuşan oyuncu: kırmızı ünlem, dokununca ses şikâyeti */}
         {seat.alert && onAlert ? (
           <Pressable
             onPress={() => onAlert(seat)}
@@ -973,7 +984,6 @@ function SeatTile({
             <Text style={styles.alertText}>!</Text>
           </Pressable>
         ) : null}
-        {/* Olay balonu: avatarın üstünde simge ve kelime */}
         {seat.event ? (
           <View style={styles.eventWrap} pointerEvents="none">
             <View style={[styles.event, { backgroundColor: seat.event.color }]}>
@@ -983,13 +993,7 @@ function SeatTile({
         ) : null}
       </Animated.View>
 
-      <Text
-        style={[styles.name, { color: nameColor }, light ? styles.nameLight : styles.nameDark, dead && styles.nameDead]}
-        numberOfLines={1}
-      >
-        {p.is_me ? `${shortName(p.name)} (sen)` : shortName(p.name)}
-      </Text>
-      {/* Alt satır: oy tabelası varsa tabela (ok oy verilen kişinin avatarına döner), yoksa durum yazısı */}
+      {/* Kutucuğun altı: oy tabelası varsa tabela (ok oy verilen kişiye döner), yoksa durum yazısı */}
       <View style={styles.signSlot}>
         {seat.sign ? (
           <View
@@ -1003,14 +1007,14 @@ function SeatTile({
             {arrow !== null ? (
               <Ionicons
                 name="arrow-forward"
-                size={19}
+                size={17}
                 color={seat.sign.kind === 'hunt' ? '#FF8A98' : '#3B220B'}
                 style={{ transform: [{ rotate: `${Math.round(arrow)}deg` }] }}
               />
             ) : null}
             <RichLine
               text={seat.sign.text}
-              chip={20}
+              chip={18}
               style={[styles.signText, seat.sign.kind === 'hunt' && styles.signTextHunt]}
             />
           </View>
@@ -2038,21 +2042,35 @@ const styles = StyleSheet.create({
   tile: { alignItems: 'center' },
   slotBox: { borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)', backgroundColor: 'rgba(11,19,43,0.22)' },
   slotBoxLight: { borderRadius: 14, borderWidth: 1, borderColor: 'rgba(11,19,43,0.18)', backgroundColor: 'rgba(255,255,255,0.35)' },
-  emptyRing: {
+  emptyBox: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
+    borderRadius: 14,
+    borderWidth: 1.5,
     borderStyle: 'dashed',
     borderColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: 'rgba(11,19,43,0.25)',
   },
-  emptyRingLight: { borderColor: 'rgba(11,19,43,0.25)' },
+  emptyBoxLight: { borderColor: 'rgba(11,19,43,0.25)', backgroundColor: 'rgba(255,255,255,0.35)' },
+  squareBox: { flex: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: '#1C2541' },
+  nameStrip: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    backgroundColor: 'rgba(5, 10, 24, 0.72)',
+  },
+  stripText: { color: '#FFFFFF', fontFamily: fonts.extra },
   tileTop: { zIndex: 5, elevation: 5 },
   tileTalk: { zIndex: 8, elevation: 8 },
   mark: { position: 'absolute', left: 0, top: 0, alignItems: 'center', justifyContent: 'center', zIndex: 20, elevation: 20 },
   markText: { textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 6 },
   dim: { opacity: 0.38 },
   row: { flexDirection: 'row', gap: 8 },
-  signSlot: { height: 28, justifyContent: 'flex-start', alignItems: 'center', marginTop: 0, maxWidth: '100%' },
+  signSlot: { height: SLOT_H, justifyContent: 'center', alignItems: 'center', marginTop: 0, maxWidth: '100%' },
   alertBtn: {
     position: 'absolute',
     top: -6,

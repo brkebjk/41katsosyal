@@ -16,12 +16,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { RoleIcon } from '@/components/RoleIcon';
 import { Text } from '@/components/AppText';
 import { GamePointsModal } from '@/components/GamePointsModal';
+import { GoalBars } from '@/components/GoalBars';
 import { SharkIntroBackdrop } from '@/components/SharkStage';
 import { useRoomActions } from '@/components/useRoomActions';
 import { useAuth } from '@/lib/auth';
-import { getQuota, type Quota } from '@/lib/events';
 import { SHARK_RANK_ITEM } from '@/lib/gameInfo';
-import { getRemoteCaps, SK_ROLES, SK_TEAMS, type RemoteCaps, type SkRole } from '@/lib/shark';
+import { DEFAULT_RULES, getMyGameGoals, getPointRules, type GameGoals, type PointRules } from '@/lib/ranking';
+import { SK_ROLES, SK_TEAMS, type SkRole } from '@/lib/shark';
 import { fonts } from '@/theme';
 
 /** Rol kartlarının sırası: önce köpekbalıkları, sonra insanlar, en son tarafsızlar */
@@ -45,23 +46,23 @@ const ROLE_ORDER: SkRole[] = [
 const PAD = 12;
 
 /**
- * Köpekbalığı Kafesi giriş ekranı (Oyunlar'da oyuna dokununca). Tek ekran: tema arka planı (plaj → dalış), puan
- * sayaçları, kaydırmalı rol kartları, puan mantığı, Yan yana / Uzaktan oda açma ve açık odalar.
+ * Köpekbalığı Kafesi giriş ekranı (Oyunlar'da oyuna dokununca). Tek ekran: tema arka planı (plaj → dalış), aylık
+ * puan hedefi çubukları, kaydırmalı rol kartları, puan mantığı, Yan yana / Uzaktan oda açma ve açık odalar.
  */
 export default function SharkIntroScreen() {
   const { width } = useWindowDimensions();
   const { profile } = useAuth();
   const isModerator = profile?.role === 'admin';
-  const [quota, setQuota] = useState<Quota | null>(null);
-  const [caps, setCaps] = useState<RemoteCaps | null>(null);
+  const [goals, setGoals] = useState<GameGoals | null>(null);
+  const [rules, setRules] = useState<PointRules>(DEFAULT_RULES);
   const [page, setPage] = useState(0);
   const [pointsOpen, setPointsOpen] = useState(false);
 
   const refresh = useCallback(() => {
-    void getQuota().then((r) => {
-      if (r.data) setQuota(r.data);
+    void getMyGameGoals().then((g) => {
+      if (g) setGoals(g);
     });
-    void getRemoteCaps().then(setCaps);
+    void getPointRules().then(setRules);
   }, []);
 
   const actions = useRoomActions({ isModerator, onChanged: refresh });
@@ -83,11 +84,8 @@ export default function SharkIntroScreen() {
     if (p !== page) setPage(Math.max(0, Math.min(ROLE_ORDER.length - 1, p)));
   };
 
-  const unlimited = quota !== null && (quota.is_moderator || quota.games_limit === null);
-  const roomsLeft = quota && !unlimited ? Math.max(0, (quota.games_limit ?? 0) - quota.games_used) : null;
-  const todayLeft = caps ? Math.max(0, caps.daily_cap - caps.today) : null;
-  const monthLeft = caps ? Math.max(0, caps.month_cap - caps.month) : null;
-  const remoteLeft = todayLeft === null || monthLeft === null ? null : Math.min(todayLeft, monthLeft);
+  const mine = goals?.games.shark_cage;
+  const sideMult = goals?.side_mult ?? rules.sideMult;
 
   return (
     <View style={styles.root}>
@@ -126,33 +124,26 @@ export default function SharkIntroScreen() {
         </View>
 
         <View style={styles.body}>
-          {/* Sayaçlar */}
-          <View style={styles.counters}>
-            <View style={[styles.counter, styles.counterSide]} accessibilityLabel="Yan yana oyun puanı">
-              <Text style={[styles.counterHead, styles.sandHead]}>🏖️ Yan yana</Text>
-              <Text style={[styles.counterBig, styles.sandText]}>5x</Text>
-              <Text style={[styles.counterSub, styles.sandSub]}>puan · sınır yok</Text>
-              <Text style={[styles.counterNote, styles.sandNote]}>
-                {unlimited ? 'Oda hakkın sınırsız' : roomsLeft === null ? 'Oda hakkın…' : `Bu ay ${roomsLeft} oda hakkın var`}
-              </Text>
-            </View>
-            <View style={[styles.counter, styles.counterRemote]} accessibilityLabel="Uzaktan oyun puanı">
-              <Text style={styles.counterHead}>🌊 Uzaktan</Text>
-              <View style={styles.counterRow}>
-                <View style={styles.counterCell}>
-                  <Text style={styles.counterBig}>{todayLeft === null ? '…' : `${todayLeft}/${caps?.daily_cap}`}</Text>
-                  <Text style={styles.counterSub}>bugün kalan</Text>
-                </View>
-                <View style={styles.counterCell}>
-                  <Text style={styles.counterBig}>{monthLeft === null ? '…' : `${monthLeft}/${caps?.month_cap}`}</Text>
-                  <Text style={styles.counterSub}>bu ay kalan</Text>
-                </View>
-              </View>
-              <Text style={styles.counterNote}>
-                {remoteLeft === 0 ? 'Puanlı uzaktan oyun hakkın doldu' : 'puanlı oyun · hak yemez'}
-              </Text>
-            </View>
-          </View>
+          {/* Bu ayın puan hedefi */}
+          <GoalBars
+            bars={[
+              {
+                key: 'side',
+                label: `🏖️ Yan yana ×${sideMult}`,
+                earned: mine?.side ?? 0,
+                cap: goals?.side_cap ?? rules.sideMonthPoints,
+                color: '#FFB703',
+              },
+              {
+                key: 'remote',
+                label: '🌊 Uzaktan',
+                earned: mine?.remote ?? 0,
+                cap: goals?.remote_cap ?? rules.remoteMonthPoints,
+                color: '#48CAE4',
+              },
+            ]}
+            note="Oyun sınırsız · hedefini tamamla, sıralamada yüksel."
+          />
 
           {/* Rol kartları */}
           <View style={styles.cards}>
@@ -215,12 +206,12 @@ export default function SharkIntroScreen() {
           >
             <Text style={styles.pointsLine}>🏆 Kazanan takım 1. sıra; kalanlar ne kadar dayandıysa o kadar önde.</Text>
             <Text style={styles.pointsLine}>
-              {`👥 Kişi arttıkça puan artar (1. sıra en çok ${caps?.top_cap ?? 12}); 2. ve 3. de kazanır. En az ${
-                caps?.min_players ?? 4
+              {`👥 Kişi arttıkça puan artar (1. sıra en çok ${rules.gameTopCap}); 2. ve 3. de kazanır. En az ${
+                rules.partyMinPlayers
               } kişi.`}
             </Text>
             <Text style={styles.pointsLine}>
-              {`🏖️ Yan yana 5x puan · 🎲 Oyun Gecesi ×1,5 · 🎭 Anlatıcılı oyun puansız`}
+              {`🏖️ Yan yana ${sideMult}x puan · 🏪 Mekânda +%${Math.max(0, rules.venueBonusPct - 100)} · 🎲 Oyun Gecesi ×1,5`}
             </Text>
             <Text style={styles.pointsLink}>Puan tablosu ›</Text>
           </Pressable>
@@ -234,7 +225,7 @@ export default function SharkIntroScreen() {
               testID="sk-intro-side"
             >
               <View style={styles.bonus} pointerEvents="none">
-                <Text style={styles.bonusText}>5x Puan</Text>
+                <Text style={styles.bonusText}>{`${sideMult}x Puan`}</Text>
               </View>
               <Text style={styles.playEmoji}>🏖️</Text>
               <Text style={styles.playTitle}>YAN YANA</Text>
@@ -271,6 +262,7 @@ export default function SharkIntroScreen() {
         onClose={() => setPointsOpen(false)}
         players={8}
         extra={[SHARK_RANK_ITEM]}
+        party
       />
     </View>
   );
@@ -303,20 +295,6 @@ const styles = StyleSheet.create({
   },
   guideText: { color: '#0B132B', fontFamily: fonts.extra, fontSize: 12.5 },
   body: { flex: 1, gap: 10, paddingHorizontal: PAD, paddingBottom: 8 },
-  counters: { flexDirection: 'row', gap: 8 },
-  counter: { flex: 1, alignItems: 'center', paddingVertical: 8, paddingHorizontal: 6, borderRadius: 16, borderWidth: 1 },
-  counterSide: { backgroundColor: 'rgba(242, 210, 162, 0.92)', borderColor: '#E0A96D' },
-  counterRemote: { flex: 1.4, backgroundColor: 'rgba(11, 19, 43, 0.82)', borderColor: 'rgba(72, 202, 228, 0.6)' },
-  counterHead: { fontFamily: fonts.extra, fontSize: 12.5, color: '#48CAE4' },
-  counterRow: { flexDirection: 'row', gap: 6, alignSelf: 'stretch' },
-  counterCell: { flex: 1, alignItems: 'center' },
-  counterBig: { fontFamily: fonts.black, fontSize: 22, color: '#FFFFFF' },
-  counterSub: { fontFamily: fonts.semi, fontSize: 10.5, color: 'rgba(255,255,255,0.75)' },
-  counterNote: { marginTop: 2, fontFamily: fonts.semi, fontSize: 10.5, color: '#FFB703', textAlign: 'center' },
-  sandHead: { color: '#7A4A1E' },
-  sandText: { color: '#3B220B' },
-  sandSub: { color: '#5C3A16' },
-  sandNote: { color: '#0B132B' },
   cards: { flex: 1, minHeight: 150 },
   cardsRow: { alignItems: 'stretch' },
   cardWrap: { paddingHorizontal: 2 },

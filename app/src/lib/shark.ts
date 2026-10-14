@@ -134,6 +134,8 @@ export type SkView = {
   rematch?: boolean;
   /** Yeni el geri sayımı (sn); boş = geri sayım yok */
   rematch_left?: number | null;
+  /** Eşleştirme lobisinde başlama geri sayımı (sn); boş = yok */
+  match_left?: number | null;
   /** Oyun bitince açılan bekleme odası (oraya geçilir) */
   next_room?: string | null;
   /** Yeni el açılamadıysa nedeni ('no_quota') */
@@ -340,23 +342,7 @@ const VOICE_TEXT: Record<string, string> = {
   clip_not_found: 'Bu ses mesajı artık yok.',
 };
 
-export type RemoteCaps = {
-  today: number;
-  month: number;
-  daily_cap: number;
-  month_cap: number;
-  pct: number;
-  top_cap: number;
-  min_players: number;
-};
-
-/** Uzaktan oyunda bugün / bu ay kullanılan puanlı oyun sayısı ve sınırlar (giriş ekranındaki sayaç) */
-export async function getRemoteCaps(): Promise<RemoteCaps | null> {
-  const res = await callRpc<RemoteCaps>('my_remote_caps', {});
-  return res.data ?? null;
-}
-
-/** Bas-konuş: ses mesajını gönderir (base64 AAC, en çok 5 sn) */
+/** Bas-konuş: ses mesajını gönderir (base64 AAC, en çok 10 sn) */
 export async function postVoiceClip(roomId: string, audio: string, ms: number): Promise<string | null> {
   const res = await callRpc<string>(
     'sk_voice_post',

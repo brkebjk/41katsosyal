@@ -33,6 +33,8 @@ const ROOMS_REFRESH_MS = 10000;
  * oyunlar görünür; hepsine oda koduyla ve konum doğrulamasıyla girilir. Uzaktan odalar listelenmez: Uzaktan Eşleş’te
  * bekleyen bir uzaktan oda varsa oyuncu oraya kendiliğinden alınır.
  */
+const fmtNum = (n: number) => Math.round(n).toLocaleString('tr-TR');
+
 export default function OpenRoomsScreen() {
   const params = useLocalSearchParams<{ game?: string }>();
   const game = isGameKey(params.game) ? params.game : null;
@@ -126,7 +128,7 @@ export default function OpenRoomsScreen() {
   }
 
   const title = gameTitle(game);
-  const rulesContent = roomRulesInfo(actions.limits.freeGames, actions.limits.subscriptionGames);
+  const rulesContent = roomRulesInfo(rules);
   // Köpekbalığı ve Vampir–Köylü'de oda bu ekrandan açılmaz (giriş ekranındaki Yan yana / Uzaktan eşleş);
   // çekilişi yalnızca moderatör açar; üyeler yalnızca kodla katılır
   const party = game === 'vampire_villager' || game === 'shark_cage';
@@ -220,12 +222,12 @@ export default function OpenRoomsScreen() {
           >
             <Ionicons name="podium" size={18} color={colors.primary} />
             <Text style={[styles.pointsTitle, styles.flex]}>Puan tablosu</Text>
-            <Text style={styles.pointsBadge}>Yan yana 5x</Text>
+            <Text style={styles.pointsBadge}>{`Yan yana ${rules.sideMult}x`}</Text>
             <Ionicons name={pointsOpen ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
           </Pressable>
           {pointsOpen ? (
           <>
-          <PointsTable data={pointsTable(rules)} />
+          <PointsTable data={pointsTable(rules, undefined, rules.partyMinPlayers)} />
           <View style={styles.ruleTable}>
             {[
               [
@@ -237,9 +239,14 @@ export default function OpenRoomsScreen() {
                 `4 kişiden sonra her oyuncu 1. sıranın puanını %10 artırır (en çok ${rules.gameTopCap}).`,
               ],
               ['Son sıra', 'En az 1 puan alır.'],
-              ['Puan için en az', `${rules.gameMinPlayers} oyuncu (moderatör sayılmaz)`],
-              ['Yan yana', 'Uzaktan oyunun 5 katı puan; günlük/aylık puan sınırı yok'],
-              ['Uzaktan', 'Yan yana puanının beşte biri; oyun hakkından yemez'],
+              ['Puan için en az', `${rules.partyMinPlayers} oyuncu (moderatör sayılmaz)`],
+              [
+                'Yan yana',
+                `Uzaktan oyunun ${rules.sideMult} katı puan, konum doğrulanır; ayda en çok ${fmtNum(rules.sideMonthPoints)} puan`,
+              ],
+              ['Uzaktan', `Tablodaki puan; ayda en çok ${fmtNum(rules.remoteMonthPoints)} puan`],
+              ['Mekân bonusu', `Mekân koduyla mekânda oynanan yan yana oyun +%${Math.max(0, rules.venueBonusPct - 100)}`],
+              ['Oyun sayısı', 'Sınırsız; aylık hedefe ulaşınca o oyundan puan yazılmaz'],
               ['Etkinlik oyunu', 'Oyun Geceleri ×1,5 · Sosyal Buluşmalar ve Müzik & Eğlence ×1,25'],
               ['Oyundan ayrılan', 'Puan almaz (elenmiş sayılır)'],
               ...(game === 'vampire_villager' ? [['Başarım ödülü', '5 Vampir görevini bitirenin puanları kalıcı 1,25 kat']] : []),

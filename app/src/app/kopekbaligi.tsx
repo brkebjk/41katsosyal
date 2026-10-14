@@ -254,7 +254,7 @@ function Game({ roomId }: { roomId: string }) {
 
   const elapsed = useElapsedSeconds(
     viewAt,
-    live && view !== null && (view.status === 'playing' || (view.rematch_left ?? null) !== null || !!view.kick?.poll),
+    live && view !== null && (view.status === 'playing' || (view.rematch_left ?? null) !== null || (view.match_left ?? null) !== null || !!view.kick?.poll),
   );
   const elapsedKick = elapsed;
 
@@ -574,13 +574,13 @@ function Game({ roomId }: { roomId: string }) {
   });
 
   /**
-   * Avatar çerçevesi: kendi takımından olduğu bilinen yeşil, bilinmeyen sarı, rolü açığa çıkan rakip kırmızı.
+   * Avatar çerçevesi: kendi takımından olduğu bilinen yeşil, rolü açığa çıkan rakip kırmızı, bilinmeyen çerçevesiz.
    * Takım yalnızca sunucunun gönderdiği (görmeye hakkın olan) rolden anlaşılır. Tarafsızın takım arkadaşı yoktur.
    * Anlatıcı / izleyici takımların kendi renklerini görür.
    */
   function frameOf(p: SkPlayer): string | undefined {
     if (p.is_me || phase === 'lobby') return undefined;
-    if (!p.team) return '#FFC93C';
+    if (!p.team) return undefined;
     if (!me.team) return SK_TEAMS[p.team].color;
     return me.team !== 'neutral' && p.team === me.team ? '#34D399' : '#FF4D4D';
   }
@@ -763,6 +763,8 @@ function Game({ roomId }: { roomId: string }) {
     const readyCount = present.filter((p) => readyIds.has(p.id)).length;
     const myReady = myPlayerId !== null && readyIds.has(myPlayerId);
     const countdown = view.rematch_left != null ? Math.max(0, Math.ceil(view.rematch_left - elapsed)) : null;
+    // Eşleştirme: en az kişi sayısına ulaşınca 60 sn beklenir (başka oyuncular gelsin), sonra hazırlar çoğunluktaysa başlar
+    const matchLeft = view.match_left != null ? Math.max(0, Math.ceil(view.match_left - elapsed)) : null;
     const canReady = n >= view.min_players || countdown !== null;
     const need = Math.floor(n / 2) + 1;
     prompt =
@@ -773,7 +775,17 @@ function Game({ roomId }: { roomId: string }) {
             color: '#34D399',
             pulse: !myReady,
           }
-        : {
+        : canReady && matchLeft !== null && matchLeft > 0
+          ? {
+              title: `⏳ BAŞLAMASINA ${matchLeft} sn`,
+              lines: [
+                `${readyCount} / ${n} hazır · süre dolunca ${need} kişi “Hazırım” demişse başlar.`,
+                'Bu sürede başka oyuncular da katılabilir.',
+              ],
+              color: '#34D399',
+              pulse: !myReady,
+            }
+          : {
             title: canReady ? `HAZIR ${readyCount} / ${n}` : `🌊 LOBİ · ${n} kişi`,
             lines: canReady
               ? [`Başlamak için ${need} kişinin “Hazırım” demesi yeter.`, 'Beklersen ya da davet edersen kalabalık oyun daha çok puan verir.']
@@ -817,10 +829,10 @@ function Game({ roomId }: { roomId: string }) {
           />
         ) : null}
         {view.match ? (
-          <Text style={styles.pText}>Herkes rumuzuyla görünür. Uzaktan oyun hak yemez; yan yana oyun 5 kat puan verir.</Text>
+          <Text style={styles.pText}>Herkes rumuzuyla görünür. Her oyunun aylık puan hedefi var; yan yana oyun 7 kat puan verir.</Text>
         ) : (
           <Text style={styles.pText}>
-            {`${view.code ? `Oda ID ${view.code}. ` : ''}Her yeni el oda sahibinin aylık oyun hakkından 1 düşer.`}
+            {`${view.code ? `Oda ID ${view.code}. ` : ''}Oyun sayısı sınırsız; puan aylık hedefe kadar yazılır.`}
           </Text>
         )}
         {!view.match && (me.is_host || me.is_admin) && present.length >= view.min_players ? (
@@ -851,8 +863,8 @@ function Game({ roomId }: { roomId: string }) {
     const modeText =
       view.mode === 'narrator'
         ? me.is_omniscient
-          ? 'Anlatıcısın. Oynamazsın, herkesin rolünü görür, aşamaları sen ilerletirsin. Anlatıcılı oyunda kimse puan almaz, hak düşmez.'
-          : `Anlatıcı ${view.host.name}. Anlatıcılı oyunda puan yok, hak düşmez.`
+          ? 'Anlatıcısın. Oynamazsın, herkesin rolünü görür, aşamaları sen ilerletirsin. Anlatıcılı oyunda kimse puan almaz.'
+          : `Anlatıcı ${view.host.name}. Anlatıcılı oyunda puan yok.`
         : view.mode === 'host'
           ? me.is_host
             ? 'Ben Yöneticiyim. Aşamaları sen ilerletirsin ve sen de oynarsın (rolleri görmezsin).'
@@ -965,13 +977,17 @@ function Game({ roomId }: { roomId: string }) {
               </Text>
               <Text style={styles.roleGoal}>{roleInfo.goal}</Text>
               {isShark ? (
-                <Text style={styles.allies}>
-                  {'Takım arkadaşların ' +
+                <RichLine
+                  chip={20}
+                  style={styles.allies}
+                  text={
+                    'Takım arkadaşların ' +
                     (view.players
                       .filter((p) => p.ally)
-                      .map((p) => `${circ(p.seat)} ${p.name} (${p.role ? SK_ROLES[p.role].name : '?'})`)
-                      .join(', ') || 'yalnızsın')}
-                </Text>
+                      .map((p) => `${seatTag(p.seat)} ${p.name} (${p.role ? SK_ROLES[p.role].name : '?'})`)
+                      .join(', ') || 'yalnızsın')
+                  }
+                />
               ) : null}
             </View>
           )}
@@ -1274,8 +1290,8 @@ function Game({ roomId }: { roomId: string }) {
               : r.note === 'ok'
                 ? `+${fmtPts(r.awarded)} puan · ${r.players} oyuncu arasında ${r.best_rank}. sıra`
                 : r.note === 'too_few'
-                  ? `${r.best_rank}. sıra · puan için en az ${result.rules.gameMinPlayers} kişi gerekir.`
-                  : `${r.best_rank}. sıra · puan sınırın dolduğu için yazılmadı.`;
+                  ? `${r.best_rank}. sıra · puan için en az ${result.rules.partyMinPlayers} kişi gerekir.`
+                  : `${r.best_rank}. sıra · bu ayın puan hedefini tamamladın, puan yazılmadı.`;
     prompt = {
       title: w.title,
       lines: [
@@ -1320,7 +1336,7 @@ function Game({ roomId }: { roomId: string }) {
         {next && !me.left ? (
           <NextRoomButton seconds={10} onGo={() => router.replace({ pathname: '/kopekbaligi', params: { id: next } })} />
         ) : view.next_note === 'no_quota' ? (
-          <Text style={styles.pText}>Kimsenin bu ay oyun hakkı kalmadığı için yeni el açılamadı.</Text>
+          <Text style={styles.pText}>Yeni el açılamadı. Oyunlar ekranından yeni oda açabilirsin.</Text>
         ) : null}
         <View style={styles.row}>
           <GameButton label="Puanlar" icon="trophy" variant="ghost" onPress={() => setPointsOpen(true)} />
@@ -1673,7 +1689,7 @@ function Game({ roomId }: { roomId: string }) {
                   }}
                   mark={mark}
                   stickyKey={roomId}
-                  slots={phase === 'lobby' ? view.max_players : undefined}
+                  slots={view.max_players}
                   onEmptyPress={
                     phase === 'lobby' && me.is_player && !me.left
                       ? (n) => void act('seat', () => takeSeat(roomId, n))
@@ -1883,16 +1899,26 @@ function Game({ roomId }: { roomId: string }) {
             <Text style={styles.sheetMuted}>{me.spear_used ? 'Zıpkınını kullandın.' : 'Zıpkının duruyor.'}</Text>
           ) : null}
           {role === 'surfer' && me.marks.length ? (
-            <Text style={styles.sheetMuted}>{`İşaretlediklerin ${me.marks.map((m) => `${circ(seatOf(m))}`).join(', ')}`}</Text>
+            <RichLine
+              chip={18}
+              align="left"
+              style={styles.sheetMuted}
+              text={`İşaretlediklerin ${me.marks.map((m) => seatTag(seatOf(m))).join(' ')}`}
+            />
           ) : null}
           {isShark ? (
-            <Text style={styles.sheetMuted}>
-              {'Takım arkadaşların ' +
+            <RichLine
+              chip={18}
+              align="left"
+              style={styles.sheetMuted}
+              text={
+                'Takım arkadaşların ' +
                 (view.players
                   .filter((p) => p.ally)
-                  .map((p) => `${circ(p.seat)} ${p.name}${p.is_alive ? '' : ' (öldü)'}`)
-                  .join(', ') || 'yalnızsın')}
-            </Text>
+                  .map((p) => `${seatTag(p.seat)} ${p.name}${p.is_alive ? '' : ' (öldü)'}`)
+                  .join(', ') || 'yalnızsın')
+              }
+            />
           ) : null}
           {view.roles && Object.keys(view.roles).length ? (
             <>
@@ -1957,6 +1983,7 @@ function Game({ roomId }: { roomId: string }) {
         onClose={() => setPointsOpen(false)}
         players={present.length}
         extra={[SHARK_RANK_ITEM]}
+        party
       />
     </View>
   );
@@ -2038,12 +2065,12 @@ const styles = StyleSheet.create({
   roleGoal: { color: '#FFFFFF', fontSize: 13.5, lineHeight: 19, textAlign: 'center' },
   allies: { color: '#FF8A98', fontFamily: fonts.semi, fontSize: 12.5, textAlign: 'center' },
   panel: { padding: 0 },
-  panelInner: { gap: 8, padding: 10 },
+  panelInner: { gap: 6, padding: 8 },
   row: { flexDirection: 'row', gap: 8 },
   pText: { color: G.muted, fontSize: 12.5, lineHeight: 17 },
   pOk: { color: G.green, fontSize: 12.5, lineHeight: 17 },
   error: { color: G.redSoft, fontSize: 12.5, lineHeight: 17 },
-  tools: { flexDirection: 'row', justifyContent: 'space-around', gap: 4, paddingTop: 2 },
+  tools: { flexDirection: 'row', justifyContent: 'space-around', gap: 4, paddingTop: 0 },
   toolsLight: { backgroundColor: 'rgba(11, 19, 43, 0.75)', borderRadius: 14, paddingVertical: 4 },
   chatBar: {
     flexDirection: 'row',

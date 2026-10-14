@@ -98,7 +98,7 @@ export function GameButton({
       {loading ? (
         <ActivityIndicator size="small" color={fg} />
       ) : icon ? (
-        <Ionicons name={icon} size={15} color={fg} />
+        <Ionicons name={icon} size={14} color={fg} />
       ) : null}
       <Text style={[styles.btnText, { color: fg }]} numberOfLines={1}>
         {label}
@@ -160,7 +160,7 @@ export function ToolButton({
       style={({ pressed }) => [styles.tool, pressed && styles.pressed]}
     >
       <View style={[styles.toolIcon, hot && styles.toolIconHot]}>
-        <Ionicons name={icon} size={19} color={hot ? G.tealText : G.text} />
+        <Ionicons name={icon} size={16} color={hot ? G.tealText : G.text} />
         {badge !== undefined && badge !== null && badge !== '' ? (
           <View style={styles.toolBadge}>
             <Text style={styles.toolBadgeText}>{String(badge)}</Text>
@@ -532,22 +532,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    minHeight: 42,
-    paddingHorizontal: 14,
-    borderRadius: 21,
+    gap: 5,
+    minHeight: 34,
+    paddingHorizontal: 12,
+    borderRadius: 17,
   },
   btnFlex: { flex: 1 },
   btnPrimary: { backgroundColor: G.teal },
   btnGhost: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)', backgroundColor: 'rgba(255,255,255,0.06)' },
   btnDanger: { backgroundColor: '#D9304F' },
   btnOff: { opacity: 0.4 },
-  btnText: { fontFamily: fonts.extra, fontSize: 14 },
+  btnText: { fontFamily: fonts.extra, fontSize: 13 },
   tool: { flex: 1, alignItems: 'center', gap: 2, minWidth: 0 },
   toolIcon: {
-    width: 40,
-    height: 34,
-    borderRadius: 12,
+    width: 34,
+    height: 26,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.1)',
@@ -566,7 +566,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#9B7BFF',
   },
   toolBadgeText: { color: '#FFFFFF', fontFamily: fonts.extra, fontSize: 10 },
-  toolLabel: { color: G.muted, fontFamily: fonts.semi, fontSize: 10.5 },
+  toolLabel: { color: G.muted, fontFamily: fonts.semi, fontSize: 9.5 },
   clock: { gap: 4 },
   clockHead: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
   clockLabel: { flex: 1, color: G.muted, fontSize: 12 },

@@ -3790,6 +3790,9 @@ begin
     'rematch', r.config ? 'rematch_of',
     'rematch_left', case when r.status = 'lobby' and r.state ? 'rematch_until'
                          then greatest(0, ceil(extract(epoch from (r.state->>'rematch_until')::timestamptz - now()))::int) end,
+    -- Eşleştirme lobisi: oyunun başlamasına kalan bekleme süresi (sn)
+    'match_left', case when r.status = 'lobby' and r.state ? 'match_until'
+                       then greatest(0, ceil(extract(epoch from (r.state->>'match_until')::timestamptz - now()))::int) end,
     -- Oyuncu atma oylaması ve kişinin mikrofon / şikâyet yasağı
     'kick', public._kick_state(r.id, v.id),
     'mic_banned', v.mic_banned_until is not null and v.mic_banned_until > now(),
@@ -4135,6 +4138,8 @@ begin
   return jsonb_build_object(
     'players', v_players,
     'event', r.event_id is not null,
+    'match_left', case when r.status = 'lobby' and r.state ? 'match_until'
+                       then greatest(0, ceil(extract(epoch from (r.state->>'match_until')::timestamptz - now()))::int) end,
     'server_now', now(),
     'log', coalesce(r.state->'log', '[]'::jsonb),
     'roles', case when r.status in ('playing', 'finished') then (
@@ -4406,6 +4411,39 @@ begin
     'min_players', public.setting_int('pts_game_min_players', 4));
 end $$;
 
+
+-- Aylık puan hedefleri (her oyunun giriş ekranındaki hedef çubuğu ve Oyunlar'daki "Kalan hedef"): bu ay her oyundan
+-- uzaktan ve yan yana kazanılan puan ve sınırları. Etkinliklerin sınırı yoktur; bu ay etkinliklerden kazanılan da döner.
+create or replace function public.my_game_goals()
+returns jsonb language plpgsql volatile security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_start timestamptz := public._month_start();
+begin
+  v := public._require_user();
+  return jsonb_build_object(
+    'remote_cap', public.setting_int('pts_remote_month_points', 250),
+    'side_cap', public.setting_int('pts_side_month_points', 1750),
+    'side_mult', greatest(1, public.setting_int('pts_side_mult', 7)),
+    'venue_pct', greatest(100, public.setting_int('pts_venue_bonus_pct', 125)),
+    'party_min_players', public.setting_int('pts_party_min_players', 5),
+    'quiz', jsonb_build_object(
+      'earned', (select coalesce(sum(amount), 0) from public.point_events
+                  where user_id = v.id and source = 'quiz_play' and created_at >= v_start),
+      'cap', round(public.setting_int('pts_quiz_month_points', 250) * public._quiz_level_mult(v.id), 2)),
+    'games', (select coalesce(jsonb_object_agg(g.key, jsonb_build_object(
+                'remote', (select coalesce(sum(pe.amount), 0) from public.point_events pe
+                             join public.game_rooms gr on gr.id = pe.room_id
+                            where pe.user_id = v.id and pe.source = 'game_remote' and gr.game_type = g.key
+                              and pe.created_at >= v_start),
+                'side', (select coalesce(sum(pe.amount), 0) from public.point_events pe
+                           join public.game_rooms gr on gr.id = pe.room_id
+                          where pe.user_id = v.id and pe.source = 'game_play' and gr.game_type = g.key
+                            and pe.created_at >= v_start))), '{}'::jsonb)
+                from (values ('shark_cage'), ('vampire_villager')) g(key)),
+    'events', (select coalesce(sum(amount), 0) from public.point_events
+                where user_id = v.id and source like 'event%' and created_at >= v_start));
+end $$;
 
 -- ---- "Tartışmayı hızlı geç" (Vampir–Köylü sabahı, Köpekbalığı Kafesi plajı) ---------------------------------------
 -- Yaşayan her oyuncu işaretleyebilir / işaretini kaldırabilir. Yaşayanların yarısından fazlası işaretlerse tartışma
@@ -4952,24 +4990,11 @@ end $$;
 -- (eşleşme arayanlar boş yerlere yerleşir). Etkinlik oyunu hak harcamaz.
 
 -- Kişinin yan yana oyun açma hakkı var mı? Döner: { ok, credit (varsa harcanacak sponsor hakkı) }
+-- Yeni el için hak denetimi: oyun hakkı artık yok, herkes açabilir (mekân bonusu odanın ayarıyla yeni ele geçer)
 create or replace function public._room_quota_check(p_user uuid)
 returns jsonb language plpgsql stable security definer set search_path = public as $$
-declare
-  p public.profiles;
-  v_credit uuid;
 begin
-  select * into p from public.profiles where id = p_user;
-  if not found then return jsonb_build_object('ok', false); end if;
-  if p.role = 'admin' then return jsonb_build_object('ok', true); end if;
-  v_credit := public._free_sponsor_credit(p_user);
-  if v_credit is not null then return jsonb_build_object('ok', true, 'credit', v_credit); end if;
-  return jsonb_build_object('ok',
-    (select count(*) from public.game_rooms gr
-      where gr.host_id = p_user and (gr.status <> 'cancelled' or gr.started_at is not null)
-        and gr.created_at >= public._month_start() and gr.event_id is null
-        and exists (select 1 from public.game_types gt where gt.key = gr.game_type and gt.uses_quota)
-        and not gr.remote
-        and not exists (select 1 from public.sponsor_credits sc where sc.room_id = gr.id)) < public._game_quota(p));
+  return jsonb_build_object('ok', exists (select 1 from public.profiles where id = p_user));
 end $$;
 
 create or replace function public._room_rematch(p_old uuid)
@@ -5108,8 +5133,27 @@ begin
     return;
   end if;
 
-  if coalesce((r.config->>'match')::boolean, false) and v_n >= v_min and v_ready > v_n - v_ready then
-    if r.game_type = 'shark_cage' then perform public._sk_begin(p_room_id); else perform public._vv_begin(p_room_id); end if;
+  -- Eşleştirme lobisi hemen başlamaz: en az oyuncu sayısına ulaşınca geri sayım (match_wait_seconds, 60 sn) başlar,
+  -- bu sürede başka oyuncular da gelir. Süre dolunca (ya da oda dolunca) "Hazırım" diyenler çoğunluktaysa başlar.
+  if coalesce((r.config->>'match')::boolean, false) then
+    if v_n < v_min then
+      if r.state ? 'match_until' then update public.game_rooms set state = state - 'match_until' where id = p_room_id; end if;
+      return;
+    end if;
+    if not r.state ? 'match_until' then
+      update public.game_rooms
+         set state = state || jsonb_build_object('match_until',
+               now() + make_interval(secs => greatest(10, public.setting_int('match_wait_seconds', 60))))
+       where id = p_room_id;
+      return;
+    end if;
+    if now() < (r.state->>'match_until')::timestamptz
+       and v_n < (select coalesce(gt.max_players, 16) from public.game_types gt where gt.key = r.game_type) then
+      return;
+    end if;
+    if v_ready > v_n - v_ready then
+      if r.game_type = 'shark_cage' then perform public._sk_begin(p_room_id); else perform public._vv_begin(p_room_id); end if;
+    end if;
   end if;
 end $$;
 
@@ -5454,6 +5498,7 @@ grant execute on function public.sk_say(uuid, text, text) to authenticated;
 grant execute on function public.sk_voice_post(uuid, text, int) to authenticated;
 grant execute on function public.sk_voice_get(uuid) to authenticated;
 grant execute on function public.my_remote_caps() to authenticated;
+grant execute on function public.my_game_goals() to authenticated;
 grant execute on function public.vv_skip_discussion(uuid, boolean) to authenticated;
 grant execute on function public.sk_skip_discussion(uuid, boolean) to authenticated;
 grant execute on function public.sk_match_join() to authenticated;
@@ -6314,57 +6359,3 @@ do $$ begin
     values ('seed_quiz_difficulty_v1', 'true', 'Kurulum işareti: başlangıç sorularına zorluk derecesi verildi');
   end if;
 end $$;
-
--- Bilgi Yarışması bir kez açılır (sonradan kapatırsan şemayı tekrar çalıştırmak onu yeniden açmaz)
-do $$ begin
-  if not exists (select 1 from public.app_settings where key = 'seed_quiz_enabled_v1') then
-    update public.game_types set enabled = true where key = 'quiz';
-    -- Eski oda usulü açık kalmış Bilgi Yarışması odaları kapatılır
-    update public.game_rooms set status = 'cancelled', finished_at = now()
-     where game_type = 'quiz' and status in ('lobby', 'playing');
-    insert into public.app_settings (key, value, description)
-    values ('seed_quiz_enabled_v1', 'true', 'Kurulum işareti: Bilgi Yarışması bir kez açıldı');
-  end if;
-end $$;
-
--- “Premium” adı “Abone” oldu: eski kurulumda kalmış ayar açıklamaları da güncellenir
-update public.app_settings
-   set description = 'Düzenleyenin katılımcılardan ayda en çok kazanabileceği puan (abone ile ücretsiz üye eşit olsun diye tek etkinliğin tavanı)'
- where key = 'pts_event_host_month_cap';
-update public.app_settings
-   set description = 'Ayda en çok kaç etkinlik açmaktan puan alınır (aboneler de dahil, herkes için aynı)'
- where key = 'pts_event_create_month_events';
-
--- ---------------------------------------------------------------------
--- Anlık bildirim (Realtime): yeni bildirim ve duyuru, uygulamaya açık bağlantı üzerinden hemen haber verilir.
--- Uygulama böylece birkaç saniyede bir sunucuya sormak zorunda kalmaz (sunucu yükü azalır).
--- Realtime yalnızca kişinin okuyabildiği satırları iletir: üye yalnızca KENDİ bildirimlerini ve etkin duyuruları görür.
--- Yazma izni yoktur; bildirim ve duyurular yine yalnızca sunucu fonksiyonlarıyla oluşur.
--- ---------------------------------------------------------------------
-grant select on public.notifications, public.announcements to authenticated;
-drop policy if exists notifications_own_select on public.notifications;
-create policy notifications_own_select on public.notifications for select to authenticated
-  using (user_id = auth.uid());
-drop policy if exists announcements_active_select on public.announcements;
-create policy announcements_active_select on public.announcements for select to authenticated
-  using (is_active and public._is_active_user());
-do $$ begin
-  begin alter publication supabase_realtime add table public.notifications;
-  exception when duplicate_object or undefined_object then null; end;
-  begin alter publication supabase_realtime add table public.announcements;
-  exception when duplicate_object or undefined_object then null; end;
-end $$;
-
--- Profil 4
-grant execute on function public.submit_problem_report(text, text, text, text, text, text, text) to authenticated;
-grant execute on function public.admin_list_problem_reports(text) to authenticated;
-grant execute on function public.admin_close_problem_report(uuid) to authenticated;
-grant execute on function public.my_privacy() to authenticated;
-grant execute on function public.set_consent(text, boolean) to authenticated;
-grant execute on function public.my_data_export() to authenticated;
-grant execute on function public.my_invite() to authenticated;
-grant execute on function public.redeem_invite_code(text) to authenticated;
-grant execute on function public.invite_buy(text) to authenticated;
-grant execute on function public.invite_use_cell_name(int, int, text) to authenticated;
-grant execute on function public.admin_alias_codes() to authenticated;
-grant execute on function public.dm_open_by_name(text) to authenticated;

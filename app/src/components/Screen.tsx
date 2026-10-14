@@ -24,7 +24,7 @@ type Props = {
   /** Verilirse başlığın üstünde "Geri" düğmesi görünür (sekme dışı ekranlar için) */
   onBack?: () => void;
   backLabel?: string;
-  /** Başlık satırının sağ üst köşesine konan küçük öğe (ör. oyun hakkı göstergesi) */
+  /** Başlık satırının sağ üst köşesine konan küçük öğe (ör. oyun göstergesi) */
   headerRight?: ReactNode;
   /** Kaydırılan içeriğin altında sabit duran alan (ör. yazı kutusu); klavye açılınca onunla yukarı kayar */
   footer?: ReactNode;

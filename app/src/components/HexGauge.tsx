@@ -10,7 +10,7 @@ type Props = {
   /** Aylık toplam hak (doluluk oranı için). `null` ise dolu görünür */
   limit: number | null;
   onPress: () => void;
-  /** Dokunulabilir olduğunu gösteren küçük “+” işareti (oyun hakkı kodu girişi için) */
+  /** Dokunulabilir olduğunu gösteren küçük “+” işareti (mekân kodu girişi için) */
   plus?: boolean;
   /** Renk: oyun hakkı sarı (varsayılan), etkinlik hakkı mor */
   tone?: 'yellow' | 'purple';

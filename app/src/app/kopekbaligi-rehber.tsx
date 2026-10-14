@@ -172,8 +172,9 @@ export default function SharkGuideScreen() {
             Kazanan takım 1. sırada sayılır; diğerleri oyunda ne kadar uzun kaldıysa o kadar önde. Kalabalık arttıkça 1.
             sıranın puanı yükselir; 2. ve 3. sıralar da puan alır.
           </P>
-          <P>Puan için en az 4 oyuncu gerekir. Yan yana oyun uzaktan oyunun 5 katı puan verir. Etkinlik oyunu Oyun Geceleri’nde 1,5 kat, Sosyal Buluşmalar ve Müzik & Eğlence’de 1,25 kat.</P>
-          <P>Anlatıcılı oyunda kimse puan almaz ve kimsenin oyun hakkı düşmez.</P>
+          <P>Puan için en az 5 oyuncu gerekir. Yan yana oyun (konum doğrulanır) uzaktan oyunun 7 katı puan verir; mekân koduyla mekânda oynarsan +%25. Etkinlik oyunu Oyun Geceleri’nde 1,5 kat, Sosyal Buluşmalar ve Müzik & Eğlence’de 1,25 kat.</P>
+          <P>Oyun sayısı sınırsız. Her ay bu oyundan uzaktan en çok 250, yan yana en çok 1.750 puan kazanılır (aylık hedef).</P>
+          <P>Anlatıcılı oyunda kimse puan almaz.</P>
         </>,
       )}
       {sec(
@@ -182,7 +183,7 @@ export default function SharkGuideScreen() {
         'Anlatıcı modu',
         <P>
           Yalnızca etkinlik oyununda ve yalnızca etkinliğin sahibi seçebilir. Anlatıcı oynamaz; herkesin rolünü görür ve
-          aşamaları ilerletir. Bu oyun eğlence içindir: hak düşmez, puan yazılmaz.
+          aşamaları ilerletir. Bu oyun eğlence içindir: puan yazılmaz.
         </P>,
       )}
       {sec(

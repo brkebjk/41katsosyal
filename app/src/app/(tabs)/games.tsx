@@ -22,9 +22,18 @@ import { setGameInvites } from '@/lib/invites';
 import { getGamePlayerCounts, listMyEventRaffles } from '@/lib/rooms';
 import { listTreasures } from '@/lib/treasure';
 import { GAMES } from '@/lib/gameCatalog';
-import { DEFAULT_MIN_PLAYERS, quotaInfo, roomRulesInfo } from '@/lib/gameInfo';
+import { DEFAULT_MIN_PLAYERS, roomRulesInfo, venueInfo } from '@/lib/gameInfo';
 import { GAME_KEYS, gameButtonImages, gameTileImages, type GameKey } from '@/lib/images';
-import { getLeaderboard, type RankRow } from '@/lib/ranking';
+import {
+  DEFAULT_RULES,
+  getLeaderboard,
+  getMyGameGoals,
+  getPointRules,
+  goalLeft,
+  type GameGoals,
+  type PointRules,
+  type RankRow,
+} from '@/lib/ranking';
 import { supabase } from '@/lib/supabase';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 import { fmtPts } from '@/lib/labels';
@@ -74,6 +83,9 @@ function GamesScreen() {
   const [treasureCount, setTreasureCount] = useState<number | null>(null);
   const [quota, setQuota] = useState<Quota | null>(null);
   const quotaSeq = useRef(0);
+  /** Bu ayın puan hedefleri (oyun kutularında “Kalan hedef”) */
+  const [goals, setGoals] = useState<GameGoals | null>(null);
+  const [rules, setRules] = useState<PointRules>(DEFAULT_RULES);
   /** Açık bilgi penceresi */
   const [info, setInfo] = useState<'rooms' | 'points' | 'quota' | null>(null);
   /** “Oda Oluştur”a basınca açılan oyun seçimi */
@@ -83,16 +95,27 @@ function GamesScreen() {
 
   const refreshQuota = useCallback(async () => {
     const my = ++quotaSeq.current;
-    const res = await getQuota();
+    const [res, g] = await Promise.all([getQuota(), getMyGameGoals()]);
     if (my !== quotaSeq.current) return;
     if (res.data) setQuota(res.data);
+    if (g) setGoals(g);
   }, []);
 
   const actions = useRoomActions({
     isModerator,
     onChanged: () => void refreshQuota(),
   });
-  const { beginFocus, limits } = actions;
+  const { beginFocus } = actions;
+
+  useEffect(() => {
+    let active = true;
+    void getPointRules().then((r) => {
+      if (active) setRules(r);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Hangi oyunların açık olduğunu sunucudan oku
   useEffect(() => {
@@ -122,7 +145,7 @@ function GamesScreen() {
   }, []);
 
   // Sekme açılınca: oyun ekranından menüye dönmüş olabiliriz (yan yana oyunlarda menüye dönmek oyundan ayrılmaktır);
-  // kalan oyun hakkı da tazelenir.
+  // puan hedefleri de tazelenir.
   useFocusEffect(
     useCallback(() => {
       beginFocus(() => void refreshQuota());
@@ -200,23 +223,17 @@ function GamesScreen() {
   const gridKeys = GAME_KEYS.filter((k) => k !== 'raffle');
   for (let i = 0; i < gridKeys.length; i += 2) rows.push(gridKeys.slice(i, i + 2));
 
-  const roomsContent = roomRulesInfo(limits.freeGames, limits.subscriptionGames);
-  const quotaContent = quotaInfo(limits.freeGames, limits.subscriptionGames);
+  const roomsContent = roomRulesInfo(rules);
+  const quotaContent = venueInfo(rules);
 
-  // Kalan hak: moderatörde ya da sınırsız hesapta null (∞), diğerlerinde aylık hak − kullanılan
-  const unlimited = quota !== null && (quota.is_moderator || quota.games_limit === null);
-  const gaugeLimit = quota?.games_limit ?? null;
-  // Kullanılmamış mekân (sponsor) hakkı varsa kalan sayıya 1 eklenir; kod girmek için gösterge “+” taşır
+  // Oyun hakkı yok (∞); “+” mekân kodu girişidir (moderatör kod girmez)
   const hasCredit = quota?.sponsor_credit === true;
-  const baseRemaining = quota === null ? null : unlimited ? null : Math.max(0, (gaugeLimit ?? 0) - quota.games_used);
-  const remaining = baseRemaining === null ? null : baseRemaining + (hasCredit ? 1 : 0);
-  const gaugeFull = gaugeLimit === null ? null : gaugeLimit + (hasCredit ? 1 : 0);
   const gauge = quota ? (
     <HexGauge
-      remaining={remaining}
-      limit={gaugeFull}
-      plus={!unlimited}
-      onPress={() => (unlimited ? setInfo('quota') : setCodeOpen(true))}
+      remaining={null}
+      limit={null}
+      plus={!quota.is_moderator}
+      onPress={() => (quota.is_moderator ? setInfo('quota') : setCodeOpen(true))}
     />
   ) : undefined;
 
@@ -225,7 +242,7 @@ function GamesScreen() {
     return (
       <Screen title="Oyunlar" subtitle="Telefonlarla yan yana oyna">
         <Text style={styles.hint}>
-          Mekân hesapları oyun oynamaz ve oda açmaz. Müşterilerine Profil sekmesinden oyun hakkı kodu verebilirsin.
+          Mekân hesapları oyun oynamaz ve oda açmaz. Müşterilerine Profil sekmesinden mekân bonusu kodu verebilirsin.
         </Text>
       </Screen>
     );
@@ -416,6 +433,11 @@ function GamesScreen() {
                 minPlayers={minPlayers[key] ?? null}
                 playing={playing[key] ?? 0}
                 treasures={key === 'treasure_hunt' ? treasureCount : null}
+                goal={
+                  goals && (key === 'shark_cage' || key === 'vampire_villager' || key === 'quiz')
+                    ? goalLeft(goals, key)
+                    : null
+                }
                 onPress={() => onTilePress(key)}
                 tilt={TILTS[key]}
               />
@@ -505,10 +527,13 @@ function GameTile({
   minPlayers,
   playing,
   treasures,
+  goal,
   onPress,
   tilt,
 }: {
   gameKey: GameKey;
+  /** Bu ay kalan puan hedefi (puan veren oyunlarda); null = gösterilmez */
+  goal: number | null;
   size: number;
   live: boolean;
   minPlayers: number | null;
@@ -579,6 +604,13 @@ function GameTile({
         </View>
       ) : null}
       <View style={styles.tileText}>
+        {goal !== null && live ? (
+          <View style={styles.goalBox} accessibilityLabel={`Bu ay kalan hedef ${Math.round(goal)} puan`}>
+            <Text style={styles.goalText} numberOfLines={1}>
+              {goal > 0 ? `Kalan Hedef : ${fmtPts(goal)} Puan` : '✓ Aylık hedef tamam'}
+            </Text>
+          </View>
+        ) : null}
         <Text style={styles.tileTitle} numberOfLines={1}>
           {info.title}
         </Text>
@@ -818,6 +850,15 @@ const styles = StyleSheet.create({
   },
   badgeText: { color: colors.primary, fontFamily: fonts.semi, fontSize: 11 },
   tileText: { padding: spacing.md, gap: 2 },
+  goalBox: {
+    alignSelf: 'flex-start',
+    marginBottom: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+    backgroundColor: '#FFFFFF',
+  },
+  goalText: { color: '#0E9F6E', fontFamily: fonts.extra, fontSize: 10.5 },
   tileTitle: {
     color: '#FFFFFF',
     fontFamily: fonts.extra,

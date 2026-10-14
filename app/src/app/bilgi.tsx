@@ -673,15 +673,9 @@ export default function QuizScreen() {
               {/* Puan hedefleri */}
               <View style={styles.goals}>
                 <PointGoal
-                  label="Bugünkü hedef"
-                  value={Number(lobby?.points_today ?? 0)}
-                  max={lobby?.daily_points ?? 10}
-                  icon="today"
-                />
-                <PointGoal
                   label="Bu ayın hedefi"
                   value={Number(lobby?.points_month ?? 0)}
-                  max={lobby?.month_points ?? 125}
+                  max={lobby?.month_points ?? 250}
                   icon="calendar"
                 />
                 <Pressable
@@ -1019,10 +1013,9 @@ function PointsPopup({ lobby, onClose }: { lobby: QuizLobby | null; onClose: () 
       <PointsTable
         title="Sınırlar"
         rows={[
-          ['Günde en çok', `${lobby?.daily_points ?? 10} puan`],
-          ['Ayda en çok', `${lobby?.month_points ?? 125} puan`],
+          ['Aylık puan hedefi', `${lobby?.month_points ?? 250} puan`],
           ['Özel oda (aynı kişilerle)', `günde ${lobby?.private_group_daily ?? 5} puan`],
-          ['Günde en çok oyun', `${lobby?.daily_games ?? 25}`],
+          ['Oyun sayısı', 'Sınırsız (can harcar)'],
           ['Can', `en çok ${lobby?.max_lives ?? 5}, ${lobby?.life_minutes ?? 30} dk'da 1 dolar`],
         ]}
       />

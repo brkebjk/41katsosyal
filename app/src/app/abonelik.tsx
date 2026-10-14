@@ -39,7 +39,6 @@ function buildRows(l: Limits): Row[] {
     { label: 'Gönderi, yorum ve beğeni', icon: 'chatbubbles', free: true, subscribed: true },
     { label: 'Özel mesaj başlatma', icon: 'mail', free: 'Yalnızca cevap', subscribed: true },
     { label: 'Etkinlik oluşturma', icon: 'calendar', free: `ayda ${l.freeEvents}`, subscribed: `ayda ${l.subscriptionEvents}` },
-    { label: 'Oyun başlatma', icon: 'game-controller', free: `ayda ${l.freeGames}`, subscribed: `ayda ${l.subscriptionGames}` },
     { label: '41. Kat Özel ücretli etkinlikler', icon: 'star', free: 'Ücretli', subscribed: 'Ücretsiz' },
   ];
 }
@@ -142,7 +141,7 @@ export default function SubscriptionScreen() {
             <ImageSlot name="subscriptionBadge" style={styles.badge} />
             <Text style={styles.title}>41. Kat Abonelik</Text>
             <Text style={styles.lead}>
-              Daha çok etkinlik, daha çok oyun ve özel mesaj başlatma. 41. Kat Özel etkinliklerine ücretsiz katıl.
+              Daha çok etkinlik ve özel mesaj başlatma. 41. Kat Özel etkinliklerine ücretsiz katıl. Oyunlar herkese sınırsız.
             </Text>
           </View>
 
@@ -218,7 +217,7 @@ export default function SubscriptionScreen() {
           </LinearGradient>
           <Text style={styles.footnote}>
             Haklar her ayın başında yenilenir; kullanılmayan haklar sonraki aya geçmez. Abonelik sıralamadaki puanını ve
-            hediye kazanma şansını artırmaz; puanla abonelik kazanılmaz. Seviye ödülleri (ör. +1 oyun hakkı) abonelikten
+            hediye kazanma şansını artırmaz; puanla abonelik kazanılmaz. Seviye ödülleri (ör. +1 etkinlik hakkı) abonelikten
             ayrıdır ve abonelere de verilir.
           </Text>
 

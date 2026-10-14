@@ -445,9 +445,11 @@ export function PushToTalk({
   const width = progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
   return (
     <View style={styles.pttWrap}>
-      <Text style={[styles.pttHint, listening && styles.pttListening]} numberOfLines={1}>
-        {listening ? '👂 Seni dinliyorlar' : 'Oyun zevkini arttırmak için sırayla konuş.'}
-      </Text>
+      <View style={styles.pttHintBox}>
+        <Text style={[styles.pttHint, listening && styles.pttListening]} numberOfLines={1}>
+          {listening ? '👂 Seni dinliyorlar' : 'Oyun zevkini arttırmak için sırayla konuş.'}
+        </Text>
+      </View>
       <Pressable
         onPressIn={() => void start()}
         onPressOut={release}
@@ -480,15 +482,15 @@ export function PushToTalk({
 
 const styles = StyleSheet.create({
   pttWrap: { gap: 3 },
-  pttHint: {
-    color: '#34D399',
-    fontFamily: fonts.extra,
-    fontSize: 11.5,
-    textAlign: 'center',
-    textShadowColor: 'rgba(0,0,0,0.85)',
-    textShadowRadius: 4,
+  pttHintBox: {
+    alignSelf: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
   },
-  pttListening: { color: '#7CFFB2', fontFamily: fonts.black, fontSize: 13 },
+  pttHint: { color: '#0E9F6E', fontFamily: fonts.extra, fontSize: 11.5, textAlign: 'center' },
+  pttListening: { color: '#057A55', fontFamily: fonts.black, fontSize: 13 },
   ptt: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -26,14 +26,16 @@ export type PointsTableData = {
   rows: { place: number; points: number }[];
   /** Oyuncu sayısına göre 1. sıranın puanı (“kalabalık oyun, çok puan”) */
   ladder: { players: number; first: number; plus: boolean }[];
+  /** Yan yana oyunun puan çarpanı (tablodaki puanlar uzaktan oyunun puanıdır) */
+  sideMult: number;
 };
 
 /**
  * Puan kazanç tablosu: bu oyuncu sayısında hangi sıra kaç puan alır, bir de oyuncu sayısı arttıkça 1. sıranın puanı.
  * Odadaki kişi, puan için gereken en azdan azsa tablo en az sayıdaki oyuncuya göre gösterilir (`actual` yine gerçek sayıdır).
  */
-export function pointsTable(rules: PointRules, players?: number): PointsTableData {
-  const min = Math.max(2, rules.gameMinPlayers);
+export function pointsTable(rules: PointRules, players?: number, minPlayers?: number): PointsTableData {
+  const min = Math.max(2, minPlayers ?? rules.gameMinPlayers);
   const cap = Math.max(min, rules.gameTopCap);
   const size = players === undefined ? 8 : Math.max(min, Math.min(players, 100));
   const rows = Array.from({ length: size }, (_, i) => ({
@@ -46,14 +48,19 @@ export function pointsTable(rules: PointRules, players?: number): PointsTableDat
   const sizes = Array.from(new Set([min, 5, 6, 8, 10, 12])).filter((n) => n >= min && n < capAt);
   sizes.push(capAt);
   const ladder = sizes.map((n) => ({ players: n, first: topPoints(n, cap), plus: n === capAt }));
-  return { size, actual: players ?? null, minPlayers: min, rows, ladder };
+  return { size, actual: players ?? null, minPlayers: min, rows, ladder, sideMult: Math.max(1, rules.sideMult) };
 }
 
 /**
  * “Oyun puanı nasıl hesaplanır?” `players` verilirse (oyunun bekleme odasında) tablo o oyuncu sayısıyla gösterilir.
  * `extra` oyuna özel ek satırlar içindir (ör. Vampir–Köylü’de takım sırası).
  */
-export function gamePointsInfo(rules: PointRules, players?: number, extra: InfoItem[] = []): InfoContent {
+export function gamePointsInfo(
+  rules: PointRules,
+  players?: number,
+  extra: InfoItem[] = [],
+  minPlayers?: number,
+): InfoContent {
   const inGame = players !== undefined;
   const items: InfoItem[] = [];
   // Bekleme odasında “kalabalık oyun, çok puan” zaten tablodaki basamaklarla görünür; ekran kalabalık olmasın diye yazılmaz
@@ -72,9 +79,14 @@ export function gamePointsInfo(rules: PointRules, players?: number, extra: InfoI
     },
     ...extra,
     {
-      icon: 'shield-checkmark',
-      lead: 'Sınırlar.',
-      text: `Puan için oyun en az ${rules.gameMinPlayers} kişiyle oynanmalı. Yan yana oyunlarda günlük ya da aylık puan sınırı yoktur; uzaktan oyunlarda vardır.`,
+      icon: 'people-circle',
+      lead: `Yan yana ×${rules.sideMult}.`,
+      text: `Aynı masada (konum doğrulanarak) oynanan oyun, uzaktan oyunun ${rules.sideMult} katı puan verir. Mekân kodu ile mekânda oynarsan +%${Math.max(0, rules.venueBonusPct - 100)}.`,
+    },
+    {
+      icon: 'flag',
+      lead: 'Aylık hedef.',
+      text: `Her oyundan ayda uzaktan en çok ${fmtNum(rules.remoteMonthPoints)}, yan yana en çok ${fmtNum(rules.sideMonthPoints)} puan kazanılır. Oyun sayısı sınırsız; hedefe ulaşınca o ay o oyundan puan yazılmaz. Puan için oyun en az ${minPlayers ?? rules.gameMinPlayers} kişiyle oynanmalı.`,
     },
   );
   // Oyunun içindeyken (bekleme odası) ekran kalabalık olmasın diye Bilgi Yarışması satırı konmaz
@@ -82,7 +94,7 @@ export function gamePointsInfo(rules: PointRules, players?: number, extra: InfoI
     items.push({
       icon: 'help-circle',
       lead: 'Bilgi Yarışması.',
-      text: `${quizRuleSummary(rules)} Oyun hakkını harcamaz.`,
+      text: quizRuleSummary(rules),
     });
   }
   return {
@@ -115,7 +127,7 @@ export function quizInfo(rules: PointRules, enabled: boolean): InfoContent {
       {
         icon: 'heart',
         lead: `${rules.quizMaxLives} can.`,
-        text: `Her oyun 1 can harcar; her ${rules.quizLifeMinutes} dakikada 1 can dolar. Günde en çok ${rules.quizDailyGames} oyun oynanır. Seviye 5'te can sınırsızdır (günlük oyun sınırı yine geçerli).`,
+        text: `Her oyun 1 can harcar; her ${rules.quizLifeMinutes} dakikada 1 can dolar. Oyun sayısında sınır yok. Seviye 5'te can sınırsızdır.`,
       },
       {
         icon: 'person',
@@ -164,7 +176,7 @@ export function quizInfo(rules: PointRules, enabled: boolean): InfoContent {
       {
         icon: 'shield-checkmark',
         lead: 'Puan sınırı.',
-        text: `Bilgi Yarışması'ndan günde en çok ${rules.quizDailyPoints}, ayda en çok ${rules.quizMonthPoints} puan alınır. Yanlış cevap puan düşürmez. Seviye 4'te kazandığın puan ve bu sınırlar ${String(LEVEL_QUIZ_MULT).replace('.', ',')} katına çıkar.`,
+        text: `Bilgi Yarışması'nın aylık puan hedefi ${fmtNum(rules.quizMonthPoints)} puan; hedefe ulaşınca o ay puan yazılmaz. Yanlış cevap puan düşürmez. Seviye 4'te kazandığın puan ve hedef ${String(LEVEL_QUIZ_MULT).replace('.', ',')} katına çıkar.`,
       },
       {
         icon: 'exit',
@@ -173,8 +185,8 @@ export function quizInfo(rules: PointRules, enabled: boolean): InfoContent {
       },
       {
         icon: 'ticket',
-        lead: 'Oyun hakkından yemez.',
-        text: 'Ayda başlatabileceğin oyun sayısına sayılmaz. Petek sıralamasına sayılmaz.',
+        lead: 'Petek sıralaması.',
+        text: 'Bilgi Yarışması puanı petek sıralamasına sayılmaz.',
       },
     ],
     note: enabled ? undefined : 'Sorular hazırlanıyor, çok yakında burada olacak.',
@@ -182,7 +194,7 @@ export function quizInfo(rules: PointRules, enabled: boolean): InfoContent {
 }
 
 /** “Odaya katıl” kutusunun altındaki oda kuralları. */
-export function roomRulesInfo(freeGames: number, subscriptionGames: number): InfoContent {
+export function roomRulesInfo(rules: PointRules): InfoContent {
   return {
     title: 'Oda kuralları',
     icon: 'key',
@@ -204,8 +216,8 @@ export function roomRulesInfo(freeGames: number, subscriptionGames: number): Inf
       },
       {
         icon: 'game-controller',
-        lead: 'Hak.',
-        text: `Her üye ayda ${freeGames} oyun başlatabilir, aboneler ayda ${subscriptionGames}. Seviye 2'deki üyeler bunun üstüne ayda +1 oyun hakkı alır. Bilgi Yarışması ve çekiliş hakkı harcamaz.`,
+        lead: 'Sınırsız oyun.',
+        text: `Oyun hakkı yok, herkes istediği kadar oda açar ve oynar. Her oyunun aylık puan hedefi var: uzaktan ${fmtNum(rules.remoteMonthPoints)}, yan yana ${fmtNum(rules.sideMonthPoints)} puan.`,
       },
       {
         icon: 'exit',
@@ -254,7 +266,7 @@ export const HOW_TO_PLAY: Record<string, InfoItem[]> = {
     {
       icon: 'headset',
       lead: 'Uzaktan oyna.',
-      text: 'Uzaktan Eşleş ile herkes kendi telefonundan oynar. Sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur (her tartışmada 10 sn). Uzaktan oyun hak yemez; yan yana oyun 5 kat puan verir.',
+      text: 'Uzaktan Eşleş ile herkes kendi telefonundan oynar. Sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur (her tartışmada 10 sn). Yan yana oyun 7 kat puan verir.',
     },
     {
       icon: 'trophy',
@@ -312,7 +324,7 @@ export const HOW_TO_PLAY: Record<string, InfoItem[]> = {
     {
       icon: 'heart',
       lead: 'Canlar.',
-      text: 'En çok 5 can; her oyun 1 can harcar, her 30 dakikada 1 can dolar. Günde en çok 25 oyun.',
+      text: 'En çok 5 can; her oyun 1 can harcar, her 30 dakikada 1 can dolar. Oyun sayısı sınırsız.',
     },
     {
       icon: 'person',
@@ -376,42 +388,35 @@ export const DEFAULT_MIN_PLAYERS: Record<string, number> = {
   treasure_hunt: 1,
 };
 
-/** Kalan oyun hakkı göstergesine dokununca açılan açıklama. */
-export function quotaInfo(freeGames: number, subscriptionGames: number, sponsorDays = 30): InfoContent {
+/** Mekân kodu düğmesine dokununca açılan açıklama. */
+export function venueInfo(rules: PointRules): InfoContent {
+  const bonus = Math.max(0, rules.venueBonusPct - 100);
   return {
-    title: 'Oyun hakkın',
-    icon: 'game-controller',
+    title: 'Mekân bonusu',
+    icon: 'storefront',
     items: [
       {
-        icon: 'ticket',
-        lead: 'Ne işe yarar?',
-        text: `Yeni bir oyun odası açmak 1 hak harcar. Üyeler ayda ${freeGames}, aboneler ayda ${subscriptionGames} oda açabilir.`,
-      },
-      {
-        icon: 'refresh',
-        lead: 'Her ay yenilenir.',
-        text: 'Kullanmadığın haklar sonraki aya aktarılmaz; ay başında hakların yeniden dolar.',
-      },
-      {
-        icon: 'trending-up',
-        lead: 'Seviye ödülü.',
-        text: 'Seviye 2’deyken her ay +1 oyun hakkı alırsın. Bu hak da biriktirilemez; o ay kullanılmazsa silinir.',
-      },
-      {
-        icon: 'arrow-undo',
-        lead: 'Geri verilir.',
-        text: 'Oyun başlamadan odayı kapatırsan harcadığın hak sana geri verilir.',
-      },
-      {
-        icon: 'people',
-        lead: 'Katılmak hak harcamaz.',
-        text: 'Başkasının odasına kodla girmek, Bilgi Yarışması ve çekiliş hakkından yemez.',
-      },
-      {
         icon: 'storefront',
-        lead: 'Mekân kodu ek hak verir.',
-        text: `Anlaşmalı bir mekândan aldığın kodu göstergedeki “+” ile girersen 1 ek oda hakkı kazanırsın. Önce bu hak kullanılır, aylık hakkından düşmez. Kullanmazsan ${sponsorDays} gün sonra sona erer; kullanılmamış hakkın varken yeni kod girilemez. Kod yalnızca oda hakkı verir, puan vermez.`,
+        lead: `Mekânda oyna, +%${bonus} puan.`,
+        text: `Anlaşmalı bir mekândan aldığın kodu gir, sonra o mekânda (mekânın peteğinde ya da hemen yanında) yan yana oda aç. O oyunda herkesin puanı %${bonus} artar.`,
+      },
+      {
+        icon: 'time',
+        lead: `${rules.sponsorCreditHours} saat geçerli.`,
+        text: `Kod girildikten sonra ${rules.sponsorCreditHours} saat içinde o mekânda açtığın ilk yan yana odada kullanılır. Kullanılmamış kodun varken yeni kod girilemez.`,
+      },
+      {
+        icon: 'shield-checkmark',
+        lead: 'Aylık hedef aynı kalır.',
+        text: `Bonus, oyunun aylık puan hedefini (yan yana ${fmtNum(rules.sideMonthPoints)}) aşmaz; hedefe daha çabuk ulaşırsın.`,
+      },
+      {
+        icon: 'game-controller',
+        lead: 'Oyun hakkı yok.',
+        text: 'Herkes istediği kadar oyun oynar; kod yalnızca mekân bonusu verir.',
       },
     ],
   };
 }
+
+const fmtNum = (n: number) => Math.round(n).toLocaleString('tr-TR');

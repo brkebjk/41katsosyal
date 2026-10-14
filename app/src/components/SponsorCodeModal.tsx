@@ -13,17 +13,17 @@ import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 type Props = {
   visible: boolean;
   onClose: () => void;
-  /** Kod kabul edilince çağrılır (kalan hak tazelensin diye) */
+  /** Kod kabul edilince çağrılır (gösterge tazelensin diye) */
   onRedeemed: () => void;
-  /** Zaten kullanılmamış bir sponsor hakkı var mı? (varsa yeni kod alınamaz) */
+  /** Zaten kullanılmamış bir mekân kodu var mı? (varsa yeni kod alınamaz) */
   hasCredit: boolean;
-  /** “Oyun hakkım nasıl çalışır?” bilgi penceresini açar */
+  /** “Mekân bonusu nasıl çalışır?” bilgi penceresini açar */
   onInfo: () => void;
 };
 
 /**
- * Oyunlar sekmesindeki hak göstergesine dokununca açılır: mekândan alınan kodu girerek 1 ek oyun odası hakkı kazanılır.
- * Kod yalnızca oda hakkı verir; puan vermez.
+ * Oyunlar sekmesindeki göstergenin “+”sına dokununca açılır: mekândan alınan kod girilir; birkaç saat içinde o mekânda
+ * açılan ilk yan yana odada herkesin puanı mekân bonusuyla artar (aylık hedefi aşmaz).
  */
 export function SponsorCodeModal(props: Props) {
   return (
@@ -80,11 +80,11 @@ function Card({ onClose, onRedeemed, hasCredit, onInfo }: Props) {
     return (
       <View style={styles.card} testID="sponsor-code-done">
         <Text style={styles.title} accessibilityRole="header">
-          1 oyun hakkı kazandın
+          Mekân bonusu hazır
         </Text>
         <Text
           style={styles.message}
-        >{`${done} sana 1 ek oyun odası hakkı verdi. Oda Oluştur'a basıp kullanabilirsin.`}</Text>
+        >{`${done} kodu kabul edildi. Birkaç saat içinde bu mekânda Oda Oluştur ile yan yana oda açarsan o oyunda herkes daha çok puan alır.`}</Text>
         <PrimaryButton label="Tamam" onPress={onClose} />
       </View>
     );
@@ -97,8 +97,8 @@ function Card({ onClose, onRedeemed, hasCredit, onInfo }: Props) {
       </Text>
       <Text style={styles.message}>
         {hasCredit
-          ? 'Zaten kullanılmamış bir mekân hakkın var. Önce onu kullan; sonra yeni kod girebilirsin.'
-          : 'Anlaşmalı bir mekândan aldığın kodu yaz. Kod sana 1 ek oyun odası hakkı verir. Her mekânın kodunu günde bir kez kullanabilirsin.'}
+          ? 'Kullanılmamış bir mekân kodun var. Önce o mekânda yan yana oda aç ya da süresinin dolmasını bekle; sonra yeni kod girebilirsin.'
+          : 'Anlaşmalı bir mekândan aldığın kodu yaz. O mekânda açtığın yan yana oyunda herkes daha çok puan alır. Her mekânın kodunu günde bir kez kullanabilirsin.'}
       </Text>
       <TextField
         label="Kod"
@@ -129,7 +129,7 @@ function Card({ onClose, onRedeemed, hasCredit, onInfo }: Props) {
         testID="sponsor-code-submit"
       />
       <View style={styles.info}>
-        <InfoLink label="Oyun hakkım nasıl çalışır?" onPress={onInfo} />
+        <InfoLink label="Mekân bonusu nasıl çalışır?" onPress={onInfo} />
       </View>
       <PrimaryButton label="Kapat" onPress={onClose} variant="ghost" disabled={busy} />
     </View>

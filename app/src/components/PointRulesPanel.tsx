@@ -56,14 +56,19 @@ function ruleItems(rules: PointRules, contestOn: boolean): InfoItem[] {
       text: `Etkinlik başına en çok ${rules.hostAttendeeCap} kişi, ayda en çok ${rules.hostMonthCap} puan. Aynı kişi seni ${rules.pairCooldownDays} günde bir puanlandırır.`,
     },
     {
+      icon: 'star',
+      lead: `Etkinliği puanla: +${rules.eventRate}.`,
+      text: `Düzenleyen 5 yıldızda +${rules.eventRated5}, 4 yıldızda +${rules.eventRated4} alır (ayda en çok ${rules.eventRatedMonthCap}).`,
+    },
+    {
       icon: 'game-controller',
-      lead: `Oyun oyna: en çok +${rules.gameTopCap}.`,
-      text: 'Kalabalık oyun daha çok puan: 4 kişide 1. sıra +4, 6 kişide +7, 8 kişide +11, 10 kişide +16. Puan bitirdiğin sıraya göre. Ayrıntısı aşağıda.',
+      lead: `Oyun oyna: uzaktan en çok +${rules.gameTopCap}, yan yana ×${rules.sideMult}.`,
+      text: `Oyun sınırsız. Kalabalık oyun daha çok puan; puan bitirdiğin sıraya göre. Her oyundan ayda uzaktan ${rules.remoteMonthPoints}, yan yana ${rules.sideMonthPoints} puanlık hedef. Mekân koduyla mekânda +%${Math.max(0, rules.venueBonusPct - 100)}. Ayrıntısı aşağıda.`,
     },
     {
       icon: 'help-circle',
-      lead: `Bilgi Yarışması: günde en çok +${rules.quizDailyPoints}.`,
-      text: `Uzaktan oynanır, oyun hakkını harcamaz. ${quizRuleSummary(rules)}`,
+      lead: `Bilgi Yarışması: ayda +${rules.quizMonthPoints} hedef.`,
+      text: quizRuleSummary(rules),
     },
     ...(rules.titlesEnabled > 0
       ? [

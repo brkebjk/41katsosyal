@@ -1810,14 +1810,14 @@ returns int language sql stable security definer set search_path = public as $$
   select coalesce((select (value #>> '{}')::int from public.app_settings where key = p_key), p_default);
 $$;
 
--- Üyenin kullanılmamış sponsor oyun hakkı (varsa kimliği). Süresi dolan (sponsor_credit_valid_days) hak sayılmaz;
+-- Üyenin kullanılmamış mekân kodu (varsa kimliği). Süresi dolan (sponsor_credit_valid_hours) kod sayılmaz;
 -- hakla açılan oda başlamadan iptal edilirse hak geri gelir (aylık hakta olduğu gibi).
 create or replace function public._free_sponsor_credit(p_user uuid)
 returns uuid language sql stable security definer set search_path = public as $$
   select c.id
     from public.sponsor_credits c
    where c.user_id = p_user
-     and c.created_at > now() - make_interval(days => greatest(1, public.setting_int('sponsor_credit_valid_days', 30)))
+     and c.created_at > now() - make_interval(hours => greatest(1, public.setting_int('sponsor_credit_valid_hours', 6)))
      and (c.room_id is null
           or exists (select 1 from public.game_rooms gr
                       where gr.id = c.room_id and gr.status = 'cancelled' and gr.started_at is null))
@@ -2235,13 +2235,11 @@ returns int language sql stable security definer set search_path = public as $$
     + case when public._level_perk(p.id) = 'event_plus1' then 1 else 0 end;
 $$;
 
--- Üyenin aylık oyun (oda açma) hakkı: ücretsiz / premium + seviye ödülü (+1). Mekân kodu hakkı ayrıca sayılır.
+-- Oyun (oda açma) hakkı artık yok: herkes istediği kadar yan yana ve uzaktan oyun açar. Puanı oyun başına aylık
+-- puan sınırları dengeler (uzaktan 250, yan yana 1.750). Eski çağrılar için çok büyük bir sayı döner.
 create or replace function public._game_quota(p public.profiles)
 returns int language sql stable security definer set search_path = public as $$
-  select case when p.premium_until is not null and p.premium_until > now()
-              then public.setting_int('premium_monthly_game_quota', 12)
-              else public.setting_int('free_monthly_game_quota', 3) end
-         + case when public._level_perk(p.id) = 'game_plus1' then 1 else 0 end;
+  select 1000000;
 $$;
 
 create or replace function public._require_user()
@@ -2514,16 +2512,18 @@ declare
   v_today timestamptz := date_trunc('day', now() at time zone 'Europe/Istanbul') at time zone 'Europe/Istanbul';
   v_src text := case when new.game_type = 'quiz' then 'quiz_play'
                      when new.remote then 'game_remote' else 'game_play' end;
+  -- Puan için en az oyuncu: Köpekbalığı ve Vampir–Köylü 5, diğer masa oyunları (ör. Okey 101) 4
   v_min_pts int := case when new.game_type = 'quiz' then public.setting_int('pts_quiz_min_players', 2)
+                        when new.game_type in ('shark_cage', 'vampire_villager') then public.setting_int('pts_party_min_players', 5)
                         else public.setting_int('pts_game_min_players', 4) end;
-  v_daily int := case when new.game_type = 'quiz' then public.setting_int('pts_quiz_daily_cap', 3)
-                      when new.remote then public.setting_int('pts_remote_daily_cap', 2)
-                      else public.setting_int('pts_game_daily_cap', 5) end;
-  v_month int := case when new.game_type = 'quiz' then public.setting_int('pts_quiz_month_cap', 10)
-                      when new.remote then public.setting_int('pts_remote_month_cap', 6)
-                      else public.setting_int('pts_game_month_cap', 12) end;
-  -- Uzaktan oyunun puanı yan yana oyunun bu yüzdesidir (varsayılan %50, en çok %80)
-  v_remote_pct int := least(80, greatest(10, public.setting_int('pts_remote_pct', 20)));
+  -- YENİ PUAN DÜZENİ: oyun hakkı yok. Her oyunun aylık puan hedefi (sınırı) vardır: uzaktan 250, yan yana 1.750.
+  -- Yan yana oyun uzaktan oyunun 7 katı puan verir (konum doğrulanır). Sınıra yaklaşınca kalan kadar yazılır.
+  v_side_mult int := greatest(1, public.setting_int('pts_side_mult', 7));
+  v_month numeric := case when new.remote then public.setting_int('pts_remote_month_points', 250)
+                          else public.setting_int('pts_side_month_points', 1750) end;
+  v_venue_pct int := greatest(100, public.setting_int('pts_venue_bonus_pct', 125));
+  v_venue boolean := new.config ? 'venue' and not new.remote;
+  v_earned numeric;
   v_rated boolean;
   v_pts numeric;
   v_ach jsonb;
@@ -2587,14 +2587,12 @@ begin
       end if;
     end if;
 
-    -- Günlük ve aylık üst sınır: Bilgi Yarışması ve uzaktan oyunlarda vardır. Yan yana oyunlarda sınır YOKTUR
-    -- (puan için en az pts_game_min_players (4) kişi gerekir; oda açmak aylık oyun hakkından düşer)
-    if v_rated
-       and (v_src = 'game_play' or
-       (select count(*) from public.point_events pe
-             where pe.user_id = g.user_id and pe.source = v_src and pe.created_at >= v_today) < v_daily
-       and (select count(*) from public.point_events pe
-             where pe.user_id = g.user_id and pe.source = v_src and pe.created_at >= public._month_start()) < v_month) then
+    -- Aylık puan sınırı oyun başına (bu oyunun bu ay yan yana ya da uzaktan kazandırdığı puan)
+    select coalesce(sum(pe.amount), 0) into v_earned
+      from public.point_events pe join public.game_rooms gr on gr.id = pe.room_id
+     where pe.user_id = g.user_id and pe.source = v_src and gr.game_type = new.game_type
+       and pe.created_at >= public._month_start();
+    if v_rated and v_earned < v_month then
       v_pts := g.points;
       -- Paket 26: Vampir başarım ödülü, Vampir–Köylü puanlarını kalıcı ×1,25 yapar (0,5'e yuvarlanır)
       v_mult := new.game_type = 'vampire_villager' and public._has_reward(g.user_id, 'vv_master');
@@ -2603,10 +2601,12 @@ begin
       if v_ev_mult <> 1.0 then
         v_pts := round(v_pts * v_ev_mult * 2) / 2.0;
       end if;
-      -- Uzaktan oyun: puan yan yana oyunun %20'si (yan yana 5 kat; 0,5'e yuvarlanır, en az 0,5)
-      if new.remote then
-        v_pts := greatest(0.5, round(v_pts * v_remote_pct / 100.0 * 2) / 2.0);
+      -- Yan yana oyun 7 kat; mekânda oynanırsa (mekân kodu) +%25. Sınırın kalanından fazlası yazılmaz.
+      if not new.remote then
+        v_pts := v_pts * v_side_mult;
+        if v_venue then v_pts := round(v_pts * v_venue_pct / 100.0 * 2) / 2.0; end if;
       end if;
+      v_pts := least(v_pts, v_month - v_earned);
       insert into public.point_events (user_id, amount, reason, source, room_id)
       values (g.user_id, v_pts,
               coalesce(v_title, new.game_type) || ': ' || g.best_rank || '. sıra, ' || g.players || ' oyuncu'
@@ -2615,7 +2615,8 @@ begin
                 || (case when v_ev_mult <> 1.0
                          then ' · Etkinlik oyunu ×' || replace(rtrim(rtrim(v_ev_mult::text, '0'), '.'), '.', ',')
                          else '' end)
-                || (case when new.remote then ' · Uzaktan (%' || v_remote_pct || ')' else '' end),
+                || (case when new.remote then ' · Uzaktan' else ' · Yan yana ×' || v_side_mult end)
+                || (case when v_venue then ' · Mekân bonusu' else '' end),
               v_src, new.id);
       -- Aylık oyun sıralaması ve şampiyon ünvanı, hesaba yazılan bu puanlardan hesaplanır (hak sınırları herkes için aynı)
       insert into public.game_play_log (user_id, game_type, room_id, points, won)
@@ -2649,12 +2650,12 @@ begin
                           where pe.room_id = p_room_id and pe.user_id = auth.uid()
                             and pe.source in ('game_play', 'quiz_play', 'game_remote')), 0)::numeric;
   v_min := case when r.game_type = 'quiz' then public.setting_int('pts_quiz_min_players', 2)
+                when r.game_type in ('shark_cage', 'vampire_villager') then public.setting_int('pts_party_min_players', 5)
                 else public.setting_int('pts_game_min_players', 4) end;
-  -- Uzaktan oyunda oyunun puan değeri de yarıya iner (kullanıcıya gösterilen değer yazılanla tutarlı olsun)
+  -- Oyunun puan değeri: uzaktan temel puan, yan yana 7 katı (kullanıcıya gösterilen değer yazılanla tutarlı olsun)
   return query select g.best_rank, g.players,
-    (case when r.remote
-          then greatest(0.5, round(g.points * least(80, greatest(10, public.setting_int('pts_remote_pct', 20))) / 100.0 * 2) / 2.0)
-          else g.points end)::numeric,
+    (case when r.remote then g.points
+          else g.points * greatest(1, public.setting_int('pts_side_mult', 7)) end)::numeric,
     v_awarded,
     (case when v_awarded > 0 then 'ok' when g.players < v_min then 'too_few' else 'cap' end)::text;
 end $$;
@@ -3751,7 +3752,7 @@ begin
      and not gr.remote -- uzaktan oda oyun hakkından düşmez (yalnızca yan yana oyun düşer)
      and not exists (select 1 from public.sponsor_credits sc where sc.room_id = gr.id);
   v_credit := public._free_sponsor_credit(v.id);
-  select sc.created_at + make_interval(days => greatest(1, public.setting_int('sponsor_credit_valid_days', 30)))
+  select sc.created_at + make_interval(hours => greatest(1, public.setting_int('sponsor_credit_valid_hours', 6)))
     into v_credit_until from public.sponsor_credits sc where sc.id = v_credit;
   return jsonb_build_object(
     'is_moderator', v.role = 'admin',
@@ -3762,7 +3763,7 @@ begin
     'leader_pending', exists (select 1 from public.event_leader_applications a
                                where a.user_id = v.id and a.status = 'pending'),
     'events_used', v_events_used,
-    'games_limit', case when v.role <> 'user' then null else public._game_quota(v) end,
+    'games_limit', null::int, -- oyun hakkı yok (sınırsız)
     'level_perk', public._level_perk(v.id),
     'games_used', v_games_used,
     'sponsor_credit', v_credit is not null,
@@ -4300,21 +4301,17 @@ begin
                     where host_id = v.id and game_type = p_game_type and status in ('lobby', 'playing')) then
       raise exception 'already_hosting';
     end if;
-    -- Oyun hakkı: çekiliş ve uzaktan oyun (Bilgi Yarışması) hakkı harcamaz.
-    -- Önce varsa sponsor koduyla kazanılan EK hak harcanır (süresi dolabilir); yoksa aylık hak. Sponsor hakkıyla açılan
-    -- oda aylık sayıma girmez. Puan sınırları (günlük/aylık oyun puanı) oda sayısına bakmaz, bu yüzden değişmez.
-    -- Uzaktan oda oyun hakkından düşmez: yan yana oyun iki kat puan verdiği için değerlidir (abonelik hakkı artırır)
+    -- Oyun hakkı yok. Mekân kodu (mekânda alınır, birkaç saat geçerli): o mekânda açılan yan yana oyuna puan bonusu.
+    -- Oda (ve oda sahibinin telefonu) mekânın peteğinde ya da hemen yanında değilse kod harcanmaz (evde bonus alınamaz).
     if p_event_id is null and not p_remote and exists (select 1 from public.game_types where key = p_game_type and uses_quota) then
       v_credit := public._free_sponsor_credit(v.id);
-      if v_credit is null
-         and (select count(*) from public.game_rooms gr
-               where gr.host_id = v.id and (status <> 'cancelled' or started_at is not null)
-                 and gr.created_at >= public._month_start() and gr.event_id is null
-                 and exists (select 1 from public.game_types gt where gt.key = gr.game_type and gt.uses_quota)
-                 and not gr.remote
-                 and not exists (select 1 from public.sponsor_credits sc where sc.room_id = gr.id))
-             >= v_limit then
-        raise exception 'quota_exceeded';
+      if v_credit is not null and not exists (
+           select 1 from public.sponsor_credits sc join public.venues vn on vn.user_id = sc.venue_id
+            where sc.id = v_credit and vn.cell_q is not null and p_place_q is not null and p_place_r is not null
+              and public._hex_dist(vn.cell_q, vn.cell_r, p_place_q, p_place_r) <= 1
+              and public._game_cell_given(p_cell_q, p_cell_r)
+              and public._hex_dist(vn.cell_q, vn.cell_r, p_cell_q, p_cell_r) <= 1) then
+        v_credit := null;
       end if;
     end if;
   end if;
@@ -4349,6 +4346,11 @@ begin
   returning * into v_room;
   if v_credit is not null then
     update public.sponsor_credits set room_id = v_room.id where id = v_credit;
+    -- Mekânda oynanan oyun: puan bonusu (yeni ellere de geçer: yeni el odası ayarları kopyalar)
+    update public.game_rooms
+       set config = config || jsonb_build_object('venue', (select sc.venue_id from public.sponsor_credits sc where sc.id = v_credit))
+     where id = v_room.id
+    returning * into v_room;
   end if;
   -- Unutulmuş eski kayıtlar (12 saatten eski) her ihtimale karşı silinir
   delete from public.room_host_locations where created_at < now() - interval '12 hours';

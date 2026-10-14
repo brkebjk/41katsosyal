@@ -265,7 +265,7 @@ function Game({ roomId }: { roomId: string }) {
 
   const elapsed = useElapsedSeconds(
     viewAt,
-    live && view !== null && (view.status === 'playing' || (view.rematch_left ?? null) !== null || !!view.kick?.poll),
+    live && view !== null && (view.status === 'playing' || (view.rematch_left ?? null) !== null || (view.match_left ?? null) !== null || !!view.kick?.poll),
   );
 
   // ---- Bas-konuş (uzaktan oda) ------------------------------------------------------------------
@@ -436,10 +436,10 @@ function Game({ roomId }: { roomId: string }) {
   const outHow = new Map<string, 'vote'>();
   for (const e of view.log ?? []) if (e.k === 'vote' && e.id) outHow.set(e.id, 'vote');
 
-  /** Avatar çerçevesi: takımından olduğu bilinen yeşil, bilinmeyen sarı, rakip kırmızı */
+  /** Avatar çerçevesi: takımından olduğu bilinen yeşil, rakip kırmızı, bilinmeyen çerçevesiz */
   function frameOf(p: VvPlayer): string | undefined {
     if (p.is_me || phase === 'lobby') return undefined;
-    if (!p.role) return '#FFC93C';
+    if (!p.role) return undefined;
     if (!role) return teamOf(p.role)?.color;
     return (p.role === 'vampire') === isVamp ? '#34D399' : '#FF4D4D';
   }
@@ -662,6 +662,8 @@ function Game({ roomId }: { roomId: string }) {
     const readyCount = present.filter((p) => readyIds.has(p.id)).length;
     const myReady = myPlayerId !== null && readyIds.has(myPlayerId);
     const countdown = view.rematch_left != null ? Math.max(0, Math.ceil(view.rematch_left - elapsed)) : null;
+    // Eşleştirme: en az kişi sayısına ulaşınca 60 sn beklenir (başka oyuncular gelsin), sonra hazırlar çoğunluktaysa başlar
+    const matchLeft = view.match_left != null ? Math.max(0, Math.ceil(view.match_left - elapsed)) : null;
     const canReady = n >= view.min_players || countdown !== null;
     const need = Math.floor(n / 2) + 1;
     prompt =
@@ -672,7 +674,17 @@ function Game({ roomId }: { roomId: string }) {
             color: '#34D399',
             pulse: !myReady,
           }
-        : {
+        : canReady && matchLeft !== null && matchLeft > 0
+          ? {
+              title: `⏳ BAŞLAMASINA ${matchLeft} sn`,
+              lines: [
+                `${readyCount} / ${n} hazır · süre dolunca ${need} kişi “Hazırım” demişse başlar.`,
+                'Bu sürede başka oyuncular da katılabilir.',
+              ],
+              color: '#34D399',
+              pulse: !myReady,
+            }
+          : {
             title: canReady ? `HAZIR ${readyCount} / ${n}` : `🌙 LOBİ · ${n} kişi`,
             lines: canReady ? [`Başlamak için ${need} kişinin “Hazırım” demesi yeter.`] : [`“Hazırım” ${view.min_players} kişide açılır (şu an ${n}).`],
             color: canReady ? '#34D399' : '#C9B6FF',
@@ -713,8 +725,8 @@ function Game({ roomId }: { roomId: string }) {
         ) : null}
         <Text style={styles.pText}>
           {view.match
-            ? 'Herkes rumuzuyla görünür. Uzaktan oyun hak yemez; yan yana oyun 5 kat puan verir.'
-            : `${view.code ? `Oda ID ${view.code}. ` : ''}Her yeni el oda sahibinin aylık oyun hakkından 1 düşer.`}
+            ? 'Herkes rumuzuyla görünür. Her oyunun aylık puan hedefi var; yan yana oyun 7 kat puan verir.'
+            : `${view.code ? `Oda ID ${view.code}. ` : ''}Oyun sayısı sınırsız; puan aylık hedefe kadar yazılır.`}
         </Text>
         {!view.match && (me.is_host || me.is_admin) && present.length >= view.min_players ? (
           <GameButton
@@ -842,13 +854,17 @@ function Game({ roomId }: { roomId: string }) {
               <Text style={[styles.roleTeam, { color: t.color }]}>{`${t.emoji} ${t.name}`}</Text>
               <Text style={styles.roleGoal}>{roleData.goal}</Text>
               {isVamp ? (
-                <Text style={styles.allies}>
-                  {'Vampir dostların ' +
+                <RichLine
+                  chip={20}
+                  style={styles.allies}
+                  text={
+                    'Vampir dostların ' +
                     (view.players
                       .filter((p) => p.ally)
-                      .map((p) => `${circ(p.seat)} ${p.name}`)
-                      .join(', ') || 'yok, yalnızsın')}
-                </Text>
+                      .map((p) => `${seatTag(p.seat)} ${p.name}`)
+                      .join(', ') || 'yok, yalnızsın')
+                  }
+                />
               ) : null}
             </View>
           )}
@@ -1033,8 +1049,8 @@ function Game({ roomId }: { roomId: string }) {
           : r.note === 'ok'
             ? `+${fmtPts(r.awarded)} puan · ${r.players} oyuncu arasında ${r.best_rank}. sıra`
             : r.note === 'too_few'
-              ? `${r.best_rank}. sıra · puan için en az ${result.rules.gameMinPlayers} kişi gerekir.`
-              : `${r.best_rank}. sıra · puan sınırın dolduğu için yazılmadı.`;
+              ? `${r.best_rank}. sıra · puan için en az ${result.rules.partyMinPlayers} kişi gerekir.`
+              : `${r.best_rank}. sıra · bu ayın puan hedefini tamamladın, puan yazılmadı.`;
     prompt = {
       title: w.title,
       lines: [
@@ -1077,7 +1093,7 @@ function Game({ roomId }: { roomId: string }) {
         {next && !me.left ? (
           <NextRoomButton seconds={10} onGo={() => router.replace({ pathname: '/vampir', params: { id: next } })} />
         ) : view.next_note === 'no_quota' ? (
-          <Text style={styles.pText}>Kimsenin bu ay oyun hakkı kalmadığı için yeni el açılamadı.</Text>
+          <Text style={styles.pText}>Yeni el açılamadı. Oyunlar ekranından yeni oda açabilirsin.</Text>
         ) : null}
         <View style={styles.row}>
           <GameButton label="Puanlar" icon="trophy" variant="ghost" onPress={() => setPointsOpen(true)} />
@@ -1390,7 +1406,7 @@ function Game({ roomId }: { roomId: string }) {
                   }}
                   mark={mark}
                   stickyKey={roomId}
-                  slots={phase === 'lobby' ? view.max_players : undefined}
+                  slots={view.max_players}
                   onEmptyPress={
                     phase === 'lobby' && me.is_player && !me.left ? (n) => void act('seat', () => takeSeat(roomId, n)) : undefined
                   }
@@ -1575,13 +1591,18 @@ function Game({ roomId }: { roomId: string }) {
             <Text style={styles.sheetMuted}>{`Son koruduğun ${plain(me.last_protect)}; bu gece onu koruyamazsın.`}</Text>
           ) : null}
           {isVamp ? (
-            <Text style={styles.sheetMuted}>
-              {'Vampir dostların ' +
+            <RichLine
+              chip={18}
+              align="left"
+              style={styles.sheetMuted}
+              text={
+                'Vampir dostların ' +
                 (view.players
                   .filter((p) => p.ally)
-                  .map((p) => `${circ(p.seat)} ${p.name}${p.is_alive ? '' : ' (öldü)'}`)
-                  .join(', ') || 'yok')}
-            </Text>
+                  .map((p) => `${seatTag(p.seat)} ${p.name}${p.is_alive ? '' : ' (öldü)'}`)
+                  .join(', ') || 'yok')
+              }
+            />
           ) : null}
           {view.roles && Object.keys(view.roles).length ? (
             <>
@@ -1649,7 +1670,7 @@ function Game({ roomId }: { roomId: string }) {
         icon="moon"
         items={HOW_TO_PLAY.vampire_villager ?? []}
       />
-      <GamePointsModal visible={pointsOpen} onClose={() => setPointsOpen(false)} players={present.length} extra={[VAMPIRE_RANK_ITEM]} />
+      <GamePointsModal visible={pointsOpen} onClose={() => setPointsOpen(false)} players={present.length} extra={[VAMPIRE_RANK_ITEM]} party />
     </View>
   );
 }
@@ -1713,12 +1734,12 @@ const styles = StyleSheet.create({
   roleGoal: { color: '#FFFFFF', fontSize: 13.5, lineHeight: 19, textAlign: 'center' },
   allies: { color: '#C9B6FF', fontFamily: fonts.semi, fontSize: 12.5, textAlign: 'center' },
   panel: { padding: 0 },
-  panelInner: { gap: 8, padding: 10 },
+  panelInner: { gap: 6, padding: 8 },
   row: { flexDirection: 'row', gap: 8 },
   pText: { color: G.muted, fontSize: 12.5, lineHeight: 17 },
   pOk: { color: G.green, fontSize: 12.5, lineHeight: 17 },
   error: { color: G.redSoft, fontSize: 12.5, lineHeight: 17 },
-  tools: { flexDirection: 'row', justifyContent: 'space-around', gap: 4, paddingTop: 2 },
+  tools: { flexDirection: 'row', justifyContent: 'space-around', gap: 4, paddingTop: 0 },
   speaking: {
     alignSelf: 'center',
     paddingHorizontal: 12,

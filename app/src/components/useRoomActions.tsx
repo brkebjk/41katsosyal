@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 
 import { JoinByCodeModal } from '@/components/JoinByCodeModal';
 import { RoomCodeModal } from '@/components/RoomCodeModal';
@@ -9,7 +9,6 @@ import { GAMES, gameTitle } from '@/lib/gameCatalog';
 import type { Cell } from '@/lib/hex';
 import type { GameKey } from '@/lib/images';
 import { prefetchGameLocation, requireGameLocation } from '@/lib/map';
-import { DEFAULT_LIMITS, getLimits, type Limits } from '@/lib/membership';
 import { leaveLiveGames } from '@/lib/presence';
 import { confirmMeetupSafety } from '@/lib/safety';
 import {
@@ -40,21 +39,9 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
   /** Kodu sorulan açık oda (kod penceresi açıkken dolu) */
   const [codeRoom, setCodeRoom] = useState<OpenRoom | null>(null);
   const [placeAsk, setPlaceAsk] = useState<PlaceRequest | null>(null);
-  const [limits, setLimits] = useState<Limits>(DEFAULT_LIMITS);
   const lock = useRef(false);
   /** Menüye dönünce çalışan "oyunlardan çık" isteği; oda açmadan/katılmadan önce bitmesi beklenir */
   const leaveDone = useRef<Promise<void>>(Promise.resolve());
-
-  // Aylık oyun hakları moderatör ayarından okunur
-  useEffect(() => {
-    let active = true;
-    void getLimits().then((l) => {
-      if (active) setLimits(l);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   /**
    * Ekran açılınca çağrılır: oyun ekranından menüye dönmüş (ya da uygulamayı yeniden açmış) olabiliriz. Yan yana
@@ -129,8 +116,8 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
       title: 'Bekleyen odaya uzaktan katıl',
       message:
         room.game_type === 'shark_cage'
-          ? `${room.host_name} odasında herkes kendi telefonundan oynar. Plajda bas-konuş ses mesajlarıyla konuşulur. Uzaktan oyun oyun hakkından yemez; yan yana oyun 5 kat puan verir.`
-          : `${room.host_name} odasında herkes kendi telefonundan oynar. Sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur. Uzaktan oyun oyun hakkından yemez; yan yana oyun 5 kat puan verir.`,
+          ? `${room.host_name} odasında herkes kendi telefonundan oynar. Plajda bas-konuş ses mesajlarıyla konuşulur. Uzaktan oyunda bu oyundan ayda en çok 250 puan kazanılır; yan yana oyun 7 kat puan verir.`
+          : `${room.host_name} odasında herkes kendi telefonundan oynar. Sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur. Uzaktan oyunda bu oyundan ayda en çok 250 puan kazanılır; yan yana oyun 7 kat puan verir.`,
       icon: 'headset',
       buttons: [
         { label: 'Katıl', value: true, style: 'primary' },
@@ -197,15 +184,10 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
    * Ben Yöneticiyim (geceyi/oylamayı oda sahibi ilerletir). Moderatör ayrıca oynayıp oynamayacağını seçer:
    * oynarsa oyuncudur, oynamazsa anlatıcı olur. Vazgeçilirse boş döner.
    */
-  async function askVampireMode(remote = false): Promise<RoomMode | null> {
-    const quota = isModerator
-      ? ''
-      : remote
-        ? ' Uzaktan oda oyun hakkından yemez.'
-        : ` Üyeler ayda ${limits.freeGames} oda açabilir (abone: ${limits.subscriptionGames}). Başlamadan odayı kapatırsan hakkın geri verilir.`;
+  async function askVampireMode(): Promise<RoomMode | null> {
     const first = await showDialog<'auto' | 'host' | null>({
       title: 'Vampir–Köylü nasıl oynansın?',
-      message: `Otomatik Oyun: yönetici gerekmez; gece, tartışma ve oylama süreleri dolunca oyun kendiliğinden ilerler.\n\nBen Yöneticiyim: geceyi ve oylamayı sen başlatıp bitirirsin.\n\nİkisinde de sen de oynarsın.${quota}`,
+      message: `Otomatik Oyun: yönetici gerekmez; gece, tartışma ve oylama süreleri dolunca oyun kendiliğinden ilerler.\n\nBen Yöneticiyim: geceyi ve oylamayı sen başlatıp bitirirsin.\n\nİkisinde de sen de oynarsın.`,
       icon: 'moon',
       buttons: [
         { label: 'Otomatik Oyun', value: 'auto', style: 'primary' },
@@ -235,14 +217,9 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
 
   /**
    * Köpekbalığı Kafesi nasıl oynansın? Otomatik ya da Ben Yöneticiyim (ikisinde de oynarsın). Anlatıcı yalnızca etkinlik
-   * oyununda ve yalnızca etkinlik sahibine sunulur (oynamaz, herkesin rolünü görür; puan yok, hak düşmez).
+   * oyununda ve yalnızca etkinlik sahibine sunulur (oynamaz, herkesin rolünü görür; puan yok).
    */
-  async function askSharkMode(remote = false, event = false): Promise<RoomMode | null> {
-    const quota = isModerator || event
-      ? ''
-      : remote
-        ? ' Uzaktan oda oyun hakkından yemez.'
-        : ` Üyeler ayda ${limits.freeGames} oda açabilir (abone: ${limits.subscriptionGames}). Başlamadan odayı kapatırsan hakkın geri verilir.`;
+  async function askSharkMode(event = false): Promise<RoomMode | null> {
     const buttons: { label: string; value: RoomMode | null; style: 'primary' | 'ghost' }[] = [
       { label: 'Otomatik Oyun', value: 'auto', style: 'primary' },
       { label: 'Ben Yöneticiyim', value: 'host', style: 'ghost' },
@@ -253,9 +230,9 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
       title: 'Köpekbalığı Kafesi nasıl oynansın?',
       message: `Otomatik Oyun: yönetici gerekmez; dalış, plaj ve oylama süreleri dolunca oyun kendiliğinden ilerler.\n\nBen Yöneticiyim: aşamaları sen ilerletirsin; sen de oynarsın ama rolleri görmezsin.${
         event
-          ? '\n\nAnlatıcı: oynamazsın, herkesin rolünü görür ve oyunu sen anlatırsın. Anlatıcılı oyunda kimse puan almaz, hak düşmez.'
+          ? '\n\nAnlatıcı: oynamazsın, herkesin rolünü görür ve oyunu sen anlatırsın. Anlatıcılı oyunda kimse puan almaz.'
           : ''
-      }${quota}`,
+      }`,
       icon: 'water',
       buttons,
       cancelValue: null,
@@ -285,15 +262,15 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
     // Pencereler hemen açılır; menüye dönüşte başlayan "oyundan çık" isteği oda açmadan hemen önce beklenir
     const leaving = leaveDone.current;
     try {
-      // Nerede oynanacak? Yan yana (aynı masada; 2 kat puan, oyun hakkından yer) ya da uzaktan (sesli sohbetle)
+      // Nerede oynanacak? Yan yana (aynı masada; 7 kat puan, konum doğrulanır) ya da uzaktan (eşleştirmeyle)
       const where = preset ?? await showDialog<'side' | 'remote' | null>({
         title: 'Nasıl oynanacak?',
         message: shark
-          ? 'Yan yana. Aynı masada oturursunuz. 5 kat puan verir, oyun hakkından yer.\n\nUzaktan eşleş. Haritadan oyuncu aranır, herkes kendi telefonundan oynar ve plajda bas-konuş ses mesajlarıyla konuşulur. Oyun hakkından yemez, puanı yan yananın beşte biridir.'
-          : 'Yan yana. Aynı masada oturursunuz. 5 kat puan verir, oyun hakkından yer.\n\nUzaktan eşleş. Haritadan oyuncu aranır, herkes kendi telefonundan oynar ve sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur. Oyun hakkından yemez, puanı yan yananın beşte biridir.',
+          ? 'Yan yana. Aynı masada oturursunuz, konum doğrulanır. 7 kat puan verir (ayda en çok 1.750). Mekân koduyla mekânda oynarsan +%25.\n\nUzaktan eşleş. Haritadan oyuncu aranır, herkes kendi telefonundan oynar ve plajda bas-konuş ses mesajlarıyla konuşulur. Ayda en çok 250 puan.\n\nOyun sayısı sınırsız.'
+          : 'Yan yana. Aynı masada oturursunuz, konum doğrulanır. 7 kat puan verir (ayda en çok 1.750). Mekân koduyla mekânda oynarsan +%25.\n\nUzaktan eşleş. Haritadan oyuncu aranır, herkes kendi telefonundan oynar ve sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur. Ayda en çok 250 puan.\n\nOyun sayısı sınırsız.',
         icon: 'people',
         buttons: [
-          { label: 'Yan yana · 5x Puan', value: 'side', style: 'primary' },
+          { label: 'Yan yana · 7x Puan', value: 'side', style: 'primary' },
           { label: 'Uzaktan eşleş', value: 'remote', style: 'ghost' },
           { label: 'Vazgeç', value: null, style: 'ghost' },
         ],
@@ -356,7 +333,7 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
     setHint(null);
     const game = await showDialog<'vampire_villager' | 'shark_cage' | null>({
       title: 'Etkinlik oyunu aç',
-      message: `“${ev.title}” etkinliğinde oyun odası açılır.\n\nOda kodu, katılımını doğrulamış katılımcılara bildirimle gider; odaya yalnızca onlar girebilir. Oyun Geceleri’nde puan 1,5 kat, Sosyal Buluşmalar ve Müzik & Eğlence’de 1,25 kat. Etkinlik odası aylık oda hakkından yemez.\n\nKöpekbalığı Kafesi’nde anlatıcı olabilirsin (oynamazsın; anlatıcılı oyunda puan yok).`,
+      message: `“${ev.title}” etkinliğinde oyun odası açılır.\n\nOda kodu, katılımını doğrulamış katılımcılara bildirimle gider; odaya yalnızca onlar girebilir. Oyun Geceleri’nde puan 1,5 kat, Sosyal Buluşmalar ve Müzik & Eğlence’de 1,25 kat.\n\nKöpekbalığı Kafesi’nde anlatıcı olabilirsin (oynamazsın; anlatıcılı oyunda puan yok).`,
       icon: 'game-controller',
       buttons: [
         { label: 'Köpekbalığı Kafesi', value: 'shark_cage', style: 'primary' },
@@ -369,7 +346,7 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
     lock.current = true;
     try {
       await leaveDone.current;
-      const mode = game === 'shark_cage' ? await askSharkMode(false, true) : await askVampireMode();
+      const mode = game === 'shark_cage' ? await askSharkMode(true) : await askVampireMode();
       if (!mode) return;
       let phone: Cell | undefined;
       if (mode !== 'narrator') {
@@ -429,7 +406,6 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
   return {
     hint,
     setHint,
-    limits,
     beginFocus,
     openJoin: () => {
       void confirmMeetupSafety('game').then((ok) => {

@@ -39,7 +39,7 @@ import { eventGaugeAction } from '@/lib/eventQuota';
 import { getQuota, type Quota } from '@/lib/events';
 import { listBlocks, unblock, type BlockedAuthor } from '@/lib/feed';
 import { listFriendships, type Friendships } from '@/lib/friends';
-import { quotaInfo } from '@/lib/gameInfo';
+import { venueInfo } from '@/lib/gameInfo';
 import { imageAspect } from '@/lib/images';
 import {
   fmtPts,
@@ -50,12 +50,19 @@ import {
   lastDayBefore,
   RESERVED_NAME_TEXT,
 } from '@/lib/labels';
-import { DEFAULT_LIMITS, getLimits, type Limits } from '@/lib/membership';
 import { useNotices } from '@/lib/notices';
 import { useIdentityEnabled } from '@/lib/identityFlag';
 import { nextPhotoChangeAt, profilePhotoUrl, removeProfilePhoto, uploadProfilePhoto } from '@/lib/profilePhoto';
 import { REAL_NAME } from '@/lib/realName';
-import { getMyTitles, listLevels, type LevelInfo, type MyTitle } from '@/lib/ranking';
+import {
+  DEFAULT_RULES,
+  getMyTitles,
+  getPointRules,
+  listLevels,
+  type LevelInfo,
+  type MyTitle,
+  type PointRules,
+} from '@/lib/ranking';
 import { useTabResetKey } from '@/lib/tabReset';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
@@ -87,7 +94,7 @@ function ProfileScreen() {
   const { profile, account, previewMode, leavePreview, refreshProfile, refreshAccount, signOut, updateFullName } =
     useAuth();
   const [levels, setLevels] = useState<LevelInfo[]>([]);
-  const [limits, setLimits] = useState<Limits>(DEFAULT_LIMITS);
+  const [rules, setRules] = useState<PointRules>(DEFAULT_RULES);
   const [quota, setQuota] = useState<Quota | null>(null);
   const [earned, setEarned] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
@@ -122,8 +129,8 @@ function ProfileScreen() {
     void listLevels().then((l) => {
       if (active) setLevels(l);
     });
-    void getLimits().then((l) => {
-      if (active) setLimits(l);
+    void getPointRules().then((r) => {
+      if (active) setRules(r);
     });
     return () => {
       active = false;
@@ -317,14 +324,9 @@ function ProfileScreen() {
     }
   }
 
-  // Hak göstergeleri: oyun (sarı) ve etkinlik (mor). Kullanılmamış mekân kodu hakkı oyun hakkına 1 ekler.
+  // Hak göstergeleri: oyun (sarı, artık herkese sınırsız; “+” mekân kodu girişi) ve etkinlik (mor)
   const hasCredit = quota?.sponsor_credit === true;
-  const gamesUnlimited = quota !== null && (quota.is_moderator || quota.games_limit === null);
-  const gamesRemaining =
-    quota === null || gamesUnlimited
-      ? null
-      : Math.max(0, (quota.games_limit ?? 0) - quota.games_used) + (hasCredit ? 1 : 0);
-  const gamesFull = quota?.games_limit == null ? null : quota.games_limit + (hasCredit ? 1 : 0);
+  const gamesUnlimited = quota?.is_moderator === true;
   const eventsUnlimited = quota !== null && (quota.is_moderator || quota.events_limit === null);
   const eventsRemaining =
     quota === null || eventsUnlimited ? null : Math.max(0, (quota.events_limit ?? 0) - quota.events_used);
@@ -527,8 +529,8 @@ function ProfileScreen() {
           <View style={styles.gaugeCol}>
             {quota ? (
               <HexGauge
-                remaining={gamesRemaining}
-                limit={gamesFull}
+                remaining={null}
+                limit={null}
                 plus={!gamesUnlimited}
                 tone="yellow"
                 kind="oyun"
@@ -1010,7 +1012,7 @@ function ProfileScreen() {
         }}
       />
       {(() => {
-        const q = quotaInfo(limits.freeGames, limits.subscriptionGames);
+        const q = venueInfo(rules);
         return (
           <InfoModal
             visible={quotaInfoOpen}
