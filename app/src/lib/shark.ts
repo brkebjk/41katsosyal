@@ -116,6 +116,14 @@ export type SkView = {
   match?: boolean;
   /** Eşleştirme lobisinde "Hazırım" diyenlerin kimlikleri */
   lobby_ready?: string[] | null;
+  /** Biten oyundan sonra açılan yeni el bekleme odası mı */
+  rematch?: boolean;
+  /** Yeni el geri sayımı (sn); boş = geri sayım yok */
+  rematch_left?: number | null;
+  /** Oyun bitince açılan bekleme odası (oraya geçilir) */
+  next_room?: string | null;
+  /** Yeni el açılamadıysa nedeni ('no_quota') */
+  next_note?: string | null;
   close_reason: string | null;
   counts: { shark: number; human: number; neutral: number };
   players: SkPlayer[];

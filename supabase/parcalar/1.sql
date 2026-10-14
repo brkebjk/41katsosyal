@@ -4856,11 +4856,13 @@ begin
   if not found or r.status not in ('lobby', 'playing') then return null; end if;
   if not exists (select 1 from public.game_types where key = r.game_type and presence_required) then return null; end if;
 
-  -- Köpekbalığı Kafesi: eşleştirme odasında (lobide de) ve başlamış her uzaktan oyunda sahibi ayrılınca oda kapanmaz,
+  -- Eşleştirme odasında (lobide de) ve başlamış her uzaktan oyunda sahibi ayrılınca oda kapanmaz,
   -- sahiplik sıradaki gerçek oyuncuya geçer (önce hayatta olanlar, sonra katılma sırası). Yalnızca botlar kaldıysa kapanır.
   -- Anlatıcı ayrılırsa oyun otomatik ilerler ama yine puansız kalır (no_points).
-  if r.host_id = p_user_id and r.game_type = 'shark_cage'
-     and (coalesce((r.config->>'match')::boolean, false) or (r.remote and r.status = 'playing'))
+  -- (Paket: iki oyunda da; yeni el bekleme odasında da sahiplik devredilir, oda dağılmaz)
+  if r.host_id = p_user_id and r.game_type in ('shark_cage', 'vampire_villager')
+     and (coalesce((r.config->>'match')::boolean, false) or (r.remote and r.status = 'playing')
+          or (r.config ? 'rematch_of' and r.status = 'lobby'))
      and exists (select 1 from public.room_players rp join public.profiles bp on bp.id = rp.user_id
                   where rp.room_id = p_room_id and rp.user_id <> p_user_id and rp.left_at is null and not bp.is_bot) then
     update public.game_rooms
@@ -5423,6 +5425,21 @@ returns void language plpgsql security definer set search_path = public as $$
 declare
   v public.profiles;
   r public.game_rooms;
+begin
+  v := public._require_user();
+  r := public._vv_room(p_room_id);
+  if r.host_id <> v.id and v.role <> 'admin' then raise exception 'forbidden'; end if;
+  if r.status <> 'lobby' then raise exception 'invalid_transition'; end if;
+  -- Eşleştirme odası "Hazırım" çoğunluğuyla kendiliğinden başlar
+  if coalesce((r.config->>'match')::boolean, false) then raise exception 'match_room'; end if;
+  perform public._vv_begin(p_room_id);
+end $$;
+
+-- Oyunu başlatır (yetki kontrolü çağıranda): roller dağıtılır, rol gösterimi başlar
+create or replace function public._vv_begin(p_room_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
   v_n int;
   v_min int;
   v_comp jsonb;
@@ -5431,10 +5448,8 @@ declare
   v_t int;
   v_mode text;
 begin
-  v := public._require_user();
-  r := public._vv_room(p_room_id);
-  if r.host_id <> v.id and v.role <> 'admin' then raise exception 'forbidden'; end if;
-  if r.status <> 'lobby' then raise exception 'invalid_transition'; end if;
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found or r.status <> 'lobby' then raise exception 'invalid_transition'; end if;
 
   -- Anlatıcı modunda moderatör oyuncu sayılmaz; öteki modlarda (Otomatik / Ben Yöneticiyim ve oynuyorum) oynar
   v_mode := public._vv_mode(r);
@@ -5874,6 +5889,9 @@ begin
       perform public._vv_auto_tick(p_room_id);
       if r.remote then perform public._voice_kick_tick(p_room_id); end if;
       select * into r from public.game_rooms where id = p_room_id;
+    elsif r.status = 'lobby' then
+      perform public._room_lobby_tick(p_room_id);
+      select * into r from public.game_rooms where id = p_room_id;
     end if;
   end if;
 
@@ -5979,7 +5997,17 @@ begin
   return jsonb_build_object(
     'phase', v_phase,
     'status', r.status,
-    'code', case when r.host_id = auth.uid() then (select c.code from public.room_codes c where c.room_id = r.id) end,
+    'code', case when r.host_id = auth.uid()
+                   or ((coalesce((r.config->>'match')::boolean, false) or r.config ? 'rematch_of')
+                       and v_is_player and r.status = 'lobby')
+                 then (select c.code from public.room_codes c where c.room_id = r.id) end,
+    'match', coalesce((r.config->>'match')::boolean, false),
+    'lobby_ready', case when r.status = 'lobby' then coalesce(r.state->'ready', '[]'::jsonb) end,
+    'rematch', r.config ? 'rematch_of',
+    'rematch_left', case when r.status = 'lobby' and r.state ? 'rematch_until'
+                         then greatest(0, ceil(extract(epoch from (r.state->>'rematch_until')::timestamptz - now()))::int) end,
+    'next_room', case when r.status = 'finished' then r.state->>'next_room' end,
+    'next_note', case when r.status = 'finished' then r.state->>'rematch' end,
     'round', v_round,
     'winner', r.state->>'winner',
     'composition', coalesce(r.state->'composition', public._vv_composition(v_count)),
@@ -6757,23 +6785,3 @@ returns timestamptz language sql stable as $$
                                     - greatest(1, least(coalesce(p_dow, 1), 7)) + 7) % 7)))
          at time zone 'Europe/Istanbul';
 $$;
-
--- Harita açık mı, eşikler neler? (district_resets: ilçe adı ve haftalık sıfırlanma günü, 1 = Pazartesi)
-create or replace function public.map_status()
-returns jsonb language plpgsql stable security definer set search_path = public as $$
-declare v_admin boolean := public.is_admin();
-begin
-  if not public._is_active_user() then raise exception 'not_authenticated'; end if;
-  return jsonb_build_object(
-    'open', v_admin or public.setting_bool('map_public'),
-    'is_public', public.setting_bool('map_public'),
-    'is_moderator', v_admin,
-    'min_people', greatest(public.setting_int('map_min_people', 5), 1),
-    'delay_minutes', greatest(public.setting_int('map_delay_minutes', 60), 0),
-    'window_days', 7,
-    'presence_open', v_admin or public.setting_bool('map_presence_public'),
-    'presence_minutes', greatest(5, least(public.setting_int('map_presence_minutes', 20), 120)),
-    'district_resets', coalesce((select jsonb_agg(jsonb_build_object('name', d.name, 'dow', d.reset_dow) order by d.district)
-                                   from public.map_district_reset d), '[]'::jsonb)
-  );
-end $$;

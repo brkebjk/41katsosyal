@@ -1,6 +1,26 @@
 -- PARÇA 2 / 3 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+-- Harita açık mı, eşikler neler? (district_resets: ilçe adı ve haftalık sıfırlanma günü, 1 = Pazartesi)
+create or replace function public.map_status()
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare v_admin boolean := public.is_admin();
+begin
+  if not public._is_active_user() then raise exception 'not_authenticated'; end if;
+  return jsonb_build_object(
+    'open', v_admin or public.setting_bool('map_public'),
+    'is_public', public.setting_bool('map_public'),
+    'is_moderator', v_admin,
+    'min_people', greatest(public.setting_int('map_min_people', 5), 1),
+    'delay_minutes', greatest(public.setting_int('map_delay_minutes', 60), 0),
+    'window_days', 7,
+    'presence_open', v_admin or public.setting_bool('map_presence_public'),
+    'presence_minutes', greatest(5, least(public.setting_int('map_presence_minutes', 20), 120)),
+    'district_resets', coalesce((select jsonb_agg(jsonb_build_object('name', d.name, 'dow', d.reset_dow) order by d.district)
+                                   from public.map_district_reset d), '[]'::jsonb)
+  );
+end $$;
+
 -- Renkli petekler. Yalnızca "en az N farklı üye" olan petekler gelir (N = map_min_people), gerçek sayı hiç gelmez.
 --  - her ilçede yalnızca o ilçenin son haftalık sıfırlanmasından sonraki ve "gecikme" süresinden eski kayıtlar sayılır,
 --  - oyun kaydı, aynı odadan başka bir üye aynı ya da komşu petekten bildirmişse sayılır (sahte konuma karşı),

@@ -36,6 +36,7 @@ import {
   G,
   GameButton,
   Glass,
+  NextRoomButton,
   Pill,
   PlayerGrid,
   SkipToggle,
@@ -71,6 +72,7 @@ import {
   sendWhisper,
   skipDiscussion,
   startVampireGame,
+  vvLobbyReady,
   VV_NOT_IN_ROOM,
   VV_ROOM_GONE,
   type VvPhase,
@@ -261,7 +263,10 @@ function Game({ roomId }: { roomId: string }) {
   }, [stayAwake]);
 
   // Saniyede bir sayan saat: otomatik oyunun geri sayımı ve elle bitirme düğmesinin bekleme süresi
-  const elapsed = useElapsedSeconds(viewAt, live && view !== null && view.status === 'playing');
+  const elapsed = useElapsedSeconds(
+    viewAt,
+    live && view !== null && (view.status === 'playing' || (view.rematch_left ?? null) !== null),
+  );
 
   // ---- Sesler: gece/gündüz geçişi, ölüm, oylama, sonuç, son saniyeler, fısıltı -------------------------
   useEffect(() => {
@@ -370,7 +375,7 @@ function Game({ roomId }: { roomId: string }) {
     return (
       <Screen title="Vampir–Köylü" onBack={goToGames} backLabel="Oyunlar">
         <InfoCard title="Odadan çıkarıldın" tone="danger">
-          Bekleme odasından ayrıldığında ya da bağlantın uzun süre koptuğunda listeden çıkarılırsın. İstersen oda kodunu
+          Bekleme odasından ayrıldığında, yeni elde “Hazırım” demediğinde ya da bağlantın uzun süre koptuğunda listeden çıkarılırsın. İstersen oda kodunu
           Oyunlar sekmesinden tekrar girerek katılabilirsin.
         </InfoCard>
         <PrimaryButton label="Oyunlara dön" onPress={goToGames} />
@@ -393,7 +398,12 @@ function Game({ roomId }: { roomId: string }) {
   const phase = view.phase;
   const mode = view.mode;
   const canControl = me.can_control;
-  const canStart = me.is_host || me.is_admin;
+  const canStart = (me.is_host || me.is_admin) && !view.match;
+  // Eşleştirme lobisi ve yeni el bekleme odası: "Hazırım"
+  const readyMode = phase === 'lobby' && (view.match === true || (view.rematch === true && view.rematch_left != null));
+  const readyIds = new Set(view.lobby_ready ?? []);
+  const myVvId = view.players.find((p) => p.is_me)?.id ?? null;
+  const myReady = myVvId !== null && readyIds.has(myVvId);
   const phaseKey = `${phase}:${view.round}`;
   const alive = view.players.filter((p) => p.is_alive);
   const present = view.players.filter((p) => !p.left);
@@ -408,6 +418,9 @@ function Game({ roomId }: { roomId: string }) {
   /** Oda sahibi olmayan üyeler geceyi/oylamayı ancak bu süre geçince elle bitirebilir */
   const waitLeft = me.is_omniscient ? 0 : Math.max(0, view.force_after - view.phase_age - elapsed);
 
+  const vvMatch = view.match === true;
+  const vvRemote = view.remote === true;
+  const vvRematch = view.rematch === true;
   function requestLeave() {
     if (!mustConfirmLeave) {
       goToGames();
@@ -415,7 +428,18 @@ function Game({ roomId }: { roomId: string }) {
     }
     const lobby = phase === 'lobby';
     const quota = me.is_admin ? '' : ' Oyun başlamadığı için aylık hakkın geri verilir.';
-    const copy = me.is_host
+    // Eşleştirme odasında, yeni el bekleme odasında ve başlamış uzaktan oyunda oda sahibi ayrılınca sahiplik devredilir
+    const handOver =
+      me.is_host && me.is_player && (vvMatch || (vvRemote && !lobby) || (vvRematch && lobby));
+    const copy = handOver
+      ? lobby
+        ? { title: 'Odadan ayrıl', msg: 'Bekleme odasından çıkarsın; oda sahipliği başka bir oyuncuya geçer.', ok: 'Odadan ayrıl' }
+        : {
+            title: 'Oyundan ayrıl',
+            msg: 'Ayrılırsan elenirsin ve geri dönemezsin. Oyun sürer, oda sahipliği başka bir oyuncuya geçer (başka gerçek oyuncu yoksa oda kapanır).',
+            ok: 'Oyundan ayrıl',
+          }
+      : me.is_host
       ? lobby
         ? { title: 'Odayı kapat', msg: `Oda kapanır ve katılanlar oyuna giremez.${quota}`, ok: 'Odayı kapat' }
         : {
@@ -619,6 +643,11 @@ function Game({ roomId }: { roomId: string }) {
       return { icon: 'search', text: vamp ? 'Vampir' : 'Temiz', color: vamp ? G.redSoft : G.green };
     }
     if (known) return { text: known.name, color: known.color };
+    if (readyMode) {
+      return readyIds.has(p.id)
+        ? { icon: 'checkmark-circle', text: 'Hazır', color: G.green }
+        : { icon: 'time-outline', text: 'Bekliyor', color: G.faint };
+    }
     if (phase === 'lobby' && p.is_host) return { icon: 'star', text: 'Oda sahibi', color: G.gold };
     return null;
   }
@@ -823,8 +852,33 @@ function Game({ roomId }: { roomId: string }) {
                 ? 'Oyuncu sayılmazsın; herkesin rolünü görür, oyunu sen ilerletirsin.'
                 : 'Moderatör anlatıcıdır, oyuncu değildir. Oyunu o ilerletir.',
             };
+    const countdown = view.rematch_left != null ? Math.max(0, Math.ceil(view.rematch_left - elapsed)) : null;
+    const readyCount = view.players.filter((p) => readyIds.has(p.id)).length;
     panel = (
       <>
+        {readyMode ? (
+          <>
+            <Text style={[styles.pTitle, { color: G.green }]}>
+              {countdown !== null ? `🔁 Yeni el · ${countdown} sn` : `Hazır ${readyCount} / ${count}`}
+            </Text>
+            <Text style={styles.pText}>
+              {countdown !== null
+                ? `Süre dolunca “Hazırım” diyenlerle yeni el başlar. En az ${view.min_players} hazır gerekir, az olursa oda bekleme odası olarak kalır.`
+                : `Hazır diyenler demeyenlerden fazla olunca oyun başlar (en az ${view.min_players} kişi).`}
+            </Text>
+            <GameButton
+              label={myReady ? '✓ Hazırım · vazgeç' : 'HAZIRIM'}
+              variant={myReady ? 'ghost' : 'primary'}
+              disabled={!myReady && countdown === null && count < view.min_players}
+              loading={busy === 'lready'}
+              onPress={() => void act('lready', () => vvLobbyReady(roomId, !myReady))}
+              testID="vv-lobby-ready"
+            />
+            {!view.match ? (
+              <Text style={styles.pText}>Her yeni el oda sahibinin aylık oyun hakkından 1 düşer.</Text>
+            ) : null}
+          </>
+        ) : null}
         {view.code ? (
           <View style={styles.codeRow}>
             <View style={styles.flex}>
@@ -1195,9 +1249,26 @@ function Game({ roomId }: { roomId: string }) {
           </Text>
         )}
         {res ? <Text style={[styles.pText, res.good && styles.pOk]}>{res.text}</Text> : null}
+        {/* Oyun bitince bekleme odasına geçilir (aynı oyuncularla yeni el) */}
+        {view.next_room && !me.left ? (
+          <NextRoomButton
+            seconds={10}
+            onGo={() => router.replace({ pathname: '/vampir', params: { id: view.next_room as string } })}
+          />
+        ) : view.next_note === 'no_quota' ? (
+          <Text style={styles.pText}>Kimsenin bu ay oyun hakkı kalmadığı için yeni el açılamadı.</Text>
+        ) : null}
         <View style={styles.btnRow}>
           <GameButton label="Puanlar" icon="trophy" variant="ghost" onPress={() => setInfo('points')} />
-          <GameButton label="Oyunlara dön" flex onPress={goToGames} />
+          <GameButton
+            label="Oyunlara dön"
+            flex
+            variant={view.next_room ? 'ghost' : 'primary'}
+            onPress={() => {
+              if (view.next_room) void leaveRoom(view.next_room);
+              goToGames();
+            }}
+          />
         </View>
       </>
     );

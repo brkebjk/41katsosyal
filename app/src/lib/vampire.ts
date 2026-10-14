@@ -47,6 +47,17 @@ export type VvWhisper = {
 export type VvInvestigation = { round: number; id: string; name: string; is_vampire: boolean };
 
 export type VvView = {
+  /** Eşleştirme (uzaktan) lobisi */
+  match?: boolean;
+  /** "Hazırım" diyenler (eşleştirme lobisi ve yeni el bekleme odası) */
+  lobby_ready?: string[] | null;
+  /** Biten oyundan sonra açılan yeni el bekleme odası */
+  rematch?: boolean;
+  /** Yeni el geri sayımı (sn); boş = yok */
+  rematch_left?: number | null;
+  /** Oyun bitince açılan bekleme odası */
+  next_room?: string | null;
+  next_note?: string | null;
   phase: VvPhase;
   status: 'lobby' | 'playing' | 'finished' | 'cancelled';
   /** Oda kodu yalnızca odayı açan kişiye gelir; başkasında boştur */
@@ -130,6 +141,7 @@ const VV_TEXT: Record<string, string> = {
   same_protect: 'Doktor art arda iki gece aynı kişiyi koruyamaz.',
   already_acted: 'Dedektif her gece yalnızca bir kişiye bakabilir.',
   not_enough_players: 'Oyunu başlatmak için yeterli oyuncu yok.',
+  match_room: 'Bu oda “Hazırım” diyenler çoğunluğa geçince kendiliğinden başlar.',
   forbidden: 'Bu işlemi yalnızca oyunu açan kişi yapabilir.',
   invalid_transition: 'Oyun zaten başlamış ya da bitmiş.',
   room_closed: 'Bu oyuna artık katılım kapalı.',
@@ -160,6 +172,8 @@ const call = (fn: string, roomId: string, extra: Record<string, unknown> = {}): 
   callRpcVoid(fn, { p_room_id: roomId, ...extra }, VV_TEXT);
 
 export const startVampireGame = (roomId: string) => call('vv_start', roomId);
+/** "Hazırım" (eşleştirme lobisi ve yeni el bekleme odası) */
+export const vvLobbyReady = (roomId: string, on: boolean) => call('room_lobby_ready', roomId, { p_on: on });
 export const markRoleSeen = (roomId: string) => call('vv_ready', roomId);
 export const beginNight = (roomId: string) => call('vv_begin_night', roomId);
 export const nightAction = (roomId: string, target: string) => call('vv_night_action', roomId, { p_target: target });

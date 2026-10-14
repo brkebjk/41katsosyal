@@ -50,7 +50,7 @@ import { SharkChat, type ChatTab, type ChatTabInfo } from '@/components/SharkCha
 import { PushToTalk, useClipQueue } from '@/components/SharkVoice';
 import { SoundToggle } from '@/components/SoundToggle';
 import { InfoCard, useElapsedSeconds } from '@/components/VampireParts';
-import { G, GameButton, Glass, Pill, SkipToggle, ToolButton } from '@/components/VampireStage';
+import { G, GameButton, Glass, NextRoomButton, Pill, SkipToggle, ToolButton } from '@/components/VampireStage';
 import { confirmAction, notify, showDialog } from '@/lib/dialog';
 import { SHARK_RANK_ITEM } from '@/lib/gameInfo';
 import { fmtPts } from '@/lib/labels';
@@ -236,7 +236,10 @@ function Game({ roomId }: { roomId: string }) {
     };
   }, [stayAwake]);
 
-  const elapsed = useElapsedSeconds(viewAt, live && view !== null && view.status === 'playing');
+  const elapsed = useElapsedSeconds(
+    viewAt,
+    live && view !== null && (view.status === 'playing' || (view.rematch_left ?? null) !== null),
+  );
 
   // ---- Bas-konuş (uzaktan oda): gelen ses mesajları sırayla çalar; sen kaydederken sıra bekler ----------------------
   const [recording, setRecording] = useState(false);
@@ -320,7 +323,7 @@ function Game({ roomId }: { roomId: string }) {
     return (
       <Screen title="Köpekbalığı Kafesi" onBack={goToGames} backLabel="Oyunlar">
         <InfoCard title="Odadan çıkarıldın" tone="danger">
-          Bekleme odasından ayrıldığında ya da bağlantın uzun süre koptuğunda listeden çıkarılırsın.
+          Bekleme odasından ayrıldığında, yeni elde “Hazırım” demediğinde ya da bağlantın uzun süre koptuğunda listeden çıkarılırsın.
         </InfoCard>
         <PrimaryButton label="Oyunlara dön" onPress={goToGames} />
       </Screen>
@@ -701,22 +704,36 @@ function Game({ roomId }: { roomId: string }) {
   } else if (phase === 'cancelled') {
     prompt = { title: 'Oda kapandı', lines: [closedText(view.close_reason, me.is_host)] };
     actions = <GameButton label="Oyunlara dön" onPress={goToGames} />;
-  } else if (phase === 'lobby' && view.match) {
-    // Uzaktan eşleştirme lobisi: 6 kişi olunca "Hazırım" açılır; hazır diyenler demeyenlerden fazla olunca başlar
+  } else if (phase === 'lobby' && (view.match || (view.rematch && view.rematch_left != null))) {
+    // Uzaktan eşleştirme lobisi: 6 kişi olunca "Hazırım" açılır; hazır diyenler demeyenlerden fazla olunca başlar.
+    // Yeni el bekleme odası: 45 sn geri sayım; süre dolunca "Hazırım" diyenlerle yeni el başlar.
     const n = present.length;
     const readyIds = new Set(view.lobby_ready ?? []);
     const readyCount = present.filter((p) => readyIds.has(p.id)).length;
     const myReady = myPlayerId !== null && readyIds.has(myPlayerId);
-    const canReady = n >= view.min_players;
+    const countdown = view.rematch_left != null ? Math.max(0, Math.ceil(view.rematch_left - elapsed)) : null;
+    const canReady = n >= view.min_players || countdown !== null;
     const need = Math.floor(n / 2) + 1;
-    prompt = {
-      title: canReady ? `HAZIR ${readyCount} / ${n}` : `🌊 LOBİ · ${n} kişi`,
-      lines: canReady
-        ? [`Başlamak için ${need} kişinin “Hazırım” demesi yeter.`, 'Beklersen ya da davet edersen kalabalık oyun daha çok puan verir.']
-        : [`“Hazırım” ${view.min_players} kişide açılır (şu an ${n}).`, 'Arkadaşını davet et, kalabalık oyun daha çok puan verir.'],
-      color: canReady ? '#34D399' : '#48CAE4',
-      pulse: canReady && !myReady,
-    };
+    prompt =
+      countdown !== null
+        ? {
+            title: `🔁 YENİ EL · ${countdown} sn`,
+            lines: [
+              `Süre dolunca “Hazırım” diyenlerle yeni el başlar (${readyCount} / ${n} hazır).`,
+              `En az ${view.min_players} hazır gerekir, az olursa oda bekleme odası olarak kalır.`,
+            ],
+            color: '#34D399',
+            pulse: !myReady,
+          }
+        : {
+            title: canReady ? `HAZIR ${readyCount} / ${n}` : `🌊 LOBİ · ${n} kişi`,
+            lines: canReady
+              ? [`Başlamak için ${need} kişinin “Hazırım” demesi yeter.`, 'Beklersen ya da davet edersen kalabalık oyun daha çok puan verir.']
+              : [`“Hazırım” ${view.min_players} kişide açılır (şu an ${n}).`, 'Arkadaşını davet et, kalabalık oyun daha çok puan verir.'],
+            color: canReady ? '#34D399' : '#48CAE4',
+            pulse: canReady && !myReady,
+          };
+    if (countdown !== null && !myReady) command = { text: '🔁 YENİ EL · HAZIRIM DE', color: '#34D399' };
     actions = (
       <>
         <GameButton
@@ -751,7 +768,21 @@ function Game({ roomId }: { roomId: string }) {
             onPress={() => void act('bots', () => addTestBots(roomId, 3))}
           />
         ) : null}
-        <Text style={styles.pText}>Herkes rumuzuyla görünür. Uzaktan oyun hak yemez; puanı yan yana oyunun yarısıdır.</Text>
+        {view.match ? (
+          <Text style={styles.pText}>Herkes rumuzuyla görünür. Uzaktan oyun hak yemez; puanı yan yana oyunun yarısıdır.</Text>
+        ) : (
+          <Text style={styles.pText}>
+            {`${view.code ? `Oda ID ${view.code}. ` : ''}Her yeni el oda sahibinin aylık oyun hakkından 1 düşer.`}
+          </Text>
+        )}
+        {!view.match && (me.is_host || me.is_admin) && present.length >= view.min_players ? (
+          <GameButton
+            label="🦈 Hemen başlat"
+            variant="ghost"
+            loading={busy === 'start'}
+            onPress={() => void act('start', () => startShark(roomId))}
+          />
+        ) : null}
       </>
     );
   } else if (phase === 'lobby') {
@@ -1228,11 +1259,29 @@ function Game({ roomId }: { roomId: string }) {
         out: !x.p.is_alive,
       }));
     stage = <RankTable rows={rankRows} />;
+    const next = view.next_room ?? null;
     actions = (
-      <View style={styles.row}>
-        <GameButton label="Puanlar" icon="trophy" variant="ghost" onPress={() => setPointsOpen(true)} />
-        <GameButton label="Oyunlara dön" flex onPress={goToGames} />
-      </View>
+      <>
+        {/* Oyun bitince bekleme odasına geçilir (aynı oyuncularla yeni el) */}
+        {next && !me.left ? (
+          <NextRoomButton seconds={10} onGo={() => router.replace({ pathname: '/kopekbaligi', params: { id: next } })} />
+        ) : view.next_note === 'no_quota' ? (
+          <Text style={styles.pText}>Kimsenin bu ay oyun hakkı kalmadığı için yeni el açılamadı.</Text>
+        ) : null}
+        <View style={styles.row}>
+          <GameButton label="Puanlar" icon="trophy" variant="ghost" onPress={() => setPointsOpen(true)} />
+          <GameButton
+            label="Oyunlara dön"
+            flex
+            variant={next ? 'ghost' : 'primary'}
+            onPress={() => {
+              // Yeni el bekleme odasından da çıkılır (yer tutmasın)
+              if (next) void leaveRoom(next);
+              goToGames();
+            }}
+          />
+        </View>
+      </>
     );
   }
 
@@ -1319,6 +1368,7 @@ function Game({ roomId }: { roomId: string }) {
 
   const roomIsMatch = view.match === true;
   const roomIsRemote = view.remote;
+  const roomIsRematch = view.rematch === true;
   function requestLeave() {
     if (!mustConfirmLeave) {
       goToGames();
@@ -1326,7 +1376,7 @@ function Game({ roomId }: { roomId: string }) {
     }
     const lobby = phase === 'lobby';
     // Uzaktan eşleştirme odasında ve başlamış uzaktan oyunda oda sahibi ayrılınca oda kapanmaz, sahiplik devredilir
-    const handOver = me.is_host && me.is_player && (roomIsMatch || (roomIsRemote && !lobby));
+    const handOver = me.is_host && me.is_player && (roomIsMatch || (roomIsRemote && !lobby) || (roomIsRematch && lobby));
     const copy = handOver
       ? lobby
         ? { title: 'Odadan ayrıl', msg: 'Bekleme odasından çıkarsın; oda sahipliği başka bir oyuncuya geçer.', ok: 'Odadan ayrıl' }

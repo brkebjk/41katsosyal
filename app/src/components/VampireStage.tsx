@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
 import { Text } from '@/components/AppText';
@@ -79,6 +79,33 @@ export function GameButton({
         {label}
       </Text>
     </Pressable>
+  );
+}
+
+/**
+ * Oyun bitince: "Bekleme odasına geç" düğmesi, `seconds` saniye geri sayar ve süre dolunca kendiliğinden geçer
+ * (yeni el bekleme odası). Ekrandan çıkılırsa sayaç durur.
+ */
+export function NextRoomButton({ seconds = 10, onGo }: { seconds?: number; onGo: () => void }) {
+  const [left, setLeft] = useState(seconds);
+  const go = useRef(onGo);
+  useEffect(() => {
+    go.current = onGo;
+  });
+  useEffect(() => {
+    const t = setInterval(() => setLeft((x) => x - 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const done = left <= 0;
+  useEffect(() => {
+    if (done) go.current();
+  }, [done]);
+  return (
+    <GameButton
+      label={`🔁 Bekleme odasına geç · ${Math.max(0, left)}`}
+      onPress={() => go.current()}
+      testID="next-room"
+    />
   );
 }
 
