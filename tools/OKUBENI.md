@@ -8,3 +8,4 @@ Bu klasördeki dosyalar, harita verisini yeniden üretmek ve indirme boyutunu ö
 - `boyut-olc.mjs`: uygulamanın Android ve iPhone paketini derleyip indirme boyutunu ölçer (kod, görseller, yazı tipleri). Her sürümden önce çalıştırılır; sonuç `BOYUT_TAKIBI.md` tablosuna yazılır. Komut: `node tools/boyut-olc.mjs --json`
 
 Yer listesini her ay yenilemek için Claude'a yazman yeterli.
+- `sema-parcala.mjs`: `supabase/schema.sql` dosyasını SQL Editor'ın kabul ettiği boyutta `supabase/parcalar/1.sql, 2.sql, ...` parçalarına böler. Şema her değiştiğinde çalıştırılır. Komut: `node tools/sema-parcala.mjs`

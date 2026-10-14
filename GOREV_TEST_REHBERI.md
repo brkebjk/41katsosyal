@@ -1,8 +1,12 @@
 # Görev Test Rehberi – Köpekbalığı Kafesi, bas-konuş, oyun ses düğmesi
 
 ## A. Supabase'i güncelle
-- Supabase > **SQL Editor** > **+ New query** > `supabase/schema.sql` dosyasının tamamını yapıştır > **Run**.
-- Yeşil "Success" görmelisin. Vampir–Köylü olduğu gibi duruyor.
+Şema dosyası SQL Editor için çok büyüdüğü için 3 parçaya bölündü: `supabase/parcalar/` klasöründe.
+1. Supabase > **SQL Editor** > **+ New query** > `1.sql` dosyasının tamamını yapıştır > **Run** > yeşil "Success".
+2. Yeni sorgu aç > `2.sql` > Run > Success.
+3. Yeni sorgu aç > `3.sql` > Run > Success.
+- Sıra önemli: 1, 2, 3. Yarıda hata alırsan hatayı bana ilet; baştan tekrar çalıştırmak zarar vermez.
+- Vampir–Köylü olduğu gibi duruyor.
 
 ## B. Köpekbalığı Kafesi (moderatör hesabı + 1 telefon, botlarla)
 1. Oyunlar > **Köpekbalığı Kafesi** > Oda aç > **Yan yana** > **Otomatik Oyun**.

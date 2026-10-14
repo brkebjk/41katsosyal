@@ -1,8 +1,9 @@
 -- =====================================================================
 -- 41.Kat veritabanı şeması (Supabase / PostgreSQL)
 --
--- Nasıl çalıştırılır: Supabase panelinde SQL Editor > New query > bu dosyanın
--- tamamını yapıştır > Run. Hata alırsan hatayı bana ilet; dosya tekrar
+-- Nasıl çalıştırılır: dosya SQL Editor'ın sınırından büyük olduğu için supabase/parcalar/ klasöründeki
+-- 1.sql, 2.sql, 3.sql ... dosyalarını SIRAYLA çalıştır (SQL Editor > New query > dosyanın tamamını yapıştır > Run).
+-- Parçalar bu dosyadan `node tools/sema-parcala.mjs` ile üretilir. Hata alırsan hatayı bana ilet; dosya tekrar
 -- çalıştırılabilir şekilde yazıldı (iki kez çalıştırmak zarar vermez).
 --
 -- Güvenlik mantığı özeti:
