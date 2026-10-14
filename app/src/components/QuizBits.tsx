@@ -27,7 +27,13 @@ export function LivesBar({
   dailyGames,
   onRefill,
   unlimited = false,
+  monthGoal,
+  onPoints,
 }: {
+  /** Aylık puan hedefi (günlük oyun sınırı kalktığı için sağ kutuda gösterilir) */
+  monthGoal?: { value: number; max: number };
+  /** “Puan sistemi” düğmesi */
+  onPoints?: () => void;
   lives: number;
   max: number;
   /** Seviye 5 ödülü: can sınırsız (kalpler yerine ∞ görünür) */
@@ -93,13 +99,39 @@ export function LivesBar({
         </Text>
       </View>
       )}
-      {noDayLimit ? (
-        <View style={[styles.lifeBox, styles.lifeBoxDay]} accessibilityLabel="Oyun sayısı sınırsız">
-          <Text style={styles.boxLabel}>OYUN SAYISI</Text>
-          <Text style={styles.dayValue}>∞</Text>
-          <Text style={styles.livesSub}>Sınırsız · aylık puan hedefi var</Text>
+      {noDayLimit && monthGoal ? (
+        <View
+          style={[styles.lifeBox, styles.lifeBoxDay]}
+          accessibilityLabel={`Bu ayın puan hedefi: ${fmtPts(monthGoal.value)} / ${fmtPts(monthGoal.max)}`}
+          testID="quiz-month-goal"
+        >
+          <Text style={styles.boxLabel}>AYLIK HEDEF</Text>
+          <Text style={styles.dayValue}>
+            {fmtPts(monthGoal.value)}
+            <Text style={styles.dayOf}>{` / ${fmtPts(monthGoal.max)}`}</Text>
+          </Text>
+          <View style={styles.dayTrack}>
+            <View
+              style={[
+                styles.dayFill,
+                { width: `${Math.round(Math.min(1, monthGoal.max > 0 ? monthGoal.value / monthGoal.max : 0) * 100)}%` },
+              ]}
+            />
+          </View>
+          {onPoints ? (
+            <Pressable
+              onPress={onPoints}
+              accessibilityRole="button"
+              testID="quiz-points"
+              hitSlop={6}
+              style={({ pressed }) => [styles.pointsLink, pressed && { opacity: 0.7 }]}
+            >
+              <Ionicons name="stats-chart" size={12} color="#1A1200" />
+              <Text style={styles.pointsLinkText}>Puan sistemi</Text>
+            </Pressable>
+          ) : null}
         </View>
-      ) : (
+      ) : noDayLimit ? null : (
       <View
         style={[styles.lifeBox, styles.lifeBoxDay, dayLeft === 0 && styles.lifeBoxDone]}
         accessibilityLabel={`Günlük limit: ${dayLeft} oyun kaldı`}
@@ -510,6 +542,18 @@ const styles = StyleSheet.create({
   dayOf: { color: colors.textMuted, fontSize: 13 },
   dayTrack: { height: 6, borderRadius: 3, backgroundColor: colors.surfaceAlt, overflow: 'hidden' },
   dayFill: { height: 6, borderRadius: 3, backgroundColor: colors.primary },
+  pointsLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    marginTop: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: '#FFC93C',
+  },
+  pointsLinkText: { color: '#1A1200', fontFamily: fonts.extra, fontSize: 11 },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',

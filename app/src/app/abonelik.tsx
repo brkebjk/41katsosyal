@@ -141,7 +141,7 @@ export default function SubscriptionScreen() {
             <ImageSlot name="subscriptionBadge" style={styles.badge} />
             <Text style={styles.title}>41. Kat Abonelik</Text>
             <Text style={styles.lead}>
-              Daha çok etkinlik ve özel mesaj başlatma. 41. Kat Özel etkinliklerine ücretsiz katıl. Oyunlar herkese sınırsız.
+              Daha çok etkinlik ve özel mesaj başlatma. 41. Kat Özel etkinliklerine ücretsiz katıl.
             </Text>
           </View>
 

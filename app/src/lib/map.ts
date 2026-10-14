@@ -362,7 +362,7 @@ export type GameLocation = { ok: true; cell: GameCell } | { ok: false; message: 
  * Konum izni zaten verildiyse yan yana oyun konumunu hemen almaya başlar (oyun şekli sorulurken arka planda bulunur).
  * İzin yoksa boş döner; o zaman konum, uyarı penceresiyle birlikte sonra istenir.
  */
-export async function prefetchGameLocation(): Promise<Promise<GameLocation> | null> {
+export async function prefetchGameLocation(): Promise<GameLocation | null> {
   try {
     if (!(await Location.getForegroundPermissionsAsync()).granted) return null;
   } catch {

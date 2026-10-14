@@ -63,7 +63,7 @@ function ruleItems(rules: PointRules, contestOn: boolean): InfoItem[] {
     {
       icon: 'game-controller',
       lead: `Oyun oyna: uzaktan en çok +${rules.gameTopCap}, yan yana ×${rules.sideMult}.`,
-      text: `Oyun sınırsız. Kalabalık oyun daha çok puan; puan bitirdiğin sıraya göre. Her oyundan ayda uzaktan ${rules.remoteMonthPoints}, yan yana ${rules.sideMonthPoints} puanlık hedef. Mekân koduyla mekânda +%${Math.max(0, rules.venueBonusPct - 100)}. Ayrıntısı aşağıda.`,
+      text: `Kalabalık oyun daha çok puan; puan bitirdiğin sıraya göre. Her oyundan ayda uzaktan ${rules.remoteMonthPoints}, yan yana ${rules.sideMonthPoints} puanlık hedef. Mekân koduyla mekânda +%${Math.max(0, rules.venueBonusPct - 100)}. Ayrıntısı aşağıda.`,
     },
     {
       icon: 'help-circle',
@@ -153,7 +153,7 @@ export function PointRulesPanel({ showMine, contestOn }: Props) {
         title="Puan nasıl kazanılır?"
         icon="help-circle"
         items={ruleItems(rules, contestOn)}
-        note={`Katılım kodu etkinlikten 5 dakika önce açılır. Ekipçe gelenlerin katılım puanı artar (2 kişi x1,25 · 4 kişi x1,5 · 8 kişi x2); etkinlik başladıktan ${rules.eventDurationHours} saat sonra etkinlikle birlikte kapanır. Yanlış kodu çok denersen giriş kilitlenir. Konum yalnızca kodu yazarken bir kez alınır.`}
+        note={`Katılım kodu etkinlikten 5 dakika önce açılır. Ekipçe gelenlerin katılım puanı artar (2 kişi x1,25 · 4 kişi x1,5 · 8 kişi x2); kod girişi etkinlik başladıktan 30 dakika sonra (Konser & Festival’de 15 dakika sonra) kapanır. Yanlış kodu çok denersen giriş kilitlenir. Konum yalnızca kodu yazarken bir kez alınır.`}
       >
         <Text style={styles.moreLink} onPress={() => setWhich('game')} accessibilityRole="button">
           Oyun puanı nasıl hesaplanır? →

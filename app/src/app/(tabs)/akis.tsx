@@ -163,6 +163,7 @@ function FeedScreen() {
     m?: string;
     post?: string;
     dm?: string;
+    crew?: string;
   }>();
   // Özel mesajlar: bildirim, rumuz profili ya da arkadaş listesi bir yazışma gönderir; mesaj kutusu o sohbetle açılır
   const dmKey = params.dm ? `${params.dm},${params.t ?? ''}` : null;
@@ -174,6 +175,17 @@ function FeedScreen() {
     setAppliedDm(dmKey);
     if (takeFresh(dmKey ? `dm:${dmKey}` : null) && params.dm) {
       setDmTarget(params.dm);
+      setDmOpen(true);
+    }
+  }
+  // Ekip sohbeti: etiket bildirimi ya da Ekibim ekranı gönderir; mesaj kutusu ekip sohbetiyle açılır
+  const crewKey = params.crew ? `crew,${params.t ?? ''}` : null;
+  const [appliedCrew, setAppliedCrew] = useState<string | null>(null);
+  const [crewTarget, setCrewTarget] = useState<string | null>(null);
+  if (crewKey !== appliedCrew) {
+    setAppliedCrew(crewKey);
+    if (takeFresh(crewKey ? `crew:${crewKey}` : null) && crewKey) {
+      setCrewTarget(crewKey);
       setDmOpen(true);
     }
   }
@@ -617,10 +629,12 @@ function FeedScreen() {
             <DmInbox
               visible={dmOpen}
               openId={dmTarget}
+              openCrew={crewTarget}
               subscribed={subscribed}
               onClose={() => {
                 setDmOpen(false);
                 setDmTarget(null);
+                setCrewTarget(null);
                 void dmUnreadCount().then(setDmUnread);
               }}
               onUnread={setDmUnread}

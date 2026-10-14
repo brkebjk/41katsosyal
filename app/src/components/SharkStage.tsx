@@ -593,49 +593,36 @@ export type Seat = {
  * kalır. throw = kavisli atış ve dönme (şamandıra, işaret), swim = dalgalanarak yüzme (köpekbalığı, kaplan, mürekkep),
  * shot = dümdüz hızlı atış (zıpkın), smash = gelip vurma (çekiç), float = süzülme (hemşire, dürbün).
  */
-export type MarkKind = 'throw' | 'swim' | 'shot' | 'smash' | 'float';
-export type SeatMark = { from: string | null; to: string; icon: string; kind: MarkKind };
+export type MarkKind = 'throw' | 'swim' | 'shot' | 'smash' | 'float' | 'bounce';
+/** bounce: hedefe yüzer, orada titrer ve atanın kutucuğuna geri döner (izin verilmeyen hedef, ör. takım arkadaşı) */
+export type SeatMark = { from: string | null; to: string; icon: string; kind: MarkKind; nonce?: number };
 
-const GAP = 4;
 /**
- * Avatarın dışındaki SABİT yükseklik: üst boşluk 4 + çerçeve 8 + ad 4+16 + alt satır (tabela) 28. Olay balonu üst
- * satırın üstüne biner (yer kaplamaz). Kutucuk yüksekliği hep avatar + EXTRA'dır; dokununca, oy verince ya da yazı
- * değişince hiçbir şey kaymaz.
+ * Wolvesville düzeni: her satırda 4 kutucuk, aralarında boşluk yok; ızgara üstteki tabeladan alttaki düğmelere kadar
+ * bütün alanı kaplar. Kutucuk dikdörtgendir; avatar görseli kutuyu doldurur. Numara, rol simgesi, oy tabelası ve
+ * durum yazısı kutunun İÇİNDE durur (hiçbir şey dışarı taşmaz, üst üste binmez). Yazı ve simge boyutları kutunun
+ * kısa kenarına göre ölçeklenir.
  */
-/** Kare kutucuğun üstünde numara rozetine yer (rozet kutunun üst kenarına biner) */
-const TOP_PAD = 10;
-/** Kutucuğun altındaki satır: oy tabelası ya da durum yazısı */
-const SLOT_H = 24;
-const EXTRA = TOP_PAD + SLOT_H;
-const MAX_AVATAR = 160;
-const MIN_AVATAR = 30;
-
-/** Her satırda hep 4 kare kutucuk; kaydırmadan sığacak en büyük boyut */
 const COLS = 4;
-function fit(n: number, w: number, h: number): { cols: number; size: number } {
+/** Kutucuk en çok genişliğinin bu katı kadar uzun olur (çok az satırlı ızgarada aşırı uzamasın) */
+const MAX_RATIO = 1.6;
+function fit(n: number, w: number, h: number): { cols: number; cw: number; ch: number } {
   const rows = Math.max(1, Math.ceil(n / COLS));
-  const tileW = (w - GAP * (COLS - 1)) / COLS;
-  const byW = tileW - 2;
-  const byH = (h - GAP * (rows - 1)) / rows - EXTRA;
-  return { cols: COLS, size: Math.max(MIN_AVATAR, Math.floor(Math.min(byW, byH, MAX_AVATAR))) };
+  const cw = Math.floor(w / COLS);
+  const ch = Math.floor(Math.min(h / rows, cw * MAX_RATIO));
+  return { cols: COLS, cw, ch: Math.max(40, ch) };
 }
 
 /** Kutucuğu tam dolduran avatar görseli (ileride profil fotoğrafı) */
-function SquareAvatar({ index, size }: { index: number; size: number }) {
+function TileAvatar({ index, w, h }: { index: number; w: number; h: number }) {
   const safe = Math.min(Math.max(Math.round(index) || 1, 1), AVATAR_COUNT);
   const src = avatarImages[safe - 1];
   return (
-    <View style={{ width: size, height: size, backgroundColor: '#1C2541' }}>
-      {src ? <Image source={src} contentFit="cover" style={{ width: size, height: size }} /> : null}
+    <View style={{ width: w, height: h, backgroundColor: '#1C2541' }}>
+      {src ? <Image source={src} contentFit="cover" contentPosition="top" style={{ width: w, height: h }} /> : null}
     </View>
   );
 }
-
-/**
- * Avatar boyutu oyun boyunca sabit kalsın: aynı oda ve aynı oyuncu sayısı için şimdiye kadarki en küçük boyut
- * kullanılır (aşama değişip alttaki alan büyüyüp küçülse de avatarlar yer ve boyut değiştirmez).
- */
-const stickySize = new Map<string, number>();
 
 export function SeatGrid({
   seats,
@@ -646,11 +633,10 @@ export function SeatGrid({
   onLongPress,
   onAlert,
   mark,
-  stickyKey,
   slots,
   onEmptyPress,
 }: {
-  /** Boyutu sabitlemek için (oda kimliği) */
+  /** Eski çağrılar için (artık kullanılmıyor) */
   stickyKey?: string;
   /**
    * Bu kadar numaralı kutucuk çizilir, oyuncular koltuk numaralarındaki kutucukta durur (bekleme odası ve oyun);
@@ -680,27 +666,16 @@ export function SeatGrid({
   const items: (Seat | null)[] = slots
     ? Array.from({ length: Math.max(slots, ...seats.map((x) => x.p.seat)) }, (_, i) => seats.find((x) => x.p.seat === i + 1) ?? null)
     : seats;
-  const fitted = box ? fit(items.length, box.w, box.h) : { cols: COLS, size: 0 };
-  const cols = fitted.cols;
-  let size = fitted.size;
-  if (stickyKey && size > 0) {
-    const k = `${stickyKey}:${items.length}`;
-    const prev = stickySize.get(k);
-    if (prev !== undefined && prev < size) size = prev;
-    else stickySize.set(k, size);
-  }
-  const tileW = box ? Math.floor((box.w - GAP * (cols - 1)) / cols) : 0;
-  // Tabeladaki okun yönü: oy verenin avatarından oy verilenin avatarına (ızgaradaki konumlarından hesaplanır;
-  // satırlar ortalandığı için eksik son satırın kayması da hesaba katılır)
-  const tileH = size + EXTRA;
+  const { cols, cw, ch } = box ? fit(items.length, box.w, box.h) : { cols: COLS, cw: 0, ch: 0 };
+  // Tabeladaki okun yönü: oy verenin kutucuğundan oy verilenin kutucuğuna (eksik son satır sağa yaslanır)
   const center = new Map<string, { x: number; y: number }>();
   items.forEach((s, i) => {
     if (!s) return;
     const row = Math.floor(i / cols);
     const inRow = Math.min(cols, items.length - row * cols);
-    const offset = box ? box.w - (inRow * tileW + (inRow - 1) * GAP) : 0;
+    const offset = box ? box.w - inRow * cw : 0;
     const col = i - row * cols;
-    center.set(s.p.id, { x: offset + col * (tileW + GAP) + tileW / 2, y: row * (tileH + GAP) });
+    center.set(s.p.id, { x: offset + col * cw + cw / 2, y: row * ch });
   });
   const angleOf = (from: string, to: string | null | undefined): number | null => {
     if (!to) return null;
@@ -709,49 +684,49 @@ export function SeatGrid({
     if (!a || !b) return null;
     return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
   };
-  // Kaydırma yok: ızgara ayrılan alana sığdırılır ve ortalanır
+  const markSize = Math.max(24, Math.min(52, Math.round(Math.min(cw, ch) * 0.5)));
   return (
     <View style={styles.gridBox} onLayout={onLayout}>
-      {box && size > 0 ? (
+      {box && cw > 0 ? (
         <View style={styles.grid}>
           {items.map((s, i) =>
             s === null ? (
               <EmptySlot
                 key={`empty-${i + 1}`}
                 seatNo={i + 1}
-                width={tileW}
-                size={size}
+                width={cw}
+                height={ch}
                 light={!!light}
                 onPress={onEmptyPress}
               />
             ) : (
-            <SeatTile
-              key={s.p.id}
-              seat={s}
-              width={tileW}
-              size={size}
-              selected={selected === s.p.id}
-              accent={accent}
-              light={!!light}
-              arrow={angleOf(s.p.id, s.sign?.target)}
-              onPress={onPress}
-              onLongPress={onLongPress}
-              onAlert={onAlert}
-            />
+              <SeatTile
+                key={s.p.id}
+                seat={s}
+                width={cw}
+                height={ch}
+                selected={selected === s.p.id}
+                accent={accent}
+                light={!!light}
+                arrow={angleOf(s.p.id, s.sign?.target)}
+                onPress={onPress}
+                onLongPress={onLongPress}
+                onAlert={onAlert}
+              />
             ),
           )}
           {mark && center.has(mark.to) ? (
             <FlyingMark
-              key={`${mark.to}|${mark.icon}|${mark.kind}`}
+              key={`${mark.to}|${mark.icon}|${mark.kind}|${mark.nonce ?? ''}`}
               mark={mark}
               // Kutucuğun ortasının biraz üstü
-              to={{ x: center.get(mark.to)!.x, y: center.get(mark.to)!.y + TOP_PAD + size * 0.42 }}
+              to={{ x: center.get(mark.to)!.x, y: center.get(mark.to)!.y + ch * 0.42 }}
               from={
                 mark.from && center.has(mark.from) && mark.from !== mark.to
-                  ? { x: center.get(mark.from)!.x, y: center.get(mark.from)!.y + TOP_PAD + size / 2 }
+                  ? { x: center.get(mark.from)!.x, y: center.get(mark.from)!.y + ch * 0.42 }
                   : null
               }
-              size={Math.max(24, Math.min(46, Math.round(size * 0.5)))}
+              size={markSize}
             />
           ) : null}
         </View>
@@ -764,13 +739,13 @@ export function SeatGrid({
 function EmptySlot({
   seatNo,
   width,
-  size,
+  height,
   light,
   onPress,
 }: {
   seatNo: number;
   width: number;
-  size: number;
+  height: number;
   light: boolean;
   onPress?: (seatNo: number) => void;
 }) {
@@ -780,12 +755,16 @@ function EmptySlot({
       disabled={!onPress}
       accessibilityRole="button"
       accessibilityLabel={`${seatNo}. kutucuk boş${onPress ? ', buraya geç' : ''}`}
-      style={({ pressed }) => [styles.tile, { width, height: size + EXTRA }, pressed && styles.pressed]}
+      style={({ pressed }) => [{ width, height }, pressed && styles.pressed]}
       testID={`slot-${seatNo}`}
     >
-      <View style={[styles.emptyBox, { width: size, height: size, marginTop: TOP_PAD }, light && styles.emptyBoxLight]}>
+      <View style={[styles.emptyBox, light && styles.emptyBoxLight]}>
         {onPress ? (
-          <Ionicons name="add" size={Math.round(size * 0.3)} color={light ? 'rgba(11,19,43,0.35)' : 'rgba(255,255,255,0.45)'} />
+          <Ionicons
+            name="add"
+            size={Math.round(Math.min(width, height) * 0.3)}
+            color={light ? 'rgba(11,19,43,0.35)' : 'rgba(255,255,255,0.45)'}
+          />
         ) : null}
       </View>
     </Pressable>
@@ -795,7 +774,7 @@ function EmptySlot({
 function SeatTile({
   seat,
   width,
-  size,
+  height,
   selected,
   accent,
   light,
@@ -806,7 +785,7 @@ function SeatTile({
 }: {
   seat: Seat;
   width: number;
-  size: number;
+  height: number;
   selected: boolean;
   accent: string;
   light: boolean;
@@ -819,7 +798,7 @@ function SeatTile({
   const p = seat.p;
   const dead = !p.is_alive;
   const pulse = usePingPong(700);
-  // Olay: avatar bir kez zıplayarak büyür ve olay sürdükçe biraz büyük kalır (yerleşimi değiştirmez, kaydırmaz)
+  // Olay: kutucuk bir kez zıplar ve olay sürdükçe biraz büyük kalır (komşularının üstüne biner, yerleşimi değiştirmez)
   const [pop] = useState(() => new Animated.Value(1));
   const evKey = seat.event ? `${seat.event.icon}|${seat.event.text}` : null;
   useEffect(() => {
@@ -830,25 +809,25 @@ function SeatTile({
     }
     pop.setValue(1);
     Animated.sequence([
-      Animated.timing(pop, { toValue: 1.3, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: NATIVE }),
-      Animated.timing(pop, { toValue: 1.12, duration: 320, easing: Easing.inOut(Easing.cubic), useNativeDriver: NATIVE }),
+      Animated.timing(pop, { toValue: 1.18, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: NATIVE }),
+      Animated.timing(pop, { toValue: 1.06, duration: 320, easing: Easing.inOut(Easing.cubic), useNativeDriver: NATIVE }),
     ]).start();
   }, [evKey, pop]);
-  // Konuşan kişi: avatar öne çıkar (büyür), ses bitince yerine döner
+  // Konuşan kişi: kutucuk öne çıkar (büyür), ses bitince yerine döner
   const [talk] = useState(() => new Animated.Value(1));
   const speaking = !!seat.speaking;
   useEffect(() => {
-    Animated.spring(talk, { toValue: speaking ? 1.38 : 1, friction: 5, useNativeDriver: NATIVE }).start();
+    Animated.spring(talk, { toValue: speaking ? 1.15 : 1, friction: 5, useNativeDriver: NATIVE }).start();
   }, [speaking, talk]);
   // Çerçeve rengi: seçili (vurgu), konuşan (yeşil), olay rengi; yoksa takım ilişkisi (takım arkadaşı yeşil, rakip
-  // kırmızı, sen mavi), bilinmeyen soluk beyaz
+  // kırmızı, sen mavi), bilinmeyen ince soluk çizgi
   const ring = selected
     ? accent
     : speaking
       ? '#34D399'
       : seat.event
         ? seat.event.color
-        : (seat.frame ?? (p.is_me ? '#48CAE4' : light ? 'rgba(11,19,43,0.3)' : 'rgba(255,255,255,0.3)'));
+        : (seat.frame ?? (p.is_me ? '#48CAE4' : light ? 'rgba(11,19,43,0.35)' : 'rgba(0,0,0,0.55)'));
   const thick = selected || speaking || !!seat.event || !!seat.frame || p.is_me;
   const label = [
     `${p.seat} numara`,
@@ -863,14 +842,16 @@ function SeatTile({
   ]
     .filter(Boolean)
     .join(', ');
-  const small = size < 56;
-  const stripH = Math.max(15, Math.round(size * 0.19));
+  // Ölçüler kutunun kısa kenarına göre
+  const k = Math.min(width, height);
+  const stripH = Math.max(14, Math.round(height * 0.15));
+  const noSize = Math.max(18, Math.round(k * 0.24));
+  const roleSize = Math.max(18, Math.round(k * 0.3));
+  const badgeSize = Math.max(18, Math.round(k * 0.24));
+  const signH = Math.max(20, Math.round(k * 0.27));
+  const signFont = Math.max(12, Math.min(18, Math.round(k * 0.18)));
   const lineText = dead ? (seat.deadLabel ?? 'Elendi') : (seat.label?.text ?? null);
-  const lineColor = dead
-    ? light
-      ? '#9B1C2E'
-      : '#FF8A98'
-    : (seat.label?.color ?? (light ? '#24324F' : 'rgba(255,255,255,0.75)'));
+  const lineColor = dead ? '#FF8A98' : (seat.label?.color ?? '#FFFFFF');
   return (
     <Pressable
       onPress={onPress ? () => onPress(seat) : undefined}
@@ -881,98 +862,126 @@ function SeatTile({
       accessibilityState={seat.selectable ? { selected, disabled: seat.dim } : undefined}
       accessibilityLabel={label}
       style={[
-        styles.tile,
-        { width, height: size + EXTRA },
-        (seat.event || speaking) && styles.tileTop,
+        { width, height },
+        (seat.event || speaking || selected) && styles.tileTop,
         speaking && styles.tileTalk,
         seat.dim && styles.dim,
       ]}
     >
-      <Animated.View
-        style={{ width: size, height: size, marginTop: TOP_PAD, transform: [{ scale: Animated.multiply(pop, talk) }] }}
-      >
-        {selected ? (
-          <Animated.View
-            style={[
-              styles.selGlow,
-              {
-                width: size + 10,
-                height: size + 10,
-                borderRadius: 18,
-                borderColor: accent,
-                opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }),
-                transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1.04] }) }],
-              },
-            ]}
-          />
-        ) : null}
-        {/* Kare kutucuk: avatar görseli kutuyu tam doldurur, altta rumuz şeridi */}
-        <View
-          style={[
-            styles.squareBox,
-            { borderColor: ring, borderWidth: thick ? 3 : 1.5 },
-            seat.ally && styles.allyGlow,
-          ]}
-        >
+      <Animated.View style={{ width, height, transform: [{ scale: Animated.multiply(pop, talk) }] }}>
+        <View style={[styles.cellBox, { borderColor: ring, borderWidth: thick ? 3 : 1 }, seat.ally && styles.allyGlow]}>
           <View style={dead ? styles.deadAvatar : undefined}>
-            <SquareAvatar index={p.avatar ?? 1} size={size} />
+            <TileAvatar index={p.avatar ?? 1} w={width} h={height} />
           </View>
           {dead ? (
             <View style={styles.deadMark}>
-              <Text style={{ fontSize: Math.round(size * 0.36) }}>{seat.deadIcon ?? (p.left ? '🚪' : '🦈')}</Text>
+              <Text style={{ fontSize: Math.round(k * 0.36) }}>{seat.deadIcon ?? (p.left ? '🚪' : '🦈')}</Text>
             </View>
           ) : null}
           <View style={[styles.nameStrip, { height: stripH }]}>
             <Text
-              style={[styles.stripText, { fontSize: Math.max(9, Math.min(13, Math.round(size * 0.115))) }, dead && styles.nameDead]}
+              style={[styles.stripText, { fontSize: Math.max(9, Math.min(14, Math.round(k * 0.12))) }, dead && styles.nameDead]}
               numberOfLines={1}
             >
               {p.is_me ? `${shortName(p.name)} (sen)` : shortName(p.name)}
             </Text>
           </View>
         </View>
-        {/* Koltuk numarası: kutucuğun en üst ortasında */}
-        <View style={[styles.seatNo, small && styles.seatNoSmall]}>
-          <Text style={[styles.seatNoText, small && styles.seatNoTextSmall]}>{p.seat}</Text>
+        {selected ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.selGlow,
+              {
+                borderColor: accent,
+                opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }),
+              },
+            ]}
+          />
+        ) : null}
+        {/* Koltuk numarası: kutucuğun üst ortasında */}
+        <View
+          style={[
+            styles.seatNo,
+            { minWidth: noSize, height: noSize, borderRadius: noSize / 2, marginLeft: -noSize / 2 },
+          ]}
+        >
+          <Text style={[styles.seatNoText, { fontSize: Math.round(noSize * 0.56), lineHeight: Math.round(noSize * 0.7) }]}>
+            {p.seat}
+          </Text>
         </View>
-        {/* Köpekbalıklarının (vampirlerin) toplam av oyu */}
+        {/* Köpekbalıklarının (vampirlerin) toplam av oyu: sol üst */}
         {seat.huntIn ? (
-          <View style={[styles.votesIn, styles.huntIn]}>
-            <Text style={styles.huntInIcon}>🦈</Text>
-            <Text style={styles.votesInText}>{seat.huntIn}</Text>
+          <View style={[styles.votesIn, styles.huntIn, { height: badgeSize, minWidth: badgeSize, borderRadius: badgeSize / 2 }]}>
+            <Text style={[styles.huntInIcon, { fontSize: Math.round(badgeSize * 0.42) }]}>🦈</Text>
+            <Text style={[styles.votesInText, { fontSize: Math.round(badgeSize * 0.5) }]}>{seat.huntIn}</Text>
           </View>
         ) : null}
+        {/* Aldığı oy: sağ üst */}
         {seat.votesIn ? (
-          <View style={styles.votesIn}>
-            <Text style={styles.votesInText}>{seat.votesIn}</Text>
-            <Text style={styles.votesInSub}>oy</Text>
+          <View style={[styles.votesIn, styles.votesRight, { height: badgeSize, minWidth: badgeSize, borderRadius: badgeSize / 2 }]}>
+            <Text style={[styles.votesInText, { fontSize: Math.round(badgeSize * 0.5) }]}>{seat.votesIn}</Text>
           </View>
         ) : null}
         {seat.badge && !dead ? (
-          <View style={[styles.badge, { bottom: stripH + 2 }]}>
-            <Text style={styles.badgeText}>{seat.badge}</Text>
+          <View style={[styles.badge, { bottom: stripH + 2, width: badgeSize, height: badgeSize, borderRadius: badgeSize / 2 }]}>
+            <Text style={[styles.badgeText, { fontSize: Math.round(badgeSize * 0.55) }]}>{seat.badge}</Text>
           </View>
         ) : null}
-        {/* Rol ikonu: kutucuğun orta alt kısmında, rumuz şeridinin hemen üstünde */}
+        {/* Rol simgesi: kutucuğun orta altında, rumuz şeridinin hemen üstünde */}
         {seat.roleEmoji ? (
           <View style={[styles.roleBadge, { bottom: stripH + 2 }]} pointerEvents="none">
             {seat.roleEmoji.role ? (
-              <RoleIcon role={seat.roleEmoji.role} size={Math.max(18, Math.round(size * 0.27))} framed />
+              <RoleIcon role={seat.roleEmoji.role} size={roleSize} framed />
             ) : (
-              <Text style={styles.badgeText}>{seat.roleEmoji.emoji}</Text>
+              <Text style={{ fontSize: Math.round(roleSize * 0.7) }}>{seat.roleEmoji.emoji}</Text>
             )}
           </View>
         ) : null}
         {p.marshal && !seat.roleEmoji ? (
-          <View style={[styles.badge, styles.badgeLeft, { bottom: stripH + 2 }]}>
-            <Text style={styles.badgeText}>🎖️</Text>
+          <View style={[styles.badge, styles.badgeLeft, { bottom: stripH + 2, width: badgeSize, height: badgeSize, borderRadius: badgeSize / 2 }]}>
+            <Text style={[styles.badgeText, { fontSize: Math.round(badgeSize * 0.55) }]}>🎖️</Text>
           </View>
         ) : seat.marked ? (
-          <View style={[styles.badge, styles.badgeLeft, { bottom: stripH + 2 }]}>
-            <Text style={styles.badgeText}>📍</Text>
+          <View style={[styles.badge, styles.badgeLeft, { bottom: stripH + 2, width: badgeSize, height: badgeSize, borderRadius: badgeSize / 2 }]}>
+            <Text style={[styles.badgeText, { fontSize: Math.round(badgeSize * 0.55) }]}>📍</Text>
           </View>
         ) : null}
-        {seat.thinking && !dead ? <Thinking size={size} /> : null}
+        {seat.thinking && !dead ? <Thinking size={k} /> : null}
+        {/* Oy tabelası (ok oy verilen kişiye döner) ya da durum yazısı: kutunun ortasında */}
+        <View style={styles.midSlot} pointerEvents="none">
+          {seat.sign ? (
+            <View
+              style={[
+                styles.sign,
+                { height: signH, paddingHorizontal: Math.round(signH * 0.25) },
+                seat.sign.kind === 'pass' && styles.signPass,
+                seat.sign.kind === 'hunt' && styles.signHunt,
+                seat.sign.kind === 'double' && styles.signDouble,
+              ]}
+            >
+              {arrow !== null ? (
+                <Ionicons
+                  name="arrow-forward"
+                  size={signFont}
+                  color={seat.sign.kind === 'hunt' ? '#FF8A98' : '#3B220B'}
+                  style={{ transform: [{ rotate: `${Math.round(arrow)}deg` }] }}
+                />
+              ) : null}
+              <RichLine
+                text={seat.sign.text}
+                chip={Math.round(signFont * 1.05)}
+                style={[styles.signText, { fontSize: signFont }, seat.sign.kind === 'hunt' && styles.signTextHunt]}
+              />
+            </View>
+          ) : lineText ? (
+            <View style={styles.linePill}>
+              <Text style={[styles.label, { color: lineColor, fontSize: Math.max(9, Math.min(12, Math.round(k * 0.11))) }]} numberOfLines={1}>
+                {lineText}
+              </Text>
+            </View>
+          ) : null}
+        </View>
         {seat.alert && onAlert ? (
           <Pressable
             onPress={() => onAlert(seat)}
@@ -992,38 +1001,6 @@ function SeatTile({
           </View>
         ) : null}
       </Animated.View>
-
-      {/* Kutucuğun altı: oy tabelası varsa tabela (ok oy verilen kişiye döner), yoksa durum yazısı */}
-      <View style={styles.signSlot}>
-        {seat.sign ? (
-          <View
-            style={[
-              styles.sign,
-              seat.sign.kind === 'pass' && styles.signPass,
-              seat.sign.kind === 'hunt' && styles.signHunt,
-              seat.sign.kind === 'double' && styles.signDouble,
-            ]}
-          >
-            {arrow !== null ? (
-              <Ionicons
-                name="arrow-forward"
-                size={17}
-                color={seat.sign.kind === 'hunt' ? '#FF8A98' : '#3B220B'}
-                style={{ transform: [{ rotate: `${Math.round(arrow)}deg` }] }}
-              />
-            ) : null}
-            <RichLine
-              text={seat.sign.text}
-              chip={18}
-              style={[styles.signText, seat.sign.kind === 'hunt' && styles.signTextHunt]}
-            />
-          </View>
-        ) : lineText ? (
-          <Text style={[styles.label, { color: lineColor }, !light && styles.nameDark]} numberOfLines={1}>
-            {lineText}
-          </Text>
-        ) : null}
-      </View>
     </Pressable>
   );
 }
@@ -1037,12 +1014,23 @@ function FlyingMark({ mark, from, to, size }: {
 }) {
   const [t] = useState(() => new Animated.Value(0));
   const [hit] = useState(() => new Animated.Value(0));
+  const [back] = useState(() => new Animated.Value(0));
   const bob = usePingPong(1100);
   const start = from ?? { x: to.x, y: to.y - 90 };
   const kind = mark.kind;
   useEffect(() => {
     t.setValue(0);
     hit.setValue(0);
+    back.setValue(0);
+    if (kind === 'bounce') {
+      // Git, hedefte titre, geri dön ve kaybol
+      Animated.sequence([
+        Animated.timing(t, { toValue: 1, duration: 520, easing: Easing.inOut(Easing.cubic), useNativeDriver: NATIVE }),
+        Animated.timing(hit, { toValue: 1, duration: 420, easing: Easing.linear, useNativeDriver: NATIVE }),
+        Animated.timing(back, { toValue: 1, duration: 520, easing: Easing.inOut(Easing.cubic), useNativeDriver: NATIVE }),
+      ]).start();
+      return;
+    }
     const dur = kind === 'shot' ? 260 : kind === 'swim' ? 900 : kind === 'float' ? 800 : 620;
     Animated.sequence([
       Animated.timing(t, {
@@ -1054,8 +1042,31 @@ function FlyingMark({ mark, from, to, size }: {
       // Varışta vurma / sıçrama
       Animated.timing(hit, { toValue: 1, duration: kind === 'smash' ? 360 : 260, useNativeDriver: NATIVE }),
     ]).start();
-  }, [t, hit, kind]);
+  }, [t, hit, back, kind]);
   const half = size / 2;
+  if (kind === 'bounce') {
+    // İleri: t 0→1; titreme: hit; geri: back 0→1 (başlangıç noktasına döner ve söner)
+    const bx = Animated.add(
+      t.interpolate({ inputRange: [0, 1], outputRange: [start.x - half, to.x - half] }),
+      Animated.add(
+        hit.interpolate({ inputRange: [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1], outputRange: [0, -7, 7, -7, 7, -5, 5, 0] }),
+        back.interpolate({ inputRange: [0, 1], outputRange: [0, start.x - to.x] }),
+      ),
+    );
+    const by = Animated.add(
+      t.interpolate({ inputRange: [0, 1], outputRange: [start.y - half, to.y - half] }),
+      back.interpolate({ inputRange: [0, 1], outputRange: [0, start.y - to.y] }),
+    );
+    const op = back.interpolate({ inputRange: [0, 0.8, 1], outputRange: [1, 1, 0] });
+    return (
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.mark, { width: size, height: size, opacity: op, transform: [{ translateX: bx }, { translateY: by }] }]}
+      >
+        <Text style={[styles.markText, { fontSize: Math.round(size * 0.8), lineHeight: size }]}>{mark.icon}</Text>
+      </Animated.View>
+    );
+  }
   const tx = t.interpolate({ inputRange: [0, 1], outputRange: [start.x - half, to.x - half] });
   // Atışta kavis: yolun ortasında yukarı kalkar
   const peak = Math.min(start.y, to.y) - (kind === 'throw' ? 70 : kind === 'smash' ? 40 : 0);
@@ -1213,19 +1224,40 @@ export function SeatChip({ n, size = 20 }: { n: number; size?: number }) {
 
 /**
  * Bu oyundaki roller (Wolvesville'deki gibi): her rol, sayısı ve rolü açığa çıkmış (ya da senin bildiğin) oyuncuların
- * numarası. Ölenin numarasının üstü çizilir. Sıra: köpekbalıkları, insanlar, tarafsızlar.
+ * numarası ve rumuzu. Takım arkadaşının rumuzu yeşil, ölen düşmanınki kırmızı; ölenin numarasının üstü çizilir.
+ * Sıra: köpekbalıkları, insanlar, tarafsızlar.
  */
 export function RoleRoster({
   roles,
   players,
   order: given,
+  myRole,
 }: {
   roles: Partial<Record<string, number>>;
-  players: { id: string; seat: number; role: string | null; is_alive: boolean; left: boolean }[];
+  players: {
+    id: string;
+    seat: number;
+    name?: string;
+    role: string | null;
+    is_alive: boolean;
+    left: boolean;
+    ally?: boolean;
+    is_me?: boolean;
+  }[];
   /** Rollerin sırası (varsayılan: Köpekbalığı Kafesi rolleri) */
   order?: string[];
+  /** Senin rolün (takım arkadaşı / düşman renkleri için) */
+  myRole?: string | null;
 }) {
   const sideRank = { evil: 0, good: 1, neutral: 2 } as const;
+  const mySide = roleInfo(myRole)?.side ?? null;
+  const toneOf = (p: (typeof players)[number], side: 'evil' | 'good' | 'neutral'): string => {
+    const mate = !!p.is_me || !!p.ally || (mySide !== null && mySide !== 'neutral' && side === mySide);
+    if (mate) return '#34D399';
+    const out = !p.is_alive || p.left;
+    if (out && mySide !== null) return '#FF4D4D';
+    return 'rgba(255,255,255,0.85)';
+  };
   const order = (given ?? (Object.keys(SK_ROLES) as string[])).filter((k) => (roles[k] ?? 0) > 0 && roleInfo(k));
   order.sort((a, b) => sideRank[roleInfo(a)!.side] - sideRank[roleInfo(b)!.side]);
   return (
@@ -1241,9 +1273,16 @@ export function RoleRoster({
             <Text style={styles.rosterCount}>{`×${roles[k]}`}</Text>
             <View style={styles.rosterSeats}>
               {who.map((p) => (
-                <View key={p.id} style={!p.is_alive || p.left ? styles.rosterDead : undefined}>
-                  <SeatChip n={p.seat} size={22} />
-                  {!p.is_alive || p.left ? <View style={styles.rosterStrike} pointerEvents="none" /> : null}
+                <View key={p.id} style={styles.rosterWho}>
+                  <View style={!p.is_alive || p.left ? styles.rosterDead : undefined}>
+                    <SeatChip n={p.seat} size={22} />
+                    {!p.is_alive || p.left ? <View style={styles.rosterStrike} pointerEvents="none" /> : null}
+                  </View>
+                  {p.name ? (
+                    <Text style={[styles.rosterWhoName, { color: toneOf(p, roleInfo(k)!.side) }]} numberOfLines={1}>
+                      {p.is_me ? 'sen' : shortName(p.name)}
+                    </Text>
+                  ) : null}
                 </View>
               ))}
             </View>
@@ -2036,23 +2075,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   wheelHubText: { color: '#FFB703', fontFamily: fonts.black, fontSize: 26 },
-  gridBox: { flex: 1, minHeight: 60, justifyContent: 'center' },
+  gridBox: { flex: 1, minHeight: 60, justifyContent: 'flex-start' },
   // Nizami dizilim: eksik kalan son satır sağa yaslanır (üstte 4, altta 2 ise alttakiler sağdaki iki sütunda)
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', columnGap: GAP, rowGap: GAP },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end' },
   tile: { alignItems: 'center' },
   slotBox: { borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)', backgroundColor: 'rgba(11,19,43,0.22)' },
   slotBoxLight: { borderRadius: 14, borderWidth: 1, borderColor: 'rgba(11,19,43,0.18)', backgroundColor: 'rgba(255,255,255,0.35)' },
   emptyBox: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: 'rgba(255,255,255,0.3)',
-    backgroundColor: 'rgba(11,19,43,0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(11,19,43,0.45)',
   },
   emptyBoxLight: { borderColor: 'rgba(11,19,43,0.25)', backgroundColor: 'rgba(255,255,255,0.35)' },
-  squareBox: { flex: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: '#1C2541' },
+  cellBox: { flex: 1, overflow: 'hidden', backgroundColor: '#1C2541' },
   nameStrip: {
     position: 'absolute',
     left: 0,
@@ -2070,11 +2108,12 @@ const styles = StyleSheet.create({
   markText: { textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 6 },
   dim: { opacity: 0.38 },
   row: { flexDirection: 'row', gap: 8 },
-  signSlot: { height: SLOT_H, justifyContent: 'center', alignItems: 'center', marginTop: 0, maxWidth: '100%' },
+  midSlot: { position: 'absolute', top: '40%', left: 2, right: 2, alignItems: 'center' },
+  linePill: { maxWidth: '100%', paddingHorizontal: 5, borderRadius: 6, backgroundColor: 'rgba(5, 10, 24, 0.72)' },
   alertBtn: {
     position: 'absolute',
-    top: -6,
-    right: -8,
+    top: 2,
+    right: 2,
     width: 24,
     height: 24,
     borderRadius: 12,
@@ -2125,7 +2164,7 @@ const styles = StyleSheet.create({
     textShadowRadius: 6,
   },
   // Olay yazısı (AVLANDI, KAFESTE…) avatarın içinde, ortada
-  eventWrap: { position: 'absolute', top: 0, bottom: 0, left: -12, right: -12, alignItems: 'center', justifyContent: 'center' },
+  eventWrap: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, alignItems: 'center', justifyContent: 'center' },
   event: {
     paddingHorizontal: 7,
     height: 20,
@@ -2255,7 +2294,7 @@ const styles = StyleSheet.create({
   signDouble: { backgroundColor: '#FFB703', borderColor: '#7A4A1E' },
   signText: { color: '#3B220B', fontFamily: fonts.black, fontSize: 17 },
   signTextHunt: { color: '#FF8A98' },
-  selGlow: { position: 'absolute', left: -5, top: -5, borderWidth: 3 },
+  selGlow: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, borderWidth: 4 },
   ring: { flex: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   allyGlow: { shadowColor: '#34D399', shadowOpacity: 0.9, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } },
   deadAvatar: { opacity: 0.32 },
@@ -2270,32 +2309,24 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(10, 15, 30, 0.35)',
   },
   seatNo: {
-    // Avatarın üst ortasında
+    // Kutucuğun üst ortasında (boyutu kutuya göre verilir)
     position: 'absolute',
-    top: -8,
+    top: 3,
     left: '50%',
-    marginLeft: -13,
-    minWidth: 26,
-    height: 26,
-    paddingHorizontal: 4,
-    borderRadius: 13,
+    paddingHorizontal: 3,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#0B132B',
     borderWidth: 2,
     borderColor: '#FFB703',
   },
-  seatNoSmall: { minWidth: 20, height: 20, borderRadius: 10, top: -6, marginLeft: -10 },
-  seatNoText: { color: '#FFB703', fontFamily: fonts.black, fontSize: 14 },
-  seatNoTextSmall: { fontSize: 11 },
+  seatNoText: { color: '#FFB703', fontFamily: fonts.black },
   votesIn: {
+    // Av oyu sol üstte; aldığı oy (votesRight) sağ üstte
     position: 'absolute',
-    top: -4,
-    right: -6,
-    minWidth: 28,
-    paddingHorizontal: 4,
-    height: 28,
-    borderRadius: 14,
+    top: 3,
+    left: 3,
+    paddingHorizontal: 3,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#D9304F',
@@ -2303,25 +2334,23 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
   },
   votesInText: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 13, lineHeight: 14 },
+  votesRight: { left: undefined, right: 3 },
   huntIn: { flexDirection: 'row', gap: 1, paddingHorizontal: 5, backgroundColor: '#7A0A1A', borderColor: '#FF4D4D' },
   huntInIcon: { fontSize: 11, lineHeight: 14 },
   votesInSub: { color: '#FFFFFF', fontFamily: fonts.semi, fontSize: 7.5, lineHeight: 8 },
   badge: {
     position: 'absolute',
-    bottom: -2,
-    right: -4,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    bottom: 2,
+    right: 3,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(11, 19, 43, 0.85)',
   },
-  badgeLeft: { right: undefined, left: -4 },
+  badgeLeft: { right: undefined, left: 3 },
   roleBadge: {
     position: 'absolute',
-    // Avatarın alt ortasında, yuvarlak çerçeve içinde (avatarın kenarına biner); ikon boyutu avatara göre
-    bottom: -4,
+    // Kutucuğun alt ortasında, rumuz şeridinin üstünde, yuvarlak çerçeve içinde; ikon boyutu kutuya göre
+    bottom: 0,
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -2332,7 +2361,7 @@ const styles = StyleSheet.create({
   nameDark: { textShadowColor: 'rgba(0,0,0,0.9)', textShadowRadius: 4 },
   nameLight: {},
   nameDead: { textDecorationLine: 'line-through' },
-  label: { maxWidth: '100%', fontFamily: fonts.extra, fontSize: 11 },
+  label: { maxWidth: '100%', fontFamily: fonts.extra, fontSize: 11, textAlign: 'center' },
   prompt: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -2378,6 +2407,8 @@ const styles = StyleSheet.create({
   rosterCount: { color: 'rgba(255,255,255,0.75)', fontFamily: fonts.black, fontSize: 13 },
   rosterSeats: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 4 },
   rosterDead: { opacity: 0.55 },
+  rosterWho: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: 130 },
+  rosterWhoName: { flexShrink: 1, fontFamily: fonts.extra, fontSize: 12.5 },
   rosterStrike: {
     position: 'absolute',
     left: -2,

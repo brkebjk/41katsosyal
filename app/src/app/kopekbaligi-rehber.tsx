@@ -173,7 +173,7 @@ export default function SharkGuideScreen() {
             sıranın puanı yükselir; 2. ve 3. sıralar da puan alır.
           </P>
           <P>Puan için en az 5 oyuncu gerekir. Yan yana oyun (konum doğrulanır) uzaktan oyunun 7 katı puan verir; mekân koduyla mekânda oynarsan +%25. Etkinlik oyunu Oyun Geceleri’nde 1,5 kat, Sosyal Buluşmalar ve Müzik & Eğlence’de 1,25 kat.</P>
-          <P>Oyun sayısı sınırsız. Her ay bu oyundan uzaktan en çok 250, yan yana en çok 1.750 puan kazanılır (aylık hedef).</P>
+          <P>Her ay bu oyundan uzaktan en çok 250, yan yana en çok 1.750 puan kazanılır (aylık hedef).</P>
           <P>Anlatıcılı oyunda kimse puan almaz.</P>
         </>,
       )}

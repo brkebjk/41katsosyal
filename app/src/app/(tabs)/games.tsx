@@ -9,7 +9,7 @@ import { Text } from '@/components/AppText';
 import { FloatingActions } from '@/components/FloatingActions';
 import { GameActionButton } from '@/components/GameActionButton';
 import { GamePointsModal } from '@/components/GamePointsModal';
-import { HexGauge } from '@/components/HexGauge';
+import { GoalRing } from '@/components/GoalRing';
 import { InfoModal } from '@/components/InfoModal';
 import { Popup } from '@/components/Popup';
 import { Screen } from '@/components/Screen';
@@ -29,7 +29,7 @@ import {
   getLeaderboard,
   getMyGameGoals,
   getPointRules,
-  goalLeft,
+  goalOf,
   type GameGoals,
   type PointRules,
   type RankRow,
@@ -226,16 +226,21 @@ function GamesScreen() {
   const roomsContent = roomRulesInfo(rules);
   const quotaContent = venueInfo(rules);
 
-  // Oyun hakkı yok (∞); “+” mekân kodu girişidir (moderatör kod girmez)
+  // Mekân düğmesi: mekân kodu girişi (kullanılmamış kod varsa yeşil nokta). Moderatör kod girmez, yalnızca açıklama.
   const hasCredit = quota?.sponsor_credit === true;
-  const gauge = quota ? (
-    <HexGauge
-      remaining={null}
-      limit={null}
-      plus={!quota.is_moderator}
-      onPress={() => (quota.is_moderator ? setInfo('quota') : setCodeOpen(true))}
-    />
-  ) : undefined;
+  const gauge = (
+    <Pressable
+      onPress={() => (quota?.is_moderator ? setInfo('quota') : setCodeOpen(true))}
+      accessibilityRole="button"
+      accessibilityLabel={hasCredit ? 'Mekân kodu girildi' : 'Mekân kodu gir'}
+      testID="games-venue"
+      style={({ pressed }) => [styles.venueBtn, pressed && styles.tilePressed]}
+    >
+      <Ionicons name="storefront" size={18} color="#1A1200" />
+      <Text style={styles.venueText}>Mekân</Text>
+      {hasCredit ? <View style={styles.venueDot} /> : null}
+    </Pressable>
+  );
 
   // Mekân (sponsor) hesapları oyun oynamaz; yalnızca açıklama gösterilir
   if (profile?.role === 'sponsor') {
@@ -435,7 +440,7 @@ function GamesScreen() {
                 treasures={key === 'treasure_hunt' ? treasureCount : null}
                 goal={
                   goals && (key === 'shark_cage' || key === 'vampire_villager' || key === 'quiz')
-                    ? goalLeft(goals, key)
+                    ? goalOf(goals, key)
                     : null
                 }
                 onPress={() => onTilePress(key)}
@@ -532,8 +537,8 @@ function GameTile({
   tilt,
 }: {
   gameKey: GameKey;
-  /** Bu ay kalan puan hedefi (puan veren oyunlarda); null = gösterilmez */
-  goal: number | null;
+  /** Bu ayın puan hedefi ve kalanı (puan veren oyunlarda); null = gösterilmez */
+  goal: { left: number; cap: number } | null;
   size: number;
   live: boolean;
   minPlayers: number | null;
@@ -602,15 +607,12 @@ function GameTile({
         <View style={styles.badge}>
           <Text style={styles.badgeText}>Yakında</Text>
         </View>
+      ) : goal ? (
+        <View style={styles.ringCorner} pointerEvents="none">
+          <GoalRing left={goal.left} cap={goal.cap} size={Math.max(40, Math.min(54, Math.round(size * 0.27)))} />
+        </View>
       ) : null}
       <View style={styles.tileText}>
-        {goal !== null && live ? (
-          <View style={styles.goalBox} accessibilityLabel={`Bu ay kalan hedef ${Math.round(goal)} puan`}>
-            <Text style={styles.goalText} numberOfLines={1}>
-              {goal > 0 ? `Kalan Hedef : ${fmtPts(goal)} Puan` : '✓ Aylık hedef tamam'}
-            </Text>
-          </View>
-        ) : null}
         <Text style={styles.tileTitle} numberOfLines={1}>
           {info.title}
         </Text>
@@ -850,15 +852,28 @@ const styles = StyleSheet.create({
   },
   badgeText: { color: colors.primary, fontFamily: fonts.semi, fontSize: 11 },
   tileText: { padding: spacing.md, gap: 2 },
-  goalBox: {
-    alignSelf: 'flex-start',
-    marginBottom: 2,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 6,
-    backgroundColor: '#FFFFFF',
+  ringCorner: { position: 'absolute', top: spacing.sm, right: spacing.sm },
+  venueBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    height: 34,
+    paddingHorizontal: 12,
+    borderRadius: 17,
+    backgroundColor: '#FFC93C',
   },
-  goalText: { color: '#0E9F6E', fontFamily: fonts.extra, fontSize: 10.5 },
+  venueText: { color: '#1A1200', fontFamily: fonts.extra, fontSize: 13 },
+  venueDot: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#34D399',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
   tileTitle: {
     color: '#FFFFFF',
     fontFamily: fonts.extra,

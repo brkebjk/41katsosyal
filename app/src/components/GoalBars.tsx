@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/AppText';
@@ -8,6 +9,8 @@ export type GoalBar = {
   key: string;
   /** Satırın başındaki kısa ad (ör. "🏖️ Yan yana ×7") */
   label: string;
+  /** Adın önündeki simge (ör. yan yana / uzaktan simgesi) */
+  icon?: ReactNode;
   earned: number;
   cap: number;
   color: string;
@@ -31,6 +34,7 @@ export function GoalBars({ bars, title = '🎯 Bu ayın puan hedefi', note }: { 
             accessibilityLabel={`${b.label}: ${fmtPts(b.earned)} / ${fmtPts(b.cap)} puan${done ? ', hedef tamam' : ''}`}
           >
             <View style={styles.head}>
+              {b.icon ?? null}
               <Text style={styles.label} numberOfLines={1}>
                 {b.label}
               </Text>
@@ -61,7 +65,7 @@ const styles = StyleSheet.create({
   },
   title: { color: '#FFC93C', fontFamily: fonts.extra, fontSize: 12.5 },
   row: { gap: 3 },
-  head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
   label: { flex: 1, color: '#FFFFFF', fontFamily: fonts.semi, fontSize: 12 },
   count: { color: 'rgba(255,255,255,0.85)', fontFamily: fonts.extra, fontSize: 12 },
   track: { height: 7, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.15)', overflow: 'hidden' },

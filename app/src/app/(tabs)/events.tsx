@@ -99,7 +99,7 @@ function StartCountdown({ starts }: { starts: Date }) {
 }
 
 const CONCERT_RULES =
-  'Konser & Festival kuralları: etkinlik moderatör onayından sonra yayınlanır. Katılım kodu otomatik oluşur ve katıl diyenler kodu kendisi görür. Kod, başlamadan 5 dakika önceden başlangıçtan 45 dakika sonrasına kadar girilir (etkinlik alanında, konumla). Etkinlik başlangıçtan 2 saat sonra listeden kalkar.';
+  'Konser & Festival kuralları: etkinlik moderatör onayından sonra yayınlanır. Katılım kodu otomatik oluşur ve katıl diyenler kodu kendisi görür. Kod, başlamadan 5 dakika önceden başlangıçtan 15 dakika sonrasına kadar girilir (etkinlik alanında, konumla). Etkinlik başlangıçtan 2 saat sonra listeden kalkar.';
 
 /** Bir kez işlenen “Etkinliği gör” yönlendirmeleri (sekme yeniden kurulunca tekrar uygulanmaz) */
 const consumedEventKeys = new Set<string>();

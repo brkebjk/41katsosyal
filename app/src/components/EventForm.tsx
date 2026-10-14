@@ -624,7 +624,7 @@ export function EventForm({ visible, onClose, onCreated, userId, hostName, isMod
               {category === 'konser_festival' && !isModerator ? (
                 <Text style={styles.imageNote}>
                   Konser & Festival: moderatör onayından sonra yayına girer. Katılım kodu otomatik oluşur ve katıl
-                  diyenler kodu kendisi görür; kod başlamadan 5 dakika önceden başlangıçtan 45 dakika sonrasına kadar
+                  diyenler kodu kendisi görür; kod başlamadan 5 dakika önceden başlangıçtan 15 dakika sonrasına kadar
                   girilir. Etkinlik başlangıçtan 2 saat sonra listeden kalkar.
                 </Text>
               ) : null}

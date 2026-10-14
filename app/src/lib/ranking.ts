@@ -388,7 +388,7 @@ export function quizPts(v: number): string {
 
 /** Bilgi Yarışması puan kuralının tek satırlık özeti (puan bilgi ekranları için) */
 export function quizRuleSummary(r: PointRules): string {
-  return `Solo Maraton: 5 doğru +${quizPts(r.quizSolo5)}, 8 doğru +${quizPts(r.quizSolo8)}, 12 doğru +${quizPts(r.quizSolo12)}. Uzaktan kazanana 2 kişide +${quizPts(r.quizWinBase * 1.25)}, 5 kişide +${quizPts(r.quizWinBase * 2)}. Oyun sayısı sınırsız; aylık puan hedefi ${r.quizMonthPoints} puan.`;
+  return `Solo Maraton: 5 doğru +${quizPts(r.quizSolo5)}, 8 doğru +${quizPts(r.quizSolo8)}, 12 doğru +${quizPts(r.quizSolo12)}. Uzaktan kazanana 2 kişide +${quizPts(r.quizWinBase * 1.25)}, 5 kişide +${quizPts(r.quizWinBase * 2)}. Aylık puan hedefi ${r.quizMonthPoints} puan.`;
 }
 
 export async function getPointRules(): Promise<PointRules> {
@@ -441,11 +441,14 @@ export async function getMyGameGoals(): Promise<GameGoals | null> {
   };
 }
 
-/** Bir oyunun bu ay kalan puan hedefi (uzaktan + yan yana) */
-export function goalLeft(goals: GameGoals, game: GoalGame | 'quiz'): number {
-  if (game === 'quiz') return Math.max(0, goals.quiz.cap - goals.quiz.earned);
+/** Bir oyunun bu ayki puan hedefi (uzaktan + yan yana): toplam hedef ve kalan */
+export function goalOf(goals: GameGoals, game: GoalGame | 'quiz'): { left: number; cap: number } {
+  if (game === 'quiz') return { cap: goals.quiz.cap, left: Math.max(0, goals.quiz.cap - goals.quiz.earned) };
   const e = goals.games[game];
-  return Math.max(0, goals.remote_cap - e.remote) + Math.max(0, goals.side_cap - e.side);
+  return {
+    cap: goals.remote_cap + goals.side_cap,
+    left: Math.max(0, goals.remote_cap - e.remote) + Math.max(0, goals.side_cap - e.side),
+  };
 }
 
 // ---------------------------------------------------------------------------

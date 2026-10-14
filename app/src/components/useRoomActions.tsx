@@ -28,6 +28,9 @@ type Options = {
   onChanged?: () => void;
 };
 
+/** Belirli süre bekler, sonra boş döner (konumu ya da ayarı en çok bu kadar beklemek için) */
+const wait = (ms: number) => new Promise<null>((resolve) => setTimeout(() => resolve(null), ms));
+
 /**
  * Oyunlar ekranı ile “Açık odalar” ekranının ortak işleri: kodla katılma, listeden katılma ve yeni oda açma
  * (mod seçimi → konum → bölge + adres tarifi → oda). İki ekran da aynı kuralları kullansın diye tek yerde durur.
@@ -266,8 +269,8 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
       const where = preset ?? await showDialog<'side' | 'remote' | null>({
         title: 'Nasıl oynanacak?',
         message: shark
-          ? 'Yan yana. Aynı masada oturursunuz, konum doğrulanır. 7 kat puan verir (ayda en çok 1.750). Mekân koduyla mekânda oynarsan +%25.\n\nUzaktan eşleş. Haritadan oyuncu aranır, herkes kendi telefonundan oynar ve plajda bas-konuş ses mesajlarıyla konuşulur. Ayda en çok 250 puan.\n\nOyun sayısı sınırsız.'
-          : 'Yan yana. Aynı masada oturursunuz, konum doğrulanır. 7 kat puan verir (ayda en çok 1.750). Mekân koduyla mekânda oynarsan +%25.\n\nUzaktan eşleş. Haritadan oyuncu aranır, herkes kendi telefonundan oynar ve sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur. Ayda en çok 250 puan.\n\nOyun sayısı sınırsız.',
+          ? 'Yan yana. Aynı masada oturursunuz, konum doğrulanır. 7 kat puan verir (ayda en çok 1.750). Mekân koduyla mekânda oynarsan +%25.\n\nUzaktan eşleş. Haritadan oyuncu aranır, herkes kendi telefonundan oynar ve plajda bas-konuş ses mesajlarıyla konuşulur. Ayda en çok 250 puan.'
+          : 'Yan yana. Aynı masada oturursunuz, konum doğrulanır. 7 kat puan verir (ayda en çok 1.750). Mekân koduyla mekânda oynarsan +%25.\n\nUzaktan eşleş. Haritadan oyuncu aranır, herkes kendi telefonundan oynar ve sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur. Ayda en çok 250 puan.',
         icon: 'people',
         buttons: [
           { label: 'Yan yana · 7x Puan', value: 'side', style: 'primary' },
@@ -282,25 +285,27 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
         router.push({ pathname: '/kopekbaligi-ara', params: { oyun: key } });
         return;
       }
-      // İzin varsa konum ve uzaklık sınırı, oyun şekli sorulurken arka planda bulunur (pencereler beklemeden açılsın)
+      // İzin varsa konum ve uzaklık sınırı, oyun şekli sorulurken arka planda bulunur. Hiçbir pencere konumu beklemez:
+      // konum çabuk geldiyse oda yeri haritası bulunduğun petekten açılır, gelmediyse yer seçildikten sonra alınır.
       const earlyP = prefetchGameLocation();
       const maxP = getJoinMaxDistance();
       const mode = shark ? await askSharkMode() : await askVampireMode();
       if (!mode) return;
-      const early = await earlyP;
+      const quick = await Promise.race([earlyP, wait(300)]);
+      const maxDistance = await Promise.race([maxP, wait(300).then(() => 1)]);
+      const place = await askPlace(GAMES[key].title, quick?.ok ? quick.cell : null, maxDistance);
+      if (!place) return;
       // Yan yana oynanan oyunu açarken (oyuncu olarak girecekse) konum izni zorunludur; izin yoksa oda hiç açılmaz.
       let phone: Cell | undefined;
       if (mode !== 'narrator') {
-        const loc = early ? await early : await requireGameLocation();
+        const early = quick ?? (await earlyP);
+        const loc = early ?? (await requireGameLocation());
         if (!loc.ok) {
           await notify('Oda açılamadı', loc.message, { tone: 'danger', icon: 'location' });
           return;
         }
         phone = loc.cell;
       }
-      const maxDistance = await maxP;
-      const place = await askPlace(GAMES[key].title, phone ?? null, maxDistance);
-      if (!place) return;
       await leaving;
       const res = await createRoom(key, mode, phone, place);
       if (res.error || !res.room) {

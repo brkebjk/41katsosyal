@@ -61,6 +61,7 @@ import { confirmAction, notify, showDialog } from '@/lib/dialog';
 import { SHARK_RANK_ITEM } from '@/lib/gameInfo';
 import { fmtPts } from '@/lib/labels';
 import { getMyGameResult, getPointRules, type MyGameResult, type PointRules } from '@/lib/ranking';
+import { crewTargetStatus, inviteToCrew, type CrewTarget } from '@/lib/crew';
 import { FRIEND_CONSEQUENCE, FRIEND_WARNING, sendRequestInRoom } from '@/lib/friends';
 import { joinRoomWithLocation, leaveRoom } from '@/lib/rooms';
 import type { Result } from '@/lib/rpc';
@@ -165,10 +166,24 @@ function Game({ roomId }: { roomId: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   /** Seçili kişi: hangi aşamada / hangi iş için */
   const [pick, setPick] = useState<{ key: string; id: string } | null>(null);
+  /** Takım arkadaşına av denemesi: atılan simge titreyip geri döner, kısa uyarı çıkar */
+  const [bounce, setBounce] = useState<{ to: string; nonce: number } | null>(null);
   const [slot, setSlot] = useState<{ key: string; slot: Slot } | null>(null);
   const [sheet, setSheet] = useState<'role' | 'pick' | 'result' | 'players' | null>(null);
   /** Avatara ya da listedeki oyuncuya dokununca açılan küçük oyuncu penceresi (oyuncu kimliği) */
   const [card, setCard] = useState<string | null>(null);
+  /** Oyuncu penceresi açılınca: bu kişiyi ekibime davet edebilir miyim? (arkadaşsak) */
+  const [crewInfo, setCrewInfo] = useState<{ id: string; t: CrewTarget } | null>(null);
+  useEffect(() => {
+    if (!card) return;
+    let alive = true;
+    void crewTargetStatus(roomId, card).then((t) => {
+      if (alive && t) setCrewInfo({ id: card, t });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [card, roomId]);
   /** Atma oylaması penceresine cevap verildi / kapatıldı (oylamanın anahtarı) */
   const [kickSeen, setKickSeen] = useState<string | null>(null);
   /** Üst şeridin alt kenarı: atma oylaması penceresi hemen altında açılır */
@@ -553,7 +568,8 @@ function Game({ roomId }: { roomId: string }) {
       // Ölen avatarında nasıl öldüğü: kafes, köpekbalığı (avlandı), zıpkın, kapı (ayrıldı)
       deadIcon: how === 'left' ? '🚪' : how === 'cage' ? '⛓️' : how === 'spear' ? '🔱' : '🦈',
       selectable,
-      dim: activeSlot !== null && !selectable && p.is_alive,
+      // Takım arkadaşları seçim sırasında da net görünür (soluklaşmaz)
+      dim: activeSlot !== null && !selectable && p.is_alive && !p.ally,
       sign,
       votesIn: votesIn.get(p.id),
       huntIn: huntIn.get(p.id),
@@ -585,7 +601,17 @@ function Game({ roomId }: { roomId: string }) {
     return me.team !== 'neutral' && p.team === me.team ? '#34D399' : '#FF4D4D';
   }
 
+  function rejectAlly(id: string) {
+    const n = Date.now();
+    setBounce({ to: id, nonce: n });
+    setTimeout(() => setBounce((b) => (b && b.nonce === n ? null : b)), 2000);
+  }
+
   function pressSeat(s: Seat) {
+    if (activeSlot === 'hunt' && s.p.ally && !s.p.is_me && s.p.is_alive) {
+      rejectAlly(s.p.id);
+      return;
+    }
     // Seçim sırasında dokunuş hedef seçer; değilse oyuncu penceresi açılır (rolü, atma oylaması, arkadaş ekle)
     if (s.selectable && activeSlot) {
       setPick({ key: `${phaseKey}:${activeSlot}`, id: s.p.id });
@@ -620,7 +646,12 @@ function Game({ roomId }: { roomId: string }) {
         : activeSlot === 'ability' && role
           ? ABILITY_MARK[role]
           : undefined;
-  const mark: SeatMark | null = markTo && markLook ? { from: myPlayerId, to: markTo, ...markLook } : null;
+  const mark: SeatMark | null =
+    bounce && myPlayerId
+      ? { from: myPlayerId, to: bounce.to, icon: '🦈', kind: 'bounce', nonce: bounce.nonce }
+      : markTo && markLook
+        ? { from: myPlayerId, to: markTo, ...markLook }
+        : null;
 
   /** Oyuncu listesinde bir oyuncuya dokununca: liste kapanır, oyuncu penceresi açılır */
   function pickPlayer(p: SkPlayer) {
@@ -629,8 +660,20 @@ function Game({ roomId }: { roomId: string }) {
     setCard(p.id);
   }
 
-  function cardAction(key: 'kick' | 'friend' | 'voice', id: string) {
+  function cardAction(key: 'kick' | 'friend' | 'voice' | 'crew', id: string) {
     setCard(null);
+    if (key === 'crew') {
+      void act('crew', async () => {
+        const r = await inviteToCrew(id);
+        if (!r.error) {
+          void notify('Ekip daveti gönderildi', `${plain(id)} kabul edince ekibine katılır. Ekibini Profil > Ekibim’den yönetebilirsin.`, {
+            icon: null,
+          });
+        }
+        return r;
+      });
+      return;
+    }
     if (key === 'kick') {
       void act('kick', () => kickStart(roomId, id));
     } else if (key === 'friend') {
@@ -832,7 +875,7 @@ function Game({ roomId }: { roomId: string }) {
           <Text style={styles.pText}>Herkes rumuzuyla görünür. Her oyunun aylık puan hedefi var; yan yana oyun 7 kat puan verir.</Text>
         ) : (
           <Text style={styles.pText}>
-            {`${view.code ? `Oda ID ${view.code}. ` : ''}Oyun sayısı sınırsız; puan aylık hedefe kadar yazılır.`}
+            {`${view.code ? `Oda ID ${view.code}. ` : ''}Puan aylık hedefe kadar yazılır.`}
           </Text>
         )}
         {!view.match && (me.is_host || me.is_admin) && present.length >= view.min_players ? (
@@ -1481,9 +1524,15 @@ function Game({ roomId }: { roomId: string }) {
   const cardKick =
     !!cardPlayer && !!kk && kk.open && !kk.poll && kk.starts_left > 0 && me.is_player && !me.left &&
     (phase === 'lobby' || me.is_alive) && !cardPlayer.left;
-  const cardOpts: { key: 'kick' | 'friend' | 'voice'; label: string; tone: CardButton['tone']; disabled?: boolean }[] = [
+  const crewNow = cardPlayer && crewInfo?.id === cardPlayer.id ? crewInfo.t : null;
+  const cardOpts: { key: 'kick' | 'friend' | 'voice' | 'crew'; label: string; tone: CardButton['tone']; disabled?: boolean }[] = [
     ...(cardKick ? [{ key: 'kick' as const, label: `🚪 Atma oylaması başlat (${kk?.starts_left ?? 0} hak)`, tone: 'danger' as const }] : []),
-    { key: 'friend', label: '➕ Arkadaş ekle', tone: 'primary', disabled: busy === 'friend' },
+    // Arkadaşsanız arkadaş ekle yerine ekibe davet
+    ...(crewNow?.friend
+      ? crewNow.can_invite
+        ? [{ key: 'crew' as const, label: '👥 Ekibe davet et', tone: 'primary' as const, disabled: busy === 'crew' }]
+        : []
+      : [{ key: 'friend' as const, label: '➕ Arkadaş ekle', tone: 'primary' as const, disabled: busy === 'friend' }]),
     ...(view.remote ? [{ key: 'voice' as const, label: '🔊 Ses mesajını şikâyet et', tone: 'ghost' as const }] : []),
   ];
   // Plaj başlayınca bu gecenin sonucun varsa (Oşinograf, Kaplan, Cankurtaran, kilit) görsel kart kendiliğinden açılır
@@ -1688,7 +1737,6 @@ function Game({ roomId }: { roomId: string }) {
                     if (c && c.from === s0.p.id) void reportClip(c.id, plain(c.from));
                   }}
                   mark={mark}
-                  stickyKey={roomId}
                   slots={view.max_players}
                   onEmptyPress={
                     phase === 'lobby' && me.is_player && !me.left
@@ -1697,6 +1745,11 @@ function Game({ roomId }: { roomId: string }) {
                   }
                 />
               )}
+              {bounce ? (
+                <View style={styles.allyWarn} pointerEvents="none">
+                  <Pill text={'Takım arkadaşını oylayamazsın'} tone="danger" />
+                </View>
+              ) : null}
               {view.test || connError || (playing && me.is_player && !me.is_alive && !me.left) ? (
                 <View style={styles.pills} pointerEvents="none">
                   {view.test ? <Pill text="Deneme odası, puan yazılmaz" tone="danger" /> : null}
@@ -1852,7 +1905,7 @@ function Game({ roomId }: { roomId: string }) {
                   : null
               }
               buttons={cardOpts}
-              onButton={(key) => cardAction(key as 'kick' | 'friend' | 'voice', cardPlayer.id)}
+              onButton={(key) => cardAction(key as 'kick' | 'friend' | 'voice' | 'crew', cardPlayer.id)}
               onClose={() => setCard(null)}
             />
           ) : null}
@@ -1923,7 +1976,7 @@ function Game({ roomId }: { roomId: string }) {
           {view.roles && Object.keys(view.roles).length ? (
             <>
               <Text style={styles.sheetHead}>Bu oyundaki roller</Text>
-              <RoleRoster roles={view.roles} players={view.players} />
+              <RoleRoster roles={view.roles} players={view.players} myRole={role} />
             </>
           ) : null}
           {me.notes.length ? (
@@ -2037,7 +2090,9 @@ const styles = StyleSheet.create({
   shadow: { textShadowColor: 'rgba(0,0,0,0.8)', textShadowRadius: 8 },
   subtitle: { fontFamily: fonts.semi, fontSize: 11.5 },
   body: { flex: 1, gap: 6, paddingHorizontal: 8, paddingBottom: 6 },
-  stageWrap: { flex: 1 },
+  // Izgara kenardan kenara ve üstteki tabeladan alttaki düğmelere kadar uzanır (gövdenin boşlukları sıfırlanır)
+  allyWarn: { position: 'absolute', top: '45%', left: 0, right: 0, alignItems: 'center', zIndex: 40, elevation: 40 },
+  stageWrap: { flex: 1, marginHorizontal: -8, marginVertical: -6 },
   pills: {
     position: 'absolute',
     top: 0,

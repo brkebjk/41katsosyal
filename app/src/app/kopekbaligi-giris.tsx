@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { RoleIcon } from '@/components/RoleIcon';
 import { Text } from '@/components/AppText';
 import { GamePointsModal } from '@/components/GamePointsModal';
+import { RemoteIcon, SideIcon } from '@/components/GameModeIcons';
 import { GoalBars } from '@/components/GoalBars';
 import { SharkIntroBackdrop } from '@/components/SharkStage';
 import { useRoomActions } from '@/components/useRoomActions';
@@ -129,20 +130,22 @@ export default function SharkIntroScreen() {
             bars={[
               {
                 key: 'side',
-                label: `🏖️ Yan yana ×${sideMult}`,
+                label: `Yan yana ×${sideMult}`,
+                icon: <SideIcon size={14} />,
                 earned: mine?.side ?? 0,
                 cap: goals?.side_cap ?? rules.sideMonthPoints,
                 color: '#FFB703',
               },
               {
                 key: 'remote',
-                label: '🌊 Uzaktan',
+                label: 'Uzaktan',
+                icon: <RemoteIcon size={16} />,
                 earned: mine?.remote ?? 0,
                 cap: goals?.remote_cap ?? rules.remoteMonthPoints,
                 color: '#48CAE4',
               },
             ]}
-            note="Oyun sınırsız · hedefini tamamla, sıralamada yüksel."
+            note="Hedefini tamamla, sıralamada yüksel."
           />
 
           {/* Rol kartları */}

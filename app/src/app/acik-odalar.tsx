@@ -246,7 +246,7 @@ export default function OpenRoomsScreen() {
               ],
               ['Uzaktan', `Tablodaki puan; ayda en çok ${fmtNum(rules.remoteMonthPoints)} puan`],
               ['Mekân bonusu', `Mekân koduyla mekânda oynanan yan yana oyun +%${Math.max(0, rules.venueBonusPct - 100)}`],
-              ['Oyun sayısı', 'Sınırsız; aylık hedefe ulaşınca o oyundan puan yazılmaz'],
+              ['Aylık hedef', 'Hedefe ulaşınca o ay o oyundan puan yazılmaz'],
               ['Etkinlik oyunu', 'Oyun Geceleri ×1,5 · Sosyal Buluşmalar ve Müzik & Eğlence ×1,25'],
               ['Oyundan ayrılan', 'Puan almaz (elenmiş sayılır)'],
               ...(game === 'vampire_villager' ? [['Başarım ödülü', '5 Vampir görevini bitirenin puanları kalıcı 1,25 kat']] : []),

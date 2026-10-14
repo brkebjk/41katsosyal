@@ -11,7 +11,6 @@ import { DeleteAccountSheet } from '@/components/DeleteAccountSheet';
 import { FriendsSheet } from '@/components/FriendsSheet';
 import { HexGauge } from '@/components/HexGauge';
 import { IdentityVerifySheet } from '@/components/IdentityVerifySheet';
-import { InfoModal } from '@/components/InfoModal';
 import { LeaderApplySheet } from '@/components/LeaderApplySheet';
 import { MyThreadsSheet } from '@/components/MyThreadsSheet';
 import { NotificationSettingsSheet } from '@/components/NotificationSettingsSheet';
@@ -26,7 +25,6 @@ import { ProblemReportPopup } from '@/components/ProblemReportPopup';
 import { RealNameNotice } from '@/components/RealNameNotice';
 import { RecoveryPhraseSetup } from '@/components/RecoveryPhraseSetup';
 import { Screen } from '@/components/Screen';
-import { SponsorCodeModal } from '@/components/SponsorCodeModal';
 import { SponsorProfile } from '@/components/SponsorProfile';
 import { TextField } from '@/components/TextField';
 import { VerifyRewardsBox } from '@/components/VerifyPrizeNote';
@@ -39,7 +37,6 @@ import { eventGaugeAction } from '@/lib/eventQuota';
 import { getQuota, type Quota } from '@/lib/events';
 import { listBlocks, unblock, type BlockedAuthor } from '@/lib/feed';
 import { listFriendships, type Friendships } from '@/lib/friends';
-import { venueInfo } from '@/lib/gameInfo';
 import { imageAspect } from '@/lib/images';
 import {
   fmtPts,
@@ -55,13 +52,10 @@ import { useIdentityEnabled } from '@/lib/identityFlag';
 import { nextPhotoChangeAt, profilePhotoUrl, removeProfilePhoto, uploadProfilePhoto } from '@/lib/profilePhoto';
 import { REAL_NAME } from '@/lib/realName';
 import {
-  DEFAULT_RULES,
   getMyTitles,
-  getPointRules,
   listLevels,
   type LevelInfo,
   type MyTitle,
-  type PointRules,
 } from '@/lib/ranking';
 import { useTabResetKey } from '@/lib/tabReset';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
@@ -94,7 +88,6 @@ function ProfileScreen() {
   const { profile, account, previewMode, leavePreview, refreshProfile, refreshAccount, signOut, updateFullName } =
     useAuth();
   const [levels, setLevels] = useState<LevelInfo[]>([]);
-  const [rules, setRules] = useState<PointRules>(DEFAULT_RULES);
   const [quota, setQuota] = useState<Quota | null>(null);
   const [earned, setEarned] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
@@ -117,8 +110,6 @@ function ProfileScreen() {
   >(
     null,
   );
-  const [codeOpen, setCodeOpen] = useState(false);
-  const [quotaInfoOpen, setQuotaInfoOpen] = useState(false);
   const [pointsOpen, setPointsOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const notices = useNotices();
@@ -128,9 +119,6 @@ function ProfileScreen() {
     let active = true;
     void listLevels().then((l) => {
       if (active) setLevels(l);
-    });
-    void getPointRules().then((r) => {
-      if (active) setRules(r);
     });
     return () => {
       active = false;
@@ -324,9 +312,7 @@ function ProfileScreen() {
     }
   }
 
-  // Hak göstergeleri: oyun (sarı, artık herkese sınırsız; “+” mekân kodu girişi) ve etkinlik (mor)
-  const hasCredit = quota?.sponsor_credit === true;
-  const gamesUnlimited = quota?.is_moderator === true;
+  // Hak göstergesi: etkinlik (mor). Oyun hakkı yok (oyunlar sınırsız), oyun göstergesi de yok.
   const eventsUnlimited = quota !== null && (quota.is_moderator || quota.events_limit === null);
   const eventsRemaining =
     quota === null || eventsUnlimited ? null : Math.max(0, (quota.events_limit ?? 0) - quota.events_used);
@@ -526,22 +512,8 @@ function ProfileScreen() {
               )}
             </Pressable>
           </View>
-          <View style={styles.gaugeCol}>
-            {quota ? (
-              <HexGauge
-                remaining={null}
-                limit={null}
-                plus={!gamesUnlimited}
-                tone="yellow"
-                kind="oyun"
-                onPress={() => (gamesUnlimited ? undefined : setCodeOpen(true))}
-                testID="profile-games-gauge"
-              />
-            ) : (
-              <View style={styles.gaugeSpace} />
-            )}
-            <Text style={styles.gaugeLabel}>Oyun</Text>
-          </View>
+          {/* Sağda boşluk: avatar ortada kalsın (oyun hakkı göstergesi kaldırıldı) */}
+          <View style={styles.gaugeCol} />
         </View>
         <View style={styles.realNameRow}>
           <View style={styles.realNameBox}>
@@ -766,6 +738,12 @@ function ProfileScreen() {
           }
           value={friends ? (friends.incoming.length > 0 ? 'Yanıtla' : String(friends.friends.length)) : undefined}
           onPress={() => setOverlay('friends')}
+        />
+        <ListRow
+          icon="people-circle"
+          title="Ekibim"
+          subtitle="Arkadaşlarınla ekip kur, Ekip Sıralaması'nda yarışın"
+          onPress={() => router.push('/ekip')}
         />
         <ListRow
           icon="notifications"
@@ -1001,28 +979,6 @@ function ProfileScreen() {
         levels={levels}
       />
 
-      <SponsorCodeModal
-        visible={codeOpen}
-        onClose={() => setCodeOpen(false)}
-        onRedeemed={() => void refreshQuota()}
-        hasCredit={hasCredit}
-        onInfo={() => {
-          setCodeOpen(false);
-          setQuotaInfoOpen(true);
-        }}
-      />
-      {(() => {
-        const q = venueInfo(rules);
-        return (
-          <InfoModal
-            visible={quotaInfoOpen}
-            onClose={() => setQuotaInfoOpen(false)}
-            title={q.title}
-            icon={q.icon}
-            items={q.items}
-          />
-        );
-      })()}
     </Screen>
   );
 }

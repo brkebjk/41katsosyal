@@ -86,7 +86,7 @@ export function gamePointsInfo(
     {
       icon: 'flag',
       lead: 'Aylık hedef.',
-      text: `Her oyundan ayda uzaktan en çok ${fmtNum(rules.remoteMonthPoints)}, yan yana en çok ${fmtNum(rules.sideMonthPoints)} puan kazanılır. Oyun sayısı sınırsız; hedefe ulaşınca o ay o oyundan puan yazılmaz. Puan için oyun en az ${minPlayers ?? rules.gameMinPlayers} kişiyle oynanmalı.`,
+      text: `Her oyundan ayda uzaktan en çok ${fmtNum(rules.remoteMonthPoints)}, yan yana en çok ${fmtNum(rules.sideMonthPoints)} puan kazanılır. Hedefe ulaşınca o ay o oyundan puan yazılmaz. Puan için oyun en az ${minPlayers ?? rules.gameMinPlayers} kişiyle oynanmalı.`,
     },
   );
   // Oyunun içindeyken (bekleme odası) ekran kalabalık olmasın diye Bilgi Yarışması satırı konmaz
@@ -127,7 +127,7 @@ export function quizInfo(rules: PointRules, enabled: boolean): InfoContent {
       {
         icon: 'heart',
         lead: `${rules.quizMaxLives} can.`,
-        text: `Her oyun 1 can harcar; her ${rules.quizLifeMinutes} dakikada 1 can dolar. Oyun sayısında sınır yok. Seviye 5'te can sınırsızdır.`,
+        text: `Her oyun 1 can harcar; her ${rules.quizLifeMinutes} dakikada 1 can dolar. Seviye 5'te can sınırsızdır.`,
       },
       {
         icon: 'person',
@@ -216,8 +216,8 @@ export function roomRulesInfo(rules: PointRules): InfoContent {
       },
       {
         icon: 'game-controller',
-        lead: 'Sınırsız oyun.',
-        text: `Oyun hakkı yok, herkes istediği kadar oda açar ve oynar. Her oyunun aylık puan hedefi var: uzaktan ${fmtNum(rules.remoteMonthPoints)}, yan yana ${fmtNum(rules.sideMonthPoints)} puan.`,
+        lead: 'Aylık puan hedefi.',
+        text: `Her oyunun aylık puan hedefi var: uzaktan ${fmtNum(rules.remoteMonthPoints)}, yan yana ${fmtNum(rules.sideMonthPoints)} puan.`,
       },
       {
         icon: 'exit',
@@ -324,7 +324,7 @@ export const HOW_TO_PLAY: Record<string, InfoItem[]> = {
     {
       icon: 'heart',
       lead: 'Canlar.',
-      text: 'En çok 5 can; her oyun 1 can harcar, her 30 dakikada 1 can dolar. Oyun sayısı sınırsız.',
+      text: 'En çok 5 can; her oyun 1 can harcar, her 30 dakikada 1 can dolar.',
     },
     {
       icon: 'person',
@@ -409,11 +409,6 @@ export function venueInfo(rules: PointRules): InfoContent {
         icon: 'shield-checkmark',
         lead: 'Aylık hedef aynı kalır.',
         text: `Bonus, oyunun aylık puan hedefini (yan yana ${fmtNum(rules.sideMonthPoints)}) aşmaz; hedefe daha çabuk ulaşırsın.`,
-      },
-      {
-        icon: 'game-controller',
-        lead: 'Oyun hakkı yok.',
-        text: 'Herkes istediği kadar oyun oynar; kod yalnızca mekân bonusu verir.',
       },
     ],
   };

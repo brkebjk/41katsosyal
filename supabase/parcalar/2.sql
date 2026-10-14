@@ -1,6 +1,21 @@
 -- PARÇA 2 / 4 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+create or replace function public.my_points_this_month()
+returns table (source text, points numeric, entries int)
+language sql stable security definer set search_path = public as $$
+  select pe.source, sum(pe.amount), count(*)::int
+    from public.point_events pe
+   where pe.user_id = auth.uid() and public._is_active_user() and pe.created_at >= public._month_start()
+   group by pe.source
+   order by 2 desc;
+$$;
+
+-- Eski etkinliklerin katılım kodu yoksa üretilir (tekrar çalıştırmak güvenlidir)
+insert into public.event_codes (event_id, code)
+select e.id, public._random_code(6) from public.events e
+ where not exists (select 1 from public.event_codes c where c.event_id = e.id);
+
 -- Puan ayarları (moderatör SQL ile değiştirebilir; yoksa varsayılan kullanılır)
 insert into public.app_settings (key, value, description) values
   ('pts_event_create', '15', 'Puan: etkinlik açana (etkinlik iptal edilirse geri alınır)'),
@@ -6687,7 +6702,7 @@ insert into public.app_settings (key, value, description) values
   ('pts_event_rated_5', '4', 'Etkinlik puanlama: 5 yıldız alan düzenleyen kaç puan kazanır? (konser hariç)'),
   ('pts_event_rated_4', '2', 'Etkinlik puanlama: 4 yıldız alan düzenleyen kaç puan kazanır? (konser hariç)'),
   ('pts_event_rated_month_cap', '80', 'Etkinlik puanlama: düzenleyen puanlamalardan ayda en çok kaç puan kazanır?'),
-  ('concert_checkin_minutes_after', '45', 'Konser & Festival: kod girişi başlangıçtan en geç kaç dakika sonrasına kadar açık?')
+  ('concert_checkin_minutes_after', '15', 'Konser & Festival: kod girişi başlangıçtan en geç kaç dakika sonrasına kadar açık?')
 on conflict (key) do update set description = excluded.description;
 
 -- Uygulama metinleri (Profil > Uygulama ve kayıt ekranında açılır). Değerleri Table Editor > app_settings'ten

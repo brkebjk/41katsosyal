@@ -6,6 +6,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/AppText';
 import { GamePointsModal } from '@/components/GamePointsModal';
+import { CrewBoard } from '@/components/CrewBoard';
 import { InfoModal } from '@/components/InfoModal';
 import { ListRow, Panel } from '@/components/Panel';
 import { PointRulesPanel } from '@/components/PointRulesPanel';
@@ -49,7 +50,7 @@ const MEDAL: Record<number, string> = { 1: '#FFC93C', 2: '#C9D1E3', 3: '#E39A5B'
 /** Oyun sıralaması sekmeleri: çekiliş sıralamada yer almaz */
 const GAME_TABS = ACHIEVEMENTS.filter((g) => g.game !== 'raffle');
 
-type Mode = 'points' | 'games';
+type Mode = 'points' | 'games' | 'crew';
 type BoardRow = {
   place: number;
   full_name: string;
@@ -78,9 +79,10 @@ export default function LeaderboardScreen() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const requestId = useRef(0);
   // Bir oyunun ekranından gelindiyse doğrudan o oyunun sıralaması açılır
-  const params = useLocalSearchParams<{ game?: string }>();
+  const params = useLocalSearchParams<{ game?: string; tab?: string }>();
   const startGame = GAME_TABS.some((g) => g.game === params.game) ? (params.game as string) : null;
-  const [mode, setMode] = useState<Mode>(startGame ? 'games' : 'points');
+  const [mode, setMode] = useState<Mode>(params.tab === 'crew' ? 'crew' : startGame ? 'games' : 'points');
+  const [crewKey, setCrewKey] = useState(0);
   const [game, setGame] = useState<string>(startGame ?? GAME_TABS[0].game);
   const [gameRows, setGameRows] = useState<GameRankRow[]>([]);
   const [champion, setChampion] = useState<GameChampion | null>(null);
@@ -133,7 +135,7 @@ export default function LeaderboardScreen() {
       void getContest().then(setContest);
       void getPointRules().then(setRules);
       if (mode === 'points') void load(period);
-      else void loadGame(game, period);
+      else if (mode === 'games') void loadGame(game, period);
     }, [load, loadGame, mode, period, game]),
   );
 
@@ -145,7 +147,9 @@ export default function LeaderboardScreen() {
 
   async function onRefresh() {
     setRefreshing(true);
-    if (mode === 'points') {
+    if (mode === 'crew') {
+      setCrewKey((k) => k + 1);
+    } else if (mode === 'points') {
       await load(period);
       if (historyOpen) await loadHistory();
     } else {
@@ -175,7 +179,7 @@ export default function LeaderboardScreen() {
   return (
     <Screen
       title="Sıralama"
-      subtitle={`${mode === 'points' ? '' : 'Oyunlar · '}${monthTitle(thisMonth ? 0 : 1)}`}
+      subtitle={`${mode === 'points' ? '' : mode === 'crew' ? 'Ekipler · ' : 'Oyunlar · '}${monthTitle(thisMonth ? 0 : 1)}`}
       onRefresh={onRefresh}
       refreshing={refreshing}
       onBack={() => (router.canGoBack() ? router.back() : router.replace('/games'))}
@@ -206,12 +210,15 @@ export default function LeaderboardScreen() {
         options={[
           { value: 'points', label: 'Genel puan' },
           { value: 'games', label: 'Oyunlar' },
+          { value: 'crew', label: 'Ekip' },
         ]}
         value={mode}
         onChange={setMode}
       />
 
-      {mode === 'games' ? (
+      {mode === 'crew' ? (
+        <CrewBoard refreshKey={crewKey} />
+      ) : mode === 'games' ? (
         <GameBoard
           game={game}
           rows={gameRows}

@@ -639,7 +639,7 @@ create table if not exists public.reports (
 alter table public.reports drop constraint if exists reports_target_type_check;
 alter table public.reports add constraint reports_target_type_check
   check (target_type in ('post', 'comment', 'event_comment', 'venue_review', 'room', 'event', 'quiz_chat', 'vv_whisper',
-                         'vv_dead', 'dm', 'sk_voice'));
+                         'vv_dead', 'dm', 'sk_voice', 'crew_msg'));
 
 -- Paket 27: özel mesajlar (DM). Yalnızca rumuzla yazışılır; iki kişi arkadaşsa gerçek ad görünür.
 -- Yazışmayı yalnızca abone başlatabilir; diğer taraf (abone olmasa da) cevap verebilir. Karşı taraf cevap verene kadar
@@ -905,7 +905,8 @@ create table if not exists public.notifications (
 );
 alter table public.notifications drop constraint if exists notifications_kind_check;
 alter table public.notifications add constraint notifications_kind_check
-  check (kind in ('admin_message', 'friend_request', 'system', 'game_invite', 'team_invite', 'mention', 'dm', 'room_msg'));
+  check (kind in ('admin_message', 'friend_request', 'system', 'game_invite', 'team_invite', 'mention', 'dm', 'room_msg',
+                  'crew_invite', 'crew_mention'));
 -- Paket 33: oda kapanınca o odanın davet / yazışma bildirimleri hızlı silinsin
 create index if not exists notifications_room_idx on public.notifications ((data->>'room_id'))
   where kind in ('room_msg', 'game_invite');
@@ -1854,13 +1855,15 @@ returns timestamptz language sql stable set search_path = public as $$
               else public._event_close_at(p_starts) end;
 $$;
 
--- Kod girişinin son anı: Konser & Festival başlangıçtan concert_checkin_minutes_after (45) dakika sonra, diğerleri kapanışta
+-- Kod girişinin son anı: başlangıçtan event_checkin_minutes_after (30) dakika sonra; Konser & Festival'de
+-- concert_checkin_minutes_after (15) dakika sonra. Hiçbir zaman etkinliğin kapanışından sonra olmaz.
 create or replace function public._event_checkin_end(p_starts timestamptz, p_category text)
 returns timestamptz language sql stable set search_path = public as $$
-  select case when p_category = 'konser_festival'
-              then p_starts + make_interval(mins => greatest(5, public.setting_int('concert_checkin_minutes_after', 45)))
-              else public._event_close_at(p_starts) end;
-$$;
+  select least(public._event_close_at(p_starts),
+               p_starts + make_interval(mins => greatest(5,
+                 case when p_category = 'konser_festival'
+                      then public.setting_int('concert_checkin_minutes_after', 15)
+                      else public.setting_int('event_checkin_minutes_after', 30) end)));$$;
 
 -- ---------------------------------------------------------------------
 -- Sıralama (haftada bir güncellenir) ve oyun şampiyonu ünvanları: altyapı
@@ -2621,6 +2624,8 @@ begin
       -- Aylık oyun sıralaması ve şampiyon ünvanı, hesaba yazılan bu puanlardan hesaplanır (hak sınırları herkes için aynı)
       insert into public.game_play_log (user_id, game_type, room_id, points, won)
       values (g.user_id, new.game_type, new.id, v_pts, coalesce(g.won, false));
+      -- Ekipçe oynandıysa (aynı oyunda ekipten en az 2 kişi) bu puan Ekip Sıralaması'na da yazılır
+      perform public._crew_award(new.id, g.user_id, v_pts);
     end if;
   end loop;
   return null;
@@ -3364,7 +3369,7 @@ declare
 begin
   v := public._require_user();
   if p_type not in ('post', 'comment', 'event_comment', 'venue_review', 'room', 'event', 'quiz_chat', 'vv_whisper',
-                    'vv_dead', 'dm', 'sk_voice') then
+                    'vv_dead', 'dm', 'sk_voice', 'crew_msg') then
     raise exception 'invalid_type';
   end if;
   -- Köpekbalığı Kafesi ses mesajı: yalnızca o mesajı dinleyebilen kişi (kendi mesajı hariç) bildirebilir.
@@ -3382,6 +3387,12 @@ begin
   if p_type = 'dm' and not exists (
        select 1 from public.dm_messages m join public.dm_threads d on d.id = m.thread_id
         where m.id = p_id and m.sender_id <> v.id and (d.user_a = v.id or d.user_b = v.id)) then
+    raise exception 'target_not_found';
+  end if;
+  -- Ekip sohbeti: yalnızca o ekipteki bir üye, başkasının mesajını bildirebilir
+  if p_type = 'crew_msg' and not exists (
+       select 1 from public.crew_messages m join public.crew_members cm on cm.crew_id = m.crew_id and cm.user_id = v.id
+        where m.id = p_id and m.sender_id <> v.id) then
     raise exception 'target_not_found';
   end if;
   -- Elenenlerin sohbeti: aynı odadaki bir oyuncu, başkasının mesajını bildirebilir
@@ -6795,17 +6806,3 @@ $$;
 
 -- Bu ay hangi kaynaktan kaç puan kazandım? (ekranda "Puan geçmişim" için)
 drop function if exists public.my_points_this_month();
-create or replace function public.my_points_this_month()
-returns table (source text, points numeric, entries int)
-language sql stable security definer set search_path = public as $$
-  select pe.source, sum(pe.amount), count(*)::int
-    from public.point_events pe
-   where pe.user_id = auth.uid() and public._is_active_user() and pe.created_at >= public._month_start()
-   group by pe.source
-   order by 2 desc;
-$$;
-
--- Eski etkinliklerin katılım kodu yoksa üretilir (tekrar çalıştırmak güvenlidir)
-insert into public.event_codes (event_id, code)
-select e.id, public._random_code(6) from public.events e
- where not exists (select 1 from public.event_codes c where c.event_id = e.id);

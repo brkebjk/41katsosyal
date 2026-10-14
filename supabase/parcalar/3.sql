@@ -5424,6 +5424,504 @@ returns jsonb language sql stable security definer set search_path = public as $
     'open', (select public._kick_window(r) is not null from public.game_rooms r where r.id = p_room_id));
 $$;
 
+-- ---------------------------------------------------------------------------------------------------------------------
+-- EKİP (oyun ekibi): arkadaş olanlar kalıcı bir ekip kurar (en çok crew_max_members, 5 kişi). Ekipçe oynanan puanlı
+-- oyunların puanı (aynı oyunda ekipten en az 2 kişi) Ekip Sıralaması'na da yazılır; kişisel puan ve aylık hedefler
+-- değişmez. Suistimale karşı:
+--   * ekibe yalnızca ekipteki birinin ARKADAŞI davet edilir,
+--   * her üye haftada (crew_change_days, 7 gün) en çok 1 kez ekibe girer (kurmak, katılmak, ekip değiştirmek),
+--   * ekibe yeni giren üyenin katkısı crew_contrib_days (3) gün sonra sayılır,
+--   * puanlı oyun kuralları aynen geçerlidir (en az 4–5 gerçek üye, yan yana konum kontrolü, aylık hedef).
+-- Kurucu ekibin adını değiştirir ve üye atar. Ekibe özel sohbet mesaj kutusunda ekibin adıyla görünür; üyeler
+-- birbirini @rumuz ile etiketler, etiketlenene bildirim gider. Tablolar doğrudan okunamaz/yazılamaz.
+-- ---------------------------------------------------------------------------------------------------------------------
+create table if not exists public.crews (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(btrim(name)) between 2 and 30),
+  founder_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create table if not exists public.crew_members (
+  user_id uuid primary key references public.profiles (id) on delete cascade,
+  crew_id uuid not null references public.crews (id) on delete cascade,
+  joined_at timestamptz not null default now(),
+  read_at timestamptz
+);
+create index if not exists crew_members_crew_idx on public.crew_members (crew_id);
+-- Ekibe giriş geçmişi (haftada 1 kuralı): üye silinse de kayıt kalır
+create table if not exists public.crew_joins (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  crew_id uuid,
+  created_at timestamptz not null default now()
+);
+create index if not exists crew_joins_user_idx on public.crew_joins (user_id, created_at desc);
+create table if not exists public.crew_invites (
+  id uuid primary key default gen_random_uuid(),
+  crew_id uuid not null references public.crews (id) on delete cascade,
+  from_user uuid not null references public.profiles (id) on delete cascade,
+  to_user uuid not null references public.profiles (id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'accepted', 'declined', 'cancelled')),
+  created_at timestamptz not null default now(),
+  responded_at timestamptz,
+  check (from_user <> to_user)
+);
+create unique index if not exists crew_invites_pending_idx on public.crew_invites (crew_id, to_user) where status = 'pending';
+create index if not exists crew_invites_to_idx on public.crew_invites (to_user, status);
+create index if not exists crew_invites_from_idx on public.crew_invites (from_user, created_at);
+create table if not exists public.crew_messages (
+  id uuid primary key default gen_random_uuid(),
+  crew_id uuid not null references public.crews (id) on delete cascade,
+  sender_id uuid not null references public.profiles (id) on delete cascade,
+  alias text not null,
+  avatar int not null default 1,
+  body text not null check (char_length(body) between 1 and 500),
+  created_at timestamptz not null default now()
+);
+create index if not exists crew_messages_crew_idx on public.crew_messages (crew_id, created_at desc);
+create index if not exists crew_messages_sender_idx on public.crew_messages (sender_id, created_at);
+-- Ekip puanı: ekipçe oynanan puanlı oyunda üyenin hesabına yazılan puan (katkısı sayılan üyeler)
+create table if not exists public.crew_points (
+  id bigint generated always as identity primary key,
+  crew_id uuid not null references public.crews (id) on delete cascade,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  room_id uuid references public.game_rooms (id) on delete set null,
+  amount numeric not null check (amount > 0),
+  created_at timestamptz not null default now()
+);
+create index if not exists crew_points_crew_idx on public.crew_points (crew_id, created_at);
+create unique index if not exists crew_points_user_room_idx on public.crew_points (user_id, room_id) where room_id is not null;
+alter table public.crews enable row level security;
+alter table public.crew_members enable row level security;
+alter table public.crew_joins enable row level security;
+alter table public.crew_invites enable row level security;
+alter table public.crew_messages enable row level security;
+alter table public.crew_points enable row level security;
+
+insert into public.app_settings (key, value, description) values
+  ('crew_max_members', '5', 'Ekip: en çok kaç kişi?'),
+  ('crew_change_days', '7', 'Ekip: üye kaç günde bir ekibe girebilir (kurmak, katılmak, değiştirmek)?'),
+  ('crew_contrib_days', '3', 'Ekip: yeni üyenin ekip puanına katkısı kaç gün sonra sayılır?')
+on conflict (key) do update set description = excluded.description;
+
+create or replace function public._crew_of(p_user uuid)
+returns uuid language sql stable security definer set search_path = public as $$
+  select crew_id from public.crew_members where user_id = p_user;
+$$;
+
+-- Üye ekibe girebilir mi (haftada 1)? Bir sonraki giriş zamanı (girebiliyorsa boş)
+create or replace function public._crew_next_change(p_user uuid)
+returns timestamptz language sql stable security definer set search_path = public as $$
+  select max(j.created_at) + make_interval(days => greatest(0, public.setting_int('crew_change_days', 7)))
+    from public.crew_joins j
+   where j.user_id = p_user
+     and j.created_at > now() - make_interval(days => greatest(0, public.setting_int('crew_change_days', 7)));
+$$;
+
+-- Ekip adı: 2–30 karakter, iletişim bilgisi / bağlantı yok, ağır küfür maskelenir
+create or replace function public._crew_name(p_name text)
+returns text language plpgsql stable security definer set search_path = public as $$
+declare
+  v text := btrim(regexp_replace(coalesce(p_name, ''), '[[:space:]]+', ' ', 'g'));
+begin
+  if char_length(v) not between 2 and 30 then raise exception 'crew_invalid_name'; end if;
+  if public._has_link(v) or public._has_contact_info(v) then raise exception 'crew_invalid_name'; end if;
+  return left(public._mask_profanity(v), 30);
+end $$;
+
+-- Ekibe ekle (giriş kaydıyla). Kurucu/katılan için ortak; sınırları çağıran denetler.
+create or replace function public._crew_add(p_crew uuid, p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.crew_members (user_id, crew_id, joined_at, read_at) values (p_user, p_crew, now(), now());
+  insert into public.crew_joins (user_id, crew_id) values (p_user, p_crew);
+  -- Bu kişiye bu ekipten gelen diğer bekleyen davetler kapanır
+  update public.crew_invites set status = 'cancelled', responded_at = now()
+   where to_user = p_user and status = 'pending' and crew_id = p_crew;
+end $$;
+
+-- Ekipten çıkar: kurucu çıkarsa kurucu en eski üyeye geçer; kimse kalmazsa ekip silinir
+create or replace function public._crew_remove(p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_crew uuid;
+  v_next uuid;
+begin
+  delete from public.crew_members where user_id = p_user returning crew_id into v_crew;
+  if v_crew is null then return; end if;
+  if exists (select 1 from public.crews where id = v_crew and founder_id = p_user) then
+    select user_id into v_next from public.crew_members where crew_id = v_crew order by joined_at, user_id limit 1;
+    if v_next is null then
+      delete from public.crews where id = v_crew;
+    else
+      update public.crews set founder_id = v_next where id = v_crew;
+    end if;
+  end if;
+  -- Ayrılanın gönderdiği bekleyen davetler kapanır
+  update public.crew_invites set status = 'cancelled', responded_at = now()
+   where from_user = p_user and status = 'pending';
+end $$;
+
+-- Ekip kur (kurucu olursun). Ekipteyken kurulamaz; haftada 1 kuralı geçerli.
+create or replace function public.crew_create(p_name text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_name text;
+  v_id uuid;
+begin
+  v := public._require_writer(null);
+  if v.role <> 'user' then raise exception 'crew_not_allowed'; end if;
+  perform 1 from public.profiles where id = v.id for update;
+  if public._crew_of(v.id) is not null then raise exception 'crew_already_member'; end if;
+  if public._crew_next_change(v.id) is not null then raise exception 'crew_change_wait'; end if;
+  v_name := public._crew_name(p_name);
+  insert into public.crews (name, founder_id) values (v_name, v.id) returning id into v_id;
+  perform public._crew_add(v_id, v.id);
+  return v_id;
+end $$;
+
+-- Kurucu ekibin adını değiştirir
+create or replace function public.crew_rename(p_name text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_crew uuid;
+begin
+  v := public._require_writer(null);
+  v_crew := public._crew_of(v.id);
+  if v_crew is null then raise exception 'crew_not_member'; end if;
+  if not exists (select 1 from public.crews where id = v_crew and founder_id = v.id) then raise exception 'crew_founder_only'; end if;
+  update public.crews set name = public._crew_name(p_name) where id = v_crew;
+end $$;
+
+-- Ekibe davet: yalnızca ekipteki biri, kendi ARKADAŞINI davet eder. Ekibin yoksa davetle birlikte ekip kurulur
+-- (adı sonra kurucu değiştirir). Ekip doluysa (bekleyen davetler dahil) davet edilemez; günde en çok 10 davet.
+create or replace function public.crew_invite(p_target uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  t public.profiles;
+  v_crew uuid;
+  v_id uuid;
+  v_name text;
+  v_max int := greatest(2, public.setting_int('crew_max_members', 5));
+begin
+  v := public._require_writer(null);
+  if v.role <> 'user' then raise exception 'crew_not_allowed'; end if;
+  select * into t from public.profiles where id = p_target;
+  if not found or t.id = v.id or t.role <> 'user' or t.banned_at is not null then raise exception 'crew_target_invalid'; end if;
+  if not public._friends(v.id, t.id) then raise exception 'crew_not_friend'; end if;
+  if public._blocked_between(v.id, t.id) then raise exception 'crew_target_invalid'; end if;
+  perform 1 from public.profiles where id = v.id for update;
+  v_crew := public._crew_of(v.id);
+  if v_crew is null then
+    if public._crew_next_change(v.id) is not null then raise exception 'crew_change_wait'; end if;
+    insert into public.crews (name, founder_id)
+    values ('Yeni Ekip', v.id)
+    returning id into v_crew;
+    perform public._crew_add(v_crew, v.id);
+  end if;
+  perform 1 from public.crews where id = v_crew for update;
+  if public._crew_of(t.id) = v_crew then raise exception 'crew_already_in'; end if;
+  if exists (select 1 from public.crew_invites where crew_id = v_crew and to_user = t.id and status = 'pending') then
+    raise exception 'crew_invite_exists';
+  end if;
+  if (select count(*) from public.crew_members where crew_id = v_crew)
+     + (select count(*) from public.crew_invites where crew_id = v_crew and status = 'pending') >= v_max then
+    raise exception 'crew_full';
+  end if;
+  if (select count(*) from public.crew_invites where from_user = v.id and created_at > now() - interval '1 day') >= 10 then
+    raise exception 'rate_limited';
+  end if;
+  select name into v_name from public.crews where id = v_crew;
+  insert into public.crew_invites (crew_id, from_user, to_user) values (v_crew, v.id, t.id) returning id into v_id;
+  perform public._notify(t.id, 'crew_invite', 'Ekip daveti',
+    v.full_name || ' seni “' || v_name || '” ekibine davet etti.',
+    jsonb_build_object('invite_id', v_id, 'route', '/ekip'));
+  return v_id;
+end $$;
+
+-- Daveti cevapla. Kabul: başka ekipteysen oradan çıkarsın (ekip değiştirme); haftada 1 kuralı ve ekip sınırı geçerli.
+create or replace function public.crew_invite_respond(p_invite uuid, p_accept boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  i public.crew_invites;
+  v_max int := greatest(2, public.setting_int('crew_max_members', 5));
+begin
+  v := public._require_writer(null);
+  select * into i from public.crew_invites where id = p_invite and to_user = v.id for update;
+  if not found then raise exception 'crew_invite_not_found'; end if;
+  if i.status <> 'pending' then raise exception 'crew_invite_closed'; end if;
+  if not coalesce(p_accept, false) then
+    update public.crew_invites set status = 'declined', responded_at = now() where id = i.id;
+    return;
+  end if;
+  perform 1 from public.profiles where id = v.id for update;
+  perform 1 from public.crews where id = i.crew_id for update;
+  if not found then raise exception 'crew_invite_closed'; end if;
+  -- Davet eden hâlâ o ekipte ve hâlâ arkadaşın olmalı
+  if public._crew_of(i.from_user) is distinct from i.crew_id or not public._friends(v.id, i.from_user) then
+    update public.crew_invites set status = 'cancelled', responded_at = now() where id = i.id;
+    raise exception 'crew_invite_closed';
+  end if;
+  if public._crew_of(v.id) = i.crew_id then raise exception 'crew_already_in'; end if;
+  if public._crew_next_change(v.id) is not null then raise exception 'crew_change_wait'; end if;
+  if (select count(*) from public.crew_members where crew_id = i.crew_id) >= v_max then raise exception 'crew_full'; end if;
+  perform public._crew_remove(v.id);
+  update public.crew_invites set status = 'accepted', responded_at = now() where id = i.id;
+  perform public._crew_add(i.crew_id, v.id);
+  perform public._notify(i.from_user, 'system', 'Ekip daveti kabul edildi',
+    v.full_name || ' ekibine katıldı.', jsonb_build_object('route', '/ekip'));
+end $$;
+
+create or replace function public.crew_leave()
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+begin
+  v := public._require_user();
+  if public._crew_of(v.id) is null then raise exception 'crew_not_member'; end if;
+  perform public._crew_remove(v.id);
+end $$;
+
+-- Kurucu bir üyeyi ekipten çıkarır
+create or replace function public.crew_kick(p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_crew uuid;
+  v_name text;
+begin
+  v := public._require_user();
+  v_crew := public._crew_of(v.id);
+  if v_crew is null then raise exception 'crew_not_member'; end if;
+  select name into v_name from public.crews where id = v_crew and founder_id = v.id;
+  if not found then raise exception 'crew_founder_only'; end if;
+  if p_user = v.id or public._crew_of(p_user) is distinct from v_crew then raise exception 'crew_target_invalid'; end if;
+  perform public._crew_remove(p_user);
+  perform public._notify(p_user, 'system', 'Ekipten çıkarıldın', '“' || v_name || '” ekibinden çıkarıldın.',
+    jsonb_build_object('route', '/ekip'));
+end $$;
+
+-- Ekip puanı: ekipçe oynanan puanlı oyun (aynı oyunda ekipten en az 2 oyuncu). Katkısı sayılan (ekipte en az
+-- crew_contrib_days günü dolan) üyenin bu oyundan hesabına yazılan puanı ekibe de yazılır. record_game_plays çağırır.
+create or replace function public._crew_award(p_room uuid, p_user uuid, p_pts numeric)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  m public.crew_members;
+begin
+  if p_pts is null or p_pts <= 0 then return; end if;
+  select * into m from public.crew_members where user_id = p_user;
+  if not found then return; end if;
+  if m.joined_at > now() - make_interval(days => greatest(0, public.setting_int('crew_contrib_days', 3))) then return; end if;
+  if not exists (select 1 from public.room_players rp join public.crew_members cm on cm.user_id = rp.user_id
+                  where rp.room_id = p_room and rp.left_at is null and rp.user_id <> p_user and cm.crew_id = m.crew_id) then
+    return;
+  end if;
+  insert into public.crew_points (crew_id, user_id, room_id, amount) values (m.crew_id, p_user, p_room, p_pts)
+  on conflict do nothing;
+end $$;
+
+-- Ekip ekranı: ekibim, üyeler, gelen davetler, haftada 1 kuralı, bu ayki ekip puanı ve sıram.
+-- Üyenin gerçek adı yalnızca arkadaşı olana görünür; diğerlerine bu haftaki rumuzu.
+create or replace function public.crew_view()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  c public.crews;
+  v_start timestamptz := public._month_start();
+  v_days int := greatest(0, public.setting_int('crew_contrib_days', 3));
+begin
+  v := public._require_user();
+  select cr.* into c from public.crews cr join public.crew_members cm on cm.crew_id = cr.id where cm.user_id = v.id;
+  return jsonb_build_object(
+    'max_members', greatest(2, public.setting_int('crew_max_members', 5)),
+    'contrib_days', v_days,
+    'next_change_at', public._crew_next_change(v.id),
+    'crew', case when c.id is null then null else jsonb_build_object(
+      'id', c.id, 'name', c.name, 'is_founder', c.founder_id = v.id, 'created_at', c.created_at,
+      'month_points', (select coalesce(sum(amount), 0) from public.crew_points where crew_id = c.id and created_at >= v_start),
+      'my_points', (select coalesce(sum(amount), 0) from public.crew_points
+                     where crew_id = c.id and user_id = v.id and created_at >= v_start),
+      'rank', (select x.place from public.get_crew_leaderboard(500, 0) x where x.is_mine limit 1),
+      'members', (select coalesce(jsonb_agg(jsonb_build_object(
+                    'id', p.id,
+                    'name', case when p.id = v.id or public._friends(v.id, p.id) then p.full_name else p.alias end,
+                    'alias', p.alias,
+                    'avatar', p.avatar_index,
+                    'is_me', p.id = v.id,
+                    'is_founder', p.id = c.founder_id,
+                    'is_friend', public._friends(v.id, p.id),
+                    'joined_at', cm.joined_at,
+                    'counts_from', cm.joined_at + make_interval(days => v_days),
+                    'month_points', (select coalesce(sum(cp.amount), 0) from public.crew_points cp
+                                      where cp.crew_id = c.id and cp.user_id = p.id and cp.created_at >= v_start))
+                    order by (p.id = c.founder_id) desc, cm.joined_at), '[]'::jsonb)
+                    from public.crew_members cm join public.profiles p on p.id = cm.user_id
+                   where cm.crew_id = c.id),
+      'pending', (select coalesce(jsonb_agg(jsonb_build_object('id', i.id, 'name', p.full_name, 'created_at', i.created_at)
+                    order by i.created_at), '[]'::jsonb)
+                    from public.crew_invites i join public.profiles p on p.id = i.to_user
+                   where i.crew_id = c.id and i.status = 'pending' and (i.from_user = v.id or c.founder_id = v.id))) end,
+    'invites', (select coalesce(jsonb_agg(jsonb_build_object(
+                  'id', i.id, 'crew_name', cr.name, 'from_name', p.full_name, 'created_at', i.created_at,
+                  'members', (select count(*) from public.crew_members cm where cm.crew_id = cr.id))
+                  order by i.created_at desc), '[]'::jsonb)
+                  from public.crew_invites i join public.crews cr on cr.id = i.crew_id join public.profiles p on p.id = i.from_user
+                 where i.to_user = v.id and i.status = 'pending'));
+end $$;
+
+-- Oyun ekranındaki oyuncu penceresi: bu kişiyi ekibime davet edebilir miyim? (ikimiz de bu odadaysak)
+create or replace function public.crew_target_status(p_room uuid, p_target uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_crew uuid;
+  v_friend boolean;
+begin
+  v := public._require_user();
+  if not exists (select 1 from public.room_players where room_id = p_room and user_id = v.id)
+     or not exists (select 1 from public.room_players where room_id = p_room and user_id = p_target) then
+    return jsonb_build_object('friend', false, 'same_crew', false, 'can_invite', false);
+  end if;
+  v_crew := public._crew_of(v.id);
+  v_friend := public._friends(v.id, p_target);
+  return jsonb_build_object(
+    'friend', v_friend,
+    'same_crew', coalesce(v_crew is not null and public._crew_of(p_target) = v_crew, false),
+    'can_invite', v_friend and v.role = 'user'
+                  and (v_crew is null or public._crew_of(p_target) is distinct from v_crew)
+                  and not exists (select 1 from public.crew_invites i
+                                   where i.to_user = p_target and i.crew_id = v_crew and i.status = 'pending'));
+end $$;
+
+-- Ekip sohbeti: son 150 mesaj (eskiden yeniye); açılınca okundu sayılır
+create or replace function public.crew_messages_list()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_crew uuid;
+begin
+  v := public._require_user();
+  v_crew := public._crew_of(v.id);
+  if v_crew is null then raise exception 'crew_not_member'; end if;
+  update public.crew_members set read_at = now() where user_id = v.id;
+  return (select coalesce(jsonb_agg(jsonb_build_object(
+            'id', x.id, 'alias', x.alias, 'avatar', x.avatar, 'body', x.body, 'mine', x.sender_id = v.id,
+            'created_at', x.created_at) order by x.created_at), '[]'::jsonb)
+            from (select * from public.crew_messages where crew_id = v_crew order by created_at desc limit 150) x);
+end $$;
+
+-- Ekip sohbetine yaz. @rumuz ile etiketlenen EKİP ÜYESİNE bildirim gider (saatte en çok 10).
+create or replace function public.crew_say(p_body text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_crew uuid;
+  v_name text;
+  v_body text := btrim(regexp_replace(coalesce(p_body, ''), '[[:space:]]+$', ''));
+  v_id uuid;
+  m record;
+begin
+  v := public._require_writer(null);
+  v_crew := public._crew_of(v.id);
+  if v_crew is null then raise exception 'crew_not_member'; end if;
+  if char_length(v_body) not between 1 and 500 then raise exception 'invalid_body'; end if;
+  if public._has_link(v_body) then raise exception 'links_not_allowed'; end if;
+  if (select count(*) from public.crew_messages where sender_id = v.id and created_at > now() - interval '1 minute') >= 15 then
+    raise exception 'rate_limited';
+  end if;
+  v_body := left(public._mask_profanity(public._expand_mentions(v_body)), 500);
+  insert into public.crew_messages (crew_id, sender_id, alias, avatar, body)
+  values (v_crew, v.id, v.alias, v.avatar_index, v_body) returning id into v_id;
+  update public.crew_members set read_at = now() where user_id = v.id;
+  -- Eski mesajlar 90 günde silinir
+  if random() < 0.05 then delete from public.crew_messages where created_at < now() - interval '90 days'; end if;
+  select name into v_name from public.crews where id = v_crew;
+  for m in
+    select distinct x.uid from (
+      select public._alias_lookup(coalesce(t.g[2], '') || '#' || t.g[3]) as uid
+        from regexp_matches(v_body, public._mention_re(), 'g') as t(g)
+    ) x
+    join public.crew_members cm on cm.user_id = x.uid and cm.crew_id = v_crew
+   where x.uid <> v.id
+   limit 5
+  loop
+    if (select count(*) from public.notifications n
+         where n.user_id = m.uid and n.kind = 'crew_mention' and n.created_at > now() - interval '1 hour') < 10 then
+      perform public._notify(m.uid, 'crew_mention', '“' || v_name || '” sohbetinde senden bahsedildi',
+        left(v_body, 140) || case when char_length(v_body) > 140 then '…' else '' end,
+        jsonb_build_object('route', '/akis', 'crew', true));
+    end if;
+  end loop;
+  return v_id;
+end $$;
+
+-- Ekip sohbetindeki okunmamış mesaj sayısı (mesaj kutusu rozeti)
+create or replace function public._crew_unread(p_user uuid)
+returns int language sql stable security definer set search_path = public as $$
+  select coalesce((select count(*)::int from public.crew_messages m
+                    join public.crew_members cm on cm.crew_id = m.crew_id and cm.user_id = p_user
+                   where m.sender_id <> p_user and m.created_at > coalesce(cm.read_at, cm.joined_at)), 0);
+$$;
+
+-- Mesaj kutusu başlığı: ekibim (adı, son mesaj, okunmamış)
+create or replace function public.crew_inbox()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  c public.crews;
+  l public.crew_messages;
+begin
+  v := public._require_user();
+  select cr.* into c from public.crews cr join public.crew_members cm on cm.crew_id = cr.id where cm.user_id = v.id;
+  if c.id is null then return null; end if;
+  select * into l from public.crew_messages where crew_id = c.id order by created_at desc limit 1;
+  return jsonb_build_object('id', c.id, 'name', c.name, 'unread', public._crew_unread(v.id),
+    'members', (select count(*) from public.crew_members where crew_id = c.id),
+    'last_body', l.body, 'last_alias', l.alias, 'last_mine', l.sender_id = v.id, 'last_at', coalesce(l.created_at, c.created_at));
+end $$;
+
+-- Mesaj kutusu rozeti: özel mesajlar + ekip sohbeti
+create or replace function public.dm_unread_count()
+returns int language sql stable security definer set search_path = public as $$
+  select (coalesce((select sum(x.unread) from public.dm_list() x), 0) + public._crew_unread(auth.uid()))::int;
+$$;
+
+-- Ekip Sıralaması: ayın (ya da geçen ayların) ekip puanı. Yalnızca ekipçe oynanan puanlı oyunlar.
+create or replace function public.get_crew_leaderboard(p_limit int default 100, p_months_ago int default 0)
+returns table (place bigint, crew_name text, members int, points numeric, is_mine boolean)
+language plpgsql security definer set search_path = public as $$
+#variable_conflict use_column
+declare
+  v_ago int := greatest(0, least(coalesce(p_months_ago, 0), 24));
+  v_lim int := greatest(1, least(coalesce(p_limit, 100), 500));
+  v_lstart timestamp := date_trunc('month', (now() at time zone 'Europe/Istanbul') - make_interval(months => v_ago));
+  v_from timestamptz := v_lstart at time zone 'Europe/Istanbul';
+  v_to timestamptz := (v_lstart + interval '1 month') at time zone 'Europe/Istanbul';
+  v_mine uuid := public._crew_of(auth.uid());
+begin
+  if not public._is_active_user() then return; end if;
+  return query
+  with s as (
+    select cp.crew_id, sum(cp.amount) as pts
+      from public.crew_points cp
+     where cp.created_at >= v_from and cp.created_at < v_to
+     group by cp.crew_id
+    having sum(cp.amount) > 0
+  ), t as (
+    select dense_rank() over (order by s.pts desc) as place, c.id as cid, c.name as cname, s.pts as pts,
+           (select count(*)::int from public.crew_members cm where cm.crew_id = c.id) as n
+      from s join public.crews c on c.id = s.crew_id
+  )
+  select t.place, t.cname, t.n, t.pts, coalesce(t.cid = v_mine, false)
+    from t
+   where t.place <= v_lim or t.cid = v_mine
+   order by t.place, t.cname;
+end $$;
+
 revoke execute on all functions in schema public from public, anon, authenticated;
 
 -- RLS kurallarının içinde kullanılan yardımcılar
@@ -5499,6 +5997,25 @@ grant execute on function public.sk_voice_post(uuid, text, int) to authenticated
 grant execute on function public.sk_voice_get(uuid) to authenticated;
 grant execute on function public.my_remote_caps() to authenticated;
 grant execute on function public.my_game_goals() to authenticated;
+grant execute on function public.crew_create(text) to authenticated;
+grant execute on function public.crew_rename(text) to authenticated;
+grant execute on function public.crew_invite(uuid) to authenticated;
+grant execute on function public.crew_invite_respond(uuid, boolean) to authenticated;
+grant execute on function public.crew_leave() to authenticated;
+grant execute on function public.crew_kick(uuid) to authenticated;
+grant execute on function public.crew_view() to authenticated;
+grant execute on function public.crew_target_status(uuid, uuid) to authenticated;
+grant execute on function public.crew_messages_list() to authenticated;
+grant execute on function public.crew_say(text) to authenticated;
+grant execute on function public.crew_inbox() to authenticated;
+grant execute on function public.get_crew_leaderboard(int, int) to authenticated;
+-- Ekip tabloları doğrudan okunamaz; moderatör yalnızca ŞİKAYET EDİLMİŞ ekip mesajını okuyabilir
+revoke all on public.crews, public.crew_members, public.crew_joins, public.crew_invites, public.crew_messages, public.crew_points
+  from anon, authenticated;
+grant select on public.crew_messages to authenticated;
+drop policy if exists crew_messages_admin_reported on public.crew_messages;
+create policy crew_messages_admin_reported on public.crew_messages for select to authenticated
+  using (public.is_admin() and exists (select 1 from public.reports r where r.target_type = 'crew_msg' and r.target_id = crew_messages.id));
 grant execute on function public.vv_skip_discussion(uuid, boolean) to authenticated;
 grant execute on function public.sk_skip_discussion(uuid, boolean) to authenticated;
 grant execute on function public.sk_match_join() to authenticated;
@@ -6097,265 +6614,3 @@ insert into public.quiz_questions (category, question, options, correct) values
   ('kocaeli', 'Kocaeli adını hangi Osmanlı komutanından alır?', array['Akçakoca', 'Orhan Gazi', 'Konur Alp', 'Turgut Alp'], 0),
   ('kocaeli', 'Türk donanmasının önemli üs ve tersanelerinden birinin bulunduğu Kocaeli ilçesi hangisidir?', array['Gölcük', 'Kandıra', 'Kartepe', 'Başiskele'], 0)
 on conflict do nothing;
-
--- Paket 27: üyenin gönderdiği soru arşivlerinden eklenen sorular (159 farklı soru; dosyalardaki
--- tekrar eden "Varyasyon/Versiyon" kopyaları ve doğruluğu şüpheli 6 soru alınmadı). Aynı soru varsa dokunulmaz.
-insert into public.quiz_questions (category, question, options, correct, difficulty) values
-  ('kocaeli', 'Kocaeli''nin plaka kodu kaçtır?', array['34', '54', '41', '16'], 2, 1),
-  ('kocaeli', 'Kocaeli''nin kuzeyinde hangi deniz bulunur?', array['Marmara Denizi', 'Karadeniz', 'Ege Denizi', 'Akdeniz'], 1, 1),
-  ('kocaeli', 'İzmit Körfezi''ni geçişi sağlayan asma köprünün adı nedir?', array['15 Temmuz Şehitler Köprüsü', 'Yavuz Sultan Selim Köprüsü', 'Osmangazi Köprüsü', 'Çanakkale Köprüsü'], 2, 1),
-  ('kocaeli', 'Kocaeli''nin il merkezi olan ilçesinin adı nedir?', array['Gebze', 'İzmit', 'Gölcük', 'Karamürsel'], 1, 1),
-  ('kocaeli', 'Kocaeli''nin geleneksel tatlısı olarak bilinen pişmaniye hangi malzeme ile yapılır?', array['Pirinç ve süt', 'Un ve şeker', 'Ceviz ve bal', 'İncir ve ceviz'], 1, 2),
-  ('kocaeli', 'Kocaeli''nde bulunan ve Osmanlı dönemine ait önemli bir saat kulesi nerededir?', array['Gebze', 'İzmit', 'Kandıra', 'Karamürsel'], 1, 2),
-  ('kocaeli', 'Kocaeli''nin doğusunda hangi ilimiz yer alır?', array['Bursa', 'Yalova', 'Sakarya', 'İstanbul'], 2, 1),
-  ('kocaeli', 'Kocaeli''nin batısında hangi büyük metropol yer alır?', array['Bursa', 'İstanbul', 'Yalova', 'Bilecik'], 1, 1),
-  ('kocaeli', 'Hereke halıları ile meşhur olan Kocaeli ilçesi hangisidir?', array['Gölcük', 'Körfez', 'Kandıra', 'Başiskele'], 1, 2),
-  ('kocaeli', 'Kocaeli''nin Karadeniz''e kıyısı olan turistik ilçesi hangisidir?', array['Karamürsel', 'Kandıra', 'Kartepe', 'Derince'], 1, 1),
-  ('kocaeli', 'Kış turizmi ile öne çıkan Kartepe''nin zirvesi hangi dağ silsilesi üzerindedir?', array['Köroğlu Dağları', 'Samanlı Dağları', 'Uludağ', 'Aladağlar'], 1, 3),
-  ('kocaeli', 'Kocaeli''de su sporları ve kampçılık için popüler olan baraj gölü hangisidir?', array['Yuvacık Barajı', 'Sapanca Gölü', 'Terkos Gölü', 'Eymir Gölü'], 0, 2),
-  ('kocaeli', 'Gebze ilçesinde bulunan ve Fatih Sultan Mehmet''in vefat ettiği konaklama yeri neresidir?', array['Topkapı Sarayı', 'Hünkar Çayırı', 'Yıldız Sarayı', 'Edirne Sarayı'], 1, 3),
-  ('kocaeli', 'Kocaeli''nin en yüksek rakımlı dağı hangisidir?', array['Kartepe', 'Uludağ', 'Ilgaz', 'Bozdağ'], 0, 2),
-  ('tarih', 'Osmanlı İmparatorluğu''nun kuruluş yılı hangisidir?', array['1071', '1299', '1453', '1923'], 1, 1),
-  ('tarih', 'İstanbul hangi yıl feth edilmiştir?', array['1325', '1453', '1516', '1520'], 1, 1),
-  ('tarih', 'Malazgirt Savaşı hangi yılda gerçekleşmiştir?', array['1071', '1176', '1299', '1402'], 0, 1),
-  ('tarih', 'Türkiye Cumhuriyeti''nin ilan edildiği yıl hangisidir?', array['1920', '1922', '1923', '1938'], 2, 1),
-  ('tarih', 'I. Dünya Savaşı hangi yıllar arasında gerçekleşmiştir?', array['1912-1916', '1914-1918', '1939-1945', '1920-1924'], 1, 2),
-  ('tarih', 'Fransız İhtilali hangi yılda başlamıştır?', array['1776', '1789', '1804', '1815'], 1, 2),
-  ('tarih', 'Ankara Savaşı hangi Türk hükümdarları arasında yapılmıştır?', array['Osman Bey - Bizans', 'Fatih - İkinci Murad', 'Yıldırım Bayezid - Timur', 'Kanuni - Charles V'], 2, 3),
-  ('tarih', 'Magna Carta Libertatum hangi yıl imzalanmıştır?', array['1066', '1215', '1314', '1492'], 1, 3),
-  ('tarih', 'Kurtuluş Savaşı''nı resmen sona erdiren antlaşma hangisidir?', array['Sevr Antlaşması', 'Mondros Mütarekesi', 'Lozan Barış Antlaşması', 'Mudanya Ateşkesi'], 2, 2),
-  ('tarih', 'Söğüt ve Domaniç''te kurulan beylik daha sonra hangi imparatorluğa dönüşmüştür?', array['Selçuklu', 'Büyük Hun', 'Osmanlı İmparatorluğu', 'Karakoyunlu'], 2, 1),
-  ('cografya', 'Türkiye''nin başkenti neresidir?', array['İstanbul', 'İzmir', 'Ankara', 'Bursa'], 2, 1),
-  ('cografya', 'Yüzölçümü en büyük olan gölümüz hangisidir?', array['Tuz Gölü', 'Van Gölü', 'Beyşehir Gölü', 'Eğirdir Gölü'], 1, 2),
-  ('cografya', 'Dünyanın en uzun nehirlerinden biri olan Nil Nehri hangi kıtadadır?', array['Asya', 'Afrika', 'Güney Amerika', 'Avrupa'], 1, 1),
-  ('cografya', 'Dünyanın en büyük okyanusu hangisidir?', array['Atlantik', 'Hint', 'Pasifik', 'Arktik'], 2, 1),
-  ('cografya', 'Türkiye''nin en yüksek dağının adı nedir?', array['Erciyes Dağı', 'Süphan Dağı', 'Ağrı Dağı', 'Kaçkar Dağı'], 2, 1),
-  ('cografya', 'Hangi kıta hem bir kıta hem de bir ülke olarak kabul edilir?', array['Antarktika', 'Avustralya', 'Asya', 'Avrupa'], 1, 2),
-  ('cografya', 'Brezilya''nın başkenti neresidir?', array['Rio de Janeiro', 'Sao Paulo', 'Brasilia', 'Salvador'], 2, 2),
-  ('cografya', 'Dünyanın en derin çukuru olan Mariana Çukuru hangi okyanustadır?', array['Atlantik', 'Hint', 'Pasifik', 'Arktik'], 2, 3),
-  ('cografya', 'Avrupa ile Asya''yı birbirinden ayıran dağ silsilesi hangisidir?', array['Alpler', 'Ural Dağları', 'Kafkaslar', 'And Dağları'], 1, 2),
-  ('cografya', 'Türkiye''nin en çok yağış alan bölgesi hangisidir?', array['Akdeniz Bölgesi', 'Karadeniz Bölgesi', 'Ege Bölgesi', 'İç Anadolu Bölgesi'], 1, 1),
-  ('bilim', 'Suyun kimyasal formülü nedir?', array['CO2', 'H2O', 'NaCl', 'O2'], 1, 1),
-  ('bilim', 'Işığın boşluktaki hızı yaklaşık ne kadardır?', array['150.000 km/s', '300.000 km/s', '450.000 km/s', '600.000 km/s'], 1, 2),
-  ('bilim', 'Güneş sistemindeki en büyük gezegen hangisidir?', array['Satürn', 'Mars', 'Jüpiter', 'Neptün'], 2, 1),
-  ('bilim', 'İnsan vücudundaki en büyük organ hangisidir?', array['Karaciğer', 'Akciğer', 'Kalp', 'Deri'], 3, 2),
-  ('bilim', 'Fotosentez olayında bitkiler hangi gazı tüketir?', array['Oksijen', 'Azot', 'Karbondioksit', 'Hidrojen'], 2, 1),
-  ('bilim', 'Hangi elementin simgesi ''Au''dur?', array['Gümüş', 'Bakır', 'Altın', 'Demir'], 2, 2),
-  ('bilim', 'Penisilini bulan bilim insanı kimdir?', array['Louis Pasteur', 'Alexander Fleming', 'Marie Curie', 'Albert Einstein'], 1, 2),
-  ('bilim', 'Hücrenin enerji üretim merkezi olan organel hangisidir?', array['Ribozom', 'Mitokondri', 'Golgi cisimciği', 'Kloroplast'], 1, 2),
-  ('bilim', 'Atomun çekirdeğinde hangi parçacıklar bulunur?', array['Proton ve Elektron', 'Proton ve Nötron', 'Elektron ve Nötron', 'Yalnız Elektron'], 1, 3),
-  ('bilim', 'Rölativite (Görelilik) teorisini ortaya atan fizikçi kimdir?', array['Isaac Newton', 'Galileo Galilei', 'Albert Einstein', 'Nikola Tesla'], 2, 1),
-  ('spor', 'Futbol maçları normal sürede kaçar dakikadır?', array['60 dakika', '80 dakika', '90 dakika', '120 dakika'], 2, 1),
-  ('spor', 'Modern Olimpiyatlar ilk kez hangi şehirde düzenlenmiştir?', array['Paris', 'Atina', 'Londra', 'Roma'], 1, 2),
-  ('spor', 'Basketbol maçında bir saha içi basketi en fazla kaç puan değerindedir?', array['1 puan', '2 puan', '3 puan', '4 puan'], 2, 1),
-  ('spor', 'Tenis maçında ''Grand Slam'' turnuvaları yılda kaç kez yapılır?', array['2', '3', '4', '5'], 2, 2),
-  ('spor', 'Hangi spor dalında ''korsan vuruşu'' veya ''smash'' terimleri sıkça kullanılır?', array['Futbol', 'Voleybol', 'Halter', 'Güreş'], 1, 1),
-  ('spor', 'Maraton koşusu tam olarak kaç kilometre mesafededir?', array['21.097 metre', '42.195 metre', '50.000 metre', '10.000 metre'], 1, 3),
-  ('spor', 'Satranç oyununda kaç taşla başlanır?', array['16 taş', '24 taş', '32 taş', '64 taş'], 2, 1),
-  ('spor', 'Voleybol takımında sahada aynı anda kaç oyuncu bulunur?', array['5', '6', '7', '11'], 1, 1),
-  ('spor', 'Boks maçlarında bir raunt genellikle kaç dakikadır?', array['2 dakika', '3 dakika', '4 dakika', '5 dakika'], 1, 2),
-  ('sanat', 'Mona Lisa tablosunun ressamı kimdir?', array['Michelangelo', 'Leonardo da Vinci', 'Raphael', 'Rembrandt'], 1, 1),
-  ('sanat', 'İstiklal Marşı''mızın bestecisi kimdir?', array['Mehmet Akif Ersoy', 'Zeki Üngör', 'Osman Zeki Üngör', 'Cemal Reşit Rey'], 2, 2),
-  ('sanat', 'Osman Hamdi Bey''in en ünlü tablosu hangisidir?', array['Hünkar', 'Kaplumbağa Terbiyecisi', 'İstanbul Sokakları', 'Gecenin Sessizliği'], 1, 1),
-  ('sanat', 'Dünyaca ünlü ''Yıldızlı Gece'' tablosunun sahibi kimdir?', array['Claude Monet', 'Pablo Picasso', 'Vincent van Gogh', 'Salvador Dali'], 2, 2),
-  ('sanat', 'Türkiye''nin ilk opera sanatçısı ve ''Divaya'' unvanı verilen sanatçısı kimdir?', array['Leyla Gencer', 'Semiha Berksoy', 'Suna Korad', 'Pervin Çapar'], 1, 3),
-  ('sanat', 'Sinemanın babaları olarak kabul edilen Fransız mucitler kimlerdir?', array['Lumière Kardeşler', 'Méliès Kardeşler', 'Edison ve Ford', 'Chaplin ve Keaton'], 0, 2),
-  ('sanat', 'Türk edebiyatında ''Şair-i Azam'' olarak bilinen sanatçısı kimdir?', array['Namık Kemal', 'Ziya Paşa', 'Abdülhak Hâmid Tarhan', 'Tevfik Fikret'], 2, 3),
-  ('sanat', 'Heykel sanatında ''Düşünen Adam'' eserinin yaratıcısı kimdir?', array['Michelangelo', 'Donatello', 'Auguste Rodin', 'Bernini'], 2, 2),
-  ('sanat', 'Yakup Kadri Karaosmanoğlu''nun yaban adlı romanında anlattığı ana tema nedir?', array['Kurtuluş Savaşı', 'Aydın-köylü çatışması', 'İstanbul hayatı', 'Osmanlı''nın çöküşü'], 1, 2),
-  ('sanat', 'Klasik müzikte ''Dokuzuncu Senfoni'' ile tanınan ve sağır olduktan sonra bile eser veren besteci kimdir?', array['Wolfgang Amadeus Mozart', 'Johann Sebastian Bach', 'Ludwig van Beethoven', 'Frédéric Chopin'], 2, 1),
-  ('eglence', 'Yüzüklerin Efendisi''nde Tek Yüzük''ü yok etmekle görevli hobbit kimdir?', array['Aragorn', 'Gandalf', 'Frodo Baggins', 'Samwise Gamgee'], 2, 1),
-  ('eglence', 'Harry Potter serisinde büyücülük okulunun adı nedir?', array['Durmstrang', 'Beauxbatons', 'Hogwarts', 'Ilvermorny'], 2, 1),
-  ('eglence', 'Game of Thrones dizisindeki meşhur kış mottosu nedir?', array['Fire and Blood', 'Winter is Coming', 'We Do Not Sow', 'Ours is the Fury'], 1, 2),
-  ('eglence', 'Minecraft oyununun yaratıcısı olan geliştirici kimdir?', array['Notch', 'Gabe Newell', 'Hideo Kojima', 'Will Wright'], 0, 2),
-  ('eglence', 'Yunan mitolojisinde Zeus''un eşi ve tanrıların kraliçesi kimdir?', array['Athena', 'Afrodit', 'Hera', 'Artemis'], 2, 1),
-  ('eglence', 'GTA serisinin yapımcısı olan oyun şirketi hangisidir?', array['Ubisoft', 'Electronic Arts', 'Rockstar Games', 'Bethesda'], 2, 1),
-  ('eglence', 'Marvel evreninde demir zırhıyla tanınan kahraman kimdir?', array['Captain America', 'Thor', 'Iron Man', 'Hulk'], 2, 1),
-  ('eglence', 'Star Wars evreninde ''Güç''ün karanlık tarafını temsil eden ana karakterlerden biri kimdir?', array['Luke Skywalker', 'Yoda', 'Darth Vader', 'Obi-Wan Kenobi'], 2, 1),
-  ('eglence', 'Cyberpunk 2077 oyununun geçtiği kurgusal megakentin adı nedir?', array['Los Santos', 'Liberty City', 'Night City', 'Neo Tokyo'], 2, 2),
-  ('eglence', 'Türk sinemasında ''Hababam Sınıfı'' serisinin yaratıcısı ünlü yazar kimdir?', array['Aziz Nesin', 'Rıfat Ilgaz', 'Orhan Kemal', 'Yaşar Kemal'], 1, 1),
-  ('genel', 'UNESCO Dünya Mirası listesinde yer alan Göbeklitepe hangi ilimizdedir?', array['Gaziantep', 'Şanlıurfa', 'Adıyaman', 'Diyarbakır'], 1, 1),
-  ('genel', 'Dünyanın yedi harikasından biri olan Keops Piramidi hangi ülkededir?', array['Yunanistan', 'Mısır', 'Irak', 'İran'], 1, 1),
-  ('genel', 'Nobel Ödülleri hangi ülkede verilmektedir?', array['İsviçre', 'İsveç ve Norveç', 'Almanya', 'İngiltere'], 1, 2),
-  ('genel', 'Dünyanın en kalabalık ülkesi hangisidir?', array['Çin', 'Hindistan', 'ABD', 'Endonezya'], 1, 2),
-  ('genel', 'Eyfel Kulesi hangi ülkenin başkentindedir?', array['İtalya', 'Fransa', 'İspanya', 'Almanya'], 1, 1),
-  ('genel', 'Para birimi ''Yen'' olan ülke hangisidir?', array['Çin', 'Güney Kore', 'Japonya', 'Tayland'], 2, 1),
-  ('genel', 'Dünya Sağlık Örgütü''nün (WHO) merkezi hangi şehirde yer alır?', array['New York', 'Cenevre', 'Viyana', 'Brüksel'], 1, 3),
-  ('genel', 'Kilometre kareye düşen insan sayısını ifade eden kavram nedir?', array['Nüfus artış hızı', 'Nüfus yoğunluğu', 'Demografik yapı', 'Net göç hızı'], 1, 2),
-  ('genel', 'Uluslararası Saat Dilimi''nin başlangıç mercii olan Greenwich hangi ülkededir?', array['Fransa', 'İngiltere', 'ABD', 'Almanya'], 1, 1),
-  ('genel', 'İnternetin temelini oluşturan ARPANET projesi hangi ülkenin savunma bakanlığı tarafından başlatılmıştır?', array['Rusya', 'İngiltere', 'ABD', 'Fransa'], 2, 3),
-  ('kocaeli', 'İzmit''te bulunan ve Osmanlı padişahlarının İzmit''teki av köşkü olarak kullanılan yapı hangisidir?', array['Kasr-ı Hümayun (İzmit Sarayı)', 'Saat Kulesi', 'İmaret Camii', 'Sırrı Paşa Mükellef Mebusu'], 0, 3),
-  ('kocaeli', 'Kocaeli''nin Karamürsel ilçesi ile üne kavuşan meşhur meyvesi hangisidir?', array['Karamürsel Sepet Elması', 'Hereke İnciri', 'Kandıra Karpuzu', 'Eşme Ayvası'], 0, 2),
-  ('kocaeli', 'Kocaeli''nin Kandıra ilçesinde Karadeniz''e kıyısı olan ve kumlu plajlarıyla bilinen ünlü koy hangisidir?', array['Kerpe', 'Eskihisar', 'Darıca', 'Değirmendere'], 0, 1),
-  ('kocaeli', 'Kocaeli''nin Darıca ilçesinde yer alan popüler hayvanat bahçesinin adı nedir?', array['Faruk Yalçın Hayvanat Bahçesi', 'Darica Botanik Parkı', 'Kocaeli Hayvanat Bahçesi', 'Marmara Doğa Parkı'], 0, 2),
-  ('kocaeli', 'Kocaeli''nin İzmit ilçesinde bulunan tarihi saat kulesi hangi padişahın tahta çıkışının 25. yıl dönümü için inşa edilmiştir?', array['II. Abdülhamid', 'Abdülaziz', 'V. Mehmed Reşad', 'II. Mahmud'], 0, 3),
-  ('kocaeli', 'Kocaeli''nin plaka kodundan hemen sonra gelen 42 hangi ile aittir?', array['Konya', 'Sakarya', 'Bursa', 'Balıkesir'], 0, 1),
-  ('kocaeli', 'İzmit Körfezi''nin güney kıyısında yer alan ve donanma üssü ile bilinen Kocaeli ilçesi hangisidir?', array['Gölcük', 'Karamürsel', 'Körfez', 'Derince'], 0, 1),
-  ('kocaeli', 'Kocaeli''nin Kartepe ilçesinde winter sporları dışında yaz aylarında popüler olan yayla hangisidir?', array['Kuzuyayla', 'Kartepe Yaylası', 'Aytepe', 'Soğuksu Yaylası'], 0, 2),
-  ('tarih', 'Mustafa Kemal Atatürk''ün Samsun''a çıkış tarihi tam olarak nedir?', array['19 Mayıs 1919', '23 Nisan 1920', '29 Ekim 1923', '30 Ağustos 1922'], 0, 1),
-  ('tarih', 'I. TBMM hangi yıl açılmıştır?', array['1919', '1920', '1922', '1923'], 1, 1),
-  ('tarih', 'Sakarya Meydan Muharebesi kaç gün sürmüştür?', array['10 gün 10 gece', '22 gün 22 gece', '30 gün 30 gece', '40 gün 40 gece'], 1, 3),
-  ('tarih', 'Amasya Genelgesi''nin yayımlandığı yıl ve ay hangisidir?', array['Mayıs 1919', 'Haziran 1919', 'Temmuz 1919', 'Ağustos 1919'], 1, 2),
-  ('tarih', 'Sivas Kongresi kaç gün sürmüştür?', array['4 gün', '7 gün', '15 gün', '30 gün'], 1, 3),
-  ('tarih', 'Osmanlı Devleti''nin ilk başkenti neresidir?', array['Bursa', 'Edirne', 'Söğüt', 'İstanbul'], 2, 1),
-  ('tarih', 'Trablusgarp Savaşı hangi devletle yapılmıştır?', array['İtalya', 'İngiltere', 'Fransa', 'Rusya'], 0, 2),
-  ('tarih', 'Cumhuriyet tarihinin ilk başbakanı kimdir?', array['Fevzi Çakmak', 'İsmet İnönü', 'Rauf Orbay', 'Ali Fethi Okyar'], 1, 2),
-  ('tarih', 'Lozan Barış Antlaşması hangi yıl imzalanmıştır?', array['1920', '1922', '1923', '1924'], 2, 1),
-  ('cografya', 'Türkiye''nin en büyük tuz gölü olan Tuz Gölü hangi coğrafi bölgededir?', array['İç Anadolu Bölgesi', 'Doğu Anadolu Bölgesi', 'Akdeniz Bölgesi', 'Marmara Bölgesi'], 0, 1),
-  ('cografya', 'Türkiye''nin en uzun akarsuyu hangisidir?', array['Fırat', 'Dicle', 'Kızılırmak', 'Sakarya'], 2, 2),
-  ('cografya', 'Van Gölü''nün ortasında yer alan ve tarihi kilisesiyle bilinen adanın adı nedir?', array['Akdamar Adası', 'Gümüş Adası', 'Bozcaada', 'Cunda Adası'], 0, 2),
-  ('cografya', 'Ege Bölgesi''nde kıyıdan içeriye doğru uzanan dağların genel adı nedir?', array['Kıvrım dağları', 'Kırıklı dağlar', 'Volkanik dağlar', 'Kıyıya paralel dağlar'], 1, 3),
-  ('cografya', 'Akdeniz ikliminin temel bitki örtüsü nedir?', array['Bozkır', 'Maki', 'Tayga ormanları', 'Tundra'], 1, 1),
-  ('cografya', 'Türkiye''nin komşuları arasında en uzun karasınırına sahip olan ülke hangisidir?', array['İran', 'Irak', 'Bulgaristan', 'Suriye'], 3, 2),
-  ('cografya', 'Karadeniz''in en çok yağış alan bölümü hangisidir?', array['Batı Karadeniz', 'Orta Karadeniz', 'Doğu Karadeniz', 'Yıldız Dağları Bölümü'], 2, 1),
-  ('cografya', 'Türkiye''nin yüzölçümü bakımından en büyük ili hangisidir?', array['Ankara', 'Sivas', 'Konya', 'Erzurum'], 2, 1),
-  ('cografya', 'Munzur Vadisi Milli Parkı hangi ilimizdedir?', array['Erzincan', 'Tunceli', 'Bingöl', 'Elazığ'], 1, 2),
-  ('cografya', 'Pamukkale travertenleri hangi ilimizde yer almaktadır?', array['Muğla', 'Aydın', 'Denizli', 'İzmir'], 2, 1),
-  ('bilim', 'DNA''nın çift sarmal modelini 1953 yılında açıklayan bilim insanları kimlerdir?', array['Albert Einstein', 'James Watson ve Francis Crick', 'Marie Curie', 'Gregor Mendel'], 1, 2),
-  ('bilim', 'Periyodik tablonun oluşturulmasında büyük katkı sağlayan Rus kimyager kimdir?', array['Antoine Lavoisier', 'Dmitri Mendeleyev', 'John Dalton', 'Robert Boyle'], 1, 2),
-  ('bilim', 'Kuduz aşısını bulan ünlü Fransız mikrobiyolog kimdir?', array['Alexander Fleming', 'Louis Pasteur', 'Robert Koch', 'Edward Jenner'], 1, 1),
-  ('bilim', 'Güneş sistemindeki en sıcak gezegen hangisidir?', array['Merkür', 'Venüs', 'Mars', 'Jüpiter'], 1, 3),
-  ('bilim', 'İnsan vücudunda oksijen taşıyan kırmızı kan hücrelerine ne ad verilir?', array['Lökosit', 'Eritrosit', 'Trombosit', 'Plazma'], 1, 2),
-  ('bilim', 'Elektrik akımının birimi nedir?', array['Volt', 'Watt', 'Amper', 'Ohm'], 2, 1),
-  ('bilim', 'Hangi vitamin güneşi gördüğümüzde vücudumuzda sentezlenir?', array['A Vitamini', 'B Vitamini', 'C Vitamini', 'D Vitamini'], 3, 1),
-  ('bilim', 'Karasal ekosistemlerde azot döngüsünde temel rol oynayan canlılar hangileridir?', array['Virüsler', 'Bakteriler ve arkeler', 'Mantarlar', 'Algler'], 1, 3),
-  ('bilim', 'Evrenin genişlediğini gözlemleriyle kanıtlayan ve adını uzay teleskobuna veren astronom kimdir?', array['Galileo Galilei', 'Johannes Kepler', 'Edwin Hubble', 'Carl Sagan'], 2, 2),
-  ('bilim', 'Suyun donma noktası Celsius ölçeğinde kaç derecedir?', array['-10 derece', '0 derece', '4 derece', '100 derece'], 1, 1),
-  ('spor', 'FIFA Dünya Kupası''nı en çok kazanan milli futbol takımı hangisidir?', array['Almanya', 'İtalya', 'Brezilya', 'Arjantin'], 2, 1),
-  ('spor', 'Basketbolu icat eden kişi kimdir?', array['Michael Jordan', 'James Naismith', 'Wilt Chamberlain', 'Kobe Bryant'], 1, 2),
-  ('spor', 'Modern Olimpiyat bayrağındaki beş halka hangi kıtaları simgeler?', array['Okyanusya', 'Afrika, Amerika, Asya, Avrupa, Okyanusya', 'Avrupa', 'Asya'], 1, 3),
-  ('spor', 'Tenis turnuvalarından Wimbledon hangi ülkede düzenlenmektedir?', array['Fransa', 'ABD', 'İngiltere', 'Avustralya'], 2, 1),
-  ('spor', 'Formula 1 yarışlarında yarışın bittiğini ve kazananın geçtiğini belirten bayrak hangi renktedir?', array['Kırmızı bayrak', 'Sarı bayrak', 'Damalı siyah-beyaz bayrak', 'Mavi bayrak'], 2, 1),
-  ('spor', 'Türkiye''nin ilk olimpiyat madalyasını kazandığı spor dalı hangisidir?', array['Halter', 'Güreş', 'Ağırlık', 'Boks'], 1, 2),
-  ('spor', 'Voleybolda arka alandaki oyuncuların savunma yapmasını sağlayan özel forma giyen oyuncuya ne ad verilir?', array['Pasör', 'Smaçör', 'Libero', 'Blokör'], 2, 1),
-  ('spor', 'Galatasaray hangi yıl UEFA Kupası''nı kazanmıştır?', array['1996', '2000', '2001', '2003'], 1, 2),
-  ('spor', 'Maraton koşusu olimpiyatlara ilk kez hangi yıl dahil edilmiştir?', array['1896 Atina', '1900 Paris', '1924 Londra', '1936 Berlin'], 0, 3),
-  ('spor', 'Buz hokeyi maçlarında bir takımda sahada aynı anda kaç oyuncu bulunur?', array['4 oyuncu', '5 oyuncu', '6 oyuncu', '7 oyuncu'], 2, 2),
-  ('sanat', 'Pablo Picasso''nun mavi renk tonlarının ağırlıkta olduğu dönemi ne olarak adlandırılır?', array['Pembe Dönem', 'Mavi Dönem', 'Kübizm Dönemi', 'Klasik Dönem'], 1, 2),
-  ('sanat', 'Türk edebiyatının ilk yerli romanı olan ''Taaşşuk-ı Talat ve Fitnat''ın yazarı kimdir?', array['Namık Kemal', 'Şemsettin Sami', 'Recaizade Mahmud Ekrem', 'Ahmet Mithat Efendi'], 1, 3),
-  ('sanat', 'William Shakespeare''in ''Olmak ya da olmamak, bütün mesele bu'' repliği hangi oyununda geçer?', array['Macbeth', 'Hamlet', 'Othello', 'Kral Lear'], 1, 1),
-  ('sanat', 'İtalyan Rönesans''ının dev heykeltıraşı ve ressamı olan, ''Davut'' heykelinin yaratıcısı kimdir?', array['Leonardo da Vinci', 'Donatello', 'Michelangelo', 'Raphael'], 2, 2),
-  ('sanat', 'Nobel Edebiyat Ödülü''nü kazanan ilk Türk yazar kimdir?', array['Yaşar Kemal', 'Orhan Pamuk', 'Ahmet Hamdi Tanpınar', 'Nazım Hikmet'], 1, 1),
-  ('sanat', 'Ressam Osman Hamdi Bey''in kurduğu ve günümüzdeki Mimar Sinan Güzel Sanatlar Üniversitesi''nin temelini oluşturan okulun adı nedir?', array['Darüşşafaka', 'Sanayi-i Nefise Mektebi', 'Mekteb-i Mülkiye', 'Darülfünun'], 1, 3),
-  ('sanat', 'Çok sesli batı müziğinde ''Ay Işığı Sonatı'' ile tanınan besteci kimdir?', array['Johann Sebastian Bach', 'Ludwig van Beethoven', 'Frédéric Chopin', 'Wolfgang Amadeus Mozart'], 1, 2),
-  ('sanat', 'Victor Hugo''nun ünlü romanı ''Sefiller''in baş kahramanı kimdir?', array['Quasimodo', 'Jean Valjean', 'Cosette', 'Javert'], 1, 1),
-  ('sanat', 'Türk sinemasının ''Sultan'' lakaplı ünlü oyuncusu kimdir?', array['Hülya Koçyiğit', 'Filiz Akın', 'Türkan Şoray', 'Fatma Girik'], 2, 1),
-  ('sanat', 'Mimar Sinan''ın ''ustalık eserim'' olarak nitelendirdiği cami hangisidir?', array['Süleymaniye Camii', 'Selimiye Camii', 'Şehzadebaşı Camii', 'Fatih Camii'], 1, 1),
-  ('eglence', 'The Witcher serisinin ana karakteri olan ünlü cadının adı nedir?', array['Geralt of Rivia', 'Vesemir', 'Lambert', 'Eskel'], 0, 1),
-  ('eglence', 'Cyberpunk evreninde geçen ve Johnny Silverhand karakterini canlandıran ünlü aktör kimdir?', array['Brad Pitt', 'Keanu Reeves', 'Tom Cruise', 'Christian Bale'], 1, 1),
-  ('eglence', 'League of Legends oyununda Demacia''nın adalet simgesi olan şampiyon kimdir?', array['Garen', 'Darius', 'Ahri', 'Yasuo'], 0, 2),
-  ('eglence', 'Yunan mitolojisinde denizler, depremler ve atlar tanrısı olan, elinde üçlü mızrak taşıyan tanrı kimdir?', array['Zeus', 'Hades', 'Poseidon', 'Ares'], 2, 1),
-  ('eglence', 'Sinema tarihine damga vuran ''Baba'' film serisinin yönetmeni kimdir?', array['Martin Scorsese', 'Quentin Tarantino', 'Francis Ford Coppola', 'Christopher Nolan'], 2, 2),
-  ('eglence', 'J.R.R. Tolkien''in Orta Dünya evreninde Mordor''un karanlık efendisi kimdir?', array['Saruman', 'Sauron', 'Morgoth', 'Witch-king'], 1, 1),
-  ('eglence', 'Matrix filminde Neo''ya hap seçeneğini sunan karakter kimdir?', array['Trinity', 'Morpheus', 'Cypher', 'Oracle'], 1, 1),
-  ('eglence', 'Harry Potter evreninde Slytherin binasının hayaleti kimdir?', array['Neredeyse Başsız Nick', 'Şişman Rahip', 'Kanlı Baron', 'Şeffaf Bilge'], 2, 3),
-  ('eglence', 'Game of Thrones evreninde Ejderhaların Annesi olarak bilinen karakter kimdir?', array['Cersei Lannister', 'Sansa Stark', 'Daenerys Targaryen', 'Arya Stark'], 2, 1),
-  ('genel', 'Birleşmiş Milletler''in merkezi hangi şehirde bulunmaktadır?', array['Cenevre', 'Viyana', 'New York', 'Paris'], 2, 1),
-  ('genel', 'Nil Nehri hangi kıtadadır?', array['Atlas Okyanusu', 'Kızıldeniz', 'Afrika', 'Asya'], 2, 2),
-  ('genel', 'Mona Lisa tablosu şu anda hangi müzede sergilenmektedir?', array['British Museum', 'Louvre Müzesi', 'Vatikan Müzeleri', 'Metropolitan Sanat Müzesi'], 1, 1),
-  ('genel', 'Avrupa Birliği''nin yürütme organı olan kurumun adı nedir?', array['Avrupa Parlamentosu', 'Avrupa Komisyonu', 'Avrupa Konseyi', 'Adalet Divanı'], 1, 3),
-  ('genel', 'Dünya üzerinde internet alan adlarında kullanılan ''.tr'' uzantısı hangi ülkeyi temsil eder?', array['Türkmenistan', 'Trinidad', 'Türkiye', 'Tunus'], 2, 1),
-  ('genel', 'Yunanistan''ın başkenti neresidir?', array['Selanik', 'Atina', 'Patras', 'Larissa'], 1, 1),
-  ('genel', 'Oscar ödüllerini veren resmi kurumun tam adı nedir?', array['Amerikan Film Enstitüsü', 'Sinema Sanatları ve Bilimleri Akademisi', 'Hollywood Film Birliği', 'Ulusal Sinema Konseyi'], 1, 3),
-  ('genel', 'Dünya''nın uydusu olan Ay''a ayak basan ilk insan kimdir?', array['Buzz Aldrin', 'Yuri Gagarin', 'Neil Armstrong', 'Michael Collins'], 2, 1),
-  ('genel', 'Nobel Barış Ödülü hangi şehirde sahiplerine takdim edilir?', array['Stockholm', 'Oslo', 'Cenevre', 'Kopenhag'], 1, 3),
-  ('genel', 'Türkiye''nin ilk yerli sondaj gemisinin adı nedir?', array['Yavuz', 'Kanuni', 'Fatih', 'Abdülhamid Han'], 2, 2)
-on conflict do nothing;
-
--- Başlangıç sorularına zorluk derecesi (bir kez; moderatörün sonradan değiştirdiğine dokunulmaz)
-do $$ begin
-  if not exists (select 1 from public.app_settings where key = 'seed_quiz_difficulty_v1') then
-    update public.quiz_questions set difficulty = 1 where question in (
-      'Türkiye Cumhuriyeti hangi yıl ilan edildi?',
-      'İstanbul hangi yıl fethedildi?',
-      'Osmanlı Devleti''nin kurucusu kimdir?',
-      'İstanbul''u fetheden padişah kimdir?',
-      'Mustafa Kemal Samsun''a hangi tarihte çıktı?',
-      'Çanakkale Savaşı hangi yıl başladı?',
-      'Mustafa Kemal Atatürk hangi şehirde doğdu?',
-      'Türkiye''nin en yüksek dağı hangisidir?',
-      'Türkiye''nin en büyük gölü hangisidir?',
-      'Japonya''nın başkenti neresidir?',
-      'Türkiye kaç coğrafi bölgeye ayrılır?',
-      'Pamukkale travertenleri hangi ilimizdedir?',
-      'İtalya''nın başkenti neresidir?',
-      'Mısır''ın başkenti neresidir?',
-      'Almanya''nın başkenti neresidir?',
-      'Eyfel Kulesi hangi şehirdedir?',
-      'Su deniz seviyesinde kaç derecede kaynar?',
-      'Suyun kimyasal formülü nedir?',
-      '“Kızıl Gezegen” olarak bilinen gezegen hangisidir?',
-      'Bitkilerin güneş ışığıyla kendi besinini üretmesine ne denir?',
-      'Görelilik kuramı hangi bilim insanına aittir?',
-      'Bir üçgenin iç açıları toplamı kaç derecedir?',
-      'Dünya''nın tek doğal uydusu hangisidir?',
-      'Pi sayısının yaklaşık değeri kaçtır?',
-      'Futbolda bir takım sahaya kaç oyuncuyla çıkar?',
-      'Basketbolda bir takımın sahadaki oyuncu sayısı kaçtır?',
-      'Olimpiyat bayrağında kaç halka vardır?',
-      'Futbolda “hat-trick” ne demektir?',
-      'Satrançta oyunun başında her oyuncunun kaç piyonu vardır?',
-      'FIFA Dünya Kupası kaç yılda bir düzenlenir?',
-      'Basketbolda üç sayı çizgisinin dışından atılan basket kaç sayıdır?',
-      'Kırkpınar''da hangi güreş türü yapılır?',
-      'Bir futbol maçının normal süresi kaç dakikadır?',
-      'Mona Lisa tablosunu kim yaptı?',
-      'İstiklal Marşı''nın şairi kimdir?',
-      '“Romeo ve Juliet” oyununun yazarı kimdir?',
-      'Hangisi yaylı bir çalgıdır?',
-      'Mevlana Celaleddin Rumi''nin türbesi hangi ilimizdedir?',
-      'Gökkuşağında geleneksel olarak kaç renk sayılır?',
-      'Bir düzinede kaç adet vardır?',
-      'Türk lirasının simgesi hangisidir?',
-      '“Çölün gemisi” olarak anılan hayvan hangisidir?',
-      'Karada en hızlı koşan hayvan hangisidir?',
-      'Dev pandanın anavatanı hangi ülkedir?',
-      'Artık yılda şubat ayı kaç gündür?',
-      'Romen rakamıyla “X” kaçtır?',
-      'Suşi hangi ülkenin mutfağına aittir?',
-      'Belirgin halkalarıyla en çok bilinen gezegen hangisidir?',
-      'Arılar çiçek nektarından ne üretir?',
-      'Bir asırda kaç yıl vardır?',
-      'Harry Potter serisinin yazarı kimdir?',
-      'Hababam Sınıfı filmlerinde “İnek Şaban” karakterini kim canlandırdı?',
-      '“Pop''un Kralı” lakabıyla bilinen sanatçı kimdir?',
-      'Karagöz ile Hacivat ne tür bir sanattır?',
-      'Pinokyo yalan söyleyince neyi uzar?',
-      '“Rocky Balboa” hangi spor dalıyla ilgili bir film karakteridir?',
-      'Keloğlan hangi tür eserlerin kahramanıdır?',
-      'Kocaeli''nin il merkezi olan ilçe hangisidir?',
-      'Kocaeli''de bulunan kayak merkezi hangisidir?',
-      'Kocaeli hangi coğrafi bölgededir?',
-      'Kocaeli''nin plaka kodu kaçtır?',
-      'İzmit Körfezi hangi denizin bir koludur?'
-    );
-    update public.quiz_questions set difficulty = 3 where question in (
-      'Türk kadınlarına milletvekili seçme ve seçilme hakkı hangi yıl verildi?',
-      'Soyadı Kanunu hangi yıl kabul edildi?',
-      'Sevr Antlaşması hangi yıl imzalandı?',
-      'Kanuni Sultan Süleyman''ın kuşattığı ancak alamadığı Avrupa şehri hangisidir?',
-      'Türkiye NATO''ya hangi yıl üye oldu?',
-      'Lale Devri hangi padişahın döneminde yaşandı?',
-      'Tanzimat Fermanı hangi yıl ilan edildi?',
-      'Avustralya''nın başkenti neresidir?',
-      'Kanada''nın başkenti neresidir?',
-      'Nil Nehri hangi denize dökülür?',
-      'Dünyanın en büyük adası hangisidir?',
-      'Periyodik tabloda “Fe” hangi elementin simgesidir?',
-      'Penisilini kim keşfetti?',
-      'Atmosferde en çok bulunan gaz hangisidir?',
-      'Elektrik akımının birimi nedir?',
-      'İlk modern Olimpiyat Oyunları (1896) hangi şehirde yapıldı?',
-      'Mimar Sinan''ın “ustalık eserim” dediği cami hangisidir?',
-      '“Kaplumbağa Terbiyecisi” tablosunun ressamı kimdir?',
-      '“Saatleri Ayarlama Enstitüsü” romanının yazarı kimdir?',
-      'Beethoven''ın “Neşeye Övgü” bölümüyle bilinen senfonisi hangisidir?',
-      'Bir yılda kaç ay 31 gün çeker?',
-      'Nasreddin Hoca''nın türbesi hangi ilimizdedir?',
-      'Mezarının Gebze''de olduğu kabul edilen Kartacalı komutan kimdir?',
-      'Kocaeli adını hangi Osmanlı komutanından alır?'
-    );
-    insert into public.app_settings (key, value, description)
-    values ('seed_quiz_difficulty_v1', 'true', 'Kurulum işareti: başlangıç sorularına zorluk derecesi verildi');
-  end if;
-end $$;

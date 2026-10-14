@@ -1,4 +1,4 @@
-# Görev Test Rehberi – Yeni puan düzeni, büyük kutucuklar, eşleşme geri sayımı
+# Görev Test Rehberi – Wolvesville kutucukları, Ekip sistemi, mekân butonu
 
 ## A. Supabase'i güncelle
 Şema `supabase/parcalar/` klasöründe **4 parça**.
@@ -8,49 +8,51 @@
 4. Yeni sorgu aç > `4.sql` > Run.
 - Sıra önemli: 1, 2, 3, 4. "Run and enable RLS" çıkarsa onu seç.
 
-## B. Kutucuklar (iki oyun)
-1. Bekleme odasındaki kutucuk düzeni oyun başlayınca da aynı kalır. 10 kişilik oyunda 11–16 boş kalır.
-2. Kutucuklar büyük ve karedir:
-   - avatar kutuyu doldurur,
-   - numara üstte ortada,
-   - rol simgesi altta ortada,
-   - rumuz en altta şeritte.
-3. Çerçeve: takım arkadaşın **yeşil**, rolü açılan rakip **kırmızı**, bilinmeyen çerçevesiz.
-4. Alt düğmeler ve alt şerit daha küçük.
+## B. Oyun ekranı (iki oyun)
+1. Kutucuklar bitişik; ekranın iki kenarına, üstteki bilgi kutusuna ve alttaki düğmelere kadar uzanır.
+2. Numara üstte, rol simgesi altta; ikisi de kutu boyuna göre büyür.
+3. Oy tabelası ve durum yazısı kutunun ortasında durur.
+4. Köpekbalığıyken dalışta takım arkadaşların soluklaşmaz.
+5. Takım arkadaşına av dene:
+   - köpekbalığı ona gider, titrer ve sana geri döner,
+   - "Takım arkadaşını oylayamazsın" uyarısı çıkıp kaybolur.
+   - Vampir–Köylü'de aynısı (🧛).
+6. **Rolüm** listesinde rolün yanında oyuncunun rumuzu yazar:
+   - takım arkadaşın yeşil,
+   - ölen düşman kırmızı.
 
-## C. Küçük düzeltmeler
-- Rol kartında takım arkadaşlarının numarası yuvarlak rozetle yazar (Rolüm penceresinde de).
-- Sohbet balonu **yeşil**.
-- "Oyun zevkini arttırmak için sırayla konuş" beyaz kutuda yeşil yazı.
-- **Uzaktan eşleş:** 5 kişi olunca oyun hemen başlamaz. Üstte "⏳ BAŞLAMASINA 60 sn" sayar. Süre dolunca "Hazırım" diyenler çoğunluktaysa başlar. Oda dolarsa beklemeden başlar.
+## C. Yan yana oda açma
+- "Yan yana"ya basınca seçenek penceresi hemen açılır.
+- Konum arka planda alınır; petek seçme ekranı beklemeden gelir.
 
-## D. Yeni puan düzeni
-1. **Oyun hakkı yok.** Oyunlar'daki ve Profil'deki sarı gösterge **∞** yazar.
-2. Göstergedeki **+** artık **mekân kodu** girişidir.
-3. Puanlar:
-   - uzaktan oyun: tablodaki puan,
-   - yan yana oyun: 7 katı,
-   - mekân koduyla mekânda: +%25.
-4. Her oyunun aylık hedefi:
-   - uzaktan 250 puan,
-   - yan yana 1.750 puan,
-   - Bilgi Yarışması 250 puan.
-5. Köpekbalığı ve Vampir–Köylü'de puan için en az **5 kişi** gerekir.
-6. Köpekbalığı ve Vampir–Köylü giriş ekranında "Bu ayın puan hedefi" çubukları var (Yan yana / Uzaktan).
-7. Oyunlar'daki oyun kutularında "Kalan Hedef : … Puan" yazar.
-8. Bilgi Yarışması:
-   - günlük oyun sınırı yok, kutu "∞" yazar,
-   - yalnızca "Bu ayın hedefi" çubuğu kaldı.
-9. Puan tablosunda büyük sayı uzaktan puanı, altında 🏖️ yan yana puanı yazar.
-10. Etkinlik puanları:
-    - katılım 100–170,
-    - etkinlik açma 50,
-    - gelen kişi başı 25,
-    - puanlayan 15,
-    - düzenleyen 5★ için 12, 4★ için 6.
+## D. Göstergeler ve puan
+1. Profil'de ve Oyunlar'da oyun hakkı göstergesi yok (Profil'de etkinlik göstergesi duruyor).
+2. Oyunlar'ın sağ üstünde **Mekân** düğmesi var. Basınca mekân kodu penceresi açılır.
+3. Oyun kutularının sağ üstünde yuvarlak halka:
+   - içinde bu ay kazanılabilecek kalan puan yazar,
+   - kazandıkça halka dolar.
+4. Puan tablosunda yan yana simgesi 4 insan kafası, uzaktan simgesi dönen yörüngeli dünya.
+5. Bilgi Yarışması'nda can kutusunun yanında aylık hedef çubuğu ve **Puan sistemi** düğmesi var.
+6. "Oyun sınırsız / oyun hakkı" yazıları kalktı.
 
-## E. Mekân kodu (mekân hesabıyla dene)
-1. Mekân Profil'den kod oluşturur.
-2. Üye kodu Oyunlar'daki **+** ile girer.
-3. Üye mekânın peteğinde (ya da hemen yanında) yan yana oda açar. O oyunda herkes +%25 puan alır.
-4. Başka yerde açılan odada kod harcanmaz. Kod 6 saat geçerli.
+## E. Etkinlik kodu
+- Kod girişi etkinlik başladıktan **30 dk** sonra kapanır.
+- Konser & Festival'de **15 dk** sonra kapanır.
+
+## F. Ekip sistemi (iki telefonla dene)
+1. İki hesap önce arkadaş olsun.
+2. Oyunda arkadaşının avatarına dokun > **👥 Ekibe davet et**. Ekibin yoksa ekip kendiliğinden kurulur.
+3. Karşı taraf haritadaki bildirim kutusunda **Katıl**'a basar.
+4. Profil > **Ekibim**:
+   - kurucu ekibin adını değiştirir ve üye çıkarır,
+   - bu ayki ekip puanı ve sıra görünür,
+   - ekipten ayrılma buradan yapılır.
+5. Akış > Mesajlar: en üstte ekibin adıyla **ekip sohbeti** durur.
+   - Üstteki arkadaş rumuzuna dokun > @rumuz yazıya eklenir.
+   - Etiketlenen arkadaşa bildirim gider.
+6. Sıralama > **Ekip** sekmesi: ekipler sıralanır.
+7. Kurallar:
+   - ekip en çok 5 kişidir,
+   - her üye haftada 1 kez ekibe girer,
+   - yeni üyenin katkısı 3 gün sonra sayılır,
+   - yalnızca ekipten en az 2 kişinin oynadığı puanlı oyunlar ekip puanına yazılır.

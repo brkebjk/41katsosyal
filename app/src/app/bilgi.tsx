@@ -25,7 +25,7 @@ import { HoneycombMap } from '@/components/HoneycombMap';
 import { InfoModal } from '@/components/InfoModal';
 import { KeyboardLift } from '@/components/KeyboardLift';
 import { Popup } from '@/components/Popup';
-import { JokerPreview, jokerLook, LivesBar, PlayButton, PointGoal } from '@/components/QuizBits';
+import { JokerPreview, jokerLook, LivesBar, PlayButton } from '@/components/QuizBits';
 import { SideBySideView } from '@/components/SideBySideView';
 import { SoloMarathonView } from '@/components/SoloMarathonView';
 import { TextField } from '@/components/TextField';
@@ -613,6 +613,8 @@ export default function QuizScreen() {
                   dailyGames={lobby.daily_games}
                   onRefill={() => void loadLobby()}
                   unlimited={lobby.unlimited_lives === true}
+                  monthGoal={{ value: Number(lobby.points_month ?? 0), max: Number(lobby.month_points ?? 250) }}
+                  onPoints={() => setPointsOpen(true)}
                 />
               ) : null}
               {lobby && (lobby.points_mult ?? 1) > 1 ? (
@@ -670,24 +672,6 @@ export default function QuizScreen() {
                 />
               </View>
 
-              {/* Puan hedefleri */}
-              <View style={styles.goals}>
-                <PointGoal
-                  label="Bu ayın hedefi"
-                  value={Number(lobby?.points_month ?? 0)}
-                  max={lobby?.month_points ?? 250}
-                  icon="calendar"
-                />
-                <Pressable
-                  onPress={() => setPointsOpen(true)}
-                  accessibilityRole="button"
-                  testID="quiz-points"
-                  style={({ pressed }) => [styles.pointsBtn, pressed && styles.pressed]}
-                >
-                  <Ionicons name="stats-chart" size={16} color="#1A1200" />
-                  <Text style={styles.pointsBtnText}>Puan sistemi</Text>
-                </Pressable>
-              </View>
 
               <View style={styles.stats}>
                 <StatBox label="Oyun" value={String(lobby?.plays ?? 0)} icon="game-controller" />
@@ -1015,7 +999,6 @@ function PointsPopup({ lobby, onClose }: { lobby: QuizLobby | null; onClose: () 
         rows={[
           ['Aylık puan hedefi', `${lobby?.month_points ?? 250} puan`],
           ['Özel oda (aynı kişilerle)', `günde ${lobby?.private_group_daily ?? 5} puan`],
-          ['Oyun sayısı', 'Sınırsız (can harcar)'],
           ['Can', `en çok ${lobby?.max_lives ?? 5}, ${lobby?.life_minutes ?? 30} dk'da 1 dolar`],
         ]}
       />

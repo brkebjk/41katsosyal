@@ -18,6 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { Text } from '@/components/AppText';
 import { GamePointsModal } from '@/components/GamePointsModal';
+import { RemoteIcon, SideIcon } from '@/components/GameModeIcons';
 import { GoalBars } from '@/components/GoalBars';
 import { useRoomActions } from '@/components/useRoomActions';
 import { useAuth } from '@/lib/auth';
@@ -116,20 +117,22 @@ export default function VampireIntroScreen() {
             bars={[
               {
                 key: 'side',
-                label: `🏡 Yan yana ×${sideMult}`,
+                label: `Yan yana ×${sideMult}`,
+                icon: <SideIcon size={14} />,
                 earned: mine?.side ?? 0,
                 cap: goals?.side_cap ?? rules.sideMonthPoints,
                 color: '#FFB020',
               },
               {
                 key: 'remote',
-                label: '🌙 Uzaktan',
+                label: 'Uzaktan',
+                icon: <RemoteIcon size={16} />,
                 earned: mine?.remote ?? 0,
                 cap: goals?.remote_cap ?? rules.remoteMonthPoints,
                 color: '#C9B6FF',
               },
             ]}
-            note="Oyun sınırsız · hedefini tamamla, sıralamada yüksel."
+            note="Hedefini tamamla, sıralamada yüksel."
           />
 
           {/* Rol kartları */}

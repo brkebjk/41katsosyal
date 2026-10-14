@@ -7,7 +7,7 @@ export type LevelPerk = 'game_plus1' | 'event_plus1' | 'quiz_mult' | 'unlimited_
 export const LEVEL_QUIZ_MULT = 1.2;
 
 const PERK_TEXT: Record<LevelPerk, string> = {
-  game_plus1: 'Sınırsız oyun',
+  game_plus1: 'Yeni ödül yakında',
   event_plus1: '+1 etkinlik hakkı',
   quiz_mult: `Bilgi Yarışması puanı ×${String(LEVEL_QUIZ_MULT).replace('.', ',')}`,
   unlimited_lives: 'Bilgi Yarışması’nda sınırsız can',

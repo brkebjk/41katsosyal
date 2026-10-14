@@ -636,7 +636,7 @@ create table if not exists public.reports (
 alter table public.reports drop constraint if exists reports_target_type_check;
 alter table public.reports add constraint reports_target_type_check
   check (target_type in ('post', 'comment', 'event_comment', 'venue_review', 'room', 'event', 'quiz_chat', 'vv_whisper',
-                         'vv_dead', 'dm', 'sk_voice'));
+                         'vv_dead', 'dm', 'sk_voice', 'crew_msg'));
 
 -- Paket 27: özel mesajlar (DM). Yalnızca rumuzla yazışılır; iki kişi arkadaşsa gerçek ad görünür.
 -- Yazışmayı yalnızca abone başlatabilir; diğer taraf (abone olmasa da) cevap verebilir. Karşı taraf cevap verene kadar
@@ -902,7 +902,8 @@ create table if not exists public.notifications (
 );
 alter table public.notifications drop constraint if exists notifications_kind_check;
 alter table public.notifications add constraint notifications_kind_check
-  check (kind in ('admin_message', 'friend_request', 'system', 'game_invite', 'team_invite', 'mention', 'dm', 'room_msg'));
+  check (kind in ('admin_message', 'friend_request', 'system', 'game_invite', 'team_invite', 'mention', 'dm', 'room_msg',
+                  'crew_invite', 'crew_mention'));
 -- Paket 33: oda kapanınca o odanın davet / yazışma bildirimleri hızlı silinsin
 create index if not exists notifications_room_idx on public.notifications ((data->>'room_id'))
   where kind in ('room_msg', 'game_invite');
@@ -1851,13 +1852,15 @@ returns timestamptz language sql stable set search_path = public as $$
               else public._event_close_at(p_starts) end;
 $$;
 
--- Kod girişinin son anı: Konser & Festival başlangıçtan concert_checkin_minutes_after (45) dakika sonra, diğerleri kapanışta
+-- Kod girişinin son anı: başlangıçtan event_checkin_minutes_after (30) dakika sonra; Konser & Festival'de
+-- concert_checkin_minutes_after (15) dakika sonra. Hiçbir zaman etkinliğin kapanışından sonra olmaz.
 create or replace function public._event_checkin_end(p_starts timestamptz, p_category text)
 returns timestamptz language sql stable set search_path = public as $$
-  select case when p_category = 'konser_festival'
-              then p_starts + make_interval(mins => greatest(5, public.setting_int('concert_checkin_minutes_after', 45)))
-              else public._event_close_at(p_starts) end;
-$$;
+  select least(public._event_close_at(p_starts),
+               p_starts + make_interval(mins => greatest(5,
+                 case when p_category = 'konser_festival'
+                      then public.setting_int('concert_checkin_minutes_after', 15)
+                      else public.setting_int('event_checkin_minutes_after', 30) end)));$$;
 
 -- ---------------------------------------------------------------------
 -- Sıralama (haftada bir güncellenir) ve oyun şampiyonu ünvanları: altyapı
@@ -2618,6 +2621,8 @@ begin
       -- Aylık oyun sıralaması ve şampiyon ünvanı, hesaba yazılan bu puanlardan hesaplanır (hak sınırları herkes için aynı)
       insert into public.game_play_log (user_id, game_type, room_id, points, won)
       values (g.user_id, new.game_type, new.id, v_pts, coalesce(g.won, false));
+      -- Ekipçe oynandıysa (aynı oyunda ekipten en az 2 kişi) bu puan Ekip Sıralaması'na da yazılır
+      perform public._crew_award(new.id, g.user_id, v_pts);
     end if;
   end loop;
   return null;
@@ -3361,7 +3366,7 @@ declare
 begin
   v := public._require_user();
   if p_type not in ('post', 'comment', 'event_comment', 'venue_review', 'room', 'event', 'quiz_chat', 'vv_whisper',
-                    'vv_dead', 'dm', 'sk_voice') then
+                    'vv_dead', 'dm', 'sk_voice', 'crew_msg') then
     raise exception 'invalid_type';
   end if;
   -- Köpekbalığı Kafesi ses mesajı: yalnızca o mesajı dinleyebilen kişi (kendi mesajı hariç) bildirebilir.
@@ -3379,6 +3384,12 @@ begin
   if p_type = 'dm' and not exists (
        select 1 from public.dm_messages m join public.dm_threads d on d.id = m.thread_id
         where m.id = p_id and m.sender_id <> v.id and (d.user_a = v.id or d.user_b = v.id)) then
+    raise exception 'target_not_found';
+  end if;
+  -- Ekip sohbeti: yalnızca o ekipteki bir üye, başkasının mesajını bildirebilir
+  if p_type = 'crew_msg' and not exists (
+       select 1 from public.crew_messages m join public.crew_members cm on cm.crew_id = m.crew_id and cm.user_id = v.id
+        where m.id = p_id and m.sender_id <> v.id) then
     raise exception 'target_not_found';
   end if;
   -- Elenenlerin sohbeti: aynı odadaki bir oyuncu, başkasının mesajını bildirebilir
@@ -13493,7 +13504,7 @@ insert into public.app_settings (key, value, description) values
   ('pts_event_rated_5', '4', 'Etkinlik puanlama: 5 yıldız alan düzenleyen kaç puan kazanır? (konser hariç)'),
   ('pts_event_rated_4', '2', 'Etkinlik puanlama: 4 yıldız alan düzenleyen kaç puan kazanır? (konser hariç)'),
   ('pts_event_rated_month_cap', '80', 'Etkinlik puanlama: düzenleyen puanlamalardan ayda en çok kaç puan kazanır?'),
-  ('concert_checkin_minutes_after', '45', 'Konser & Festival: kod girişi başlangıçtan en geç kaç dakika sonrasına kadar açık?')
+  ('concert_checkin_minutes_after', '15', 'Konser & Festival: kod girişi başlangıçtan en geç kaç dakika sonrasına kadar açık?')
 on conflict (key) do update set description = excluded.description;
 
 -- Uygulama metinleri (Profil > Uygulama ve kayıt ekranında açılır). Değerleri Table Editor > app_settings'ten
@@ -18930,6 +18941,504 @@ returns jsonb language sql stable security definer set search_path = public as $
     'open', (select public._kick_window(r) is not null from public.game_rooms r where r.id = p_room_id));
 $$;
 
+-- ---------------------------------------------------------------------------------------------------------------------
+-- EKİP (oyun ekibi): arkadaş olanlar kalıcı bir ekip kurar (en çok crew_max_members, 5 kişi). Ekipçe oynanan puanlı
+-- oyunların puanı (aynı oyunda ekipten en az 2 kişi) Ekip Sıralaması'na da yazılır; kişisel puan ve aylık hedefler
+-- değişmez. Suistimale karşı:
+--   * ekibe yalnızca ekipteki birinin ARKADAŞI davet edilir,
+--   * her üye haftada (crew_change_days, 7 gün) en çok 1 kez ekibe girer (kurmak, katılmak, ekip değiştirmek),
+--   * ekibe yeni giren üyenin katkısı crew_contrib_days (3) gün sonra sayılır,
+--   * puanlı oyun kuralları aynen geçerlidir (en az 4–5 gerçek üye, yan yana konum kontrolü, aylık hedef).
+-- Kurucu ekibin adını değiştirir ve üye atar. Ekibe özel sohbet mesaj kutusunda ekibin adıyla görünür; üyeler
+-- birbirini @rumuz ile etiketler, etiketlenene bildirim gider. Tablolar doğrudan okunamaz/yazılamaz.
+-- ---------------------------------------------------------------------------------------------------------------------
+create table if not exists public.crews (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(btrim(name)) between 2 and 30),
+  founder_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create table if not exists public.crew_members (
+  user_id uuid primary key references public.profiles (id) on delete cascade,
+  crew_id uuid not null references public.crews (id) on delete cascade,
+  joined_at timestamptz not null default now(),
+  read_at timestamptz
+);
+create index if not exists crew_members_crew_idx on public.crew_members (crew_id);
+-- Ekibe giriş geçmişi (haftada 1 kuralı): üye silinse de kayıt kalır
+create table if not exists public.crew_joins (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  crew_id uuid,
+  created_at timestamptz not null default now()
+);
+create index if not exists crew_joins_user_idx on public.crew_joins (user_id, created_at desc);
+create table if not exists public.crew_invites (
+  id uuid primary key default gen_random_uuid(),
+  crew_id uuid not null references public.crews (id) on delete cascade,
+  from_user uuid not null references public.profiles (id) on delete cascade,
+  to_user uuid not null references public.profiles (id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'accepted', 'declined', 'cancelled')),
+  created_at timestamptz not null default now(),
+  responded_at timestamptz,
+  check (from_user <> to_user)
+);
+create unique index if not exists crew_invites_pending_idx on public.crew_invites (crew_id, to_user) where status = 'pending';
+create index if not exists crew_invites_to_idx on public.crew_invites (to_user, status);
+create index if not exists crew_invites_from_idx on public.crew_invites (from_user, created_at);
+create table if not exists public.crew_messages (
+  id uuid primary key default gen_random_uuid(),
+  crew_id uuid not null references public.crews (id) on delete cascade,
+  sender_id uuid not null references public.profiles (id) on delete cascade,
+  alias text not null,
+  avatar int not null default 1,
+  body text not null check (char_length(body) between 1 and 500),
+  created_at timestamptz not null default now()
+);
+create index if not exists crew_messages_crew_idx on public.crew_messages (crew_id, created_at desc);
+create index if not exists crew_messages_sender_idx on public.crew_messages (sender_id, created_at);
+-- Ekip puanı: ekipçe oynanan puanlı oyunda üyenin hesabına yazılan puan (katkısı sayılan üyeler)
+create table if not exists public.crew_points (
+  id bigint generated always as identity primary key,
+  crew_id uuid not null references public.crews (id) on delete cascade,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  room_id uuid references public.game_rooms (id) on delete set null,
+  amount numeric not null check (amount > 0),
+  created_at timestamptz not null default now()
+);
+create index if not exists crew_points_crew_idx on public.crew_points (crew_id, created_at);
+create unique index if not exists crew_points_user_room_idx on public.crew_points (user_id, room_id) where room_id is not null;
+alter table public.crews enable row level security;
+alter table public.crew_members enable row level security;
+alter table public.crew_joins enable row level security;
+alter table public.crew_invites enable row level security;
+alter table public.crew_messages enable row level security;
+alter table public.crew_points enable row level security;
+
+insert into public.app_settings (key, value, description) values
+  ('crew_max_members', '5', 'Ekip: en çok kaç kişi?'),
+  ('crew_change_days', '7', 'Ekip: üye kaç günde bir ekibe girebilir (kurmak, katılmak, değiştirmek)?'),
+  ('crew_contrib_days', '3', 'Ekip: yeni üyenin ekip puanına katkısı kaç gün sonra sayılır?')
+on conflict (key) do update set description = excluded.description;
+
+create or replace function public._crew_of(p_user uuid)
+returns uuid language sql stable security definer set search_path = public as $$
+  select crew_id from public.crew_members where user_id = p_user;
+$$;
+
+-- Üye ekibe girebilir mi (haftada 1)? Bir sonraki giriş zamanı (girebiliyorsa boş)
+create or replace function public._crew_next_change(p_user uuid)
+returns timestamptz language sql stable security definer set search_path = public as $$
+  select max(j.created_at) + make_interval(days => greatest(0, public.setting_int('crew_change_days', 7)))
+    from public.crew_joins j
+   where j.user_id = p_user
+     and j.created_at > now() - make_interval(days => greatest(0, public.setting_int('crew_change_days', 7)));
+$$;
+
+-- Ekip adı: 2–30 karakter, iletişim bilgisi / bağlantı yok, ağır küfür maskelenir
+create or replace function public._crew_name(p_name text)
+returns text language plpgsql stable security definer set search_path = public as $$
+declare
+  v text := btrim(regexp_replace(coalesce(p_name, ''), '[[:space:]]+', ' ', 'g'));
+begin
+  if char_length(v) not between 2 and 30 then raise exception 'crew_invalid_name'; end if;
+  if public._has_link(v) or public._has_contact_info(v) then raise exception 'crew_invalid_name'; end if;
+  return left(public._mask_profanity(v), 30);
+end $$;
+
+-- Ekibe ekle (giriş kaydıyla). Kurucu/katılan için ortak; sınırları çağıran denetler.
+create or replace function public._crew_add(p_crew uuid, p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.crew_members (user_id, crew_id, joined_at, read_at) values (p_user, p_crew, now(), now());
+  insert into public.crew_joins (user_id, crew_id) values (p_user, p_crew);
+  -- Bu kişiye bu ekipten gelen diğer bekleyen davetler kapanır
+  update public.crew_invites set status = 'cancelled', responded_at = now()
+   where to_user = p_user and status = 'pending' and crew_id = p_crew;
+end $$;
+
+-- Ekipten çıkar: kurucu çıkarsa kurucu en eski üyeye geçer; kimse kalmazsa ekip silinir
+create or replace function public._crew_remove(p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_crew uuid;
+  v_next uuid;
+begin
+  delete from public.crew_members where user_id = p_user returning crew_id into v_crew;
+  if v_crew is null then return; end if;
+  if exists (select 1 from public.crews where id = v_crew and founder_id = p_user) then
+    select user_id into v_next from public.crew_members where crew_id = v_crew order by joined_at, user_id limit 1;
+    if v_next is null then
+      delete from public.crews where id = v_crew;
+    else
+      update public.crews set founder_id = v_next where id = v_crew;
+    end if;
+  end if;
+  -- Ayrılanın gönderdiği bekleyen davetler kapanır
+  update public.crew_invites set status = 'cancelled', responded_at = now()
+   where from_user = p_user and status = 'pending';
+end $$;
+
+-- Ekip kur (kurucu olursun). Ekipteyken kurulamaz; haftada 1 kuralı geçerli.
+create or replace function public.crew_create(p_name text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_name text;
+  v_id uuid;
+begin
+  v := public._require_writer(null);
+  if v.role <> 'user' then raise exception 'crew_not_allowed'; end if;
+  perform 1 from public.profiles where id = v.id for update;
+  if public._crew_of(v.id) is not null then raise exception 'crew_already_member'; end if;
+  if public._crew_next_change(v.id) is not null then raise exception 'crew_change_wait'; end if;
+  v_name := public._crew_name(p_name);
+  insert into public.crews (name, founder_id) values (v_name, v.id) returning id into v_id;
+  perform public._crew_add(v_id, v.id);
+  return v_id;
+end $$;
+
+-- Kurucu ekibin adını değiştirir
+create or replace function public.crew_rename(p_name text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_crew uuid;
+begin
+  v := public._require_writer(null);
+  v_crew := public._crew_of(v.id);
+  if v_crew is null then raise exception 'crew_not_member'; end if;
+  if not exists (select 1 from public.crews where id = v_crew and founder_id = v.id) then raise exception 'crew_founder_only'; end if;
+  update public.crews set name = public._crew_name(p_name) where id = v_crew;
+end $$;
+
+-- Ekibe davet: yalnızca ekipteki biri, kendi ARKADAŞINI davet eder. Ekibin yoksa davetle birlikte ekip kurulur
+-- (adı sonra kurucu değiştirir). Ekip doluysa (bekleyen davetler dahil) davet edilemez; günde en çok 10 davet.
+create or replace function public.crew_invite(p_target uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  t public.profiles;
+  v_crew uuid;
+  v_id uuid;
+  v_name text;
+  v_max int := greatest(2, public.setting_int('crew_max_members', 5));
+begin
+  v := public._require_writer(null);
+  if v.role <> 'user' then raise exception 'crew_not_allowed'; end if;
+  select * into t from public.profiles where id = p_target;
+  if not found or t.id = v.id or t.role <> 'user' or t.banned_at is not null then raise exception 'crew_target_invalid'; end if;
+  if not public._friends(v.id, t.id) then raise exception 'crew_not_friend'; end if;
+  if public._blocked_between(v.id, t.id) then raise exception 'crew_target_invalid'; end if;
+  perform 1 from public.profiles where id = v.id for update;
+  v_crew := public._crew_of(v.id);
+  if v_crew is null then
+    if public._crew_next_change(v.id) is not null then raise exception 'crew_change_wait'; end if;
+    insert into public.crews (name, founder_id)
+    values ('Yeni Ekip', v.id)
+    returning id into v_crew;
+    perform public._crew_add(v_crew, v.id);
+  end if;
+  perform 1 from public.crews where id = v_crew for update;
+  if public._crew_of(t.id) = v_crew then raise exception 'crew_already_in'; end if;
+  if exists (select 1 from public.crew_invites where crew_id = v_crew and to_user = t.id and status = 'pending') then
+    raise exception 'crew_invite_exists';
+  end if;
+  if (select count(*) from public.crew_members where crew_id = v_crew)
+     + (select count(*) from public.crew_invites where crew_id = v_crew and status = 'pending') >= v_max then
+    raise exception 'crew_full';
+  end if;
+  if (select count(*) from public.crew_invites where from_user = v.id and created_at > now() - interval '1 day') >= 10 then
+    raise exception 'rate_limited';
+  end if;
+  select name into v_name from public.crews where id = v_crew;
+  insert into public.crew_invites (crew_id, from_user, to_user) values (v_crew, v.id, t.id) returning id into v_id;
+  perform public._notify(t.id, 'crew_invite', 'Ekip daveti',
+    v.full_name || ' seni “' || v_name || '” ekibine davet etti.',
+    jsonb_build_object('invite_id', v_id, 'route', '/ekip'));
+  return v_id;
+end $$;
+
+-- Daveti cevapla. Kabul: başka ekipteysen oradan çıkarsın (ekip değiştirme); haftada 1 kuralı ve ekip sınırı geçerli.
+create or replace function public.crew_invite_respond(p_invite uuid, p_accept boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  i public.crew_invites;
+  v_max int := greatest(2, public.setting_int('crew_max_members', 5));
+begin
+  v := public._require_writer(null);
+  select * into i from public.crew_invites where id = p_invite and to_user = v.id for update;
+  if not found then raise exception 'crew_invite_not_found'; end if;
+  if i.status <> 'pending' then raise exception 'crew_invite_closed'; end if;
+  if not coalesce(p_accept, false) then
+    update public.crew_invites set status = 'declined', responded_at = now() where id = i.id;
+    return;
+  end if;
+  perform 1 from public.profiles where id = v.id for update;
+  perform 1 from public.crews where id = i.crew_id for update;
+  if not found then raise exception 'crew_invite_closed'; end if;
+  -- Davet eden hâlâ o ekipte ve hâlâ arkadaşın olmalı
+  if public._crew_of(i.from_user) is distinct from i.crew_id or not public._friends(v.id, i.from_user) then
+    update public.crew_invites set status = 'cancelled', responded_at = now() where id = i.id;
+    raise exception 'crew_invite_closed';
+  end if;
+  if public._crew_of(v.id) = i.crew_id then raise exception 'crew_already_in'; end if;
+  if public._crew_next_change(v.id) is not null then raise exception 'crew_change_wait'; end if;
+  if (select count(*) from public.crew_members where crew_id = i.crew_id) >= v_max then raise exception 'crew_full'; end if;
+  perform public._crew_remove(v.id);
+  update public.crew_invites set status = 'accepted', responded_at = now() where id = i.id;
+  perform public._crew_add(i.crew_id, v.id);
+  perform public._notify(i.from_user, 'system', 'Ekip daveti kabul edildi',
+    v.full_name || ' ekibine katıldı.', jsonb_build_object('route', '/ekip'));
+end $$;
+
+create or replace function public.crew_leave()
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+begin
+  v := public._require_user();
+  if public._crew_of(v.id) is null then raise exception 'crew_not_member'; end if;
+  perform public._crew_remove(v.id);
+end $$;
+
+-- Kurucu bir üyeyi ekipten çıkarır
+create or replace function public.crew_kick(p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_crew uuid;
+  v_name text;
+begin
+  v := public._require_user();
+  v_crew := public._crew_of(v.id);
+  if v_crew is null then raise exception 'crew_not_member'; end if;
+  select name into v_name from public.crews where id = v_crew and founder_id = v.id;
+  if not found then raise exception 'crew_founder_only'; end if;
+  if p_user = v.id or public._crew_of(p_user) is distinct from v_crew then raise exception 'crew_target_invalid'; end if;
+  perform public._crew_remove(p_user);
+  perform public._notify(p_user, 'system', 'Ekipten çıkarıldın', '“' || v_name || '” ekibinden çıkarıldın.',
+    jsonb_build_object('route', '/ekip'));
+end $$;
+
+-- Ekip puanı: ekipçe oynanan puanlı oyun (aynı oyunda ekipten en az 2 oyuncu). Katkısı sayılan (ekipte en az
+-- crew_contrib_days günü dolan) üyenin bu oyundan hesabına yazılan puanı ekibe de yazılır. record_game_plays çağırır.
+create or replace function public._crew_award(p_room uuid, p_user uuid, p_pts numeric)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  m public.crew_members;
+begin
+  if p_pts is null or p_pts <= 0 then return; end if;
+  select * into m from public.crew_members where user_id = p_user;
+  if not found then return; end if;
+  if m.joined_at > now() - make_interval(days => greatest(0, public.setting_int('crew_contrib_days', 3))) then return; end if;
+  if not exists (select 1 from public.room_players rp join public.crew_members cm on cm.user_id = rp.user_id
+                  where rp.room_id = p_room and rp.left_at is null and rp.user_id <> p_user and cm.crew_id = m.crew_id) then
+    return;
+  end if;
+  insert into public.crew_points (crew_id, user_id, room_id, amount) values (m.crew_id, p_user, p_room, p_pts)
+  on conflict do nothing;
+end $$;
+
+-- Ekip ekranı: ekibim, üyeler, gelen davetler, haftada 1 kuralı, bu ayki ekip puanı ve sıram.
+-- Üyenin gerçek adı yalnızca arkadaşı olana görünür; diğerlerine bu haftaki rumuzu.
+create or replace function public.crew_view()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  c public.crews;
+  v_start timestamptz := public._month_start();
+  v_days int := greatest(0, public.setting_int('crew_contrib_days', 3));
+begin
+  v := public._require_user();
+  select cr.* into c from public.crews cr join public.crew_members cm on cm.crew_id = cr.id where cm.user_id = v.id;
+  return jsonb_build_object(
+    'max_members', greatest(2, public.setting_int('crew_max_members', 5)),
+    'contrib_days', v_days,
+    'next_change_at', public._crew_next_change(v.id),
+    'crew', case when c.id is null then null else jsonb_build_object(
+      'id', c.id, 'name', c.name, 'is_founder', c.founder_id = v.id, 'created_at', c.created_at,
+      'month_points', (select coalesce(sum(amount), 0) from public.crew_points where crew_id = c.id and created_at >= v_start),
+      'my_points', (select coalesce(sum(amount), 0) from public.crew_points
+                     where crew_id = c.id and user_id = v.id and created_at >= v_start),
+      'rank', (select x.place from public.get_crew_leaderboard(500, 0) x where x.is_mine limit 1),
+      'members', (select coalesce(jsonb_agg(jsonb_build_object(
+                    'id', p.id,
+                    'name', case when p.id = v.id or public._friends(v.id, p.id) then p.full_name else p.alias end,
+                    'alias', p.alias,
+                    'avatar', p.avatar_index,
+                    'is_me', p.id = v.id,
+                    'is_founder', p.id = c.founder_id,
+                    'is_friend', public._friends(v.id, p.id),
+                    'joined_at', cm.joined_at,
+                    'counts_from', cm.joined_at + make_interval(days => v_days),
+                    'month_points', (select coalesce(sum(cp.amount), 0) from public.crew_points cp
+                                      where cp.crew_id = c.id and cp.user_id = p.id and cp.created_at >= v_start))
+                    order by (p.id = c.founder_id) desc, cm.joined_at), '[]'::jsonb)
+                    from public.crew_members cm join public.profiles p on p.id = cm.user_id
+                   where cm.crew_id = c.id),
+      'pending', (select coalesce(jsonb_agg(jsonb_build_object('id', i.id, 'name', p.full_name, 'created_at', i.created_at)
+                    order by i.created_at), '[]'::jsonb)
+                    from public.crew_invites i join public.profiles p on p.id = i.to_user
+                   where i.crew_id = c.id and i.status = 'pending' and (i.from_user = v.id or c.founder_id = v.id))) end,
+    'invites', (select coalesce(jsonb_agg(jsonb_build_object(
+                  'id', i.id, 'crew_name', cr.name, 'from_name', p.full_name, 'created_at', i.created_at,
+                  'members', (select count(*) from public.crew_members cm where cm.crew_id = cr.id))
+                  order by i.created_at desc), '[]'::jsonb)
+                  from public.crew_invites i join public.crews cr on cr.id = i.crew_id join public.profiles p on p.id = i.from_user
+                 where i.to_user = v.id and i.status = 'pending'));
+end $$;
+
+-- Oyun ekranındaki oyuncu penceresi: bu kişiyi ekibime davet edebilir miyim? (ikimiz de bu odadaysak)
+create or replace function public.crew_target_status(p_room uuid, p_target uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_crew uuid;
+  v_friend boolean;
+begin
+  v := public._require_user();
+  if not exists (select 1 from public.room_players where room_id = p_room and user_id = v.id)
+     or not exists (select 1 from public.room_players where room_id = p_room and user_id = p_target) then
+    return jsonb_build_object('friend', false, 'same_crew', false, 'can_invite', false);
+  end if;
+  v_crew := public._crew_of(v.id);
+  v_friend := public._friends(v.id, p_target);
+  return jsonb_build_object(
+    'friend', v_friend,
+    'same_crew', coalesce(v_crew is not null and public._crew_of(p_target) = v_crew, false),
+    'can_invite', v_friend and v.role = 'user'
+                  and (v_crew is null or public._crew_of(p_target) is distinct from v_crew)
+                  and not exists (select 1 from public.crew_invites i
+                                   where i.to_user = p_target and i.crew_id = v_crew and i.status = 'pending'));
+end $$;
+
+-- Ekip sohbeti: son 150 mesaj (eskiden yeniye); açılınca okundu sayılır
+create or replace function public.crew_messages_list()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_crew uuid;
+begin
+  v := public._require_user();
+  v_crew := public._crew_of(v.id);
+  if v_crew is null then raise exception 'crew_not_member'; end if;
+  update public.crew_members set read_at = now() where user_id = v.id;
+  return (select coalesce(jsonb_agg(jsonb_build_object(
+            'id', x.id, 'alias', x.alias, 'avatar', x.avatar, 'body', x.body, 'mine', x.sender_id = v.id,
+            'created_at', x.created_at) order by x.created_at), '[]'::jsonb)
+            from (select * from public.crew_messages where crew_id = v_crew order by created_at desc limit 150) x);
+end $$;
+
+-- Ekip sohbetine yaz. @rumuz ile etiketlenen EKİP ÜYESİNE bildirim gider (saatte en çok 10).
+create or replace function public.crew_say(p_body text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_crew uuid;
+  v_name text;
+  v_body text := btrim(regexp_replace(coalesce(p_body, ''), '[[:space:]]+$', ''));
+  v_id uuid;
+  m record;
+begin
+  v := public._require_writer(null);
+  v_crew := public._crew_of(v.id);
+  if v_crew is null then raise exception 'crew_not_member'; end if;
+  if char_length(v_body) not between 1 and 500 then raise exception 'invalid_body'; end if;
+  if public._has_link(v_body) then raise exception 'links_not_allowed'; end if;
+  if (select count(*) from public.crew_messages where sender_id = v.id and created_at > now() - interval '1 minute') >= 15 then
+    raise exception 'rate_limited';
+  end if;
+  v_body := left(public._mask_profanity(public._expand_mentions(v_body)), 500);
+  insert into public.crew_messages (crew_id, sender_id, alias, avatar, body)
+  values (v_crew, v.id, v.alias, v.avatar_index, v_body) returning id into v_id;
+  update public.crew_members set read_at = now() where user_id = v.id;
+  -- Eski mesajlar 90 günde silinir
+  if random() < 0.05 then delete from public.crew_messages where created_at < now() - interval '90 days'; end if;
+  select name into v_name from public.crews where id = v_crew;
+  for m in
+    select distinct x.uid from (
+      select public._alias_lookup(coalesce(t.g[2], '') || '#' || t.g[3]) as uid
+        from regexp_matches(v_body, public._mention_re(), 'g') as t(g)
+    ) x
+    join public.crew_members cm on cm.user_id = x.uid and cm.crew_id = v_crew
+   where x.uid <> v.id
+   limit 5
+  loop
+    if (select count(*) from public.notifications n
+         where n.user_id = m.uid and n.kind = 'crew_mention' and n.created_at > now() - interval '1 hour') < 10 then
+      perform public._notify(m.uid, 'crew_mention', '“' || v_name || '” sohbetinde senden bahsedildi',
+        left(v_body, 140) || case when char_length(v_body) > 140 then '…' else '' end,
+        jsonb_build_object('route', '/akis', 'crew', true));
+    end if;
+  end loop;
+  return v_id;
+end $$;
+
+-- Ekip sohbetindeki okunmamış mesaj sayısı (mesaj kutusu rozeti)
+create or replace function public._crew_unread(p_user uuid)
+returns int language sql stable security definer set search_path = public as $$
+  select coalesce((select count(*)::int from public.crew_messages m
+                    join public.crew_members cm on cm.crew_id = m.crew_id and cm.user_id = p_user
+                   where m.sender_id <> p_user and m.created_at > coalesce(cm.read_at, cm.joined_at)), 0);
+$$;
+
+-- Mesaj kutusu başlığı: ekibim (adı, son mesaj, okunmamış)
+create or replace function public.crew_inbox()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  c public.crews;
+  l public.crew_messages;
+begin
+  v := public._require_user();
+  select cr.* into c from public.crews cr join public.crew_members cm on cm.crew_id = cr.id where cm.user_id = v.id;
+  if c.id is null then return null; end if;
+  select * into l from public.crew_messages where crew_id = c.id order by created_at desc limit 1;
+  return jsonb_build_object('id', c.id, 'name', c.name, 'unread', public._crew_unread(v.id),
+    'members', (select count(*) from public.crew_members where crew_id = c.id),
+    'last_body', l.body, 'last_alias', l.alias, 'last_mine', l.sender_id = v.id, 'last_at', coalesce(l.created_at, c.created_at));
+end $$;
+
+-- Mesaj kutusu rozeti: özel mesajlar + ekip sohbeti
+create or replace function public.dm_unread_count()
+returns int language sql stable security definer set search_path = public as $$
+  select (coalesce((select sum(x.unread) from public.dm_list() x), 0) + public._crew_unread(auth.uid()))::int;
+$$;
+
+-- Ekip Sıralaması: ayın (ya da geçen ayların) ekip puanı. Yalnızca ekipçe oynanan puanlı oyunlar.
+create or replace function public.get_crew_leaderboard(p_limit int default 100, p_months_ago int default 0)
+returns table (place bigint, crew_name text, members int, points numeric, is_mine boolean)
+language plpgsql security definer set search_path = public as $$
+#variable_conflict use_column
+declare
+  v_ago int := greatest(0, least(coalesce(p_months_ago, 0), 24));
+  v_lim int := greatest(1, least(coalesce(p_limit, 100), 500));
+  v_lstart timestamp := date_trunc('month', (now() at time zone 'Europe/Istanbul') - make_interval(months => v_ago));
+  v_from timestamptz := v_lstart at time zone 'Europe/Istanbul';
+  v_to timestamptz := (v_lstart + interval '1 month') at time zone 'Europe/Istanbul';
+  v_mine uuid := public._crew_of(auth.uid());
+begin
+  if not public._is_active_user() then return; end if;
+  return query
+  with s as (
+    select cp.crew_id, sum(cp.amount) as pts
+      from public.crew_points cp
+     where cp.created_at >= v_from and cp.created_at < v_to
+     group by cp.crew_id
+    having sum(cp.amount) > 0
+  ), t as (
+    select dense_rank() over (order by s.pts desc) as place, c.id as cid, c.name as cname, s.pts as pts,
+           (select count(*)::int from public.crew_members cm where cm.crew_id = c.id) as n
+      from s join public.crews c on c.id = s.crew_id
+  )
+  select t.place, t.cname, t.n, t.pts, coalesce(t.cid = v_mine, false)
+    from t
+   where t.place <= v_lim or t.cid = v_mine
+   order by t.place, t.cname;
+end $$;
+
 revoke execute on all functions in schema public from public, anon, authenticated;
 
 -- RLS kurallarının içinde kullanılan yardımcılar
@@ -19005,6 +19514,25 @@ grant execute on function public.sk_voice_post(uuid, text, int) to authenticated
 grant execute on function public.sk_voice_get(uuid) to authenticated;
 grant execute on function public.my_remote_caps() to authenticated;
 grant execute on function public.my_game_goals() to authenticated;
+grant execute on function public.crew_create(text) to authenticated;
+grant execute on function public.crew_rename(text) to authenticated;
+grant execute on function public.crew_invite(uuid) to authenticated;
+grant execute on function public.crew_invite_respond(uuid, boolean) to authenticated;
+grant execute on function public.crew_leave() to authenticated;
+grant execute on function public.crew_kick(uuid) to authenticated;
+grant execute on function public.crew_view() to authenticated;
+grant execute on function public.crew_target_status(uuid, uuid) to authenticated;
+grant execute on function public.crew_messages_list() to authenticated;
+grant execute on function public.crew_say(text) to authenticated;
+grant execute on function public.crew_inbox() to authenticated;
+grant execute on function public.get_crew_leaderboard(int, int) to authenticated;
+-- Ekip tabloları doğrudan okunamaz; moderatör yalnızca ŞİKAYET EDİLMİŞ ekip mesajını okuyabilir
+revoke all on public.crews, public.crew_members, public.crew_joins, public.crew_invites, public.crew_messages, public.crew_points
+  from anon, authenticated;
+grant select on public.crew_messages to authenticated;
+drop policy if exists crew_messages_admin_reported on public.crew_messages;
+create policy crew_messages_admin_reported on public.crew_messages for select to authenticated
+  using (public.is_admin() and exists (select 1 from public.reports r where r.target_type = 'crew_msg' and r.target_id = crew_messages.id));
 grant execute on function public.vv_skip_discussion(uuid, boolean) to authenticated;
 grant execute on function public.sk_skip_discussion(uuid, boolean) to authenticated;
 grant execute on function public.sk_match_join() to authenticated;
@@ -19993,6 +20521,21 @@ begin
     update public.app_settings set value = '300' where key = 'pts_event_rated_month_cap';
     insert into public.app_settings (key, value, description)
     values ('pts_rules_v6', 'true', 'İç işaret: yeni puan düzeni (oyun hakkı yok, aylık puan hedefleri) uygulandı (silme)')
+    on conflict (key) do nothing;
+  end if;
+end $$;
+
+
+-- Etkinlik kod girişi: başlangıçtan 30 dakika sonra kapanır (Konser & Festival'de 15 dakika). Bir kez çevrilir.
+insert into public.app_settings (key, value, description) values
+  ('event_checkin_minutes_after', '30', 'Etkinlik: kod girişi başlangıçtan en geç kaç dakika sonrasına kadar açık? (Konser & Festival hariç)')
+on conflict (key) do update set description = excluded.description;
+do $$
+begin
+  if not exists (select 1 from public.app_settings where key = 'event_checkin_v7') then
+    update public.app_settings set value = '15' where key = 'concert_checkin_minutes_after';
+    insert into public.app_settings (key, value, description)
+    values ('event_checkin_v7', 'true', 'İç işaret: kod girişi 30 dk / konser 15 dk kuralı uygulandı (silme)')
     on conflict (key) do nothing;
   end if;
 end $$;

@@ -33,7 +33,7 @@ export type EventItem = {
   liked_by_me: boolean;
   /** Katılımını kodla doğruladım mı? */
   checked_in: boolean;
-  /** Şu an kod girişi açık mı? (etkinlikten 5 dk önce başlar, başlangıçtan 3 saat sonra etkinlikle birlikte kapanır) */
+  /** Şu an kod girişi açık mı? (etkinlikten 5 dk önce başlar, başlangıçtan 30 dk sonra kapanır; konserde 15 dk) */
   checkin_open: boolean;
   /** Kodla katılımını doğrulayanların sayısı; yalnızca etkinliği açan görür, diğerlerinde null */
   checked_in_count: number | null;
@@ -147,7 +147,7 @@ const EVENT_TEXT: Record<string, string> = {
   host_cannot_checkin: 'Etkinliği açan kişi kendi kodunu giremez; kodu katılımcılara sen verirsin.',
   checkin_not_open: 'Kod girişi etkinlik başlamadan 5 dakika önce açılır. O zaman tekrar dene.',
   checkin_closed:
-    'Kod girişi kapandı. Konser & Festival etkinliklerinde kod girişi başlangıçtan 45 dakika sonra, diğer etkinliklerde başlangıçtan 3 saat sonra (ya da düzenleyen etkinliği bitirince) kapanır.',
+    'Kod girişi kapandı. Kod girişi etkinlik başladıktan 30 dakika sonra (Konser & Festival’de 15 dakika sonra) ya da düzenleyen etkinliği bitirince kapanır.',
   close_request_required:
     'Etkinliğe kodla katılan kişiler var, bu yüzden etkinliği kendin kaldıramazsın. Moderatöre açıklamalı bir kapatma talebi gönder.',
   close_request_not_needed: 'Kodla katılan olmadığı için talebe gerek yok, etkinliği doğrudan kaldırabilirsin.',

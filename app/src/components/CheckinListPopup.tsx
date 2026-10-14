@@ -13,8 +13,8 @@ import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 /** Kod girişi başlangıçtan bu kadar dakika önce açılır (sunucu ayarıyla aynı) */
 const OPEN_BEFORE_MIN = 5;
-/** Kod girişinin kapanışı: Konser & Festival başlangıçtan 45 dk, diğerleri 3 saat sonra */
-const closeAfterMin = (category: string) => (category === 'konser_festival' ? 45 : 180);
+/** Kod girişinin kapanışı: Konser & Festival başlangıçtan 15 dk, diğerleri 30 dk sonra (sunucu ayarıyla aynı) */
+const closeAfterMin = (category: string) => (category === 'konser_festival' ? 15 : 30);
 
 function span(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));

@@ -153,6 +153,7 @@ export type ReportGroup = {
     | 'vv_whisper'
     | 'vv_dead'
     | 'dm'
+    | 'crew_msg'
     | 'sk_voice';
   targetId: string;
   /** Bu içerik için açık şikayet kimlikleri (hepsi birlikte kapatılır) */
@@ -176,7 +177,8 @@ type ReportRow = {
     | 'quiz_chat'
     | 'vv_whisper'
     | 'vv_dead'
-    | 'dm';
+    | 'dm'
+    | 'crew_msg';
   target_id: string;
   reason: string;
   status: 'open' | 'resolved' | 'dismissed';
@@ -233,7 +235,8 @@ export async function listReports(status: 'open' | 'closed'): Promise<{ data: Re
   const whisperIds = [...groups.values()].filter((g) => g.type === 'vv_whisper').map((g) => g.targetId);
   const deadIds = [...groups.values()].filter((g) => g.type === 'vv_dead').map((g) => g.targetId);
   const dmIds = [...groups.values()].filter((g) => g.type === 'dm').map((g) => g.targetId);
-  const [posts, comments, eventComments, reviews, rooms, events, quizChats, whispers, deads, dms] = await Promise.all([
+  const crewIds = [...groups.values()].filter((g) => g.type === 'crew_msg').map((g) => g.targetId);
+  const [posts, comments, eventComments, reviews, rooms, events, quizChats, whispers, deads, dms, crewMsgs] = await Promise.all([
     postIds.length
       ? supabase.from('posts').select('id, alias, body, is_hidden, created_at').in('id', postIds)
       : Promise.resolve({ data: [] as never[] }),
@@ -290,6 +293,13 @@ export async function listReports(status: 'open' | 'closed'): Promise<{ data: Re
           .from('dm_messages')
           .select('id, body, created_at, sender:profiles!dm_messages_sender_id_fkey(full_name)')
           .in('id', dmIds)
+      : Promise.resolve({ data: [] as never[] }),
+    // Ekip sohbeti: yalnızca şikayet edilen mesaj okunabilir (rumuz + gönderenin gerçek adı)
+    crewIds.length
+      ? supabase
+          .from('crew_messages')
+          .select('id, alias, body, created_at, sender:profiles!crew_messages_sender_id_fkey(full_name)')
+          .in('id', crewIds)
       : Promise.resolve({ data: [] as never[] }),
   ]);
   type Content = { id: string; alias: string; body: string; is_hidden: boolean; created_at: string };
@@ -455,6 +465,23 @@ export async function listReports(status: 'open' | 'closed'): Promise<{ data: Re
     if (g)
       g.content = {
         alias: `${sender?.full_name ?? 'Bilinmeyen'} · Özel mesaj`,
+        body: d.body,
+        is_hidden: false,
+        created_at: d.created_at,
+      };
+  }
+  for (const d of (crewMsgs.data ?? []) as unknown as {
+    id: string;
+    alias: string;
+    body: string;
+    created_at: string;
+    sender: { full_name: string } | { full_name: string }[] | null;
+  }[]) {
+    const g = groups.get(`crew_msg:${d.id}`);
+    const sender = Array.isArray(d.sender) ? d.sender[0] : d.sender;
+    if (g)
+      g.content = {
+        alias: `${d.alias} (${sender?.full_name ?? 'Bilinmeyen'}) · Ekip sohbeti`,
         body: d.body,
         is_hidden: false,
         created_at: d.created_at,

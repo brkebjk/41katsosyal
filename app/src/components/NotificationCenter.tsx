@@ -15,6 +15,7 @@ import { TextField } from '@/components/TextField';
 import { CloseX } from '@/components/CloseX';
 import { cellName } from '@/lib/cellNames';
 import { districtOf } from '@/lib/hex';
+import { respondCrewInvite } from '@/lib/crew';
 import { respondTeamInvite } from '@/lib/invites';
 import { timeAgo } from '@/lib/labels';
 import {
@@ -40,6 +41,8 @@ const KIND_ICON: Record<NotificationKind, IconName> = {
   mention: 'at',
   dm: 'chatbubbles',
   room_msg: 'chatbubble-ellipses',
+  crew_invite: 'people-circle',
+  crew_mention: 'people',
   announcement: 'megaphone',
 };
 
@@ -52,6 +55,8 @@ const KIND_COLOR: Record<NotificationKind, string> = {
   mention: colors.accent,
   dm: colors.primary,
   room_msg: colors.game,
+  crew_invite: colors.success,
+  crew_mention: colors.success,
   announcement: colors.primary,
 };
 
@@ -249,6 +254,9 @@ export function NotificationPanel({ onClose }: { onClose: () => void }) {
                       {n.kind === 'friend_request' && typeof n.data.request_id === 'string' ? (
                         <FriendRequestButtons requestId={n.data.request_id} />
                       ) : null}
+                      {n.kind === 'crew_invite' && typeof n.data.invite_id === 'string' ? (
+                        <CrewInviteActions inviteId={n.data.invite_id} />
+                      ) : null}
                       {n.kind === 'team_invite' && typeof n.data.invite_id === 'string' ? (
                         <TeamInviteActions inviteId={n.data.invite_id} initial={String(n.data.status ?? 'pending')} />
                       ) : null}
@@ -442,6 +450,39 @@ const styles = StyleSheet.create({
 });
 
 /** Ekip davetine yanıt: kabulde iletişim bilgisi istenir; yalnızca daveti gönderene iletilir. */
+/** Ekip daveti: Katıl / Reddet (kabul edersen şu anki ekibinden ayrılırsın) */
+function CrewInviteActions({ inviteId }: { inviteId: string }) {
+  const [status, setStatus] = useState<'pending' | 'accepted' | 'declined'>('pending');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function respond(accept: boolean) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await respondCrewInvite(inviteId, accept);
+    setBusy(false);
+    if (res.error) return setError(res.error);
+    setStatus(accept ? 'accepted' : 'declined');
+  }
+
+  if (status === 'accepted') return <Text style={styles.answered}>Ekibe katıldın.</Text>;
+  if (status === 'declined') return <Text style={styles.answered}>Reddettin.</Text>;
+  return (
+    <View style={styles.inviteBox}>
+      <View style={styles.inviteBtns}>
+        <View style={styles.flex}>
+          <PrimaryButton label="Katıl" onPress={() => void respond(true)} loading={busy} />
+        </View>
+        <View style={styles.flex}>
+          <PrimaryButton label="Reddet" variant="ghost" onPress={() => void respond(false)} disabled={busy} />
+        </View>
+      </View>
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+    </View>
+  );
+}
+
 function TeamInviteActions({ inviteId, initial }: { inviteId: string; initial: string }) {
   const [status, setStatus] = useState(initial);
   const [asking, setAsking] = useState(false);
