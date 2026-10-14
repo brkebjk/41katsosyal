@@ -86,7 +86,8 @@ const ROOM_TEXT: Record<string, string> = {
   premium_required: 'Bu odaya katılmak için abonelik gerekiyor.',
   room_closed: 'Bu oda artık katılıma açık değil.',
   kicked_from_room: 'Bu odadan oylamayla çıkarıldın; yeniden giremezsin.',
-  remote_not_allowed: 'Uzaktan oda yalnızca Vampir–Köylü ve Köpekbalığı Kafesi için, etkinlik dışında açılabilir.',
+  remote_not_allowed:
+    'Bu oda uzaktan açılamadı. Uzaktan oda yalnızca Vampir–Köylü ve Köpekbalığı Kafesi’nde açılır; etkinlik oyunları yan yana oynanır. Köpekbalığı Kafesi’nde bu yazıyı görüyorsan sunucu güncel değildir: Supabase’de parcalar/1.sql, 2.sql, 3.sql dosyalarını sırayla çalıştır.',
   narrator_event_only: 'Anlatıcı modu yalnızca etkinlik oyununda ve yalnızca etkinliğin sahibine açıktır.',
   invalid_mode: 'Geçersiz oyun şekli.',
   quota_exceeded: 'Bu ayki oyun başlatma hakkını kullandın. Hak her ay başında yenilenir.',
