@@ -459,7 +459,18 @@ export function Shake({ shakeKey, children }: { shakeKey: string | null; childre
 // ---------------------------------------------------------------------------
 
 /** Çark döner ve oyuncunun rolünde durur (rolü sunucu seçer; çark yalnızca görüntü). */
-export function RoleWheel({ role, size, onDone }: { role: SkRole; size: number; onDone?: () => void }) {
+export function RoleWheel({
+  role,
+  size,
+  onDone,
+  odds,
+}: {
+  role: SkRole;
+  size: number;
+  onDone?: () => void;
+  /** Her rolün bu oyundaki kişi başı gelme oranı (yüzde); bu oyunda olamayan rol soluk görünür */
+  odds?: Partial<Record<string, number>> | null;
+}) {
   const [rot] = useState(() => new Animated.Value(0));
   const n = SK_WHEEL.length;
   const idx = Math.max(0, SK_WHEEL.indexOf(role));
@@ -502,7 +513,10 @@ export function RoleWheel({ role, size, onDone }: { role: SkRole; size: number; 
                 },
               ]}
             >
-              <RoleIcon role={k} size={32} />
+              <RoleIcon role={k} size={32} style={odds && !odds[k] ? styles.dim : undefined} />
+              {odds ? (
+                <Text style={[styles.wheelOdds, !odds[k] && styles.dim]}>{odds[k] ? `%${odds[k]}` : '–'}</Text>
+              ) : null}
             </View>
           );
         })}
@@ -517,6 +531,11 @@ export function RoleWheel({ role, size, onDone }: { role: SkRole; size: number; 
 // ---------------------------------------------------------------------------
 // Koltuklar: numaralı avatarlar, oy tabelası, aldığı oy
 // ---------------------------------------------------------------------------
+
+/** Avatarın altında rumuz kodu yazmaz: "Lakap#1234" → "Lakap" */
+export function shortName(name: string): string {
+  return name.replace(/#\d+\s*$/, '').trim() || name;
+}
 
 /** Bu oyuncuyu ilgilendiren olay (avlandı, vuruldu, kafeste, kurtarıldı…): avatar büyür, üstünde simge ve kelime çıkar */
 export type SeatEvent = { icon: string; text: string; color: string };
@@ -644,7 +663,7 @@ export function SeatGrid({
   seats.forEach((s, i) => {
     const row = Math.floor(i / cols);
     const inRow = Math.min(cols, seats.length - row * cols);
-    const offset = box ? (box.w - (inRow * tileW + (inRow - 1) * GAP)) / 2 : 0;
+    const offset = box ? box.w - (inRow * tileW + (inRow - 1) * GAP) : 0;
     const col = i - row * cols;
     center.set(s.p.id, { x: offset + col * (tileW + GAP) + tileW / 2, y: row * (tileH + GAP) });
   });
@@ -819,7 +838,7 @@ function SeatTile({
           </View>
           {dead ? (
             <View style={[styles.deadMark, { borderRadius: size / 2 }]}>
-              <Text style={{ fontSize: Math.round(size * 0.42) }}>{seat.deadIcon ?? (p.left ? '🚪' : '🤿')}</Text>
+              <Text style={{ fontSize: Math.round(size * 0.42) }}>{seat.deadIcon ?? (p.left ? '🚪' : '🦈')}</Text>
             </View>
           ) : null}
         </View>
@@ -892,7 +911,7 @@ function SeatTile({
         style={[styles.name, { color: nameColor }, light ? styles.nameLight : styles.nameDark, dead && styles.nameDead]}
         numberOfLines={1}
       >
-        {p.is_me ? `${p.name} (sen)` : p.name}
+        {p.is_me ? `${shortName(p.name)} (sen)` : shortName(p.name)}
       </Text>
       {/* Alt satır: oy tabelası varsa tabela (ok oy verilen kişinin avatarına döner), yoksa durum yazısı */}
       <View style={styles.signSlot}>
@@ -1108,6 +1127,40 @@ export function SeatChip({ n, size = 20 }: { n: number; size?: number }) {
       <Text style={[styles.seatChipText, { fontSize: Math.round(size * 0.58), lineHeight: Math.round(size * 0.72) }]}>
         {n}
       </Text>
+    </View>
+  );
+}
+
+/**
+ * Bu oyundaki roller (Wolvesville'deki gibi): her rol, sayısı ve rolü açığa çıkmış (ya da senin bildiğin) oyuncuların
+ * numarası. Ölenin numarasının üstü çizilir. Sıra: köpekbalıkları, insanlar, tarafsızlar.
+ */
+export function RoleRoster({ roles, players }: { roles: Partial<Record<SkRole, number>>; players: SkPlayer[] }) {
+  const order: SkRole[] = (Object.keys(SK_ROLES) as SkRole[]).filter((k) => (roles[k] ?? 0) > 0);
+  const teamRank = { shark: 0, human: 1, neutral: 2 } as const;
+  order.sort((a, b) => teamRank[SK_ROLES[a].team] - teamRank[SK_ROLES[b].team]);
+  return (
+    <View style={styles.roster}>
+      {order.map((k) => {
+        const who = players.filter((p) => p.role === k).sort((a, b) => a.seat - b.seat);
+        return (
+          <View key={k} style={styles.rosterRow} accessibilityLabel={`${SK_ROLES[k].name}, ${roles[k]} kişi`}>
+            <RoleIcon role={k} size={26} framed />
+            <Text style={[styles.rosterName, { color: SK_ROLES[k].color }]} numberOfLines={1}>
+              {SK_ROLES[k].name}
+            </Text>
+            <Text style={styles.rosterCount}>{`×${roles[k]}`}</Text>
+            <View style={styles.rosterSeats}>
+              {who.map((p) => (
+                <View key={p.id} style={!p.is_alive || p.left ? styles.rosterDead : undefined}>
+                  <SeatChip n={p.seat} size={22} />
+                  {!p.is_alive || p.left ? <View style={styles.rosterStrike} pointerEvents="none" /> : null}
+                </View>
+              ))}
+            </View>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -1368,7 +1421,7 @@ export function SkSheet({ title, icon, iconNode, onClose, children }: {
   return (
     <Modal visible transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
       <KeyboardLift style={styles.sheetRoot} inModal>
-        <Pressable style={styles.sheetBackdrop} onPress={onClose} accessibilityRole="button" accessibilityLabel="Kapat" />
+        <Pressable style={styles.sheetBackdropClear} onPress={onClose} accessibilityRole="button" accessibilityLabel="Kapat" />
         <View style={[styles.sheet, { maxHeight: Math.round(height * 0.82) }]} accessibilityViewIsModal>
           <View style={styles.sheetHead}>
             {iconNode ?? (icon ? <Text style={styles.sheetIcon}>{icon}</Text> : null)}
@@ -1869,6 +1922,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   wheelEmoji: { fontSize: 19 },
+  wheelOdds: {
+    position: 'absolute',
+    bottom: -13,
+    color: '#FFFFFF',
+    fontFamily: fonts.black,
+    fontSize: 10,
+    textShadowColor: 'rgba(0,0,0,0.9)',
+    textShadowRadius: 3,
+  },
   wheelHub: {
     position: 'absolute',
     left: '50%',
@@ -1886,7 +1948,8 @@ const styles = StyleSheet.create({
   },
   wheelHubText: { color: '#FFB703', fontFamily: fonts.black, fontSize: 26 },
   gridBox: { flex: 1, minHeight: 60, justifyContent: 'center' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', columnGap: GAP, rowGap: GAP },
+  // Nizami dizilim: eksik kalan son satır sağa yaslanır (üstte 4, altta 2 ise alttakiler sağdaki iki sütunda)
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', columnGap: GAP, rowGap: GAP },
   tile: { alignItems: 'center' },
   tileTop: { zIndex: 5, elevation: 5 },
   tileTalk: { zIndex: 8, elevation: 8 },
@@ -1948,7 +2011,8 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.85)',
     textShadowRadius: 6,
   },
-  eventWrap: { position: 'absolute', top: -30, left: -40, right: -40, alignItems: 'center' },
+  // Olay yazısı (AVLANDI, KAFESTE…) avatarın içinde, ortada
+  eventWrap: { position: 'absolute', top: 0, bottom: 0, left: -12, right: -12, alignItems: 'center', justifyContent: 'center' },
   event: {
     paddingHorizontal: 7,
     height: 20,
@@ -2180,6 +2244,8 @@ const styles = StyleSheet.create({
   timeFill: { height: '100%', borderRadius: 3 },
   sheetRoot: { flex: 1, justifyContent: 'flex-end' },
   sheetBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)' },
+  // Alt pencereler (Rolüm, oyuncular…) açıkken ekran kararmaz; dışına dokununca kapanır
+  sheetBackdropClear: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.08)' },
   sheet: {
     backgroundColor: '#111A35',
     borderTopLeftRadius: 22,
@@ -2193,6 +2259,21 @@ const styles = StyleSheet.create({
   sheetTitle: { flex: 1, color: '#FFFFFF', fontFamily: fonts.black, fontSize: 18 },
   sheetBody: { gap: 10, paddingHorizontal: 16, paddingBottom: 12 },
   chat: { gap: 8 },
+  roster: { gap: 6 },
+  rosterRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 30 },
+  rosterName: { flexShrink: 1, fontFamily: fonts.extra, fontSize: 14 },
+  rosterCount: { color: 'rgba(255,255,255,0.75)', fontFamily: fonts.black, fontSize: 13 },
+  rosterSeats: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 4 },
+  rosterDead: { opacity: 0.55 },
+  rosterStrike: {
+    position: 'absolute',
+    left: -2,
+    right: -2,
+    top: 10,
+    height: 2,
+    backgroundColor: '#FF4D4D',
+    transform: [{ rotate: '-20deg' }],
+  },
   cardRoot: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 60, elevation: 60, justifyContent: 'center', padding: 22 },
   card: {
     backgroundColor: '#111A35',

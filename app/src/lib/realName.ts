@@ -12,7 +12,7 @@ export const REAL_NAME = {
   eventComment:
     'Etkinlik yorumlarında rumuz yoktur: yorumun gerçek adınla, herkesin göreceği şekilde yayınlanır.',
   /** Oyun odası açarken */
-  roomHost: 'Oda sahibi olarak gerçek adın açık odalar listesinde ve oyuncu listesinde tüm üyelere görünür.',
+  roomHost: 'Açık odalar listesinde rumuzun, odadaki oyuncu listesinde gerçek adın görünür.',
   /** Odaya katılırken */
   roomJoin: 'Odaya girince gerçek adın oyuncu listesinde odadaki herkese görünür.',
   /** Arkadaşlık isteği gönderirken / kabul ederken */

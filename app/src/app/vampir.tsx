@@ -1026,6 +1026,18 @@ function Game({ roomId }: { roomId: string }) {
             ) : null}
           </View>
         ) : null}
+        {/* GEÇİCİ: moderatör en kalabalık oyunu görebilsin: odayı deneme oyuncularıyla doldur */}
+        {me.is_admin && view.players.filter((p) => !p.left).length < view.max_players ? (
+          <GameButton
+            label={`Odayı doldur (${view.max_players} kişi)`}
+            icon="people"
+            variant="ghost"
+            loading={busy === 'botsfill'}
+            onPress={() =>
+              void act('botsfill', () => addTestBots(roomId, view.max_players - view.players.filter((p) => !p.left).length))
+            }
+          />
+        ) : null}
         {me.is_host && !me.is_player && mode !== 'narrator' && view.code ? (
           <GameButton
             label="Oyuna katıl"
@@ -1570,10 +1582,10 @@ function Game({ roomId }: { roomId: string }) {
                 canTalk={
                   me.is_alive &&
                   !view.mic_banned &&
-                  (view.voice_left_ms ?? 15000) >= 500 &&
+                  (view.voice_left_ms ?? 10000) >= 500 &&
                   (phase === 'dawn' || phase === 'vote' || phase === 'vote_result' || (phase === 'night' && me.role === 'vampire'))
                 }
-                leftMs={view.voice_left_ms ?? 15000}
+                leftMs={view.voice_left_ms ?? 10000}
                 closedText={
                   view.mic_banned
                     ? '🔇 Mikrofonun bir süreliğine kapatıldı'
@@ -1581,12 +1593,12 @@ function Game({ roomId }: { roomId: string }) {
                     ? '🔇 Elendin, konuşamazsın'
                     : phase === 'night' && me.role !== 'vampire'
                       ? '🔇 Gece herkes susar'
-                      : (view.voice_left_ms ?? 15000) < 500
-                        ? '🔇 Bu tartışmadaki 15 sn hakkın bitti'
+                      : (view.voice_left_ms ?? 10000) < 500
+                        ? '🔇 Bu tartışmadaki 10 sn hakkın bitti'
                         : '🔇 Sabah konuşulur'
                 }
                 channelText={`${phase === 'night' ? 'Yalnızca vampirler duyar' : 'Herkes duyar'} · bu tartışmada kalan ${Math.round(
-                  (view.voice_left_ms ?? 15000) / 1000,
+                  (view.voice_left_ms ?? 10000) / 1000,
                 )} sn`}
                 onRecording={setRecording}
                 onSent={() => void load()}

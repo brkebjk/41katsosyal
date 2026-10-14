@@ -4841,7 +4841,8 @@ begin
   return query
   with ct as materialized (select * from public._champion_titles())
   select r.id, r.game_type, gt.title,
-         case when h.role = 'admin' then '41. Kat Sosyal' else h.full_name end,
+         -- Listede oda sahibi rumuzuyla görünür (moderatör "41. Kat Sosyal")
+         case when h.role = 'admin' then '41. Kat Sosyal' else h.alias end,
          (h.role = 'admin'),
          (r.host_id = auth.uid()),
          (select count(*)::int from public.room_players rp where rp.room_id = r.id and rp.left_at is null),
@@ -5379,8 +5380,14 @@ begin
     perform public._vv_ach_add(p_room_id, v_doctor, 'protects');
   end if;
 
+  -- Wolvesville kuralı: ölenin rolü herkese açıklanır (gece ısırılan da)
   update public.game_rooms
-     set state = state || jsonb_build_object(
+     set state = (case when v_killed is null then state
+                       else jsonb_set(state, '{reveals}', coalesce(state->'reveals', '{}'::jsonb)
+                              || jsonb_build_object(v_killed::text,
+                                   (select s.role from public.room_player_secrets s
+                                     where s.room_id = p_room_id and s.user_id = v_killed))) end)
+                 || jsonb_build_object(
            'phase', 'dawn',
            'phase_started_at', now(),
            'last_night', jsonb_build_object(
@@ -6109,7 +6116,7 @@ begin
     'whisper_limit', greatest(0, public.setting_int('vv_whisper_limit', 3)),
     -- Uzaktan oda: bas-konuş ses mesajları (künye; ses sk_voice_get ile) ve bu tartışmada kalan konuşma süresi
     'voice', case when r.remote and r.status = 'playing' then public._sk_clips_for(p_room_id, v.id) else '[]'::jsonb end,
-    'voice_left_ms', greatest(0, public.setting_int('sk_voice_round_ms', 15000)
+    'voice_left_ms', greatest(0, public.setting_int('sk_voice_round_ms', 10000)
                        - case when (me.data->'voice'->>'round')::int = v_round
                                and me.data->'voice'->>'channel' = (case when v_phase = 'night' then 'shark' else 'all' end)
                               then coalesce((me.data->'voice'->>'ms')::int, 0) else 0 end),

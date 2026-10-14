@@ -4838,7 +4838,8 @@ begin
   return query
   with ct as materialized (select * from public._champion_titles())
   select r.id, r.game_type, gt.title,
-         case when h.role = 'admin' then '41. Kat Sosyal' else h.full_name end,
+         -- Listede oda sahibi rumuzuyla görünür (moderatör "41. Kat Sosyal")
+         case when h.role = 'admin' then '41. Kat Sosyal' else h.alias end,
          (h.role = 'admin'),
          (r.host_id = auth.uid()),
          (select count(*)::int from public.room_players rp where rp.room_id = r.id and rp.left_at is null),
@@ -5376,8 +5377,14 @@ begin
     perform public._vv_ach_add(p_room_id, v_doctor, 'protects');
   end if;
 
+  -- Wolvesville kuralı: ölenin rolü herkese açıklanır (gece ısırılan da)
   update public.game_rooms
-     set state = state || jsonb_build_object(
+     set state = (case when v_killed is null then state
+                       else jsonb_set(state, '{reveals}', coalesce(state->'reveals', '{}'::jsonb)
+                              || jsonb_build_object(v_killed::text,
+                                   (select s.role from public.room_player_secrets s
+                                     where s.room_id = p_room_id and s.user_id = v_killed))) end)
+                 || jsonb_build_object(
            'phase', 'dawn',
            'phase_started_at', now(),
            'last_night', jsonb_build_object(
@@ -6106,7 +6113,7 @@ begin
     'whisper_limit', greatest(0, public.setting_int('vv_whisper_limit', 3)),
     -- Uzaktan oda: bas-konuş ses mesajları (künye; ses sk_voice_get ile) ve bu tartışmada kalan konuşma süresi
     'voice', case when r.remote and r.status = 'playing' then public._sk_clips_for(p_room_id, v.id) else '[]'::jsonb end,
-    'voice_left_ms', greatest(0, public.setting_int('sk_voice_round_ms', 15000)
+    'voice_left_ms', greatest(0, public.setting_int('sk_voice_round_ms', 10000)
                        - case when (me.data->'voice'->>'round')::int = v_round
                                and me.data->'voice'->>'channel' = (case when v_phase = 'night' then 'shark' else 'all' end)
                               then coalesce((me.data->'voice'->>'ms')::int, 0) else 0 end),
@@ -15872,21 +15879,22 @@ alter table public.profiles add column if not exists mic_banned_until timestampt
 do $$
 declare i int;
 begin
-  for i in 1..8 loop
-    if not exists (select 1 from public.profiles where id = ('b0700000-0000-4000-8000-00000000000' || i)::uuid) then
+  -- 15 deneme oyuncusu: moderatörle birlikte en kalabalık oyun (16 kişi) denenebilsin
+  for i in 1..15 loop
+    if not exists (select 1 from public.profiles where id = ('b0700000-0000-4000-8000-' || lpad(i::text, 12, '0'))::uuid) then
       insert into auth.users (id, aud, role, raw_user_meta_data, created_at, updated_at)
-      values (('b0700000-0000-4000-8000-00000000000' || i)::uuid, 'authenticated', 'authenticated',
+      values (('b0700000-0000-4000-8000-' || lpad(i::text, 12, '0'))::uuid, 'authenticated', 'authenticated',
               jsonb_build_object('full_name', 'Deneme Botu ' || i, 'username', 'deneme_bot_' || i,
                                  'device_id', 'kat41-test-bot-device-' || i),
               now(), now());
     end if;
   end loop;
-  update public.profiles set is_bot = true where id::text like 'b0700000-0000-4000-8000-00000000000%';
+  update public.profiles set is_bot = true where id::text like 'b0700000-0000-4000-8000-%';
 exception when others then
   raise warning 'Deneme oyuncuları oluşturulamadı: %', sqlerrm;
 end $$;
 
--- Moderatör: bekleme salonundaki Vampir–Köylü odasına deneme oyuncusu ekler (en çok 8). Oda deneme odası olur.
+-- Moderatör: bekleme salonundaki odaya deneme oyuncusu ekler (bir seferde en çok 15). Oda deneme odası olur.
 create or replace function public.admin_add_test_bots(p_room_id uuid, p_count int default 3)
 returns int language plpgsql security definer set search_path = public as $$
 declare
@@ -15906,7 +15914,7 @@ begin
    where p.is_bot
      and not exists (select 1 from public.room_players rp where rp.room_id = p_room_id and rp.user_id = p.id)
    order by p.full_name
-   limit least(8, greatest(1, coalesce(p_count, 3)));
+   limit least(15, greatest(1, coalesce(p_count, 3)));
   get diagnostics n = row_count;
   perform public._audit('test_bots', null, jsonb_build_object('room', p_room_id, 'count', n));
   return n;
@@ -16040,8 +16048,12 @@ returns jsonb language sql immutable set search_path = public as $$
                  (case when p_n >= 16 then 2 when p_n >= 10 then 1 else 0 end) as q) x;
 $$;
 
--- Rol listesi (karıştırılmadan): Alfa + (Çekiçbaş/Kaplan/Hemşire rastgele) + düz köpekbalığı; Cankurtaran ve Oşinograf
--- her zaman, Zıpkıncı 7+, Komutan 8+, Medyum 10+, kalanlar Tatilci; tarafsız: Mürekkep Balığı / Sörfçü, Hazine Avcısı %15
+-- Rol listesi (karıştırılmadan). Her rolün gelme şansı vardır; güçlü rollerin şansı daha düşüktür:
+--   köpekbalıkları: Alfa her zaman; özel köpekbalıkları Kaplan %70, Hemşire %70, Çekiçbaş %55 şansla aday olur, kalan
+--     yerler düz köpekbalığı;
+--   insanlar: Cankurtaran %85, Oşinograf %80, Zıpkıncı (7+) %55, Komutan (8+) %50, Medyum (10+) %70; kalanlar Tatilci;
+--   tarafsızlar (10+): Mürekkep Balığı 45, Sörfçü 40, Hazine Avcısı 15 ağırlıkla (aynı rol iki kez gelmez).
+-- Takım sayıları değişmez (_sk_counts). Her rolün kişi başı gelme oranı oyun başında hesaplanıp çarkta gösterilir.
 create or replace function public._sk_roles(p_n int)
 returns text[] language plpgsql volatile set search_path = public as $$
 declare
@@ -16051,32 +16063,61 @@ declare
   h int := (c->>'human')::int;
   v text[] := array['alpha'];
   specials text[];
+  humans text[];
   pool text[] := array['squid', 'surfer', 'scavenger'];
+  weights int[] := array[45, 40, 15];
   pick text;
   i int;
+  j int;
+  tot int;
+  x int;
 begin
-  select array_agg(x order by random()) into specials from unnest(array['hammer', 'tiger', 'nurse']) x;
+  select coalesce(array_agg(k order by random()), '{}') into specials
+    from (values ('tiger', 0.70), ('nurse', 0.70), ('hammer', 0.55)) t(k, ch)
+   where random() < t.ch;
   for i in 1..(s - 1) loop
-    v := v || (case when i <= 3 then specials[i] else 'shark' end);
+    v := v || coalesce(specials[i], 'shark');
   end loop;
-  v := v || array['lifeguard', 'oceanographer'];
-  if p_n >= 7 then v := v || 'spearman'::text; end if;
-  if p_n >= 8 then v := v || 'marshal'::text; end if;
-  if p_n >= 10 then v := v || 'medium'::text; end if;
-  while coalesce(array_length(v, 1), 0) < s + h loop
-    v := v || 'tourist'::text;
+  select coalesce(array_agg(k order by random()), '{}') into humans
+    from (values ('lifeguard', 0.85, 0), ('oceanographer', 0.80, 0), ('spearman', 0.55, 7),
+                 ('marshal', 0.50, 8), ('medium', 0.70, 10)) t(k, ch, minn)
+   where p_n >= t.minn and random() < t.ch;
+  for i in 1..h loop
+    v := v || coalesce(humans[i], 'tourist');
   end loop;
   for i in 1..q loop
-    if 'scavenger' = any (pool) and random() < 0.15 then
-      pick := 'scavenger';
-    else
-      select x into pick from unnest(pool) x where x <> 'scavenger' order by random() limit 1;
-      pick := coalesce(pick, 'scavenger');
-    end if;
+    tot := 0;
+    for j in 1..array_length(pool, 1) loop tot := tot + weights[j]; end loop;
+    x := floor(random() * tot)::int;
+    pick := pool[array_length(pool, 1)];
+    for j in 1..array_length(pool, 1) loop
+      if x < weights[j] then pick := pool[j]; exit; end if;
+      x := x - weights[j];
+    end loop;
     v := v || pick;
-    pool := array_remove(pool, pick);
+    j := array_position(pool, pick);
+    pool := pool[1:j - 1] || pool[j + 1:];
+    weights := weights[1:j - 1] || weights[j + 1:];
   end loop;
   return v;
+end $$;
+
+-- Her rolün kişi başı gelme oranı (yüzde, tam sayı): dağıtım 800 kez denenip sayılır. Oyun başında bir kez hesaplanır.
+create or replace function public._sk_role_odds(p_n int)
+returns jsonb language plpgsql volatile set search_path = public as $$
+declare
+  t int := 800;
+  i int;
+  r text;
+  cnt jsonb := '{}'::jsonb;
+begin
+  for i in 1..t loop
+    foreach r in array public._sk_roles(p_n) loop
+      cnt := cnt || jsonb_build_object(r, coalesce((cnt->>r)::int, 0) + 1);
+    end loop;
+  end loop;
+  return (select jsonb_object_agg(k, greatest(1, round((v::text)::numeric * 100 / (t * p_n)))::int)
+            from jsonb_each(cnt) as e(k, v));
 end $$;
 
 create or replace function public._sk_mode(r public.game_rooms)
@@ -16379,9 +16420,10 @@ begin
     if v_list is not null then perform public._sk_note(p_room_id, x.user_id, v_list); end if;
   end loop;
 
-  -- Ölümler (gece maskesi kırılanın rolü açıklanmaz: köpekbalıklarının kimi avladığı anlaşılmasın)
+  -- Ölümler. Wolvesville kuralı: ölenin rolü herkese açıklanır (gece avlanan da)
   update public.room_players set is_alive = false, out_at = now()
    where room_id = p_room_id and is_alive and user_id = any (v_dead);
+  perform public._sk_reveal(p_room_id, d) from unnest(coalesce(v_dead, '{}'::uuid[])) d;
 
   update public.game_rooms
      set state = state || jsonb_build_object(
@@ -16832,6 +16874,7 @@ begin
          started_at = now(),
          state = jsonb_build_object('phase', 'reveal', 'round', 0, 'phase_started_at', now(),
                                     'counts', public._sk_counts(v_n), 'reveals', '{}'::jsonb,
+                                    'odds', public._sk_role_odds(v_n),
                                     'timers', jsonb_build_object(
                                       'reveal', public.setting_int('sk_reveal_seconds', 30),
                                       'night', public.setting_int('sk_night_seconds', 50),
@@ -17244,6 +17287,12 @@ begin
     'next_note', case when r.status = 'finished' then r.state->>'rematch' end,
     'close_reason', r.state->>'close_reason',
     'counts', coalesce(r.state->'counts', public._sk_counts(greatest(6, v_count))),
+    -- Bu oyunda dağıtılan roller ve sayıları (Wolvesville'deki gibi herkese açık) ve çarktaki gelme oranları
+    'roles', case when r.status in ('playing', 'finished') then (
+               select coalesce(jsonb_object_agg(x.role, x.n), '{}'::jsonb)
+                 from (select s.role, count(*)::int as n from public.room_player_secrets s
+                        where s.room_id = p_room_id and s.role is not null group by s.role) x) end,
+    'odds', r.state->'odds',
     'players', v_players,
     'host', jsonb_build_object('id', r.host_id, 'name', case when v_host_role = 'admin' then '41. Kat Sosyal' else v_host_name end,
                                'is_me', r.host_id = v.id, 'is_moderator', v_host_role = 'admin'),
@@ -17305,7 +17354,7 @@ begin
       -- Moderatörün deneme odası için seçtiği rol (yalnızca kendisine)
       'picked_role', case when r.status = 'lobby' and v.role = 'admin'
                           then (select pk.role from public.sk_role_picks pk where pk.room_id = p_room_id and pk.user_id = v.id) end,
-      'voice_left_ms', greatest(0, public.setting_int('sk_voice_round_ms', 15000)
+      'voice_left_ms', greatest(0, public.setting_int('sk_voice_round_ms', 10000)
                          - case when (me.data->'voice'->>'round')::int = v_round
                                  and me.data->'voice'->>'channel' = (case when v_phase = 'night' then 'shark' else 'all' end)
                                 then coalesce((me.data->'voice'->>'ms')::int, 0) else 0 end)),
@@ -17406,7 +17455,7 @@ insert into public.app_settings (key, value, description) values
   ('sk_force_end_seconds', '45', 'Köpekbalığı Kafesi: oynayan yönetici geceyi ya da oylamayı bu kadar saniye dolmadan bitiremez')
 on conflict (key) do nothing;
 insert into public.app_settings (key, value, description) values
-  ('sk_voice_round_ms', '15000', 'Köpekbalığı Kafesi: bir oyuncunun her tartışmada (plaj+oylama ya da dalış) toplam bas-konuş süresi, milisaniye')
+  ('sk_voice_round_ms', '10000', 'Köpekbalığı Kafesi ve Vampir–Köylü: bir oyuncunun her tartışmada (plaj+oylama ya da dalış) toplam bas-konuş süresi, milisaniye')
 on conflict (key) do nothing;
 
 
@@ -17428,6 +17477,9 @@ create table if not exists public.sk_voice_clips (
 -- Bazı telefonlar 5 sn'lik kaydı daha yüksek kalitede yazar: üst sınır 240 bin karakter (yaklaşık 180 KB)
 alter table public.sk_voice_clips drop constraint if exists sk_voice_clips_audio_check;
 alter table public.sk_voice_clips add constraint sk_voice_clips_audio_check check (char_length(audio) between 100 and 240000);
+-- Tek ses mesajı en çok 10 sn (tartışmadaki toplam hak da 10 sn)
+alter table public.sk_voice_clips drop constraint if exists sk_voice_clips_duration_ms_check;
+alter table public.sk_voice_clips add constraint sk_voice_clips_duration_ms_check check (duration_ms between 300 and 11000);
 create index if not exists sk_voice_clips_room_idx on public.sk_voice_clips (room_id, created_at);
 create index if not exists sk_voice_clips_created_idx on public.sk_voice_clips (created_at);
 alter table public.sk_voice_clips enable row level security;
@@ -17476,7 +17528,7 @@ begin
   v := public._require_user();
   if v.muted_until is not null and v.muted_until > now() then raise exception 'muted'; end if;
   if char_length(v_audio) < 100 or v_audio !~ '^[A-Za-z0-9+/=]+$' then raise exception 'invalid_audio'; end if;
-  if p_duration_ms is null or p_duration_ms not between 300 and 6000 then raise exception 'invalid_audio'; end if;
+  if p_duration_ms is null or p_duration_ms not between 300 and 11000 then raise exception 'invalid_audio'; end if;
   -- Mikrofon yasağı (haklı bulunan ses şikâyeti ya da tekrarlanan haksız şikâyet)
   if v.mic_banned_until is not null and v.mic_banned_until > now() then raise exception 'mic_banned'; end if;
   -- Boyut: en çok 240 bin karakter ve bildirilen süreyle orantılı (yüksek kaliteli kayda da yer var). Bildirilenden uzun
@@ -17499,12 +17551,12 @@ begin
                     when r.state->>'phase' in ('day', 'vote', 'vote_result') then 'all'
                     when r.state->>'phase' = 'night' and public._sk_team(v_role) = 'shark' then 'shark' end;
   if v_channel is null then raise exception 'voice_closed'; end if;
-  -- Her tartışmada (tur + kanal) kişi başı en çok 15 sn konuşma (ayar: sk_voice_round_ms). Sayaç gizli kayıtta tutulur.
+  -- Her tartışmada (tur + kanal) kişi başı en çok 10 sn konuşma (ayar: sk_voice_round_ms). Sayaç gizli kayıtta tutulur.
   v_round := coalesce((r.state->>'round')::int, 0);
   select s.data into v_data from public.room_player_secrets s where s.room_id = p_room_id and s.user_id = v.id for update;
   v_used := case when (v_data->'voice'->>'round')::int = v_round and v_data->'voice'->>'channel' = v_channel
                  then coalesce((v_data->'voice'->>'ms')::int, 0) else 0 end;
-  if v_used + p_duration_ms > public.setting_int('sk_voice_round_ms', 15000) + 500 then raise exception 'voice_quota'; end if;
+  if v_used + p_duration_ms > public.setting_int('sk_voice_round_ms', 10000) + 500 then raise exception 'voice_quota'; end if;
   if exists (select 1 from public.sk_voice_clips where room_id = p_room_id and user_id = v.id
               and created_at > now() - interval '3 seconds') then
     raise exception 'rate_limited';
@@ -17836,7 +17888,7 @@ begin
      and not exists (select 1 from public.room_players rp join public.game_rooms r on r.id = rp.room_id
                       where rp.user_id = p.id and rp.left_at is null and r.status in ('lobby', 'playing'))
    order by p.full_name
-   limit least(8, greatest(1, coalesce(p_count, 3)));
+   limit least(15, greatest(1, coalesce(p_count, 3)));
   get diagnostics n = row_count;
   perform public._audit('test_bots', null, jsonb_build_object('queue', n));
   return n;
@@ -19552,6 +19604,12 @@ insert into public.app_settings (key, value, description) values
 on conflict (key) do update set description = excluded.description;
 do $$
 begin
+  -- Bas-konuş hakkı her tartışmada 10 sn (bir kez çevrilir)
+  if not exists (select 1 from public.app_settings where key = 'voice_10s_v1') then
+    update public.app_settings set value = '10000' where key = 'sk_voice_round_ms';
+    insert into public.app_settings (key, value, description)
+    values ('voice_10s_v1', 'true', 'İç işaret: bas-konuş hakkı 10 sn yapıldı (silme)') on conflict (key) do nothing;
+  end if;
   if not exists (select 1 from public.app_settings where key = 'pts_rules_v5') then
     update public.app_settings set value = '20' where key = 'pts_remote_pct';
     update public.app_settings set value = '10' where key = 'pts_remote_daily_cap';

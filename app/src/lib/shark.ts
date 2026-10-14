@@ -140,6 +140,10 @@ export type SkView = {
   next_note?: string | null;
   close_reason: string | null;
   counts: { shark: number; human: number; neutral: number };
+  /** Bu oyunda dağıtılan roller ve sayıları (herkese açık) */
+  roles?: Partial<Record<SkRole, number>> | null;
+  /** Çarktaki her rolün kişi başı gelme oranı (yüzde) */
+  odds?: Partial<Record<string, number>> | null;
   players: SkPlayer[];
   host: { id: string; name: string; is_me: boolean; is_moderator: boolean };
   marshal: string | null;
@@ -192,7 +196,7 @@ export type SkView = {
     marks: string[];
     self_used: boolean;
     spear_used: boolean;
-    /** Bu tartışmada kalan bas-konuş süresi (ms; her tartışmada en çok 15 sn) */
+    /** Bu tartışmada kalan bas-konuş süresi (ms; her tartışmada en çok 10 sn) */
     voice_left_ms?: number;
     /** Moderatör: deneme odası için seçtiği rol (lobide) */
     picked_role?: SkRole | null;
@@ -215,7 +219,7 @@ const TEXT: Record<string, string> = {
   wrong_phase: 'Oyun bu aşamadan çoktan geçmiş. Ekran yenileniyor.',
   you_left: 'Bu oyundan çıkarıldın, geri dönemezsin.',
   not_in_room: 'Bu oyunda oyuncu değilsin.',
-  you_are_dead: 'Maskeni kırdılar, artık seçim yapamazsın. Oyunu izleyebilirsin.',
+  you_are_dead: 'Elendin, artık seçim yapamazsın. Oyunu izleyebilirsin.',
   no_night_action: 'Rolünün bu gece yapacağı bir şey yok.',
   invalid_target: 'Bu kişiyi seçemezsin.',
   cannot_target_ally: 'Kendi takımından birini seçemezsin.',
@@ -325,7 +329,7 @@ const VOICE_TEXT: Record<string, string> = {
   mic_banned: 'Mikrofonun bir süreliğine kapatıldı.',
   report_banned: 'Haksız şikâyetlerin yüzünden bir süre ses şikâyeti yapamazsın.',
   audio_too_big: 'Ses kaydı çok büyük çıktı, daha kısa konuşup tekrar dene.',
-  voice_quota: 'Bu tartışmadaki 15 saniyelik konuşma hakkın doldu. Bir sonraki tartışmada yine konuşabilirsin.',
+  voice_quota: 'Bu tartışmadaki 10 saniyelik konuşma hakkın doldu. Bir sonraki tartışmada yine konuşabilirsin.',
   rate_limited: 'Biraz bekle, art arda çok hızlı ses gönderiyorsun.',
   chat_limit: 'Bu oyunda gönderebileceğin ses mesajı sınırına ulaştın.',
   muted: 'Şu an susturulmuşsun.',

@@ -20,12 +20,14 @@ import { getVoiceClip, postVoiceClip, type SkClip } from '@/lib/shark';
 import { setSoundMuted } from '@/lib/sounds';
 import { fonts } from '@/theme';
 
-// Köpekbalığı Kafesi bas-konuş: basılı tutunca en çok 5 sn ses kaydedilir ve odaya gönderilir. Gelen ses mesajları
+// Köpekbalığı Kafesi bas-konuş: basılı tutunca en çok 10 sn ses kaydedilir ve odaya gönderilir. Gelen ses mesajları
 // sırayla çalınır; biri konuşurken başkası da kaydedebilir, onun mesajı sıradakinin ardından çalar. Ses sunucuda geçici
 // durur: en geç 10 dakika sonra silinir (şikâyet edilen en çok 14 gün). Expo Go'da da çalışır.
 
-const MAX_MS = 5000;
+const MAX_MS = 10000;
 const INFO_KEY = 'kat41.pttInfo';
+/** Bilgi penceresi bir kez görüldüyse tekrar diskten okunmaz (kayıt düğmeye basar basmaz başlasın) */
+let infoSeen = false;
 
 /** Küçük ve her iki telefonda da çalınabilen ses biçimi (AAC / m4a, tek kanal, 32 kbit/sn ≈ 5 sn için 20 KB) */
 const CLIP_OPTIONS: RecordingOptions = {
@@ -45,7 +47,7 @@ const CLIP_OPTIONS: RecordingOptions = {
 };
 
 const PTT_REASON =
-  'Bas-konuş düğmesine yalnızca basılı tuttuğunda en çok 5 saniye kaydedilir. Her tartışmada toplam 15 saniye konuşabilirsin. Ses mesajın odadakilere sırayla çalınır ve en geç 10 dakika sonra sunucudan silinir (şikâyet edilirse moderatör bakana kadar en çok 14 gün saklanır). Mikrofonun başka hiçbir zaman açılmaz.';
+  'Bas-konuş düğmesine yalnızca basılı tuttuğunda kaydedilir. Her tartışmada toplam 10 saniye konuşabilirsin. Ses mesajın odadakilere sırayla çalınır ve en geç 10 dakika sonra sunucudan silinir (şikâyet edilirse moderatör bakana kadar en çok 14 gün saklanır). Mikrofonun başka hiçbir zaman açılmaz.';
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
@@ -142,7 +144,7 @@ export function useClipQueue(clips: SkClip[] | undefined, myId: string | null, e
       file.create();
       file.write(base64ToBytes(b64));
       step = 'çalınamadı';
-      await playbackMode(recordingRef.current);
+      if (!recordingRef.current) await playbackMode(false);
       const p = createAudioPlayer({ uri: file.uri });
       player.current = p;
       const f = file;
@@ -208,12 +210,12 @@ export function useClipQueue(clips: SkClip[] | undefined, myId: string | null, e
 
   // Kayıt başlayınca çalan ses mesajı duraklar (hoparlörden mikrofona, oradan karşı tarafa gitmesin); kayıt bitince
   // kaldığı yerden devam eder ve sıradakiler çalar
+  // Ses modu burada DEĞİŞTİRİLMEZ: kayıt sürerken ses modunu değiştirmek iPhone'da kaydı hemen keser (bas-konuş düğmesi
+  // modu kayıttan önce açar, kayıt bitince kapatır)
   useEffect(() => {
     recordingRef.current = recording;
-    void playbackMode(recording).then(() => {
-      if (player.current) pauseRef.current(recording);
-      else if (!recording) pumpRef.current();
-    });
+    if (player.current) pauseRef.current(recording);
+    else if (!recording) pumpRef.current();
   }, [recording]);
 
   // Yeni gelen mesajlar sıraya girer
@@ -363,11 +365,14 @@ export function PushToTalk({
   async function start() {
     holding.current = true;
     if (!canTalk || active.current || sending) return;
-    let seen = false;
-    try {
-      seen = (await AsyncStorage.getItem(INFO_KEY)) === '1';
-    } catch {
-      seen = false;
+    let seen = infoSeen;
+    if (!seen) {
+      try {
+        seen = (await AsyncStorage.getItem(INFO_KEY)) === '1';
+      } catch {
+        seen = false;
+      }
+      infoSeen = seen;
     }
     if (!seen) {
       holding.current = false;
@@ -382,6 +387,7 @@ export function PushToTalk({
         cancelValue: false,
       });
       if (!ok) return;
+      infoSeen = true;
       void AsyncStorage.setItem(INFO_KEY, '1').catch(() => {});
       const perm = await requestRecordingPermissionsAsync();
       if (!perm.granted) {

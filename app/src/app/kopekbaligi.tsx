@@ -37,6 +37,7 @@ import {
   circ,
   RichLine,
   RolePicker,
+  RoleRoster,
   RoleWheel,
   SeatGrid,
   seatTag,
@@ -526,7 +527,7 @@ function Game({ roomId }: { roomId: string }) {
         ? { text: '✓ Hazır', color: '#34D399' }
         : { text: '… bekliyor', color: light ? '#5B6472' : 'rgba(255,255,255,0.6)' };
     } else if (phase === 'lobby' && p.is_host) label = { text: '⭐ Oda sahibi', color: '#FFB703' };
-    // Nasıl elendi: oyun akışı günlüğünden (kafes, zıpkın); geri kalanı gece maskesi kırılanlardır
+    // Nasıl elendi: oyun akışı günlüğünden (kafes, zıpkın); geri kalanı gece avlananlardır
     const how = p.left ? 'left' : outHow.get(p.id) ?? 'night';
     const deadLabel = p.left
       ? 'Ayrıldı'
@@ -535,24 +536,21 @@ function Game({ roomId }: { roomId: string }) {
           ? '⛓️ Kafeste'
           : how === 'spear'
             ? '🔱 Vuruldu'
-            : '🤿 Maske kırıldı'
+            : '🦈 Avlandı'
         : null;
     const selectable = validFor(activeSlot, p) && (activeSlot !== 'vote' || phase === 'vote');
     const badge =
       clipQueue.speaking?.from === p.id
         ? '🔊'
         : me.is_omniscient && (phase === 'night' || phase === 'reveal')
-        ? p.acted
-          ? '✅'
-          : '⏳'
-        : phase === 'night'
-          ? '🤿'
-          : phase === 'day'
-            ? '☀️'
-            : null;
+          ? p.acted
+            ? '✅'
+            : '⏳'
+          : null;
     return {
       p,
-      deadIcon: how === 'left' ? '🚪' : how === 'cage' ? '⛓️' : how === 'spear' ? '🔱' : '🤿',
+      // Ölen avatarında nasıl öldüğü: kafes, köpekbalığı (avlandı), zıpkın, kapı (ayrıldı)
+      deadIcon: how === 'left' ? '🚪' : how === 'cage' ? '⛓️' : how === 'spear' ? '🔱' : '🦈',
       selectable,
       dim: activeSlot !== null && !selectable && p.is_alive,
       sign,
@@ -721,8 +719,8 @@ function Game({ roomId }: { roomId: string }) {
     flowItems.push({
       k: ln.round * 10 + 1,
       text: ln.dead.length
-        ? `🦈 ${ln.round}. gece maskesi kırıldı › ${ln.dead.map((d) => tag(d.id)).join(' ')}`
-        : `🌊 ${ln.round}. gece kimsenin maskesi kırılmadı`,
+        ? `🦈 ${ln.round}. gece avlandı › ${ln.dead.map((d) => { const r = byId.get(d.id)?.role; return `${tag(d.id)}${r ? ` ⟦r:${r}⟧` : ''}`; }).join(' ')}`
+        : `🌊 ${ln.round}. gece kimse avlanmadı`,
     });
   }
   for (const n of me.notes) if (n.round >= round - 1) flowItems.push({ k: n.round * 10 + 2, text: noteLine(n) });
@@ -891,6 +889,17 @@ function Game({ roomId }: { roomId: string }) {
             ) : null}
           </View>
         ) : null}
+        {/* GEÇİCİ: moderatör en kalabalık oyunu görebilsin: odayı deneme oyuncularıyla doldur */}
+        {me.is_admin && n < view.max_players ? (
+          <GameButton
+            label={`Odayı doldur (${view.max_players} kişi)`}
+            icon="people"
+            variant="ghost"
+            loading={busy === 'botsfill'}
+            onPress={() => void act('botsfill', () => addTestBots(roomId, view.max_players - n))}
+            testID="sk-bots-fill"
+          />
+        ) : null}
         {/* GEÇİCİ: moderatör deneme odasında rolünü seçebilir */}
         {me.is_admin && me.is_player ? (
           <GameButton
@@ -945,7 +954,7 @@ function Game({ roomId }: { roomId: string }) {
       stage = (
         <View style={styles.stage}>
           {!wheelDone ? (
-            <RoleWheel role={role} size={wheel} onDone={() => setWheelDone(true)} />
+            <RoleWheel role={role} size={wheel} odds={view.odds} onDone={() => setWheelDone(true)} />
           ) : (
             <View style={[styles.roleCard, { borderColor: roleInfo.color }]}>
               <RoleIcon role={role} size={Math.round(Math.min(width * 0.32, 128))} />
@@ -1353,7 +1362,7 @@ function Game({ roomId }: { roomId: string }) {
     phase === 'night'
       ? { text: '🤿 DALIŞ', sub: `${round}. gece · görüş düşüyor`, color: '#0B132B' }
       : phase === 'day'
-        ? { text: '☀️ PLAJ', sub: lastDead.length ? `${lastDead.length} maske kırıldı` : 'Herkes sağ salim', color: '#FFB703' }
+        ? { text: '☀️ PLAJ', sub: lastDead.length ? `${lastDead.length} kişi avlandı` : 'Herkes sağ salim', color: '#FFB703' }
         : phase === 'vote'
           ? { text: '⛓️ KAFES', sub: 'Oylama başladı', color: '#C1121F' }
           : phase === 'ended'
@@ -1463,7 +1472,7 @@ function Game({ roomId }: { roomId: string }) {
   // Plaj başlayınca bu gecenin sonucun varsa (Oşinograf, Kaplan, Cankurtaran, kilit) görsel kart kendiliğinden açılır
   const autoResult =
     phase === 'day' && me.is_player && !me.left && sheet === null && resultClosed !== round && me.notes.some((n) => n.round === round);
-  const voiceLeft = me.voice_left_ms ?? 15000;
+  const voiceLeft = me.voice_left_ms ?? 10000;
   const chatOpen = alivePlayer && (phase === 'day' || phase === 'vote' || phase === 'vote_result');
   const deadWrite =
     playing && me.is_player && !me.left && (!me.is_alive || (role === 'medium' && (phase === 'day' || phase === 'vote')));
@@ -1538,6 +1547,8 @@ function Game({ roomId }: { roomId: string }) {
             key: 'shark' as const,
             label: '🦈 Takım',
             messages: view.shark_chat,
+            // Oyun akışı (bilgi satırları) takım sohbetinde de akar
+            info,
             canWrite: sharkChatOpen,
             placeholder: 'Takımına yaz…',
             closedText: 'Takımınla yalnızca dalışta (gece) yazışırsın.',
@@ -1668,7 +1679,7 @@ function Game({ roomId }: { roomId: string }) {
                   {view.test ? <Pill text="Deneme odası, puan yazılmaz" tone="danger" /> : null}
                   {connError ? <Pill text="Bağlantı koptu, yeniden deniyor…" tone="warn" /> : null}
                   {playing && me.is_player && !me.is_alive && !me.left ? (
-                    <Pill text="Maskeni kırdılar, izliyorsun" tone="danger" />
+                    <Pill text="Elendin, izliyorsun" tone="danger" />
                   ) : null}
                 </View>
               ) : null}
@@ -1734,7 +1745,7 @@ function Game({ roomId }: { roomId: string }) {
                     : phase === 'night' && !isShark
                       ? '🔇 Dalışta mikrofonlar kapalı'
                       : voiceLeft < 500 && phase !== 'reveal'
-                        ? '🔇 Bu tartışmadaki 15 sn hakkın bitti'
+                        ? '🔇 Bu tartışmadaki 10 sn hakkın bitti'
                         : '🔇 Plajda konuşulur'
                 }
                 channelText={`${phase === 'night' ? 'Yalnızca köpekbalıkları duyar' : 'Herkes duyar'} · bu tartışmada kalan ${Math.round(
@@ -1836,6 +1847,7 @@ function Game({ roomId }: { roomId: string }) {
           seatOf={seatOf}
           onSend={(ch, t) => say(ch, t)}
           onReport={(m) => void report(m)}
+          preferTab={phase === 'night' && isShark && me.is_alive ? 'shark' : null}
         />
       ) : null}
 
@@ -1874,6 +1886,12 @@ function Game({ roomId }: { roomId: string }) {
                   .map((p) => `${circ(p.seat)} ${p.name}${p.is_alive ? '' : ' (öldü)'}`)
                   .join(', ') || 'yalnızsın')}
             </Text>
+          ) : null}
+          {view.roles && Object.keys(view.roles).length ? (
+            <>
+              <Text style={styles.sheetHead}>Bu oyundaki roller</Text>
+              <RoleRoster roles={view.roles} players={view.players} />
+            </>
           ) : null}
           {me.notes.length ? (
             <>

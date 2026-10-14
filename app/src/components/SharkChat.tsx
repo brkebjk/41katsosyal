@@ -69,7 +69,10 @@ export function SharkChat({
   seatOf,
   onSend,
   onReport,
+  preferTab,
 }: {
+  /** Baloncuğa basınca önce açılacak sekme (ör. dalışta köpekbalığına Takım sohbeti) */
+  preferTab?: ChatTab | null;
   roomId: string;
   tabs: ChatTabInfo[];
   /** Açık sekme (boş = pencere kapalı) */
@@ -255,7 +258,11 @@ export function SharkChat({
                 return;
               }
               placeWin();
-              switchTo(tabs.find((t) => unreadOf(t) > 0)?.key ?? 'all');
+              switchTo(
+                preferTab && tabs.some((t) => t.key === preferTab)
+                  ? preferTab
+                  : (tabs.find((t) => unreadOf(t) > 0)?.key ?? 'all'),
+              );
             }}
             accessibilityRole="button"
             accessibilityLabel={openTab ? 'Yazışmayı kapat' : unread ? `Yazışma, ${unread} yeni mesaj` : 'Yazışma'}

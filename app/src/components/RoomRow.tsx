@@ -1,9 +1,11 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/AppText';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { TitleBadge } from '@/components/TitleBadge';
+import { cellName } from '@/lib/cellNames';
 import { districtOf } from '@/lib/hex';
 import type { OpenRoom } from '@/lib/rooms';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
@@ -75,6 +77,26 @@ export function RoomRow({ room, isModerator, onPress, onEvent }: Props) {
             </Text>
           </View>
         ) : null}
+        {/* Oynandığı petek: adına dokununca haritada o petek gösterilir */}
+        {room.place_q !== null && room.place_r !== null ? (
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: '/',
+                params: { q: String(room.place_q), r: String(room.place_r), t: String(Date.now()), arrow: '1' },
+              })
+            }
+            accessibilityRole="link"
+            accessibilityLabel={`Petek ${cellName({ q: room.place_q, r: room.place_r })}, haritada göster`}
+            style={({ pressed }) => [styles.foot, pressed && styles.pressed]}
+            testID="room-cell"
+          >
+            <Ionicons name="map" size={14} color={colors.game} />
+            <Text style={[styles.meta, styles.cellLink]} numberOfLines={1}>
+              {cellName({ q: room.place_q, r: room.place_r })}
+            </Text>
+          </Pressable>
+        ) : null}
         {where ? (
           <View style={styles.foot}>
             <Ionicons name="location" size={14} color={colors.game} />
@@ -134,4 +156,5 @@ const styles = StyleSheet.create({
   officialTag: { backgroundColor: '#FFB703' },
   officialTagText: { color: '#1A1200' },
   pressed: { opacity: 0.75 },
+  cellLink: { color: colors.game, fontFamily: fonts.extra, textDecorationLine: 'underline' },
 });

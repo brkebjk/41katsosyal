@@ -56,7 +56,7 @@ export default function SharkGuideScreen() {
             çubuğu dalışın kalan süresidir. Seçimini bir avatara dokunup alttaki düğmeyle onaylarsın.
           </Step>
           <Step n="3" title="☀️ Plaj (gündüz)">
-            Güneş açar; dalışta maskesi kırılanlar (ölenler) açıklanır, rolleri gizli kalır. Konuşun, savunun, ipuçlarını paylaşın. Zıpkıncı
+            Güneş açar; dalışta avlananlar ve rolleri herkese açıklanır. Konuşun, savunun, ipuçlarını paylaşın. Zıpkıncı
             zıpkın atabilir, Komutan kimliğini açabilir.
           </Step>
           <Step n="4" title="⛓️ Kafes oylaması">
@@ -192,7 +192,7 @@ export default function SharkGuideScreen() {
         <>
           <P>
             Uzaktan odada herkes kendi telefonundan oynar. Konuşmak için mikrofon düğmesine basılı tut: en çok 5 saniyelik
-            bir ses mesajı kaydedilir. Her tartışmada (plaj + oylama ya da bir dalış) toplam en çok 15 saniye
+            bir ses mesajı kaydedilir. Her tartışmada (plaj + oylama ya da bir dalış) toplam en çok 10 saniye
             konuşabilirsin. Mesajlar sırayla çalar; konuşanın avatarı öne çıkar. Biri konuşurken sen de basabilirsin,
             senin mesajın onunki bitince duyulur.
           </P>

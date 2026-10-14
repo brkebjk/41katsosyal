@@ -254,7 +254,7 @@ export const HOW_TO_PLAY: Record<string, InfoItem[]> = {
     {
       icon: 'headset',
       lead: 'Uzaktan oyna.',
-      text: 'Uzaktan Eşleş ile herkes kendi telefonundan oynar. Sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur (her tartışmada 15 sn). Uzaktan oyun hak yemez; yan yana oyun 5 kat puan verir.',
+      text: 'Uzaktan Eşleş ile herkes kendi telefonundan oynar. Sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur (her tartışmada 10 sn). Uzaktan oyun hak yemez; yan yana oyun 5 kat puan verir.',
     },
     {
       icon: 'trophy',

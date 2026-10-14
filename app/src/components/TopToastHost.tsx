@@ -14,8 +14,8 @@ import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 const SHOW_MS = 5000;
-/** Arkadaşlık isteği: Onayla / Reddet seçilebilsin diye daha uzun durur; seçilmezse bildirim kutusunda bekler */
-const FRIEND_SHOW_MS = 15000;
+/** Arkadaşlık isteği: 5 sn durur; seçilmezse bildirim kutusunda Onayla / Reddet ile bekler */
+const FRIEND_SHOW_MS = 5000;
 const stamp = () => String(Date.now());
 
 function iconFor(kind: string, akind: unknown): IconName {
