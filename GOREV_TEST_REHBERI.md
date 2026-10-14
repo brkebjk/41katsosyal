@@ -8,6 +8,21 @@
 - Sıra önemli: 1, 2, 3. Yarıda hata alırsan hatayı bana ilet; baştan tekrar çalıştırmak zarar vermez.
 - Vampir–Köylü olduğu gibi duruyor.
 
+## A2. Köpekbalığı Kafesi giriş ekranı (yeni)
+1. Oyunlar > **Köpekbalığı Kafesi** kutusuna dokun: tema ekranı açılır, kaydırma yok.
+2. Arka plan:
+   - Üstte gökyüzü, güneş ve dalgalar var.
+   - Altta su altı, kabarcıklar ve ışık hüzmeleri var.
+   - Bir 🤿 dalgıç sürekli denize dalar.
+   - Yazılar okunur kalmalı.
+3. Sayaçlar:
+   - 🏖️ Yan yana: "∞ puan sınırı yok" + bu ay kalan oda hakkın.
+   - 🌊 Uzaktan: "bugün kalan 2/2" ve "bu ay kalan 6/6" puanlı oyun.
+4. Ortadaki rol kartlarını sağa-sola kaydır: 14 rol tek tek. Alttaki noktalar takım rengindedir.
+5. Puan kutusuna dokun: puan tablosu açılır.
+6. **YAN YANA** ya da **UZAKTAN** düğmesi doğrudan oda açar ("nasıl oynanacak" sorusu çıkmaz).
+7. **Açık odalar · kodla katıl**, var olan odaları listeler. **Rehber** düğmesi oyun rehberini açar.
+
 ## B. Köpekbalığı Kafesi (moderatör hesabı + 1 telefon, botlarla)
 1. Oyunlar > **Köpekbalığı Kafesi** > Oda aç > **Yan yana** > **Otomatik Oyun**.
 2. Kıyı ekranında **+3 deneme oyuncusu**'na 2 kez bas (6 kişi olmalı) > **Oyunu başlat**.

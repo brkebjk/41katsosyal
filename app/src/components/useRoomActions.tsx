@@ -264,7 +264,7 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
    * Seçilen oyun için yeni oda açar. Vampir–Köylü’de sıra: nasıl oynansın → (anlatıcı değilse) bulunduğun bölge →
    * odanın bölgesi + adres tarifi → oda. Odayı açan kişi (anlatıcı moderatör hariç) oyuncu olarak odaya da girer.
    */
-  async function createForGame(key: GameKey) {
+  async function createForGame(key: GameKey, preset?: 'side' | 'remote') {
     if (lock.current) return;
     setHint(null);
     if (key === 'raffle') {
@@ -283,7 +283,7 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
     try {
       await leaveDone.current;
       // Nerede oynanacak? Yan yana (aynı masada; 2 kat puan, oyun hakkından yer) ya da uzaktan (sesli sohbetle)
-      const where = await showDialog<'side' | 'remote' | null>({
+      const where = preset ?? await showDialog<'side' | 'remote' | null>({
         title: 'Nasıl oynanacak?',
         message: shark
           ? 'Yan yana: aynı masada oturursunuz. Puan iki katıdır, oyun hakkından yer.\n\nUzaktan: herkes kendi telefonundan oynar; plajda bas-konuş ses mesajlarıyla konuşulur. Oyun hakkından yemez, puanı yarıdır.'

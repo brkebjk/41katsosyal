@@ -276,6 +276,55 @@ function Sparkle({ x, y, delay }: { x: number; y: number; delay: number }) {
 }
 
 /** Tam ekran sahne zemini */
+/** Yüzeyden dibe dalan dalgıç (giriş ekranı) */
+function Diver({ from, to }: { from: number; to: number }) {
+  const t = useLoop(9000, 600);
+  const { width } = useWindowDimensions();
+  const translateY = t.interpolate({ inputRange: [0, 0.12, 1], outputRange: [from - 30, from, to] });
+  const translateX = t.interpolate({ inputRange: [0, 1], outputRange: [width * 0.18, width * 0.62] });
+  const rotate = t.interpolate({ inputRange: [0, 0.12, 0.3, 1], outputRange: ['-30deg', '40deg', '25deg', '20deg'] });
+  const opacity = t.interpolate({ inputRange: [0, 0.06, 0.85, 1], outputRange: [0, 0.9, 0.7, 0] });
+  return (
+    <Animated.Text style={[styles.diver, { opacity, transform: [{ translateX }, { translateY }, { rotate }] }]}>
+      🤿
+    </Animated.Text>
+  );
+}
+
+/**
+ * Giriş ekranı sahnesi: üstte plaj (gökyüzü, güneş, dalgalar), altta su altı (ışık hüzmeleri, kabarcıklar, köpekbalığı
+ * gölgesi) ve sürekli dalan dalgıç. Yazılar okunsun diye her şey soluk ve arka planda.
+ */
+export function SharkIntroBackdrop() {
+  const { height } = useWindowDimensions();
+  const surface = height * 0.26;
+  return (
+    <View style={styles.fill} pointerEvents="none">
+      <LinearGradient colors={['#6CC9F2', '#BDE9FA']} style={[styles.band, { top: 0, height: surface }]} />
+      <Sun />
+      <LinearGradient
+        colors={['#1C6E8C', '#0F3B5C', '#0B132B', '#050A18']}
+        locations={[0, 0.25, 0.6, 1]}
+        style={[styles.band, { top: surface, bottom: 0 }]}
+      />
+      <Sparkles top={surface - 10} height={20} />
+      <Waves color="#FFFFFF" top={surface - 12} />
+      <View style={[styles.fill, { top: surface }]}>
+        <LightRays />
+      </View>
+      <SharkShadow top={height * 0.62} duration={18000} />
+      <Diver from={surface} to={height * 0.9} />
+      <Bubbles count={14} />
+      {/* Okunurluk: içeriğin arkasını hafifçe karart */}
+      <LinearGradient
+        colors={['rgba(5,10,24,0)', 'rgba(5,10,24,0.35)', 'rgba(5,10,24,0.55)']}
+        locations={[0, 0.4, 1]}
+        style={styles.fill}
+      />
+    </View>
+  );
+}
+
 export function SharkBackdrop({ scene }: { scene: SkScene }) {
   const { height } = useWindowDimensions();
   if (scene === 'day' || scene === 'vote') {
@@ -865,6 +914,7 @@ const styles = StyleSheet.create({
   bubbleShine: { position: 'absolute', top: '18%', left: '22%', backgroundColor: 'rgba(255,255,255,0.8)' },
   ray: { position: 'absolute', top: -40 },
   shadowShark: { position: 'absolute', left: 0, fontSize: 64, opacity: 0.12 },
+  diver: { position: 'absolute', left: 0, top: 0, fontSize: 34 },
   band: { position: 'absolute', left: 0, right: 0 },
   waveRow: { position: 'absolute', left: 0, height: 18, flexDirection: 'row' },
   waveCrest: { height: 18, marginRight: -18 },

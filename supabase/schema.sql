@@ -17098,6 +17098,27 @@ returns jsonb language sql stable security definer set search_path = public as $
      and public._sk_clip_visible(c, p_user);
 $$;
 
+
+-- Uzaktan oyunda bugün ve bu ay kalan puanlı oyun hakkı (oyun giriş ekranındaki sayaç). Yan yana oyunda sınır yoktur.
+create or replace function public.my_remote_caps()
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_today timestamptz := date_trunc('day', now() at time zone 'Europe/Istanbul') at time zone 'Europe/Istanbul';
+begin
+  v := public._require_user();
+  return jsonb_build_object(
+    'today', (select count(*) from public.point_events pe
+               where pe.user_id = v.id and pe.source = 'game_remote' and pe.created_at >= v_today),
+    'month', (select count(*) from public.point_events pe
+               where pe.user_id = v.id and pe.source = 'game_remote' and pe.created_at >= public._month_start()),
+    'daily_cap', public.setting_int('pts_remote_daily_cap', 2),
+    'month_cap', public.setting_int('pts_remote_month_cap', 6),
+    'pct', least(80, greatest(10, public.setting_int('pts_remote_pct', 50))),
+    'top_cap', public.setting_int('pts_game_top_cap', 12),
+    'min_players', public.setting_int('pts_game_min_players', 4));
+end $$;
+
 -- ---- GEÇİCİ: Yazı düzenleme modu ---------------------------------------------------------------------------------
 -- Moderatör uygulamadaki sabit yazıları (düğme, başlık, açıklama) düzeltir; düzeltmeler herkeste görünür. Düzeltmeler
 -- koda işlenince bu bölüm ve tablo kaldırılacak. Yalnızca moderatör yazar; her değişiklik işlem günlüğüne düşer.
@@ -17432,6 +17453,7 @@ grant execute on function public.sk_next(uuid) to authenticated;
 grant execute on function public.sk_say(uuid, text, text) to authenticated;
 grant execute on function public.sk_voice_post(uuid, text, int) to authenticated;
 grant execute on function public.sk_voice_get(uuid) to authenticated;
+grant execute on function public.my_remote_caps() to authenticated;
 grant execute on function public.admin_get_voice_clip(uuid) to authenticated;
 grant execute on function public.get_room_code(uuid) to authenticated;
 grant execute on function public.leave_all_rooms() to authenticated;

@@ -148,6 +148,11 @@ function GamesScreen() {
       router.push('/hazine');
       return;
     }
+    // Köpekbalığı Kafesi kendi temalı giriş ekranından açılır (roller, puan sayacı, yan yana / uzaktan)
+    if (key === 'shark_cage') {
+      router.push('/kopekbaligi-giris');
+      return;
+    }
     // Bilgi Yarışması kendi ekranında oynanır (Solo Maraton / Uzaktan); oyun odası yoktur
     if (key === 'quiz') {
       router.push('/bilgi');
