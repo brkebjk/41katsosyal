@@ -88,7 +88,7 @@ function buildSections(
     title: 'Puanlar nasıl kazanılır',
     lines: [
       'Oyunlarda masadaki ya da odadaki oyuncu sayısı arttıkça puan çarpanı yükselir; yalnızca 1. değil, 2., 3. ve sonraki sıralar da puan kazanır. Arkadaşlarını davet ettikçe herkes daha çok puan alır.',
-      'Uzaktan oyun (sesli sohbetle): aynı sonucun yan yana oyundaki puanının yarısını verir ve günlük/aylık puan sınırı yan yana oyundan düşüktür. Uzaktan oyun oyun hakkından yemez; yan yana oyun iki kat puan verir ve oyun hakkından yer.',
+      'Uzaktan oyun (eşleşmeyle, bas-konuş): aynı sonucun yan yana oyundaki puanının beşte birini verir (yan yana oyun 5 kat puan). Uzaktan oyun oyun hakkından yemez; yan yana oyun oyun hakkından yer. Etkinlik oyunu Oyun Geceleri’nde 1,5 kat, Sosyal Buluşmalar ve Müzik & Eğlence’de 1,25 kat puan verir.',
       `Etkinlik açmak: +${rules.eventCreate} puan (ayda en fazla ${rules.eventCreateMonthEvents} etkinlik).`,
       `Etkinliğe katılıp kodu yazmak: kalabalık etkinlik daha çok puan getirir (${attendTiersText(rules)}); 41. Kat Özel etkinliklerde her basamağa +${rules.eventAttendOfficialBonus} puan eklenir. Etkinlik kalabalıklaştıkça daha önce puan alanlara da aradaki fark yazılır. Katılabileceğin etkinlik sayısında sınır yoktur; ancak puan, etkinlikte en az ${rules.eventMinAttendees} kişinin katılımı kodla ve bölge bilgisiyle doğrulanınca eklenir.`,
       `Etkinliğine gelen katılımcılar: kişi başı +${rules.hostPerAttendee} puan (bir etkinlikte en fazla ${rules.hostAttendeeCap} kişi, ayda en fazla ${rules.hostMonthCap} puan).`,

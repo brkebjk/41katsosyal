@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/AppText';
 import { PrimaryButton } from '@/components/PrimaryButton';
@@ -12,10 +12,12 @@ type Props = {
   room: OpenRoom;
   isModerator: boolean;
   onPress: () => void;
+  /** “Etkinlik Oyunu” etiketine dokununca (etkinliğin bilgi penceresi) */
+  onEvent?: (eventId: string) => void;
 };
 
 /** “Açık odalar” listesinin bir satırı: oyun, oda sahibi, bölge + adres tarifi, oyuncu sayısı ve “Katıl” düğmesi. */
-export function RoomRow({ room, isModerator, onPress }: Props) {
+export function RoomRow({ room, isModerator, onPress, onEvent }: Props) {
   // Başkasının odasında "Katıl" kod sorar; kod listede görünmez, oda sahibinden öğrenilir.
   const label = room.is_mine ? 'Senin odan' : room.joined ? 'Odaya dön' : isModerator ? 'Aç' : 'Katıl';
   const needsCode = label === 'Katıl' && !room.remote;
@@ -25,9 +27,22 @@ export function RoomRow({ room, isModerator, onPress }: Props) {
     <View style={[styles.card, room.is_official && styles.cardOfficial]} testID="room-row">
       <View style={styles.info}>
         {room.event_title ? (
-          <View style={styles.eventTag}>
+          <Pressable
+            onPress={room.event_id && onEvent ? () => onEvent(room.event_id as string) : undefined}
+            disabled={!room.event_id || !onEvent}
+            accessibilityRole="button"
+            accessibilityLabel="Etkinlik Oyunu, etkinliğin bilgisini aç"
+            style={({ pressed }) => [styles.eventTag, pressed && styles.pressed]}
+            testID="room-event-tag"
+          >
             <Ionicons name="calendar" size={12} color="#FFFFFF" />
-            <Text style={styles.eventTagText}>ETKİNLİK OYUNU</Text>
+            <Text style={styles.eventTagText}>Etkinlik Oyunu</Text>
+            {room.event_id && onEvent ? <Ionicons name="chevron-forward" size={12} color="#FFFFFF" /> : null}
+          </Pressable>
+        ) : room.is_official ? (
+          <View style={[styles.eventTag, styles.officialTag]}>
+            <Ionicons name="star" size={12} color="#1A1200" />
+            <Text style={[styles.eventTagText, styles.officialTagText]}>41. Kat Özel Oyun</Text>
           </View>
         ) : null}
         <Text style={styles.title} numberOfLines={1}>
@@ -56,7 +71,7 @@ export function RoomRow({ room, isModerator, onPress }: Props) {
           <View style={styles.foot}>
             <Ionicons name="headset" size={14} color={colors.primary} />
             <Text style={[styles.meta, styles.where]} numberOfLines={2}>
-              Uzaktan · bas-konuş · listeden ya da oda ID ile katılınır
+              Uzaktan · bas-konuş
             </Text>
           </View>
         ) : null}
@@ -116,4 +131,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   eventTagText: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 10.5, letterSpacing: 0.5 },
+  officialTag: { backgroundColor: '#FFB703' },
+  officialTagText: { color: '#1A1200' },
+  pressed: { opacity: 0.75 },
 });

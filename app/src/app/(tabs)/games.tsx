@@ -153,6 +153,11 @@ function GamesScreen() {
       router.push('/kopekbaligi-giris');
       return;
     }
+    // Vampir–Köylü de aynı düzende kendi giriş ekranından açılır
+    if (key === 'vampire_villager') {
+      router.push('/vampir-giris');
+      return;
+    }
     // Bilgi Yarışması kendi ekranında oynanır (Solo Maraton / Uzaktan); oyun odası yoktur
     if (key === 'quiz') {
       router.push('/bilgi');

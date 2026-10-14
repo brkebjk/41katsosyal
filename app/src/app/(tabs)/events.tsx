@@ -1193,7 +1193,7 @@ function EventCard({
       {/* Paket 27: etkinlik oyunu ve etkinlik çekilişi (düzenleyen; en az 4 doğrulanmış katılımcı) */}
       {ev.is_mine && (ev.checked_in_count ?? 0) >= minAttendees ? (
         <View style={styles.hostGames}>
-          {ev.with_games ? (
+          {ev.with_games && (ev.category === 'oyun_gecesi' || ev.category === 'sosyal' || ev.category === 'muzik') ? (
             <Pressable
               onPress={onStartGame}
               disabled={openedAt < when.getTime()}
@@ -1210,7 +1210,7 @@ function EventCard({
               <View style={styles.flex}>
                 <Text style={styles.hostGameTitle}>Etkinlik oyunu aç</Text>
                 <Text style={styles.hostGameSub}>
-                  {openedAt < when.getTime() ? 'Etkinlik başlayınca açılır' : 'Puan 1,25 kat · kod katılımcılara gider'}
+                  {openedAt < when.getTime() ? 'Etkinlik başlayınca açılır' : `Puan ${ev.category === 'oyun_gecesi' ? '1,5' : '1,25'} kat · kod katılımcılara gider`}
                 </Text>
               </View>
             </Pressable>

@@ -1,6 +1,53 @@
 -- PARÇA 2 / 3 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+-- Puan ayarları (moderatör SQL ile değiştirebilir; yoksa varsayılan kullanılır)
+insert into public.app_settings (key, value, description) values
+  ('pts_event_create', '15', 'Puan: etkinlik açana (etkinlik iptal edilirse geri alınır)'),
+  ('pts_event_attend', '30', 'Puan: KODLA doğrulanmış katılım, 4–9 kişilik etkinlik (kalabalık etkinlik daha çok puan getirir)'),
+  ('pts_event_attend_10', '35', 'Puan: doğrulanmış katılım, 10–19 kişilik etkinlik'),
+  ('pts_event_attend_20', '40', 'Puan: doğrulanmış katılım, 20–39 kişilik etkinlik'),
+  ('pts_event_attend_40', '50', 'Puan: doğrulanmış katılım, 40 ve üstü kişilik etkinlik'),
+  ('pts_event_attend_official_bonus', '10', 'Puan: 41. Kat Sosyal (moderatör) etkinliklerinde her basamağa eklenen katılım puanı'),
+  ('pts_event_min_attendees', '4', 'Bir etkinlikten puan açılması için kodla ve konumla doğrulanması gereken en az katılımcı sayısı (etkinlik kontenjanı da en az bu kadar olmalı)'),
+  ('event_checkin_location_required', 'true', 'Etkinlik katılımı kodun yanında konumla da doğrulansın mı? (telefon yalnızca bulunduğu bölge numarasını yollar)'),
+  ('event_checkin_max_cell_distance', '1', 'Katılımcının bölgesi etkinliğin bölgesinden en çok kaç petek uzakta olabilir? (0 = aynı petek)'),
+  ('pts_event_host_per_attendee', '10', 'Puan: etkinliğine doğrulanan her katılımcı için düzenleyene'),
+  ('pts_event_host_attendee_cap', '25', 'Bir etkinlikte düzenleyene puan getiren en çok katılımcı sayısı'),
+  ('pts_event_host_month_cap', '250', 'Düzenleyenin katılımcılardan ayda en çok kazanabileceği puan (abone ile ücretsiz üye eşit olsun diye tek etkinliğin tavanı)'),
+  ('pts_event_create_month_events', '1', 'Ayda en çok kaç etkinlik açmaktan puan alınır (aboneler de dahil, herkes için aynı)'),
+  ('pts_paid_events', 'false', 'Ücretli etkinlikler puan getirir mi? (kapalıyken para ödemek hediye şansı vermez: mağaza kuralları için önerilen)'),
+  ('pts_pair_cooldown_days', '30', 'Aynı kişi aynı düzenleyenin puanına kaç günde bir katkı verebilir'),
+  ('pts_game_top_cap', '24', 'Yan yana oyunlarda 1. sıranın alacağı EN YÜKSEK puan. 1. sıra = oyuncu sayısı × (1 + 0,1 × (oyuncu − 4)) bu sınıra kadar; sıra ilerledikçe azalır, en az 1'),
+  ('pts_game_min_players', '4', 'Yan yana oyunda puan için gereken en az oyuncu sayısı (moderatör hariç)'),
+  ('pts_game_daily_cap', '5', 'KULLANILMIYOR: yan yana oyunlarda günlük puan sınırı yoktur'),
+  ('event_raffle_max', '5', 'Bir etkinlikte düzenleyenin açabileceği en çok çekiliş sayısı'),
+  ('pts_game_month_cap', '15', 'KULLANILMIYOR: yan yana oyunlarda aylık puan sınırı yoktur'),
+  ('pts_quiz_top_cap', '3', 'Bilgi Yarışması: 1. sıranın alacağı en yüksek puan (uzaktan oynandığı için az)'),
+  ('pts_quiz_min_players', '2', 'Bilgi Yarışması: başlamak ve puan almak için gereken en az oyuncu sayısı'),
+  ('pts_quiz_daily_cap', '3', 'Günde en çok kaç Bilgi Yarışması oyunundan puan alınır'),
+  ('pts_quiz_month_cap', '10', 'Ayda en çok kaç Bilgi Yarışması oyunundan puan alınır'),
+  ('event_checkin_open_minutes_before', '60', 'Katılım kodu girişi etkinlikten kaç dakika önce açılır'),
+  ('event_duration_hours', '3', 'Etkinlik başladıktan kaç saat sonra kapanır? Kapanan etkinlik listeden kalkar; kayıt ve katılım kodu girişi biter.'),
+  ('event_close_request_min_checkins', '1', 'Kodla doğrulanmış kaç katılımcıdan sonra düzenleyen etkinliği kendisi kapatamaz, moderatöre talep gönderir?'),
+  ('pts_event_attend_category_daily', '1', 'Bir üye aynı gün (Türkiye saati) aynı kategorideki en çok kaç etkinlikten katılım puanı alır? (0 = sınırsız)'),
+  ('pts_event_attend_host_days', '2', 'Bir üye aynı üyenin düzenlediği etkinliklerden kaç günde bir katılım puanı alır? (0 = sınırsız; 41. Kat Özel etkinlikler hariç)'),
+  ('contest_active', 'false', 'Aylık hediye programı açık mı? (Yarışma kuralları metni doldurulmadan AÇMA)'),
+  ('contest_organizer', '""', 'Hediye programını düzenleyen kişi ya da şirketin adı (kurallar ekranında görünür)'),
+  ('contest_contact', '""', 'Hediye programı için iletişim e-postası (kurallar ekranında görünür)'),
+  ('contest_prizes', '""', 'Bu dönemin hediyeleri, 1. 2. 3. için kısa metin (kurallar ekranında görünür)'),
+  ('contest_award_days', '15', 'Hediyeler dönem bittikten en geç kaç gün içinde duyurulur ve verilir')
+on conflict (key) do nothing;
+
+-- Eski sabit oyun puanı ayarları artık kullanılmaz (puan oyuncu sayısı ve sıraya göre hesaplanır)
+delete from public.app_settings where key in ('pts_game_play', 'pts_game_win', 'pts_event_attend_month_events', 'event_checkin_open_hours_after',
+                                             'pts_event_attend_official');
+-- Ayar açıklamaları güncel kalsın (değerlere dokunmaz)
+update public.app_settings set description = 'Yan yana oyunlarda 1. sıranın alacağı EN YÜKSEK puan. 1. sıra = oyuncu sayısı × (1 + 0,1 × (oyuncu − 4)) bu sınıra kadar; sıra ilerledikçe azalır, en az 1'
+ where key = 'pts_game_top_cap';
+update public.app_settings set description = 'Puan: KODLA doğrulanmış katılım, 4–9 kişilik etkinlik (kalabalık etkinlik daha çok puan getirir)'
+ where key = 'pts_event_attend';
+
 -- ---------------------------------------------------------------------
 -- 5d) Harita ve yer seçme
 --     Ham konum sunucuya HİÇ gelmez: telefon bulunduğu peteğin numarasını (q, r) hesaplar, yalnızca onu yollar.
@@ -6653,75 +6700,3 @@ insert into public.app_settings (key, value, description) values
   ('signup_one_per_device', 'true', 'Her telefondan yalnızca 1 hesap açılabilsin mi? (Deneme için geçici olarak false yapılabilir; yayında true olmalı.)'),
   ('support_contact', '"İletişim bilgisi henüz eklenmedi."', 'Bize ulaşın: e-posta, telefon ya da sosyal medya adresi. Şifresini ve kurtarma kelimelerini kaybeden ya da yasaklanan üyeler buradan ulaşır.')
 on conflict (key) do update set description = excluded.description;
-
--- Hukuki metinlerin ilk taslağı (avukat incelemesinden geçecek). Köşeli parantezli [ALANLAR] doldurulmalı.
--- Yalnızca metin hâlâ "henüz eklenmedi" durumundaysa yazılır; sonradan düzenlediğin metne dokunulmaz.
--- Biçim: "## " ile başlayan satır bölüm başlığı, "• " ile başlayan satır madde olarak görünür.
-update public.app_settings set value = to_jsonb($legal$41. Kat Sosyal olarak kişisel verilerine önem veriyoruz. Bu metin, 6698 sayılı Kişisel Verilerin Korunması Kanunu ("KVKK") uyarınca hangi verilerini neden ve nasıl işlediğimizi, kimlerle paylaştığımızı ve haklarını anlatır.
-
-## 1. Veri sorumlusu
-• Unvan: [VERİ SORUMLUSUNUN ADI / UNVANI]
-• Adres: [ADRES]
-• İletişim: [E-POSTA ADRESİ]
-
-## 2. Hangi verilerini işliyoruz?
-• Kimlik ve hesap bilgileri: gerçek adın, kullanıcı adın (yalnızca giriş için; hiçbir üyeye gösterilmez), şifren ve kurtarma kelimelerin (ikisi de yalnızca geri çevrilemeyen şifreli özet olarak saklanır).
-• Rumuz ve avatar: sistemin her hafta sana rastgele verdiği takma ad ve avatar.
-• Cihaz bilgisi: telefonunun kimliğinin geri çevrilemeyen özeti (Android'de telefonun kalıcı cihaz kimliğinden üretilir). Telefon kimliğinin kendisi saklanmaz.
-• Yaklaşık konum: tam konumun sunucularımıza hiç gönderilmez ve kaydedilmez. Telefonun, konumunu yalnızca yaklaşık 500 metrelik bir bölge numarasına ("petek") çevirir ve sadece bu numara gönderilir. Bu yalnızca sen bir işlem yaptığında olur: gönderiye yer eklerken, petek akışını açarken, "Buradayım" derken, yan yana oyun açarken ya da bir oyuna girerken, etkinlik katılımını doğrularken, hazine kodu girerken. Konumun sürekli takip edilmez, uygulama arka plandayken konumuna bakılmaz.
-• Paylaştığın içerikler: akış gönderileri, yorumlar, tepkiler, özel mesajlar, oyun içi sohbet ve fısıltılar, etkinlik yorumları, mekân değerlendirmeleri, Moderatör ile yazışmaların.
-• Etkinlik bilgileri: kayıt olduğun, katılımını doğruladığın ve puanladığın etkinlikler; ekip kurarken kendi isteğinle paylaştığın iletişim bilgisi; Etkinlik Lideri başvurusundaki ad ve telefon numarası.
-• Oyun ve puan bilgileri: oynadığın oyunlar, sonuçlar, puan hareketleri, sıralama ve başarımlar.
-• Abonelik bilgisi: aboneliğinin var olup olmadığı ve bitiş tarihi. Ödeme ve kart bilgilerin bize hiç gelmez; ödemeyi App Store ya da Google Play alır.
-• Güvenlik kayıtları: şifre sıfırlama denemelerinde bağlantı (IP) adresi, yanlış kod denemeleri, şikayetler, moderatör işlemleri ve oturum bilgisi.
-• Tercihler: bildirim tercihlerin ve uygulama içi bildirimlerin.
-
-## 3. Anonimlik nasıl korunur?
-Akışta yalnızca rumuzunla görünürsün. Gönderilerinin ve yorumlarının gerçek sahibi ayrı ve kilitli bir kayıtta tutulur; üyeler bu kaydı göremez. Moderatör bu bilgiye yalnızca şikayet incelemesi ya da yasal bir zorunluluk olduğunda erişebilir ve her erişim kayıt altına alınır. Gerçek adın; sıralamada, etkinliklerde (düzenleyen ya da yorum yazan olarak), arkadaşlarına ve oyun odalarında görünür.
-
-## 4. Verilerini hangi amaçlarla işliyoruz?
-• Üyeliğini oluşturmak, hesabına güvenle girmeni ve şifreni kurtarabilmeni sağlamak,
-• Akış, etkinlik, oyun, harita, arkadaşlık ve mesajlaşma özelliklerini sunmak,
-• Puanları, sıralamaları ve başarımları hesaplamak; hileyi (çoklu hesap, sahte katılım gibi) önlemek,
-• Her telefondan yalnızca bir hesap açılmasını sağlamak ve yasaklanan hesapların yeniden açılmasını engellemek,
-• Haritada bölgelerin ne kadar hareketli olduğunu, kimseyi göstermeden ve en az 5 farklı üye olmadan renklendirmeden göstermek,
-• Şikayetleri incelemek, topluluk kurallarını uygulamak ve kötüye kullanımı önlemek,
-• Aboneliğini doğrulamak ve abonelik ayrıcalıklarını sunmak,
-• Yasal yükümlülüklerimizi yerine getirmek ve yetkili makamların taleplerini karşılamak.
-
-## 5. Hukuki sebepler
-Verilerin KVKK'nın 5. maddesindeki şu sebeplere dayanarak işlenir: üyelik sözleşmesinin kurulması ve yerine getirilmesi, hukuki yükümlülüklerimizin yerine getirilmesi, bir hakkın tesisi, kullanılması veya korunması, temel hak ve özgürlüklerine zarar vermemek kaydıyla meşru menfaatlerimiz (güvenlik, hile ve kötüye kullanımın önlenmesi) ve gerektiğinde açık rızan (bkz. Açık Rıza Metni).
-
-## 6. Verilerin kimlerle paylaşılır?
-• Altyapı hizmet sağlayıcılarımız: verilerin, uygulamanın sunucu ve veritabanı hizmetini aldığımız Supabase altyapısında saklanır ([SUNUCU BÖLGESİ / ÜLKE]).
-• Abonelik hizmeti: abonelik durumunu doğrulamak için RevenueCat ve uygulama mağazaları (Apple App Store, Google Play) ile yalnızca üye numaran ve abonelik bilgisi paylaşılır.
-• Yetkili kurum ve kuruluşlar: yalnızca kanunen zorunlu olduğunda ve talep edilen ölçüde.
-Verilerin hiçbir zaman reklam amacıyla satılmaz ya da kiralanmaz.
-
-## 7. Yurt dışına aktarım
-Hizmet sağlayıcılarımızın sunucuları yurt dışında bulunabileceği için verilerin KVKK'nın 9. maddesine uygun şekilde yurt dışına aktarılabilir. [AVUKAT DEĞERLENDİRMESİ: aktarımın dayanağı (standart sözleşme / açık rıza) burada belirtilmelidir.]
-
-## 8. Ne kadar süre saklıyoruz?
-• Akış her Pazartesi sıfırlanır; eski gönderiler üyelere görünmez, yasal talepler için arşivde 365 gün tutulup silinir.
-• Arkadaş olmayanlarla özel mesajlar haftalık kapanır, arşivde 365 gün tutulup silinir.
-• Harita yoğunluk kayıtları (petek numarası) en çok 30 gün tutulur.
-• Bilgi Yarışması sohbetleri, Vampir–Köylü fısıltıları ve elenenler sohbeti 14 gün tutulur.
-• Bildirimler 60 gün tutulur. Moderatör yazışmaları görüşme bitince, 90 gün hareketsiz kalırsa kendiliğinden silinir.
-• Şifre sıfırlamadaki bağlantı adresi kayıtları 1 gün içinde silinir.
-• Hesabını sildiğinde profilin, gönderilerin ve yorumların kalıcı olarak silinir. Telefon kimliğinin özeti, aynı telefondan yasak kaçırmak için yeniden hesap açılmasını önlemek amacıyla saklanmaya devam eder. Kanunen saklamamız gereken kayıtlar yasal süre boyunca tutulur.
-
-## 9. Hakların (KVKK madde 11)
-Bize başvurarak şunları isteyebilirsin:
-• Kişisel verilerinin işlenip işlenmediğini öğrenmek ve işlenmişse bilgi talep etmek,
-• İşlenme amacını ve amacına uygun kullanılıp kullanılmadığını öğrenmek,
-• Yurt içinde veya yurt dışında aktarıldığı üçüncü kişileri bilmek,
-• Eksik veya yanlış işlenmişse düzeltilmesini istemek,
-• Silinmesini veya yok edilmesini istemek ve bu işlemlerin aktarıldığı üçüncü kişilere bildirilmesini istemek,
-• Otomatik sistemlerle analiz edilmesi sonucu aleyhine bir sonuç çıkmasına itiraz etmek,
-• Kanuna aykırı işlenmesi sebebiyle zarara uğrarsan zararın giderilmesini talep etmek.
-
-## 10. Başvuru
-Başvurunu [E-POSTA ADRESİ] adresine ya da [ADRES] adresine yazılı olarak iletebilirsin. Başvurunu en geç 30 gün içinde ücretsiz olarak sonuçlandırırız.
-
-Son güncelleme: [TARİH]$legal$::text)
- where key = 'legal_kvkk' and value = '"KVKK aydınlatma metni henüz eklenmedi."'::jsonb;

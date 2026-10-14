@@ -5,6 +5,7 @@ import { Animated, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/AppText';
+import { FriendRequestButtons } from '@/components/FriendRequestButtons';
 import { RoomInviteChat } from '@/components/RoomInviteChat';
 import { notificationTarget } from '@/lib/notifications';
 import { showToast, useToast } from '@/lib/topToast';
@@ -13,6 +14,8 @@ import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 const SHOW_MS = 5000;
+/** Arkadaşlık isteği: Onayla / Reddet seçilebilsin diye daha uzun durur; seçilmezse bildirim kutusunda bekler */
+const FRIEND_SHOW_MS = 15000;
 const stamp = () => String(Date.now());
 
 function iconFor(kind: string, akind: unknown): IconName {
@@ -41,7 +44,7 @@ export function TopToastHost() {
     Animated.spring(y, { toValue: 0, useNativeDriver: true, friction: 8 }).start();
     const t = setTimeout(() => {
       Animated.timing(y, { toValue: -160, duration: 220, useNativeDriver: true }).start(() => showToast(null));
-    }, SHOW_MS);
+    }, toast.kind === 'friend_request' ? FRIEND_SHOW_MS : SHOW_MS);
     return () => clearTimeout(t);
   }, [toast, y]);
 
@@ -83,6 +86,12 @@ export function TopToastHost() {
               <Text style={styles.body} numberOfLines={2}>
                 {toast.body}
               </Text>
+            ) : null}
+            {toast.kind === 'friend_request' && typeof toast.data.request_id === 'string' ? (
+              <FriendRequestButtons
+                requestId={toast.data.request_id}
+                onDone={() => setTimeout(() => showToast(null), 1200)}
+              />
             ) : null}
             {toast.more > 0 ? <Text style={styles.more}>{`+${toast.more} yeni bildirim daha`}</Text> : null}
           </View>

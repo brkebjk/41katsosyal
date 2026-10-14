@@ -2,9 +2,12 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
+import { Image } from 'expo-image';
+
 import { Text } from '@/components/AppText';
 import { Avatar } from '@/components/Avatar';
-import type { VvPlayer } from '@/lib/vampire';
+import { vampireImages } from '@/lib/images';
+import { ROLES, type VvPlayer, type VvRole } from '@/lib/vampire';
 import { fonts } from '@/theme';
 
 // Vampir–Köylü oyun sahnesi: tam ekran gece/gündüz görselinin üstünde duran parçalar. Görselin üstünde okunsun diye
@@ -28,6 +31,28 @@ export const G = {
 } as const;
 
 /** Koyu cam kutu */
+/** Vampir–Köylü rol simgesi: küçük yuvarlak çerçeve içinde rol görseli (kenar rol renginde) */
+export function VvRoleIcon({ role, size = 24 }: { role: VvRole; size?: number }) {
+  const info = ROLES[role];
+  const border = size >= 30 ? 2 : 1.5;
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        borderWidth: border,
+        borderColor: info?.color ?? '#FFFFFF',
+        backgroundColor: 'rgba(11, 19, 43, 0.88)',
+        overflow: 'hidden',
+      }}
+      accessibilityLabel={info?.name}
+    >
+      {info ? <Image source={vampireImages[info.image]} contentFit="cover" style={{ flex: 1 }} /> : null}
+    </View>
+  );
+}
+
 export function Glass({ children, style }: { children: ReactNode; style?: object }) {
   return <View style={[styles.glass, style]}>{children}</View>;
 }
@@ -235,12 +260,14 @@ export type Tile = {
   kick?: { votes: number; need: number | null; mine: boolean; secsLeft: number | null } | null;
   /** Konuşanın avatarında kırmızı ünlem: dokununca sesi şikâyet et */
   alert?: boolean;
+  /** Görmeye hakkın olan rol: avatarın alt ortasında yuvarlak çerçevede */
+  role?: VvRole | null;
 };
 
-const GAP = 6;
+const GAP = 4;
 /** Avatarın dışında kalan yükseklik: üstte oy rozeti, altta ad ve alt satır */
 const EXTRA = 56;
-const MAX_AVATAR = 84;
+const MAX_AVATAR = 120;
 
 /** Oyuncu sayısına ve alana göre en büyük avatarın sığdığı sütun sayısı */
 /** Her satırda hep 4 avatar (Köpekbalığı Kafesi ile aynı düzen); kaydırmadan sığacak en büyük boyut */
@@ -248,7 +275,7 @@ function fit(n: number, w: number, h: number): { cols: number; size: number } {
   const cols = 4;
   const rows = Math.max(1, Math.ceil(n / cols));
   const tileW = (w - GAP * (cols - 1)) / cols;
-  const byW = tileW - 10;
+  const byW = tileW - 8;
   const byH = (h - GAP * (rows - 1)) / rows - EXTRA;
   return { cols, size: Math.max(26, Math.floor(Math.min(byW, byH, MAX_AVATAR))) };
 }
@@ -398,6 +425,11 @@ function PlayerTile({
           ) : null}
         </View>
 
+        {tile.role ? (
+          <View style={styles.roleBadge} pointerEvents="none">
+            <VvRoleIcon role={tile.role} size={Math.max(20, Math.round(size * 0.34))} />
+          </View>
+        ) : null}
         {/* Konuşan oyuncu: kırmızı ünlem, dokununca ses şikâyeti */}
         {tile.alert && onAlert ? (
           <Pressable
@@ -470,6 +502,7 @@ function PlayerTile({
 }
 
 const styles = StyleSheet.create({
+  roleBadge: { position: 'absolute', bottom: -4, left: 0, right: 0, alignItems: 'center' },
   alertBtn: {
     position: 'absolute',
     top: -6,

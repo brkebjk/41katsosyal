@@ -130,8 +130,8 @@ export default function SharkIntroScreen() {
           <View style={styles.counters}>
             <View style={[styles.counter, styles.counterSide]} accessibilityLabel="Yan yana oyun puanı">
               <Text style={[styles.counterHead, styles.sandHead]}>🏖️ Yan yana</Text>
-              <Text style={[styles.counterBig, styles.sandText]}>∞</Text>
-              <Text style={[styles.counterSub, styles.sandSub]}>puan sınırı yok</Text>
+              <Text style={[styles.counterBig, styles.sandText]}>5x</Text>
+              <Text style={[styles.counterSub, styles.sandSub]}>puan · sınır yok</Text>
               <Text style={[styles.counterNote, styles.sandNote]}>
                 {unlimited ? 'Oda hakkın sınırsız' : roomsLeft === null ? 'Oda hakkın…' : `Bu ay ${roomsLeft} oda hakkın var`}
               </Text>
@@ -220,7 +220,7 @@ export default function SharkIntroScreen() {
               } kişi.`}
             </Text>
             <Text style={styles.pointsLine}>
-              {`🌊 Uzaktan %${caps?.pct ?? 50} · 🎉 Etkinlik ×1,25 · 🎭 Anlatıcılı oyun puansız`}
+              {`🏖️ Yan yana 5x puan · 🎲 Oyun Gecesi ×1,5 · 🎭 Anlatıcılı oyun puansız`}
             </Text>
             <Text style={styles.pointsLink}>Puan tablosu ›</Text>
           </Pressable>
@@ -233,9 +233,12 @@ export default function SharkIntroScreen() {
               style={({ pressed }) => [styles.play, styles.playSide, pressed && styles.pressed]}
               testID="sk-intro-side"
             >
+              <View style={styles.bonus} pointerEvents="none">
+                <Text style={styles.bonusText}>5x Puan</Text>
+              </View>
               <Text style={styles.playEmoji}>🏖️</Text>
               <Text style={styles.playTitle}>YAN YANA</Text>
-              <Text style={styles.playSub}>Aynı masada · tam puan</Text>
+              <Text style={styles.playSub}>Aynı masada · kodla giriş</Text>
             </Pressable>
             <Pressable
               onPress={() => router.push('/kopekbaligi-ara')}
@@ -347,9 +350,21 @@ const styles = StyleSheet.create({
   },
   pointsLine: { color: '#FFFFFF', fontSize: 12.5, lineHeight: 17 },
   pointsLink: { color: '#FFB703', fontFamily: fonts.extra, fontSize: 12.5, textAlign: 'right' },
-  playRow: { flexDirection: 'row', gap: 10 },
+  playRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
   play: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 18, borderWidth: 2 },
   playSide: { backgroundColor: '#FFB703', borderColor: '#F2D2A2' },
+  bonus: {
+    position: 'absolute',
+    top: -11,
+    alignSelf: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: '#D9304F',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  bonusText: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 11.5, letterSpacing: 0.5 },
   playRemote: { backgroundColor: '#0077B6', borderColor: '#48CAE4' },
   playEmoji: { fontSize: 26 },
   playTitle: { color: '#0B132B', fontFamily: fonts.black, fontSize: 16, letterSpacing: 1 },

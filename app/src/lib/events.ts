@@ -68,7 +68,7 @@ export type EventItem = {
   image_status?: 'pending' | 'approved' | 'rejected' | null;
   /** Moderatör etiketi: 'tanitim_isbirligi' = Tanıtım & İşbirliği */
   tag?: string | null;
-  /** Oyunlu etkinlik: düzenleyen etkinlik başlayınca (en az 4 doğrulamayla) etkinlik oyunu açabilir, puan 1,25 kat */
+  /** Oyunlu etkinlik: düzenleyen etkinlik başlayınca (en az 4 doğrulamayla) etkinlik oyunu açabilir, puan Oyun Geceleri’nde 1,5, Sosyal Buluşmalar ve Müzik & Eğlence’de 1,25 kat */
   with_games?: boolean;
 };
 
@@ -130,6 +130,7 @@ const EVENT_TEXT: Record<string, string> = {
   invalid_capacity: 'Kontenjan 4 ile 10.000 arasında bir sayı olmalı (puan verilebilmesi için en az 4 kişi gerekir).',
   invalid_fee: 'Ücret 0 ile 100.000 ₺ arasında olmalı.',
   invalid_category: 'Bir kategori seçmelisin.',
+  event_games_category: 'Oyunlu etkinlik yalnızca Oyun Geceleri, Sosyal Buluşmalar ve Müzik & Eğlence kategorilerinde açılabilir.',
   invalid_min_age: 'Yaş sınırını seçmelisin (sınır yoksa "Yaş sınırı yok" seç).',
   invalid_cell: 'Haritadan etkinliğin yapılacağı bölgeyi (peteği) seçmelisin.',
   event_cell_daily_limit:

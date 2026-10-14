@@ -113,3 +113,8 @@ export const FRIEND_CONSEQUENCE =
 
 /** Gönderirken ve kabul ederken pencerede KIRMIZI uyarı olarak çıkar. */
 export const FRIEND_WARNING = REAL_NAME.friend;
+
+/** Oyun içinden: aynı odadaki oyuncuya arkadaşlık isteği */
+export function sendRequestInRoom(roomId: string, playerId: string) {
+  return send('room_friend_request', { p_room_id: roomId, p_player_id: playerId });
+}

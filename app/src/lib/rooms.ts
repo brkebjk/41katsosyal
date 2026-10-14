@@ -58,6 +58,8 @@ export type OpenRoom = {
   remote?: boolean;
   /** GEÇİCİ: deneme odası (botlu, puansız) */
   is_test?: boolean;
+  /** Etkinlik oyunu ise etkinliğin kimliği (etikete dokununca etkinlik penceresi açılır) */
+  event_id?: string | null;
 };
 
 /** Oda açarken seçilen yer: haritadan seçilen petek ve adres tarifi. */
@@ -107,7 +109,7 @@ const ROOM_TEXT: Record<string, string> = {
   event_needs_verified: 'Etkinlik odası için en az 4 kişinin katılımını kodla doğrulaması gerekiyor.',
   event_raffle_exists: 'Bu etkinlikte en çok 5 çekiliş yapılabilir; hakkın doldu.',
   event_raffle_open: 'Bu etkinlikte zaten açık bir çekiliş odası var. Önce onu yap ya da iptal et.',
-  event_no_games: 'Bu etkinlik “oyunsuz” açıldı; etkinlik oyunu açılamaz.',
+  event_no_games: 'Bu etkinlikte oyun açılamaz. Etkinlik oyunu yalnızca oyunlu açılan Oyun Geceleri, Sosyal Buluşmalar ve Müzik & Eğlence etkinliklerinde açılır.',
   event_not_started: 'Etkinlik oyunu etkinlik başlayınca açılabilir.',
   event_game_not_allowed: 'Etkinlikte yalnızca en az 4 kişilik yan yana oyunlar açılabilir.',
   event_game_exists: 'Bu etkinlikte zaten açık bir oyun odası var. Önce o bitsin.',

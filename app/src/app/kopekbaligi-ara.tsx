@@ -70,7 +70,7 @@ export default function SharkSearchScreen() {
 
   function cancel() {
     if (router.canGoBack()) router.back();
-    else router.replace(vampire ? '/games' : '/kopekbaligi-giris');
+    else router.replace(vampire ? '/vampir-giris' : '/kopekbaligi-giris');
   }
 
   return (

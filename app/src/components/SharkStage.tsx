@@ -570,14 +570,14 @@ export type Seat = {
 export type MarkKind = 'throw' | 'swim' | 'shot' | 'smash' | 'float';
 export type SeatMark = { from: string | null; to: string; icon: string; kind: MarkKind };
 
-const GAP = 6;
+const GAP = 4;
 /**
  * Avatarın dışındaki SABİT yükseklik: üst boşluk 4 + çerçeve 8 + ad 4+16 + alt satır (tabela) 28. Olay balonu üst
  * satırın üstüne biner (yer kaplamaz). Kutucuk yüksekliği hep avatar + EXTRA'dır; dokununca, oy verince ya da yazı
  * değişince hiçbir şey kaymaz.
  */
 const EXTRA = 60;
-const MAX_AVATAR = 108;
+const MAX_AVATAR = 120;
 const MIN_AVATAR = 26;
 
 /** Her satırda hep 4 avatar; kaydırmadan sığacak en büyük boyut */
@@ -585,7 +585,7 @@ const COLS = 4;
 function fit(n: number, w: number, h: number): { cols: number; size: number } {
   const rows = Math.max(1, Math.ceil(n / COLS));
   const tileW = (w - GAP * (COLS - 1)) / COLS;
-  const byW = tileW - 10;
+  const byW = tileW - 8;
   const byH = (h - GAP * (rows - 1)) / rows - EXTRA;
   return { cols: COLS, size: Math.max(MIN_AVATAR, Math.floor(Math.min(byW, byH, MAX_AVATAR))) };
 }
@@ -847,9 +847,9 @@ function SeatTile({
           </View>
         ) : null}
         {seat.roleEmoji ? (
-          <View style={[styles.roleBadge, { borderColor: seat.roleEmoji.color }]}>
+          <View style={styles.roleBadge} pointerEvents="none">
             {seat.roleEmoji.role ? (
-              <RoleIcon role={seat.roleEmoji.role} size={Math.max(22, Math.round(size * 0.36))} />
+              <RoleIcon role={seat.roleEmoji.role} size={Math.max(20, Math.round(size * 0.34))} framed />
             ) : (
               <Text style={styles.badgeText}>{seat.roleEmoji.emoji}</Text>
             )}
@@ -1134,7 +1134,7 @@ export function RichLine({
     // ⟦r:alpha⟧ → rol ikonu
     const r = /^⟦r:([a-z]+)⟧$/.exec(part);
     if (r && r[1] in SK_ROLES) {
-      nodes.push(<RoleIcon key={i} role={r[1] as SkRole} size={Math.round(chip * 1.25)} />);
+      nodes.push(<RoleIcon key={i} role={r[1] as SkRole} size={Math.round(chip * 1.1)} framed />);
       return;
     }
     part.split(/\s+/).forEach((w, j) => {
@@ -1166,7 +1166,8 @@ export function Prompt({ title, lines, color, light, pulse, compact }: {
 }) {
   const p = usePingPong(900);
   const scale = pulse ? p.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] }) : 1;
-  const max = compact ? 2 : 3;
+  // Yalnızca başlık ve altında en son olay
+  const max = 1;
   const sub = light ? '#24324F' : 'rgba(255,255,255,0.82)';
   return (
     <View
@@ -1176,7 +1177,7 @@ export function Prompt({ title, lines, color, light, pulse, compact }: {
       <Animated.View style={{ transform: [{ scale }] }}>
         <RichLine
           text={title}
-          chip={compact ? 20 : 24}
+          chip={compact ? 17 : 19}
           style={[styles.promptTitle, compact && styles.promptTitleCompact, { color: color ?? (light ? '#0B132B' : '#FFFFFF') }]}
         />
       </Animated.View>
@@ -1184,7 +1185,7 @@ export function Prompt({ title, lines, color, light, pulse, compact }: {
         <RichLine
           key={i}
           text={l}
-          chip={compact ? 16 : 18}
+          chip={compact ? 14 : 15}
           style={[styles.promptSub, compact && styles.promptSubCompact, { color: sub }, i > 0 && styles.promptOld]}
         />
       ))}
@@ -1296,12 +1297,12 @@ export function RankTable({ rows }: { rows: RankRow[] }) {
             <Text style={[styles.rankCell, styles.rankNo, { fontSize: font }]}>{r.won ? '🏆' : String(r.rank)}</Text>
             <View style={[styles.rankName, styles.rankWho]}>
               <SeatChip n={r.seat} size={Math.min(22, rowH - 4)} />
-              <Text style={[styles.rankCell, { fontSize: font }, r.out && styles.rankOut]} numberOfLines={1}>
+              <Text style={[styles.rankCell, styles.flex, { fontSize: font }, r.out && styles.rankOut]} numberOfLines={1}>
                 {r.me ? `${r.name} (sen)` : r.name}
               </Text>
             </View>
             <View style={[styles.rankRole, styles.rankWho]}>
-              {r.role?.key ? <RoleIcon role={r.role.key} size={Math.min(26, rowH - 2)} /> : null}
+              {r.role?.key ? <RoleIcon role={r.role.key} size={Math.min(18, rowH - 6)} framed /> : null}
               <Text style={[styles.rankCell, styles.flex, { fontSize: font, color: r.role?.color ?? '#FFFFFF' }]} numberOfLines={1}>
                 {r.role ? (r.role.key ? r.role.name : `${r.role.emoji} ${r.role.name}`) : '—'}
               </Text>
@@ -1577,6 +1578,165 @@ export function NightResult({ notes, players }: { notes: SkNote[]; players: SkPl
   );
 }
 
+export type CardButton = { key: string; label: string; tone?: 'danger' | 'primary' | 'ghost'; disabled?: boolean };
+
+/**
+ * Oyuncu penceresi: avatara (ya da listedeki oyuncuya) dokununca açılan küçük pencere. Rolü açığa çıktıysa rolün ikonu,
+ * adı ve özelliği görünür; altında seçenekler (atma oylaması, arkadaş ekle, ses şikâyeti). Ekranın içinde açılır
+ * (ayrı pencere değil), bu yüzden arkasından açılan uyarılar hep üstte kalır.
+ */
+export function PlayerCard({
+  avatar,
+  seat,
+  name,
+  status,
+  role,
+  buttons,
+  onButton,
+  onClose,
+}: {
+  avatar: number;
+  seat?: number;
+  name: string;
+  status?: string;
+  role?: { icon: ReactNode; name: string; color: string; team?: string; teamColor?: string; text: string } | null;
+  buttons: CardButton[];
+  onButton: (key: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <View style={styles.cardRoot}>
+      <Pressable style={styles.sheetBackdrop} onPress={onClose} accessibilityLabel="Kapat" />
+      <View style={styles.card} accessibilityViewIsModal>
+        <View style={styles.cardHead}>
+          <View style={styles.plAvatar}>
+            <Avatar index={avatar} size={48} />
+            {seat ? (
+              <View style={styles.miniChip}>
+                <SeatChip n={seat} size={20} />
+              </View>
+            ) : null}
+          </View>
+          <View style={styles.flex}>
+            <Text style={styles.plName} numberOfLines={1}>
+              {name}
+            </Text>
+            {status ? <Text style={styles.plStatus}>{status}</Text> : null}
+          </View>
+          <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel="Kapat">
+            <Ionicons name="close" size={22} color="rgba(255,255,255,0.8)" />
+          </Pressable>
+        </View>
+        {role ? (
+          <View style={[styles.cardRole, { borderColor: role.color }]}>
+            <View style={styles.rankWho}>
+              {role.icon}
+              <View style={styles.flex}>
+                <Text style={[styles.cardRoleName, { color: role.color }]}>{role.name}</Text>
+                {role.team ? <Text style={[styles.plStatus, { color: role.teamColor ?? '#FFFFFF' }]}>{role.team}</Text> : null}
+              </View>
+            </View>
+            <Text style={styles.cardRoleText}>{role.text}</Text>
+          </View>
+        ) : null}
+        {buttons.map((b) => (
+          <Pressable
+            key={b.key}
+            onPress={() => onButton(b.key)}
+            disabled={b.disabled}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.cardBtn,
+              b.tone === 'danger' ? styles.cardBtnDanger : b.tone === 'primary' ? styles.cardBtnPrimary : styles.cardBtnGhost,
+              b.disabled && styles.dim,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.cardBtnText}>{b.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Atma oylaması başlayınca sağ üstteki kırmızı oyuncular düğmesinden açılan küçük pencere: "③ Ali, ⑤ Veli için atma
+ * oylaması başlattı" ve altında Atılsın / Atılmasın. Seçince kapanır (oylama üstteki kırmızı bantta sürer).
+ */
+export function KickPopup({
+  starterSeat,
+  starterName,
+  targetSeat,
+  targetName,
+  yes,
+  need,
+  left,
+  isTarget,
+  canVote,
+  busy,
+  onAnswer,
+  top,
+}: {
+  starterSeat?: number;
+  starterName: string;
+  targetSeat?: number;
+  targetName: string;
+  yes: number;
+  need: number;
+  left: number;
+  isTarget: boolean;
+  canVote: boolean;
+  busy: boolean;
+  /** true = atılsın, false = atılmasın, null = yalnızca kapat */
+  onAnswer: (yes: boolean | null) => void;
+  /** Pencerenin üstten uzaklığı (üst şeridin hemen altı) */
+  top: number;
+}) {
+  const who = `${starterSeat ? seatTag(starterSeat) : ''} ${starterName}`;
+  const whom = `${targetSeat ? seatTag(targetSeat) : ''} ${targetName}`;
+  return (
+    <View style={[styles.kickPop, { top }]} accessibilityLiveRegion="polite" accessibilityViewIsModal>
+      <View style={styles.kickPopArrow} />
+      <RichLine
+        align="left"
+        chip={18}
+        style={styles.kickPopText}
+        text={isTarget ? `🚪 ${who} seni atmak için oylama başlattı` : `🚪 ${who}, ${whom} için atma oylaması başlattı`}
+      />
+      <Text style={styles.kickPopSub}>{`At ${yes} / ${need} · ${left} sn`}</Text>
+      {canVote && !isTarget ? (
+        <View style={styles.row}>
+          <Pressable
+            onPress={() => onAnswer(true)}
+            disabled={busy}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.cardBtn, styles.cardBtnDanger, styles.flex, pressed && styles.pressed]}
+          >
+            <Text style={styles.cardBtnText}>Atılsın</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => onAnswer(false)}
+            disabled={busy}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.cardBtn, styles.cardBtnGhost, styles.flex, pressed && styles.pressed]}
+          >
+            <Text style={styles.cardBtnText}>Atılmasın</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <Pressable
+          onPress={() => onAnswer(null)}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.cardBtn, styles.cardBtnGhost, pressed && styles.pressed]}
+        >
+          <Text style={styles.cardBtnText}>Tamam</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
 /** Oyuncu listesi (sağ üstteki kırmızı düğme): avatar, numara, ad ve durum; dokununca seçenekler açılır */
 export function PlayerList({ players, onPick }: { players: SkPlayer[]; onPick: (p: SkPlayer) => void }) {
   return (
@@ -1604,7 +1764,7 @@ export function PlayerList({ players, onPick }: { players: SkPlayer[]; onPick: (
                 {p.is_me ? `${p.name} (sen)` : p.name}
               </Text>
               <View style={styles.rankWho}>
-                {p.role ? <RoleIcon role={p.role} size={18} /> : null}
+                {p.role ? <RoleIcon role={p.role} size={18} framed /> : null}
                 <Text style={[styles.plStatus, !p.is_alive && styles.plDead]} numberOfLines={1}>
                   {role ? `${status} · ${role.name}` : status}
                 </Text>
@@ -1733,6 +1893,7 @@ const styles = StyleSheet.create({
   mark: { position: 'absolute', left: 0, top: 0, alignItems: 'center', justifyContent: 'center', zIndex: 20, elevation: 20 },
   markText: { textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 6 },
   dim: { opacity: 0.38 },
+  row: { flexDirection: 'row', gap: 8 },
   signSlot: { height: 28, justifyContent: 'flex-start', alignItems: 'center', marginTop: 0, maxWidth: '100%' },
   alertBtn: {
     position: 'absolute',
@@ -1893,9 +2054,9 @@ const styles = StyleSheet.create({
   rankHead: { color: '#48CAE4', fontFamily: fonts.black, fontSize: 11.5 },
   rankCell: { color: '#FFFFFF', fontFamily: fonts.extra },
   rankNo: { width: 26, textAlign: 'center' },
-  rankName: { flex: 1 },
+  rankName: { flex: 1, overflow: 'hidden' },
   rankWho: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  rankRole: { width: '30%' },
+  rankRole: { width: '30%', overflow: 'hidden' },
   rankTime: { width: 58, textAlign: 'right' },
   rankPts: { width: 44, textAlign: 'right', color: '#FFB703' },
   rankOut: { color: 'rgba(255,255,255,0.6)' },
@@ -1982,8 +2143,8 @@ const styles = StyleSheet.create({
   badgeLeft: { right: undefined, left: -4 },
   roleBadge: {
     position: 'absolute',
-    // Avatarın içinde, alt ortada (avatarın üstüne biner); ikon boyutu avatara göre
-    bottom: 2,
+    // Avatarın alt ortasında, yuvarlak çerçeve içinde (avatarın kenarına biner); ikon boyutu avatara göre
+    bottom: -4,
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -2003,14 +2164,14 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
   },
-  promptNormal: { height: 92, paddingVertical: 6 },
-  promptCompact: { height: 64, paddingVertical: 4 },
+  promptNormal: { height: 58, paddingVertical: 4 },
+  promptCompact: { height: 48, paddingVertical: 3 },
   promptDark: { backgroundColor: 'rgba(11, 19, 43, 0.62)', borderWidth: 1, borderColor: 'rgba(72, 202, 228, 0.35)' },
   promptLight: { backgroundColor: 'rgba(255, 255, 255, 0.78)', borderWidth: 1, borderColor: 'rgba(224, 169, 109, 0.6)' },
-  promptTitle: { fontFamily: fonts.black, fontSize: 20, lineHeight: 26, textAlign: 'center', letterSpacing: 0.5 },
-  promptTitleCompact: { fontSize: 16.5, lineHeight: 21 },
-  promptSub: { fontFamily: fonts.extra, fontSize: 13, lineHeight: 18, textAlign: 'center' },
-  promptSubCompact: { fontSize: 11.5, lineHeight: 15 },
+  promptTitle: { fontFamily: fonts.black, fontSize: 16, lineHeight: 21, textAlign: 'center', letterSpacing: 0.3 },
+  promptTitleCompact: { fontSize: 14.5, lineHeight: 19 },
+  promptSub: { fontFamily: fonts.extra, fontSize: 12, lineHeight: 17, textAlign: 'center' },
+  promptSubCompact: { fontSize: 11, lineHeight: 15 },
   promptOld: { opacity: 0.7, fontFamily: fonts.semi },
   time: { gap: 3 },
   timeText: { fontFamily: fonts.extra, fontSize: 12.5, textAlign: 'center' },
@@ -2032,6 +2193,51 @@ const styles = StyleSheet.create({
   sheetTitle: { flex: 1, color: '#FFFFFF', fontFamily: fonts.black, fontSize: 18 },
   sheetBody: { gap: 10, paddingHorizontal: 16, paddingBottom: 12 },
   chat: { gap: 8 },
+  cardRoot: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 60, elevation: 60, justifyContent: 'center', padding: 22 },
+  card: {
+    backgroundColor: '#111A35',
+    borderRadius: 20,
+    padding: 14,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(72, 202, 228, 0.4)',
+  },
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  cardRole: { borderWidth: 1.5, borderRadius: 14, padding: 10, gap: 6, backgroundColor: 'rgba(255,255,255,0.05)' },
+  cardRoleName: { fontFamily: fonts.black, fontSize: 16 },
+  cardRoleText: { color: 'rgba(255,255,255,0.88)', fontFamily: fonts.semi, fontSize: 13, lineHeight: 18 },
+  cardBtn: { minHeight: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
+  cardBtnDanger: { backgroundColor: '#D9304F' },
+  cardBtnPrimary: { backgroundColor: '#0F9D58' },
+  cardBtnGhost: { backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
+  cardBtnText: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 14 },
+  kickPop: {
+    position: 'absolute',
+    right: 8,
+    width: 270,
+    zIndex: 55,
+    elevation: 55,
+    backgroundColor: '#2A0D16',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#D9304F',
+    padding: 12,
+    gap: 8,
+  },
+  kickPopArrow: {
+    position: 'absolute',
+    top: -9,
+    right: 12,
+    width: 16,
+    height: 16,
+    backgroundColor: '#2A0D16',
+    borderLeftWidth: 2,
+    borderTopWidth: 2,
+    borderColor: '#D9304F',
+    transform: [{ rotate: '45deg' }],
+  },
+  kickPopText: { color: '#FFFFFF', fontFamily: fonts.extra, fontSize: 14 },
+  kickPopSub: { color: '#FFB3BF', fontFamily: fonts.semi, fontSize: 12 },
   chatEmpty: { color: 'rgba(255,255,255,0.6)', fontSize: 13 },
   msg: { maxWidth: '85%', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
   mine: { alignSelf: 'flex-end', backgroundColor: 'rgba(72, 202, 228, 0.3)' },

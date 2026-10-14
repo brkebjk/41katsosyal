@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/AppText';
+import { FriendRequestButtons } from '@/components/FriendRequestButtons';
 import { DialogHost } from '@/components/DialogHost';
 import { KeyboardLift } from '@/components/KeyboardLift';
 import { ModThreadSheet } from '@/components/ModThreadSheet';
@@ -244,6 +245,9 @@ export function NotificationPanel({ onClose }: { onClose: () => void }) {
                           <Ionicons name="arrow-undo" size={15} color={colors.primaryText} />
                           <Text style={styles.copyText}>{n.data.accepted ? 'Mesaj yaz' : 'Cevapla'}</Text>
                         </Pressable>
+                      ) : null}
+                      {n.kind === 'friend_request' && typeof n.data.request_id === 'string' ? (
+                        <FriendRequestButtons requestId={n.data.request_id} />
                       ) : null}
                       {n.kind === 'team_invite' && typeof n.data.invite_id === 'string' ? (
                         <TeamInviteActions inviteId={n.data.invite_id} initial={String(n.data.status ?? 'pending')} />

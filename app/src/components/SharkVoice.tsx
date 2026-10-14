@@ -258,6 +258,35 @@ export function useClipQueue(clips: SkClip[] | undefined, myId: string | null, e
 }
 
 /** Basılı tut, konuş düğmesi. `canTalk` değilse kapalı görünür ve nedeni yazar. */
+/**
+ * Benim ses mesajım şu an diğerlerinde çalıyor mu: herkes sesleri geliş sırasıyla, üst üste binmeden dinler. Her sesin
+ * başlama anı = max(geliş anı, önceki sesin bitişi). Sunucu saatine göre hesaplanır (offsetMs = sunucu − telefon).
+ */
+export function useListeningToMe(
+  clips: SkClip[] | undefined,
+  myId: string | null,
+  offsetMs: number,
+  enabled: boolean,
+): boolean {
+  const [now, setNow] = useState(() => Date.now());
+  const list = clips ?? [];
+  const mine = enabled && !!myId && list.some((c) => c.from === myId);
+  useEffect(() => {
+    if (!mine) return;
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, [mine]);
+  if (!mine) return false;
+  const t = now + offsetMs;
+  let end = 0;
+  for (const c of [...list].sort((a, b) => a.at.localeCompare(b.at))) {
+    const start = Math.max(Date.parse(c.at), end);
+    end = start + c.ms + 300;
+    if (c.from === myId && t >= start && t <= end) return true;
+  }
+  return false;
+}
+
 export function PushToTalk({
   roomId,
   canTalk,
@@ -266,7 +295,10 @@ export function PushToTalk({
   leftMs = MAX_MS,
   onRecording,
   onSent,
+  listening,
 }: {
+  /** Ses mesajım şu an diğerlerinde çalıyor: düğmenin üstünde "Seni dinliyorlar" */
+  listening?: boolean;
   roomId: string;
   canTalk: boolean;
   closedText: string;
@@ -308,7 +340,7 @@ export function PushToTalk({
     const file = new File(uri);
     try {
       if (ms < 400) {
-        await notify('Basılı tut', 'Konuşmak için düğmeye basılı tut, bitince bırak (en çok 5 sn).', { icon: null });
+        await notify('Basılı tut', 'Konuşmak için düğmeye basılı tut, bitince bırak.', { icon: null });
         return;
       }
       setSending(true);
@@ -406,36 +438,51 @@ export function PushToTalk({
 
   const width = progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
   return (
-    <Pressable
-      onPressIn={() => void start()}
-      onPressOut={release}
-      disabled={!canTalk && !rec}
-      accessibilityRole="button"
-      accessibilityLabel={canTalk ? 'Basılı tut ve konuş' : closedText}
-      testID="sk-ptt"
-      style={[styles.ptt, !canTalk && styles.pttOff, rec && styles.pttRec]}
-    >
-      {rec ? <Animated.View style={[styles.pttFill, { width }]} /> : null}
-      <View style={styles.pttIcon}>
-        <Ionicons name={canTalk ? 'mic' : 'mic-off'} size={22} color={rec ? '#FFFFFF' : canTalk ? '#2B1400' : '#9AA4B2'} />
-      </View>
-      <View style={styles.pttTexts}>
-        <Text style={[styles.pttTitle, !canTalk && styles.pttTitleOff, rec && styles.pttTitleRec]} numberOfLines={1}>
-          {sending
-            ? 'Gönderiliyor…'
-            : rec
-              ? 'KAYDEDİYOR · bırakınca gider'
-              : canTalk
-                ? `BASILI TUT, KONUŞ (${Math.max(1, Math.round(Math.min(MAX_MS, leftMs) / 1000))} sn)`
-                : closedText}
-        </Text>
-        {canTalk && !rec ? <Text style={styles.pttSub}>{channelText}</Text> : null}
-      </View>
-    </Pressable>
+    <View style={styles.pttWrap}>
+      <Text style={[styles.pttHint, listening && styles.pttListening]} numberOfLines={1}>
+        {listening ? '👂 Seni dinliyorlar' : 'Oyun zevkini arttırmak için sırayla konuş.'}
+      </Text>
+      <Pressable
+        onPressIn={() => void start()}
+        onPressOut={release}
+        disabled={!canTalk && !rec}
+        accessibilityRole="button"
+        accessibilityLabel={canTalk ? 'Basılı tut ve konuş' : closedText}
+        testID="sk-ptt"
+        style={[styles.ptt, !canTalk && styles.pttOff, rec && styles.pttRec]}
+      >
+        {rec ? <Animated.View style={[styles.pttFill, { width }]} /> : null}
+        <View style={styles.pttIcon}>
+          <Ionicons name={canTalk ? 'mic' : 'mic-off'} size={22} color={rec ? '#FFFFFF' : canTalk ? '#2B1400' : '#9AA4B2'} />
+        </View>
+        <View style={styles.pttTexts}>
+          <Text style={[styles.pttTitle, !canTalk && styles.pttTitleOff, rec && styles.pttTitleRec]} numberOfLines={1}>
+            {sending
+              ? 'Gönderiliyor…'
+              : rec
+                ? 'KAYDEDİYOR · bırakınca gider'
+                : canTalk
+                  ? `BASILI TUT, KONUŞ (${Math.max(1, Math.round(Math.min(MAX_MS, leftMs) / 1000))} sn)`
+                  : closedText}
+          </Text>
+          {canTalk && !rec ? <Text style={styles.pttSub}>{channelText}</Text> : null}
+        </View>
+      </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  pttWrap: { gap: 3 },
+  pttHint: {
+    color: '#34D399',
+    fontFamily: fonts.extra,
+    fontSize: 11.5,
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.85)',
+    textShadowRadius: 4,
+  },
+  pttListening: { color: '#7CFFB2', fontFamily: fonts.black, fontSize: 13 },
   ptt: {
     flexDirection: 'row',
     alignItems: 'center',

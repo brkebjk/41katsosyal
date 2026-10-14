@@ -172,7 +172,7 @@ export default function SharkGuideScreen() {
             Kazanan takım 1. sırada sayılır; diğerleri oyunda ne kadar uzun kaldıysa o kadar önde. Kalabalık arttıkça 1.
             sıranın puanı yükselir; 2. ve 3. sıralar da puan alır.
           </P>
-          <P>Puan için en az 4 oyuncu gerekir. Uzaktan oyunda puan yarıdır. Etkinlik oyununda puan 1,25 kat.</P>
+          <P>Puan için en az 4 oyuncu gerekir. Yan yana oyun uzaktan oyunun 5 katı puan verir. Etkinlik oyunu Oyun Geceleri’nde 1,5 kat, Sosyal Buluşmalar ve Müzik & Eğlence’de 1,25 kat.</P>
           <P>Anlatıcılı oyunda kimse puan almaz ve kimsenin oyun hakkı düşmez.</P>
         </>,
       )}

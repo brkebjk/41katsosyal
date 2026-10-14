@@ -26,7 +26,7 @@ import { Popup } from '@/components/Popup';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { RoleCard } from '@/components/RoleCard';
 import { useSafetyMenu } from '@/components/SafetyMenu';
-import { PushToTalk, useClipQueue } from '@/components/SharkVoice';
+import { PushToTalk, useListeningToMe, useClipQueue } from '@/components/SharkVoice';
 import { useVoiceRoom } from '@/components/VoicePanel';
 import { Screen } from '@/components/Screen';
 import { DeadChat, RoleGallery } from '@/components/VampireExtras';
@@ -42,6 +42,7 @@ import {
   PlayerGrid,
   SkipToggle,
   ToolButton,
+  VvRoleIcon,
   type Tile,
 } from '@/components/VampireStage';
 import { useAuth } from '@/lib/auth';
@@ -82,7 +83,8 @@ import {
   type VvWhisper,
 } from '@/lib/vampire';
 import { kickStart, kickVote, reportVoiceClip } from '@/lib/shark';
-import { KickBar } from '@/components/SharkStage';
+import { KickBar, KickPopup, PlayerCard } from '@/components/SharkStage';
+import { FRIEND_CONSEQUENCE, FRIEND_WARNING, sendRequestInRoom } from '@/lib/friends';
 import { colors, fonts, fontSizes, spacing } from '@/theme';
 
 const POLL_MS = 2500;
@@ -191,6 +193,10 @@ function Game({ roomId }: { roomId: string }) {
   /** Avatara dokunulunca açılan menü (fısılda, odadan atma oyu) */
   const [menuFor, setMenuFor] = useState<VvPlayer | null>(null);
   const [playersOpen, setPlayersOpen] = useState(false);
+  /** Atma oylaması penceresine cevap verildi / kapatıldı (oylamanın anahtarı) */
+  const [kickSeen, setKickSeen] = useState<string | null>(null);
+  /** Üst şeridin alt kenarı: atma oylaması penceresi hemen altında açılır */
+  const [topBottom, setTopBottom] = useState(56);
   /** Fısıltı listesi en son açıldığında bana gelmiş fısıltı sayısı (yenisi gelince düğme yanar) */
   const [seenIncoming, setSeenIncoming] = useState(0);
 
@@ -348,6 +354,7 @@ function Game({ roomId }: { roomId: string }) {
   const voice = useVoiceRoom(null, myId);
   const [recording, setRecording] = useState(false);
   const clipQueue = useClipQueue(view?.voice, myId, voiceOn && view?.status === 'playing', recording);
+  const listeningToMe = useListeningToMe(view?.voice, myId, 0, voiceOn);
 
   /** Bir işlemi yapar: çift dokunmayı engeller, istenirse önce onay sorar, sonunda görünümü tazeler. */
   async function act(
@@ -632,11 +639,9 @@ function Game({ roomId }: { roomId: string }) {
 
   /** Adın altındaki satır: ölü mü, kime oy verdi, rolü (görmeye hakkın varsa), dedektif notu */
   function subFor(p: VvPlayer): Tile['sub'] {
-    // Kendi rolüm ekranda yazmaz (yan yana oynarken başkası görmesin); oyun bitince herkesinki açılır
-    const known = p.role && (!p.is_me || phase === 'ended') ? ROLES[p.role] : null;
     if (phase !== 'lobby' && !p.is_alive) {
-      if (p.left) return { icon: 'exit-outline', text: known ? `Ayrıldı · ${known.name}` : 'Ayrıldı', color: G.faint };
-      return { icon: 'skull', text: known ? known.name : 'Elendi', color: known ? known.color : G.redSoft };
+      if (p.left) return { icon: 'exit-outline', text: 'Ayrıldı', color: G.faint };
+      return { icon: 'skull', text: 'Elendi', color: G.redSoft };
     }
     if (showVotes && voteOf.has(p.id)) {
       const to = voteOf.get(p.id);
@@ -649,7 +654,6 @@ function Game({ roomId }: { roomId: string }) {
       const vamp = investigated.get(p.id);
       return { icon: 'search', text: vamp ? 'Vampir' : 'Temiz', color: vamp ? G.redSoft : G.green };
     }
-    if (known) return { text: known.name, color: known.color };
     if (readyMode) {
       return readyIds.has(p.id)
         ? { icon: 'checkmark-circle', text: 'Hazır', color: G.green }
@@ -710,6 +714,8 @@ function Game({ roomId }: { roomId: string }) {
       dim,
       votesIn: votesIn.get(p.id),
       sub: subFor(p),
+      // Rol simgesi: sunucu yalnızca görmeye hakkın olan rolleri gönderir
+      role: p.role,
       check: checkFor(p),
       voice: voiceFor(p),
       kick: kickFor(p),
@@ -755,7 +761,35 @@ function Game({ roomId }: { roomId: string }) {
         destructive: true,
         onPress: () => {
           setMenuFor(null);
-          void reportClip(clip.id, p.name);
+          setTimeout(() => void reportClip(clip.id, p.name), 250);
+        },
+      });
+    }
+    if (!p.is_me) {
+      opts.push({
+        label: '➕ Arkadaş ekle',
+        onPress: () => {
+          setMenuFor(null);
+          void act('friend', async () => {
+            const r = await sendRequestInRoom(roomId, p.id);
+            if (!r.error) {
+              void notify(
+                r.outcome === 'accepted' ? 'Artık arkadaşsınız' : 'İstek gönderildi',
+                r.outcome === 'accepted' ? `${p.name} ile artık arkadaşsınız.` : `${p.name} kabul edince arkadaş olursunuz.`,
+                { icon: null },
+              );
+            }
+            return { error: r.error };
+          }, {
+            confirm: () =>
+              confirmAction(
+                'Arkadaşlık isteği gönder',
+                `İstek ${p.name} kişisine gidecek. ${FRIEND_CONSEQUENCE}`,
+                'İsteği gönder',
+                false,
+                { icon: 'person-add', tone: 'friend', warning: FRIEND_WARNING },
+              ),
+          });
         },
       });
     }
@@ -781,11 +815,11 @@ function Game({ roomId }: { roomId: string }) {
       setPick({ key: phaseKey, id: t.p.id });
       return;
     }
-    if (menuOptions(t.p).length > 0) setMenuFor(t.p);
+    if (!t.p.is_me) setMenuFor(t.p);
   }
 
   function longPressTile(t: Tile) {
-    if (menuOptions(t.p).length > 0) setMenuFor(t.p);
+    if (!t.p.is_me) setMenuFor(t.p);
   }
 
   async function whisper(to: string, text: string, replyTo: string | null): Promise<string | null> {
@@ -1362,6 +1396,9 @@ function Game({ roomId }: { roomId: string }) {
     : null;
   const whisperHot = incoming > seenIncoming;
   const menuOpts = menuFor ? menuOptions(menuFor) : [];
+  const vvKickPoll = view.kick?.poll ?? null;
+  const vvKickKey = vvKickPoll ? `${vvKickPoll.starter}>${vvKickPoll.target}` : null;
+  const vvKickOpen = !!vvKickPoll && kickSeen !== vvKickKey && vvKickPoll.starter !== myPid;
 
   return (
     <View style={styles.root}>
@@ -1377,7 +1414,13 @@ function Game({ roomId }: { roomId: string }) {
         <BackBlocker enabled onBack={() => {}} />
 
         {/* Üst şerit: çık, aşama başlığı, sesler, güvenlik */}
-        <View style={styles.top}>
+        <View
+          style={styles.top}
+          onLayout={(e) => {
+            const b = Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height);
+            if (Math.abs(b - topBottom) > 1) setTopBottom(b);
+          }}
+        >
           <Pressable
             onPress={blocking ? requestLeave : goToGames}
             hitSlop={10}
@@ -1411,7 +1454,14 @@ function Game({ roomId }: { roomId: string }) {
           {/* Kırmızı düğme: oyuncu listesi (atma oylaması, ses şikâyeti) ve oyunu bildir */}
           {phase === 'lobby' || playing ? (
             <Pressable
-              onPress={() => setPlayersOpen(true)}
+              onPress={() => {
+                // Atma oylaması sürüyorsa önce oylama penceresi; açıkken basınca oyuncu listesi
+                if (vvKickPoll && kickSeen === vvKickKey) setKickSeen(null);
+                else {
+                  if (vvKickPoll) setKickSeen(vvKickKey);
+                  setPlayersOpen(true);
+                }
+              }}
               hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel="Oyuncular ve şikâyet"
@@ -1476,7 +1526,7 @@ function Game({ roomId }: { roomId: string }) {
           ) : null}
 
           {/* Atma oylaması */}
-          {view.kick?.poll ? (
+          {view.kick?.poll && !vvKickOpen ? (
             <View>
               <KickBar
                 inline
@@ -1516,6 +1566,7 @@ function Game({ roomId }: { roomId: string }) {
               ) : null}
               <PushToTalk
                 roomId={roomId}
+                listening={listeningToMe}
                 canTalk={
                   me.is_alive &&
                   !view.mic_banned &&
@@ -1590,6 +1641,25 @@ function Game({ roomId }: { roomId: string }) {
             <ToolButton icon="help-circle-outline" label="Nasıl?" onPress={() => setInfo('how')} testID="vv-how" />
           </View>
         </View>
+        {/* Atma oylaması: sağ üstteki kırmızı düğmeden açılan küçük pencere */}
+        {vvKickPoll && vvKickOpen ? (
+          <KickPopup
+            top={topBottom + 8}
+            starterName={nameOf(vvKickPoll.starter)}
+            targetName={nameOf(vvKickPoll.target)}
+            yes={vvKickPoll.yes}
+            need={vvKickPoll.need}
+            left={Math.max(0, Math.ceil(vvKickPoll.left - elapsed))}
+            isTarget={vvKickPoll.target === myPid}
+            canVote={me.is_player && !me.left && (phase === 'lobby' || me.is_alive)}
+            busy={busy === 'kickvote'}
+            onAnswer={(yes) => {
+              setKickSeen(vvKickKey);
+              if (yes === true && !vvKickPoll.mine) void act('kickvote', () => kickVote(roomId, true));
+              if (yes === false && vvKickPoll.mine) void act('kickvote', () => kickVote(roomId, false));
+            }}
+          />
+        ) : null}
       </SafeAreaView>
 
       {safety.isOpen ? safety.nodes : null}
@@ -1608,8 +1678,7 @@ function Game({ roomId }: { roomId: string }) {
                 icon: 'person-circle-outline' as const,
                 onPress: () => {
                   setPlayersOpen(false);
-                  if (menuOptions(p).length > 0) setMenuFor(p);
-                  else void notify(p.name, 'Şu an bu oyuncu için yapılabilecek bir şey yok.', { icon: null });
+                  setMenuFor(p);
                 },
               })),
             {
@@ -1624,8 +1693,26 @@ function Game({ roomId }: { roomId: string }) {
           onClose={() => setPlayersOpen(false)}
         />
       ) : null}
-      {menuFor && menuOpts.length > 0 ? (
-        <ActionSheet title={menuFor.name} options={menuOpts} onClose={() => setMenuFor(null)} />
+      {/* Oyuncu penceresi: rolü açığa çıktıysa rolü ve özelliği; fısılda, atma oylaması, arkadaş ekle, ses şikâyeti */}
+      {menuFor ? (
+        <PlayerCard
+          avatar={menuFor.avatar ?? 1}
+          name={menuFor.name}
+          status={menuFor.left ? 'Ayrıldı' : !menuFor.is_alive && phase !== 'lobby' ? 'Elendi' : 'Hayatta'}
+          role={
+            menuFor.role
+              ? {
+                  icon: <VvRoleIcon role={menuFor.role} size={40} />,
+                  name: ROLES[menuFor.role].name,
+                  color: ROLES[menuFor.role].color,
+                  text: ROLES[menuFor.role].goal,
+                }
+              : null
+          }
+          buttons={menuOpts.map((o, i) => ({ key: String(i), label: o.label, tone: o.destructive ? 'danger' : 'ghost' }))}
+          onButton={(key) => menuOpts[Number(key)]?.onPress()}
+          onClose={() => setMenuFor(null)}
+        />
       ) : null}
       {sheet === 'whispers' && showWhispers ? (
         <Popup title="Fısıltılar" subtitle="İçeriği yalnızca gönderen ve alan görür." icon="ear" onClose={() => setSheet(null)}>

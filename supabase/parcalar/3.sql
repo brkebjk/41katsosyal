@@ -1,6 +1,77 @@
 -- PARÇA 3 / 3 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+-- Hukuki metinlerin ilk taslağı (avukat incelemesinden geçecek). Köşeli parantezli [ALANLAR] doldurulmalı.
+-- Yalnızca metin hâlâ "henüz eklenmedi" durumundaysa yazılır; sonradan düzenlediğin metne dokunulmaz.
+-- Biçim: "## " ile başlayan satır bölüm başlığı, "• " ile başlayan satır madde olarak görünür.
+update public.app_settings set value = to_jsonb($legal$41. Kat Sosyal olarak kişisel verilerine önem veriyoruz. Bu metin, 6698 sayılı Kişisel Verilerin Korunması Kanunu ("KVKK") uyarınca hangi verilerini neden ve nasıl işlediğimizi, kimlerle paylaştığımızı ve haklarını anlatır.
+
+## 1. Veri sorumlusu
+• Unvan: [VERİ SORUMLUSUNUN ADI / UNVANI]
+• Adres: [ADRES]
+• İletişim: [E-POSTA ADRESİ]
+
+## 2. Hangi verilerini işliyoruz?
+• Kimlik ve hesap bilgileri: gerçek adın, kullanıcı adın (yalnızca giriş için; hiçbir üyeye gösterilmez), şifren ve kurtarma kelimelerin (ikisi de yalnızca geri çevrilemeyen şifreli özet olarak saklanır).
+• Rumuz ve avatar: sistemin her hafta sana rastgele verdiği takma ad ve avatar.
+• Cihaz bilgisi: telefonunun kimliğinin geri çevrilemeyen özeti (Android'de telefonun kalıcı cihaz kimliğinden üretilir). Telefon kimliğinin kendisi saklanmaz.
+• Yaklaşık konum: tam konumun sunucularımıza hiç gönderilmez ve kaydedilmez. Telefonun, konumunu yalnızca yaklaşık 500 metrelik bir bölge numarasına ("petek") çevirir ve sadece bu numara gönderilir. Bu yalnızca sen bir işlem yaptığında olur: gönderiye yer eklerken, petek akışını açarken, "Buradayım" derken, yan yana oyun açarken ya da bir oyuna girerken, etkinlik katılımını doğrularken, hazine kodu girerken. Konumun sürekli takip edilmez, uygulama arka plandayken konumuna bakılmaz.
+• Paylaştığın içerikler: akış gönderileri, yorumlar, tepkiler, özel mesajlar, oyun içi sohbet ve fısıltılar, etkinlik yorumları, mekân değerlendirmeleri, Moderatör ile yazışmaların.
+• Etkinlik bilgileri: kayıt olduğun, katılımını doğruladığın ve puanladığın etkinlikler; ekip kurarken kendi isteğinle paylaştığın iletişim bilgisi; Etkinlik Lideri başvurusundaki ad ve telefon numarası.
+• Oyun ve puan bilgileri: oynadığın oyunlar, sonuçlar, puan hareketleri, sıralama ve başarımlar.
+• Abonelik bilgisi: aboneliğinin var olup olmadığı ve bitiş tarihi. Ödeme ve kart bilgilerin bize hiç gelmez; ödemeyi App Store ya da Google Play alır.
+• Güvenlik kayıtları: şifre sıfırlama denemelerinde bağlantı (IP) adresi, yanlış kod denemeleri, şikayetler, moderatör işlemleri ve oturum bilgisi.
+• Tercihler: bildirim tercihlerin ve uygulama içi bildirimlerin.
+
+## 3. Anonimlik nasıl korunur?
+Akışta yalnızca rumuzunla görünürsün. Gönderilerinin ve yorumlarının gerçek sahibi ayrı ve kilitli bir kayıtta tutulur; üyeler bu kaydı göremez. Moderatör bu bilgiye yalnızca şikayet incelemesi ya da yasal bir zorunluluk olduğunda erişebilir ve her erişim kayıt altına alınır. Gerçek adın; sıralamada, etkinliklerde (düzenleyen ya da yorum yazan olarak), arkadaşlarına ve oyun odalarında görünür.
+
+## 4. Verilerini hangi amaçlarla işliyoruz?
+• Üyeliğini oluşturmak, hesabına güvenle girmeni ve şifreni kurtarabilmeni sağlamak,
+• Akış, etkinlik, oyun, harita, arkadaşlık ve mesajlaşma özelliklerini sunmak,
+• Puanları, sıralamaları ve başarımları hesaplamak; hileyi (çoklu hesap, sahte katılım gibi) önlemek,
+• Her telefondan yalnızca bir hesap açılmasını sağlamak ve yasaklanan hesapların yeniden açılmasını engellemek,
+• Haritada bölgelerin ne kadar hareketli olduğunu, kimseyi göstermeden ve en az 5 farklı üye olmadan renklendirmeden göstermek,
+• Şikayetleri incelemek, topluluk kurallarını uygulamak ve kötüye kullanımı önlemek,
+• Aboneliğini doğrulamak ve abonelik ayrıcalıklarını sunmak,
+• Yasal yükümlülüklerimizi yerine getirmek ve yetkili makamların taleplerini karşılamak.
+
+## 5. Hukuki sebepler
+Verilerin KVKK'nın 5. maddesindeki şu sebeplere dayanarak işlenir: üyelik sözleşmesinin kurulması ve yerine getirilmesi, hukuki yükümlülüklerimizin yerine getirilmesi, bir hakkın tesisi, kullanılması veya korunması, temel hak ve özgürlüklerine zarar vermemek kaydıyla meşru menfaatlerimiz (güvenlik, hile ve kötüye kullanımın önlenmesi) ve gerektiğinde açık rızan (bkz. Açık Rıza Metni).
+
+## 6. Verilerin kimlerle paylaşılır?
+• Altyapı hizmet sağlayıcılarımız: verilerin, uygulamanın sunucu ve veritabanı hizmetini aldığımız Supabase altyapısında saklanır ([SUNUCU BÖLGESİ / ÜLKE]).
+• Abonelik hizmeti: abonelik durumunu doğrulamak için RevenueCat ve uygulama mağazaları (Apple App Store, Google Play) ile yalnızca üye numaran ve abonelik bilgisi paylaşılır.
+• Yetkili kurum ve kuruluşlar: yalnızca kanunen zorunlu olduğunda ve talep edilen ölçüde.
+Verilerin hiçbir zaman reklam amacıyla satılmaz ya da kiralanmaz.
+
+## 7. Yurt dışına aktarım
+Hizmet sağlayıcılarımızın sunucuları yurt dışında bulunabileceği için verilerin KVKK'nın 9. maddesine uygun şekilde yurt dışına aktarılabilir. [AVUKAT DEĞERLENDİRMESİ: aktarımın dayanağı (standart sözleşme / açık rıza) burada belirtilmelidir.]
+
+## 8. Ne kadar süre saklıyoruz?
+• Akış her Pazartesi sıfırlanır; eski gönderiler üyelere görünmez, yasal talepler için arşivde 365 gün tutulup silinir.
+• Arkadaş olmayanlarla özel mesajlar haftalık kapanır, arşivde 365 gün tutulup silinir.
+• Harita yoğunluk kayıtları (petek numarası) en çok 30 gün tutulur.
+• Bilgi Yarışması sohbetleri, Vampir–Köylü fısıltıları ve elenenler sohbeti 14 gün tutulur.
+• Bildirimler 60 gün tutulur. Moderatör yazışmaları görüşme bitince, 90 gün hareketsiz kalırsa kendiliğinden silinir.
+• Şifre sıfırlamadaki bağlantı adresi kayıtları 1 gün içinde silinir.
+• Hesabını sildiğinde profilin, gönderilerin ve yorumların kalıcı olarak silinir. Telefon kimliğinin özeti, aynı telefondan yasak kaçırmak için yeniden hesap açılmasını önlemek amacıyla saklanmaya devam eder. Kanunen saklamamız gereken kayıtlar yasal süre boyunca tutulur.
+
+## 9. Hakların (KVKK madde 11)
+Bize başvurarak şunları isteyebilirsin:
+• Kişisel verilerinin işlenip işlenmediğini öğrenmek ve işlenmişse bilgi talep etmek,
+• İşlenme amacını ve amacına uygun kullanılıp kullanılmadığını öğrenmek,
+• Yurt içinde veya yurt dışında aktarıldığı üçüncü kişileri bilmek,
+• Eksik veya yanlış işlenmişse düzeltilmesini istemek,
+• Silinmesini veya yok edilmesini istemek ve bu işlemlerin aktarıldığı üçüncü kişilere bildirilmesini istemek,
+• Otomatik sistemlerle analiz edilmesi sonucu aleyhine bir sonuç çıkmasına itiraz etmek,
+• Kanuna aykırı işlenmesi sebebiyle zarara uğrarsan zararın giderilmesini talep etmek.
+
+## 10. Başvuru
+Başvurunu [E-POSTA ADRESİ] adresine ya da [ADRES] adresine yazılı olarak iletebilirsin. Başvurunu en geç 30 gün içinde ücretsiz olarak sonuçlandırırız.
+
+Son güncelleme: [TARİH]$legal$::text)
+ where key = 'legal_kvkk' and value = '"KVKK aydınlatma metni henüz eklenmedi."'::jsonb;
 update public.app_settings set value = to_jsonb($legal$41. Kat Sosyal'e hoş geldin! Bu sözleşme, uygulamayı kullanırken senin ve bizim hak ve sorumluluklarımızı anlatır. Hesap oluşturarak bu sözleşmeyi kabul etmiş olursun.
 
 ## 1. Taraflar
@@ -3620,7 +3691,7 @@ begin
 
   select coalesce(jsonb_agg(jsonb_build_object(
            'id', x.user_id,
-           'seat', x.seat,
+           'seat', x.seat_no,
            'name', x.display_name,
            'avatar', x.avatar_index,
            'is_alive', x.is_alive,
@@ -3646,11 +3717,11 @@ begin
                               and (x.data->'hunt'->>'round')::int = v_round then x.data->'hunt'->>'target' end,
            'acted', case when v_omni and v_phase = 'night' then public._sk_night_done(x.role, x.data, v_round)
                          when v_omni and v_phase = 'reveal' then coalesce((x.data->>'ready')::boolean, false) end
-         ) order by x.seat), '[]'::jsonb)
+         ) order by x.seat_no), '[]'::jsonb)
     into v_players
     from (
       select rp.*, s.role, s.data, pr.avatar_index,
-             row_number() over (order by rp.joined_at, rp.user_id)::int as seat,
+             coalesce(rp.seat, (row_number() over (order by rp.joined_at, rp.user_id))::int) as seat_no,
              case when v_all or rp.user_id = v.id or (v_shark and public._sk_team(s.role) = 'shark')
                   then s.role else r.state->'reveals'->>(rp.user_id::text) end as vis_role
         from public.room_players rp
@@ -3821,6 +3892,26 @@ begin
              where room_id = p_room_id
                and (channel = 'all' or (channel = 'shark' and v_shark) or (channel = 'dead' and v_dead))
              order by created_at desc limit 400) d);
+end $$;
+
+-- Oyun içinden arkadaşlık isteği: yalnızca aynı odadaki (şu an ya da bu odada oynamış) gerçek bir oyuncuya.
+-- Deneme oyuncularına (bot) istek gönderilmez. Kurallar (engel, sınır, tekrar) _send_friend_request'teki gibidir.
+create or replace function public.room_friend_request(p_room_id uuid, p_player_id uuid)
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  t public.profiles;
+begin
+  v := public._require_user();
+  if not exists (select 1 from public.room_players where room_id = p_room_id and user_id = v.id) then
+    raise exception 'not_in_room';
+  end if;
+  if not exists (select 1 from public.room_players where room_id = p_room_id and user_id = p_player_id) then
+    raise exception 'request_not_found';
+  end if;
+  select * into t from public.profiles where id = p_player_id;
+  if not found or t.is_bot then raise exception 'request_not_found'; end if;
+  return public._send_friend_request(t.id, t.alias, t.avatar_index);
 end $$;
 
 insert into public.app_settings (key, value, description) values
@@ -3996,7 +4087,7 @@ begin
                where pe.user_id = v.id and pe.source = 'game_remote' and pe.created_at >= public._month_start()),
     'daily_cap', public.setting_int('pts_remote_daily_cap', 2),
     'month_cap', public.setting_int('pts_remote_month_cap', 6),
-    'pct', least(80, greatest(10, public.setting_int('pts_remote_pct', 50))),
+    'pct', least(80, greatest(10, public.setting_int('pts_remote_pct', 20))),
     'top_cap', public.setting_int('pts_game_top_cap', 12),
     'min_players', public.setting_int('pts_game_min_players', 4));
 end $$;
@@ -4130,7 +4221,8 @@ begin
    where r.game_type = v_game and r.status = 'lobby' and coalesce((r.config->>'match')::boolean, false)
      and (select count(*) from public.room_players rp where rp.room_id = r.id) < v_max
      and not exists (select 1 from public.room_bans b where b.room_id = r.id and b.user_id = p_user)
-   order by r.created_at
+   -- Önce oyun sonu bekleyen odalar (oyuncular hazır bekliyor), sonra en eski lobi
+   order by (r.config ? 'rematch_of') desc, r.created_at
    limit 1;
   if v_room is not null then
     insert into public.room_players (room_id, user_id, display_name)
@@ -4633,9 +4725,10 @@ begin
       if v_try > 20 then raise exception 'code_generation_failed'; end if;
     end;
   end loop;
-  insert into public.room_players (room_id, user_id, display_name, joined_at)
-  select v_new, x.user_id, x.display_name, now() + make_interval(secs => x.rn / 1000.0)
-    from (select rp.user_id, rp.display_name, row_number() over (order by rp.joined_at) as rn
+  -- Herkes eski numarasıyla (yeri değişmeden) bekleme odasına geçer
+  insert into public.room_players (room_id, user_id, display_name, joined_at, seat)
+  select v_new, x.user_id, x.display_name, now() + make_interval(secs => x.rn / 1000.0), x.seat
+    from (select rp.user_id, rp.display_name, rp.seat, row_number() over (order by rp.seat, rp.joined_at) as rn
             from public.room_players rp where rp.room_id = p_old and rp.left_at is null) x;
   if v_credit is not null then
     update public.sponsor_credits set room_id = v_new where id = v_credit;
@@ -5028,6 +5121,7 @@ grant execute on function public.voice_ping(uuid) to authenticated;
 grant execute on function public.room_vote_kick(uuid, uuid) to authenticated;
 grant execute on function public.sk_view(uuid) to authenticated;
 grant execute on function public.sk_history(uuid) to authenticated;
+grant execute on function public.room_friend_request(uuid, uuid) to authenticated;
 grant execute on function public.sk_pick_role(uuid, text) to authenticated;
 grant execute on function public.room_lobby_ready(uuid, boolean) to authenticated;
 grant execute on function public.room_kick_start(uuid, uuid) to authenticated;
@@ -5965,5 +6059,30 @@ grant execute on function public.game_seek_leave() to authenticated;
 grant execute on function public.game_seek_friend_request(uuid) to authenticated;
 grant execute on function public.game_seek_block(uuid) to authenticated;
 grant execute on function public.admin_set_alias_code(int) to authenticated;
+
+-- Puan kuralları (yeni düzen): yan yana oyun uzaktanın 5 katı (uzaktan %20); uzaktan oyunda sınır geniş; Bilgi
+-- Yarışması günde 15 puan, aylık sınır pratikte yok; oda hakkı abonede 12; Oyun Geceleri etkinlik oyunu ×1,5.
+-- Ayarlar bir kez çevrilir (rules_v5 işareti); sonra moderatör web panelden değiştirebilir.
+insert into public.app_settings (key, value, description) values
+  ('pts_event_game_night_pct', '150', 'Oyun Geceleri etkinlik oyununun puan çarpanı (yüzde; 150 = ×1,5)'),
+  ('pts_event_game_pct', '125', 'Sosyal Buluşmalar ve Müzik & Eğlence etkinlik oyununun puan çarpanı (yüzde; 125 = ×1,25)')
+on conflict (key) do update set description = excluded.description;
+do $$
+begin
+  if not exists (select 1 from public.app_settings where key = 'pts_rules_v5') then
+    update public.app_settings set value = '20' where key = 'pts_remote_pct';
+    update public.app_settings set value = '10' where key = 'pts_remote_daily_cap';
+    update public.app_settings set value = '100' where key = 'pts_remote_month_cap';
+    update public.app_settings set value = '15' where key = 'pts_quiz_daily_points';
+    update public.app_settings set value = '450' where key = 'pts_quiz_month_points';
+    update public.app_settings set value = '12' where key = 'premium_monthly_game_quota';
+    update public.app_settings set value = '3' where key = 'free_monthly_game_quota';
+    insert into public.app_settings (key, value, description)
+    values ('pts_rules_v5', 'true', 'İç işaret: yeni puan kuralları uygulandı (silme)')
+    on conflict (key) do nothing;
+  end if;
+end $$;
+update public.app_settings set description = 'Uzaktan oyunun puanı, aynı sonucun yan yana oyundaki puanının yüzde kaçı? (10–80; 20 = yan yana 5 kat)'
+ where key = 'pts_remote_pct';
 
 notify pgrst, 'reload schema';

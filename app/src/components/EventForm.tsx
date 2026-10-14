@@ -113,8 +113,10 @@ export function EventForm({ visible, onClose, onCreated, userId, hostName, isMod
   const [startsAt, setStartsAt] = useState<Date | null>(null);
   const [capacity, setCapacity] = useState('');
   const [category, setCategory] = useState<EventCategory | null>(null);
+  // Oyunlu etkinlik yalnızca Oyun Geceleri, Sosyal Buluşmalar ve Müzik & Eğlence’de açılır (sunucu da denetler)
+  const gamesAllowed = category === 'oyun_gecesi' || category === 'sosyal' || category === 'muzik';
   const [minAge, setMinAge] = useState<number | null>(null);
-  /** Oyunlu etkinlik: etkinlik başlayınca en az 4 doğrulamayla etkinlik oyunu açılabilir (puan 1,25 kat) */
+  /** Oyunlu etkinlik: etkinlik başlayınca en az 4 doğrulamayla etkinlik oyunu açılabilir (Oyun Geceleri ×1,5; Sosyal Buluşmalar, Müzik & Eğlence ×1,25) */
   const [withGames, setWithGames] = useState(false);
   const [paid, setPaid] = useState(false);
   const [fee, setFee] = useState('');
@@ -233,7 +235,7 @@ export function EventForm({ visible, onClose, onCreated, userId, hostName, isMod
       category,
       minAge,
       cell,
-      withGames,
+      withGames: withGames && gamesAllowed,
     });
     if (result.error) {
       setSubmitting(false);
@@ -512,10 +514,11 @@ export function EventForm({ visible, onClose, onCreated, userId, hostName, isMod
                 </View>
               </Slot>
 
+              {gamesAllowed ? (
               <View style={styles.feeBlock}>
                 <HelpLabel
                   label="Etkinlikte oyun *"
-                  help="Oyunlu: etkinlik başlayınca ve en az 4 kişi katılımını kodla doğrulayınca etkinlik oyunu açabilirsin. Etkinlik oyunlarında puan 1,25 kat! Odaya yalnızca doğrulanmış katılımcılar girer. Oyunsuz: etkinlikte oyun odası açılmaz. Etkinlik çekilişi her etkinlikte açılabilir."
+                  help="Oyunlu: etkinlik başlayınca ve en az 4 kişi katılımını kodla doğrulayınca etkinlik oyunu açabilirsin. Oyun Geceleri’nde puan 1,5 kat, Sosyal Buluşmalar ve Müzik & Eğlence’de 1,25 kat! Odaya yalnızca doğrulanmış katılımcılar girer. Oyunlu etkinlik yalnızca bu üç kategoride açılır. Oyunsuz: etkinlikte oyun odası açılmaz. Etkinlik çekilişi her etkinlikte açılabilir."
                 />
                 <View style={styles.segment}>
                   <Pressable
@@ -544,6 +547,7 @@ export function EventForm({ visible, onClose, onCreated, userId, hostName, isMod
                   </Pressable>
                 </View>
               </View>
+              ) : null}
 
               <Slot id="fee" layouts={layouts} error={errFor('fee')}>
                 <HelpLabel

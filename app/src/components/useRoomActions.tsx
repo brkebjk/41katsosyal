@@ -61,7 +61,10 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
    * oyunlarda menüye dönmek oyundan ayrılmaktır; sunucu bizi içinde olduğumuz oyunlardan çıkarır. `after` bitince çalışır.
    */
   const beginFocus = useCallback((after?: () => void) => {
-    leaveDone.current = leaveLiveGames().finally(() => after?.());
+    // Yalnızca çıkma isteği beklenir; ekranın tazelenmesi (after) beklenmez, pencereler gecikmeden açılsın
+    const leaving = leaveLiveGames();
+    leaveDone.current = leaving.catch(() => {});
+    void leaving.finally(() => after?.());
   }, []);
 
   /** Oyunun ekranına geçer. Şimdilik çekiliş ve Vampir–Köylü ekranları hazır. */
@@ -123,11 +126,11 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
   async function joinRemote(room: OpenRoom) {
     if (lock.current) return;
     const ok = await showDialog<boolean>({
-      title: 'Uzaktan odaya katıl',
+      title: 'Bekleyen odaya uzaktan katıl',
       message:
         room.game_type === 'shark_cage'
-          ? `${room.host_name} odasında herkes kendi telefonundan oynar. Plajda bas-konuş ses mesajlarıyla konuşulur. Uzaktan oyun oyun hakkından yemez; puanı yan yana oyunun yarısıdır.`
-          : `${room.host_name} odasında herkes kendi telefonundan, sesli sohbetle oynar. Sabah tartışmasında sırayla konuşulur. Uzaktan oyun oyun hakkından yemez; puanı yan yana oyunun yarısıdır.`,
+          ? `${room.host_name} odasında herkes kendi telefonundan oynar. Plajda bas-konuş ses mesajlarıyla konuşulur. Uzaktan oyun oyun hakkından yemez; yan yana oyun 5 kat puan verir.`
+          : `${room.host_name} odasında herkes kendi telefonundan oynar. Sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur. Uzaktan oyun oyun hakkından yemez; yan yana oyun 5 kat puan verir.`,
       icon: 'headset',
       buttons: [
         { label: 'Katıl', value: true, style: 'primary' },
@@ -279,17 +282,18 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
     }
     const shark = key === 'shark_cage';
     lock.current = true;
+    // Pencereler hemen açılır; menüye dönüşte başlayan "oyundan çık" isteği oda açmadan hemen önce beklenir
+    const leaving = leaveDone.current;
     try {
-      await leaveDone.current;
       // Nerede oynanacak? Yan yana (aynı masada; 2 kat puan, oyun hakkından yer) ya da uzaktan (sesli sohbetle)
       const where = preset ?? await showDialog<'side' | 'remote' | null>({
         title: 'Nasıl oynanacak?',
         message: shark
-          ? 'Yan yana. Aynı masada oturursunuz. Puan iki katıdır, oyun hakkından yer.\n\nUzaktan eşleş. Haritadan oyuncu aranır, herkes kendi telefonundan oynar ve plajda bas-konuş ses mesajlarıyla konuşulur. Oyun hakkından yemez, puanı yarıdır.'
-          : 'Yan yana. Aynı masada oturursunuz. Puan iki katıdır, oyun hakkından yer.\n\nUzaktan eşleş. Haritadan oyuncu aranır, herkes kendi telefonundan oynar ve sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur. Oyun hakkından yemez, puanı yarıdır.',
+          ? 'Yan yana. Aynı masada oturursunuz. 5 kat puan verir, oyun hakkından yer.\n\nUzaktan eşleş. Haritadan oyuncu aranır, herkes kendi telefonundan oynar ve plajda bas-konuş ses mesajlarıyla konuşulur. Oyun hakkından yemez, puanı yan yananın beşte biridir.'
+          : 'Yan yana. Aynı masada oturursunuz. 5 kat puan verir, oyun hakkından yer.\n\nUzaktan eşleş. Haritadan oyuncu aranır, herkes kendi telefonundan oynar ve sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur. Oyun hakkından yemez, puanı yan yananın beşte biridir.',
         icon: 'people',
         buttons: [
-          { label: 'Yan yana', value: 'side', style: 'primary' },
+          { label: 'Yan yana · 5x Puan', value: 'side', style: 'primary' },
           { label: 'Uzaktan eşleş', value: 'remote', style: 'ghost' },
           { label: 'Vazgeç', value: null, style: 'ghost' },
         ],
@@ -301,10 +305,12 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
         router.push({ pathname: '/kopekbaligi-ara', params: { oyun: key } });
         return;
       }
-      // İzin varsa konum, oyun şekli sorulurken arka planda bulunur (oda yeri ekranı beklemeden açılsın)
-      const early = await prefetchGameLocation();
+      // İzin varsa konum ve uzaklık sınırı, oyun şekli sorulurken arka planda bulunur (pencereler beklemeden açılsın)
+      const earlyP = prefetchGameLocation();
+      const maxP = getJoinMaxDistance();
       const mode = shark ? await askSharkMode() : await askVampireMode();
       if (!mode) return;
+      const early = await earlyP;
       // Yan yana oynanan oyunu açarken (oyuncu olarak girecekse) konum izni zorunludur; izin yoksa oda hiç açılmaz.
       let phone: Cell | undefined;
       if (mode !== 'narrator') {
@@ -315,9 +321,10 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
         }
         phone = loc.cell;
       }
-      const maxDistance = await getJoinMaxDistance();
+      const maxDistance = await maxP;
       const place = await askPlace(GAMES[key].title, phone ?? null, maxDistance);
       if (!place) return;
+      await leaving;
       const res = await createRoom(key, mode, phone, place);
       if (res.error || !res.room) {
         await notify('Oda açılamadı', res.error ?? 'Biraz sonra tekrar dene.', {
@@ -349,7 +356,7 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
     setHint(null);
     const game = await showDialog<'vampire_villager' | 'shark_cage' | null>({
       title: 'Etkinlik oyunu aç',
-      message: `“${ev.title}” etkinliğinde oyun odası açılır.\n\nOda kodu, katılımını doğrulamış katılımcılara bildirimle gider; odaya yalnızca onlar girebilir. Etkinlik oyunlarında puan 1,25 kat. Etkinlik odası aylık oda hakkından yemez.\n\nKöpekbalığı Kafesi’nde anlatıcı olabilirsin (oynamazsın; anlatıcılı oyunda puan yok).`,
+      message: `“${ev.title}” etkinliğinde oyun odası açılır.\n\nOda kodu, katılımını doğrulamış katılımcılara bildirimle gider; odaya yalnızca onlar girebilir. Oyun Geceleri’nde puan 1,5 kat, Sosyal Buluşmalar ve Müzik & Eğlence’de 1,25 kat. Etkinlik odası aylık oda hakkından yemez.\n\nKöpekbalığı Kafesi’nde anlatıcı olabilirsin (oynamazsın; anlatıcılı oyunda puan yok).`,
       icon: 'game-controller',
       buttons: [
         { label: 'Köpekbalığı Kafesi', value: 'shark_cage', style: 'primary' },
