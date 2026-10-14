@@ -24,6 +24,12 @@ export function RoomRow({ room, isModerator, onPress }: Props) {
   return (
     <View style={[styles.card, room.is_official && styles.cardOfficial]} testID="room-row">
       <View style={styles.info}>
+        {room.event_title ? (
+          <View style={styles.eventTag}>
+            <Ionicons name="calendar" size={12} color="#FFFFFF" />
+            <Text style={styles.eventTagText}>ETKİNLİK OYUNU</Text>
+          </View>
+        ) : null}
         <Text style={styles.title} numberOfLines={1}>
           {room.event_title
             ? room.game_type === 'raffle'
@@ -50,7 +56,7 @@ export function RoomRow({ room, isModerator, onPress }: Props) {
           <View style={styles.foot}>
             <Ionicons name="headset" size={14} color={colors.primary} />
             <Text style={[styles.meta, styles.where]} numberOfLines={2}>
-              Uzaktan · sesli sohbetle · kodsuz katılınır
+              Uzaktan · bas-konuş · listeden ya da oda ID ile katılınır
             </Text>
           </View>
         ) : null}
@@ -69,7 +75,7 @@ export function RoomRow({ room, isModerator, onPress }: Props) {
         {needsCode ? (
           <View style={styles.foot}>
             <Ionicons name="lock-closed-outline" size={14} color={colors.textMuted} />
-            <Text style={styles.meta}>Kodu oda sahibi söyler</Text>
+            <Text style={styles.meta}>Oda ID’sini bilen girer (masadakilerden öğren)</Text>
           </View>
         ) : null}
       </View>
@@ -98,4 +104,16 @@ const styles = StyleSheet.create({
   where: { flex: 1 },
   foot: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
   action: { width: 118 },
+  eventTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+    marginBottom: 2,
+  },
+  eventTagText: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 10.5, letterSpacing: 0.5 },
 });

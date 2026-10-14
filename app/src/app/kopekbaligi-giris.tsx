@@ -249,22 +249,13 @@ export default function SharkIntroScreen() {
           </View>
           <View style={styles.playRow}>
             <Pressable
-              onPress={() => void actions.createForGame('shark_cage', 'remote')}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.rooms, styles.flex, pressed && styles.pressed]}
-              testID="sk-intro-remote"
-            >
-              <Ionicons name="people" size={16} color="#FFFFFF" />
-              <Text style={styles.roomsText}>Özel uzaktan oda</Text>
-            </Pressable>
-            <Pressable
               onPress={() => router.push({ pathname: '/acik-odalar', params: { game: 'shark_cage' } })}
               accessibilityRole="button"
               style={({ pressed }) => [styles.rooms, styles.flex, pressed && styles.pressed]}
               testID="sk-intro-rooms"
             >
               <Ionicons name="enter-outline" size={16} color="#FFFFFF" />
-              <Text style={styles.roomsText}>Açık odalar · kod</Text>
+              <Text style={styles.roomsText}>Açık odalar · oda ID ile katıl</Text>
             </Pressable>
           </View>
           {actions.hint ? <Text style={styles.hint}>{actions.hint}</Text> : null}

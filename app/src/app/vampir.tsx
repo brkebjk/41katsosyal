@@ -882,7 +882,7 @@ function Game({ roomId }: { roomId: string }) {
         {view.code ? (
           <View style={styles.codeRow}>
             <View style={styles.flex}>
-              <Text style={styles.codeLabel}>Oda kodu · yalnızca sende görünür</Text>
+              <Text style={styles.codeLabel}>{view.match || view.rematch ? 'Oda ID · arkadaşına ver, “Kodla katıl” ile girsin' : 'Oda ID · yalnızca sende görünür'}</Text>
               <Text style={styles.pText}>Yanındakilere söyle; Oyunlar sekmesinden girerler.</Text>
             </View>
             <Text style={styles.code} selectable accessibilityLabel={`Oda kodu ${view.code.split('').join(' ')}`}>

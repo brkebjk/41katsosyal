@@ -274,8 +274,9 @@ export const sharkVote = (roomId: string, target: string | null) => call('sk_vot
 export type MatchState = { room: string | null; waiting: number; searching?: boolean };
 
 /** Eşleşme sırasına gir (eşleşirse oda kimliği döner) */
-export async function matchJoin(): Promise<{ data: MatchState | null; error: string | null }> {
-  return callRpc<MatchState>('sk_match_join', {}, TEXT);
+/** Eşleşmek için sıraya gir (iki oyunda: Köpekbalığı Kafesi ve Vampir–Köylü) */
+export async function matchJoin(game: 'shark_cage' | 'vampire_villager' = 'shark_cage'): Promise<{ data: MatchState | null; error: string | null }> {
+  return callRpc<MatchState>('match_join', { p_game: game }, TEXT);
 }
 /** Arama sürerken birkaç saniyede bir: eşleştim mi, sırada kaç kişi var */
 export async function matchPoll(): Promise<MatchState | null> {
@@ -286,7 +287,8 @@ export const matchCancel = () => callRpcVoid('sk_match_cancel', {}, TEXT);
 /** Eşleştirme lobisinde "Hazırım" / vazgeç */
 export const lobbyReady = (roomId: string, on: boolean) => call('sk_lobby_ready', roomId, { p_on: on });
 /** GEÇİCİ: moderatör deneme oyuncularını eşleştirme sırasına koyar */
-export const queueTestBots = (count: number) => callRpcVoid('admin_queue_test_bots', { p_count: count }, TEXT);
+export const queueTestBots = (count: number, game: 'shark_cage' | 'vampire_villager' = 'shark_cage') =>
+  callRpcVoid('admin_queue_test_bots', { p_count: count, p_game: game }, TEXT);
 
 /** "Tartışmayı hızlı geç" işaretini koy / kaldır */
 export const sharkSkip = (roomId: string, on: boolean) => call('sk_skip_discussion', roomId, { p_on: on });

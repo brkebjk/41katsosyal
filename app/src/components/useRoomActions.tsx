@@ -286,18 +286,23 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
       const where = preset ?? await showDialog<'side' | 'remote' | null>({
         title: 'Nasıl oynanacak?',
         message: shark
-          ? 'Yan yana: aynı masada oturursunuz. Puan iki katıdır, oyun hakkından yer.\n\nUzaktan: herkes kendi telefonundan oynar; plajda bas-konuş ses mesajlarıyla konuşulur. Oyun hakkından yemez, puanı yarıdır.'
-          : 'Yan yana: aynı masada oturursunuz. Puan iki katıdır, oyun hakkından yer.\n\nUzaktan: herkes kendi telefonundan, sesli sohbetle oynar; sabah tartışmasında sırayla konuşulur. Oyun hakkından yemez, puanı yarıdır.',
+          ? 'Yan yana. Aynı masada oturursunuz. Puan iki katıdır, oyun hakkından yer.\n\nUzaktan eşleş. Haritadan oyuncu aranır, herkes kendi telefonundan oynar ve plajda bas-konuş ses mesajlarıyla konuşulur. Oyun hakkından yemez, puanı yarıdır.'
+          : 'Yan yana. Aynı masada oturursunuz. Puan iki katıdır, oyun hakkından yer.\n\nUzaktan eşleş. Haritadan oyuncu aranır, herkes kendi telefonundan oynar ve sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur. Oyun hakkından yemez, puanı yarıdır.',
         icon: 'people',
         buttons: [
           { label: 'Yan yana', value: 'side', style: 'primary' },
-          { label: 'Uzaktan (sesli)', value: 'remote', style: 'ghost' },
+          { label: isModerator ? 'Uzaktan (deneme odası)' : 'Uzaktan eşleş', value: 'remote', style: 'ghost' },
           { label: 'Vazgeç', value: null, style: 'ghost' },
         ],
         cancelValue: null,
       });
       if (!where) return;
       if (where === 'remote') {
+        // Özel uzaktan oda yok: uzaktan oyun eşleştirmeyle açılır (moderatör deneme için yine oda açabilir)
+        if (!isModerator) {
+          router.push({ pathname: '/kopekbaligi-ara', params: { oyun: key } });
+          return;
+        }
         const rmode = shark ? await askSharkMode(true) : await askVampireMode(true);
         if (!rmode) return;
         const created = await createRoom(key, rmode, undefined, undefined, undefined, true);

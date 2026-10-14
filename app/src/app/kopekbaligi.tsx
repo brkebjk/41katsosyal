@@ -792,7 +792,7 @@ function Game({ roomId }: { roomId: string }) {
     const enough = n >= view.min_players;
     const canStart = me.is_host || me.is_admin;
     prompt = {
-      title: view.code ? `ODA KODU  ${view.code}` : 'Oyuncular toplanıyor',
+      title: view.code ? `ODA ID  ${view.code}` : 'Oyuncular toplanıyor',
       lines: [
         enough
           ? `${n} oyuncu · 🦈 ${sh} köpekbalığı · 🏖️ ${n - sh - ne} insan${ne ? ` · 🌀 ${ne} tarafsız` : ''}`

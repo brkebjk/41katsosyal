@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
@@ -19,10 +19,14 @@ const POLL_MS = 2000;
 const LOBBY_AT = 3;
 
 /**
- * Köpekbalığı Kafesi uzaktan eşleştirme: Bilgi Yarışması'ndaki gibi haritanın üstünde avatar dolaşır. Sırada 3 kişi
- * olunca (ya da açık bir lobi varsa hemen) bekleme odası açılır ve oyun ekranına geçilir.
+ * Uzaktan eşleştirme (Köpekbalığı Kafesi ve Vampir–Köylü; `?oyun=vampire_villager`): Bilgi Yarışması'ndaki gibi
+ * haritanın üstünde avatar dolaşır. Sırada 3 kişi olunca (ya da yer olan bir lobi varsa hemen) bekleme odası açılır
+ * ve oyun ekranına geçilir.
  */
 export default function SharkSearchScreen() {
+  const params = useLocalSearchParams<{ oyun?: string }>();
+  const game = params.oyun === 'vampire_villager' ? 'vampire_villager' : 'shark_cage';
+  const vampire = game === 'vampire_villager';
   const { profile } = useAuth();
   const isModerator = profile?.role === 'admin';
   const [waiting, setWaiting] = useState(1);
@@ -36,9 +40,9 @@ export default function SharkSearchScreen() {
     const go = (room: string) => {
       if (matched.current) return;
       matched.current = true;
-      router.replace({ pathname: '/kopekbaligi', params: { id: room } });
+      router.replace({ pathname: vampire ? '/vampir' : '/kopekbaligi', params: { id: room } });
     };
-    void matchJoin().then((res) => {
+    void matchJoin(game).then((res) => {
       if (!alive) return;
       if (res.error) {
         setError(res.error);
@@ -62,11 +66,11 @@ export default function SharkSearchScreen() {
       // Eşleşmeden çıkıldıysa sıradan çık
       if (!matched.current) void matchCancel();
     };
-  }, []);
+  }, [game, vampire]);
 
   function cancel() {
     if (router.canGoBack()) router.back();
-    else router.replace('/kopekbaligi-giris');
+    else router.replace(vampire ? '/games' : '/kopekbaligi-giris');
   }
 
   return (
@@ -74,9 +78,9 @@ export default function SharkSearchScreen() {
       <StatusBar style="light" />
       <Bubbles count={12} />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <Text style={styles.title}>🦈 Oyuncular aranıyor…</Text>
+        <Text style={styles.title}>{vampire ? '🧛 Oyuncular aranıyor…' : '🦈 Oyuncular aranıyor…'}</Text>
         <Text style={styles.sub}>Haritanın her yerinden uzaktan oyuncu aranıyor.</Text>
-        <SearchMap avatar={profile?.avatar_index ?? 1} />
+        <SearchMap avatar={profile?.avatar_index ?? 1} lens={vampire ? '🧛' : '🤿'} />
         <View style={styles.seats} accessibilityLabel={`Sırada ${waiting} kişi`}>
           {Array.from({ length: LOBBY_AT }).map((_, i) => (
             <View key={i} style={[styles.seat, i < waiting && styles.seatOn]}>
@@ -85,7 +89,7 @@ export default function SharkSearchScreen() {
           ))}
         </View>
         <Text style={styles.info}>
-          {`${LOBBY_AT} kişi olunca bekleme odası açılır. Odada 6 kişi olunca “Hazırım” düğmesi açılır; kalabalık oyun daha çok puan verir.`}
+          {`${LOBBY_AT} kişi olunca bekleme odası açılır. Odada yeterli kişi olunca “Hazırım” düğmesi açılır; kalabalık oyun daha çok puan verir.`}
         </Text>
         <Text style={styles.time}>{`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`}</Text>
         <View style={styles.privacy}>
@@ -97,7 +101,7 @@ export default function SharkSearchScreen() {
         {isModerator ? (
           <Pressable
             onPress={() =>
-              void queueTestBots(3).then((r) => {
+              void queueTestBots(3, game).then((r) => {
                 if (r.error) void notify('Eklenemedi', r.error, { icon: null });
               })
             }
@@ -123,7 +127,7 @@ export default function SharkSearchScreen() {
 }
 
 /** Kocaeli peteklerinin üstünde dalgıç maskeli avatar dolaşır */
-function SearchMap({ avatar }: { avatar: number }) {
+function SearchMap({ avatar, lens }: { avatar: number; lens: string }) {
   const [box, setBox] = useState({ w: 0, h: 0 });
   const [pos] = useState(() => new Animated.ValueXY({ x: 0, y: 0 }));
   useEffect(() => {
@@ -157,7 +161,7 @@ function SearchMap({ avatar }: { avatar: number }) {
       <Animated.View style={[styles.seeker, { transform: pos.getTranslateTransform() }]}>
         <Avatar index={avatar} size={58} ring />
         <View style={styles.lens}>
-          <Text style={styles.lensEmoji}>🤿</Text>
+          <Text style={styles.lensEmoji}>{lens}</Text>
         </View>
       </Animated.View>
     </View>
