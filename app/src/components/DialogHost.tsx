@@ -90,9 +90,11 @@ function DialogView({ request }: { request: DialogRequest }) {
         accessibilityLabel="Kapat"
       />
       <Animated.View style={[styles.card, { opacity: fade, transform: [{ scale }] }]}>
-        <View style={[styles.badge, { backgroundColor: tone.tint }]}>
-          <Ionicons name={request.icon} size={24} color={tone.icon} />
-        </View>
+        {request.icon ? (
+          <View style={[styles.badge, { backgroundColor: tone.tint }]}>
+            <Ionicons name={request.icon} size={24} color={tone.icon} />
+          </View>
+        ) : null}
         <Text style={styles.title} accessibilityRole="header">
           {request.title}
         </Text>

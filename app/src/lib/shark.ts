@@ -61,7 +61,8 @@ export type SkNote = {
   id?: string;
   name?: string;
   team?: SkTeam | null;
-  visits?: { round: number; names: string[] }[];
+  /** Ziyaret edilenler: gece, adlar ve kimlikler (avatar göstermek için) */
+  visits?: { round: number; names: string[]; ids?: string[] }[];
 };
 
 export type SkMsg = {
@@ -149,6 +150,8 @@ export type SkView = {
     spear_used: boolean;
     /** Bu tartışmada kalan bas-konuş süresi (ms; her tartışmada en çok 15 sn) */
     voice_left_ms?: number;
+    /** Moderatör: deneme odası için seçtiği rol (lobide) */
+    picked_role?: SkRole | null;
   };
   /** Herkese açık yazışma (plajda ve oylamada yaşayanlar yazar) */
   chat?: SkMsg[] | null;
@@ -166,7 +169,7 @@ const TEXT: Record<string, string> = {
   wrong_phase: 'Oyun bu aşamadan çoktan geçmiş. Ekran yenileniyor.',
   you_left: 'Bu oyundan çıkarıldın, geri dönemezsin.',
   not_in_room: 'Bu oyunda oyuncu değilsin.',
-  you_are_dead: 'Maskeni kırdılar: artık seçim yapamazsın. Oyunu izleyebilirsin.',
+  you_are_dead: 'Maskeni kırdılar, artık seçim yapamazsın. Oyunu izleyebilirsin.',
   no_night_action: 'Rolünün bu gece yapacağı bir şey yok.',
   invalid_target: 'Bu kişiyi seçemezsin.',
   cannot_target_ally: 'Kendi takımından birini seçemezsin.',
@@ -192,7 +195,7 @@ const TEXT: Record<string, string> = {
   day_only: 'Herkese açık yazışma plajda ve oylamada açıktır; dalışta herkes susar.',
   not_alive: 'Elenenler buraya yazamaz; ölülerin sohbetini kullan.',
   not_dead: 'Bu sohbete yalnızca elenenler (ve plajda Medyum) yazabilir.',
-  rate_limited: 'Biraz yavaş: art arda çok hızlı yazıyorsun.',
+  rate_limited: 'Biraz yavaş, art arda çok hızlı yazıyorsun.',
   chat_limit: 'Bu oyunda yazabileceğin mesaj sınırına ulaştın.',
   room_not_found: 'Bu oyun odası artık yok.',
   match_room: 'Eşleştirme odası “Hazırım” diyenler çoğunluğa geçince kendiliğinden başlar.',
@@ -222,6 +225,8 @@ const call = (fn: string, roomId: string, extra: Record<string, unknown> = {}): 
   callRpcVoid(fn, { p_room_id: roomId, ...extra }, TEXT);
 
 export const startShark = (roomId: string) => call('sk_start', roomId);
+/** Moderatör: deneme odasında kendi rolünü seç (boş = rastgele) */
+export const sharkPickRole = (roomId: string, role: SkRole | null) => call('sk_pick_role', roomId, { p_role: role });
 export const sharkReady = (roomId: string) => call('sk_ready', roomId);
 /** Gece: köpekbalığı av oyu ('hunt'), rol yeteneği ('ability'), Sörfçü'nün "Telsiz Patlat"ı ('ignite'). Hedef boş = pas. */
 export const sharkNight = (roomId: string, kind: 'hunt' | 'ability' | 'ignite', target: string | null) =>
@@ -259,10 +264,12 @@ export const sharkSay = (roomId: string, channel: 'all' | 'shark' | 'dead', body
   call('sk_say', roomId, { p_channel: channel, p_body: body });
 
 const VOICE_TEXT: Record<string, string> = {
-  voice_closed: 'Şu an konuşamazsın: dalışta yalnızca köpekbalıkları konuşur, elenenler konuşamaz.',
-  invalid_audio: 'Ses kaydı alınamadı. Tekrar dene.',
+  voice_closed: 'Şu an konuşamazsın. Dalışta yalnızca köpekbalıkları konuşur, elenenler konuşamaz.',
+  invalid_audio: 'Ses kaydı okunamadı, tekrar dene.',
+  invalid_role: 'Böyle bir rol yok.',
+  audio_too_big: 'Ses kaydı çok büyük çıktı, daha kısa konuşup tekrar dene.',
   voice_quota: 'Bu tartışmadaki 15 saniyelik konuşma hakkın doldu. Bir sonraki tartışmada yine konuşabilirsin.',
-  rate_limited: 'Biraz bekle: art arda çok hızlı ses gönderiyorsun.',
+  rate_limited: 'Biraz bekle, art arda çok hızlı ses gönderiyorsun.',
   chat_limit: 'Bu oyunda gönderebileceğin ses mesajı sınırına ulaştın.',
   muted: 'Şu an susturulmuşsun.',
   clip_not_found: 'Bu ses mesajı artık yok.',
@@ -288,7 +295,8 @@ export async function getRemoteCaps(): Promise<RemoteCaps | null> {
 export async function postVoiceClip(roomId: string, audio: string, ms: number): Promise<string | null> {
   const res = await callRpc<string>(
     'sk_voice_post',
-    { p_room_id: roomId, p_audio: audio, p_duration_ms: Math.round(ms) },
+    // Bazı telefonlar base64 yazıya satır sonu ekler: yalnızca base64 karakterleri gönderilir
+    { p_room_id: roomId, p_audio: audio.replace(/[^A-Za-z0-9+/=]/g, ''), p_duration_ms: Math.round(ms) },
     VOICE_TEXT,
   );
   return res.error;

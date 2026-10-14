@@ -98,7 +98,7 @@ export default function SharkSearchScreen() {
           <Pressable
             onPress={() =>
               void queueTestBots(3).then((r) => {
-                if (r.error) void notify('Eklenemedi', r.error, { icon: 'alert-circle' });
+                if (r.error) void notify('Eklenemedi', r.error, { icon: null });
               })
             }
             accessibilityRole="button"

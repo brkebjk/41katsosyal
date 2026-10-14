@@ -16257,6 +16257,7 @@ begin
              'visits', coalesce((
                select jsonb_agg(jsonb_build_object(
                         'round', (e->>'round')::int,
+                        'ids', e->'targets',
                         'names', (select coalesce(jsonb_agg(public._sk_name(p_room_id, tid::uuid)), '[]'::jsonb)
                                     from jsonb_array_elements_text(e->'targets') tid)) order by (e->>'round')::int)
                  from jsonb_array_elements(coalesce(ts.data->'visits', '[]'::jsonb)) e
@@ -16557,6 +16558,43 @@ end $$;
 
 -- Oyunu başlatır: roller dağıtılır (yalnızca oda sahibi ya da moderatör). Anlatıcı oyuncu sayılmaz.
 -- Rolleri dağıtır ve oyunu başlatır (iç kullanım; çağıran odayı kilitlemiş olmalı)
+-- Moderatör deneme odasında kendi rolünü seçebilir (test için). Seçim gizli tabloda durur (kimse okuyamaz), oyun
+-- başlarken uygulanır: o rol dağıtımda varsa sahibiyle yer değiştirir, yoksa moderatörün rolü o olur. Yalnızca deneme
+-- odasında (botlu, kimseye puan yazılmayan) geçerlidir; gerçek oyunda moderatör rol seçemez.
+create table if not exists public.sk_role_picks (
+  room_id uuid not null references public.game_rooms (id) on delete cascade,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  role text not null,
+  primary key (room_id, user_id)
+);
+alter table public.sk_role_picks enable row level security;
+
+create or replace function public.sk_pick_role(p_room_id uuid, p_role text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+begin
+  v := public._require_user();
+  perform public._require_admin();
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found or r.game_type <> 'shark_cage' then raise exception 'room_not_found'; end if;
+  if r.status <> 'lobby' then raise exception 'invalid_transition'; end if;
+  if not exists (select 1 from public.room_players where room_id = p_room_id and user_id = v.id and left_at is null) then
+    raise exception 'not_in_room';
+  end if;
+  if p_role is null then
+    delete from public.sk_role_picks where room_id = p_room_id and user_id = v.id;
+    return;
+  end if;
+  if p_role not in ('alpha', 'tiger', 'hammer', 'nurse', 'shark', 'lifeguard', 'oceanographer', 'spearman', 'marshal',
+                    'medium', 'tourist', 'squid', 'surfer', 'scavenger') then
+    raise exception 'invalid_role';
+  end if;
+  insert into public.sk_role_picks (room_id, user_id, role) values (p_room_id, v.id, p_role)
+  on conflict (room_id, user_id) do update set role = excluded.role;
+end $$;
+
 create or replace function public._sk_begin(p_room_id uuid)
 returns void language plpgsql security definer set search_path = public as $$
 declare
@@ -16565,6 +16603,8 @@ declare
   v_min int;
   v_max int;
   v_roles text[];
+  v_pick record;
+  v_mine text;
 begin
   select * into r from public.game_rooms where id = p_room_id for update;
   if r.status <> 'lobby' then raise exception 'invalid_transition'; end if;
@@ -16582,6 +16622,28 @@ begin
   select p_room_id, x.user_id, v_roles[x.rn], '{}'::jsonb
     from (select rp.user_id, row_number() over (order by random())::int as rn
             from public.room_players rp where rp.room_id = p_room_id and rp.left_at is null) x;
+
+  -- Moderatörün rol seçimi (yalnızca deneme odasında)
+  if coalesce((r.config->>'test')::boolean, false) then
+    for v_pick in
+      select pk.user_id, pk.role from public.sk_role_picks pk
+        join public.profiles pr on pr.id = pk.user_id and pr.role = 'admin'
+        join public.room_players rp on rp.room_id = pk.room_id and rp.user_id = pk.user_id and rp.left_at is null
+       where pk.room_id = p_room_id
+    loop
+      select s.role into v_mine from public.room_player_secrets s where s.room_id = p_room_id and s.user_id = v_pick.user_id;
+      if v_mine is distinct from v_pick.role then
+        update public.room_player_secrets set role = v_mine
+         where (room_id, user_id) = (select s.room_id, s.user_id from public.room_player_secrets s
+                                      where s.room_id = p_room_id and s.role = v_pick.role and s.user_id <> v_pick.user_id
+                                        and not exists (select 1 from public.sk_role_picks o
+                                                         where o.room_id = s.room_id and o.user_id = s.user_id)
+                                      limit 1);
+        update public.room_player_secrets set role = v_pick.role where room_id = p_room_id and user_id = v_pick.user_id;
+      end if;
+    end loop;
+  end if;
+  delete from public.sk_role_picks where room_id = p_room_id;
 
   update public.room_players set is_alive = true, score = 0, out_at = null where room_id = p_room_id;
   update public.game_rooms
@@ -17040,6 +17102,9 @@ begin
       'self_used', coalesce((me.data->>'self_used')::boolean, false),
       'spear_used', coalesce((me.data->>'spear_used')::boolean, false),
       -- Bu tartışmada kalan bas-konuş süresi (ms): plaj+oylama bir tartışma, her dalış ayrı (köpekbalığı frekansı)
+      -- Moderatörün deneme odası için seçtiği rol (yalnızca kendisine)
+      'picked_role', case when r.status = 'lobby' and v.role = 'admin'
+                          then (select pk.role from public.sk_role_picks pk where pk.room_id = p_room_id and pk.user_id = v.id) end,
       'voice_left_ms', greatest(0, public.setting_int('sk_voice_round_ms', 15000)
                          - case when (me.data->'voice'->>'round')::int = v_round
                                  and me.data->'voice'->>'channel' = (case when v_phase = 'night' then 'shark' else 'all' end)
@@ -17140,6 +17205,9 @@ create table if not exists public.sk_voice_clips (
   created_at timestamptz not null default now(),
   reported_at timestamptz
 );
+-- Bazı telefonlar 5 sn'lik kaydı daha yüksek kalitede yazar: üst sınır 240 bin karakter (yaklaşık 180 KB)
+alter table public.sk_voice_clips drop constraint if exists sk_voice_clips_audio_check;
+alter table public.sk_voice_clips add constraint sk_voice_clips_audio_check check (char_length(audio) between 100 and 240000);
 create index if not exists sk_voice_clips_room_idx on public.sk_voice_clips (room_id, created_at);
 create index if not exists sk_voice_clips_created_idx on public.sk_voice_clips (created_at);
 alter table public.sk_voice_clips enable row level security;
@@ -17180,15 +17248,16 @@ declare
   v_round int;
   v_data jsonb;
   v_used int;
+  -- Bazı telefonlar base64 yazının içine satır sonu koyar: boşluklar atılır
+  v_audio text := regexp_replace(coalesce(p_audio, ''), '\s', '', 'g');
 begin
   v := public._require_user();
   if v.muted_until is not null and v.muted_until > now() then raise exception 'muted'; end if;
-  if p_audio is null or char_length(p_audio) not between 100 and 90000 or p_audio !~ '^[A-Za-z0-9+/=]+$' then
-    raise exception 'invalid_audio';
-  end if;
+  if char_length(v_audio) < 100 or v_audio !~ '^[A-Za-z0-9+/=]+$' then raise exception 'invalid_audio'; end if;
   if p_duration_ms is null or p_duration_ms not between 300 and 6000 then raise exception 'invalid_audio'; end if;
-  -- Ses uzunluğu bildirilen süreyle uyumlu olmalı (32 kbps kayıt; geniş pay): kısa diye bildirilen uzun ses kabul edilmez
-  if char_length(p_audio) > 8000 + p_duration_ms * 14 then raise exception 'invalid_audio'; end if;
+  -- Boyut: en çok 240 bin karakter ve bildirilen süreyle orantılı (yüksek kaliteli kayda da yer var). Bildirilenden uzun
+  -- ses gönderilse bile dinleyenin telefonu çalmayı bildirilen sürenin sonunda keser.
+  if char_length(v_audio) > least(240000, 12000 + p_duration_ms * 40) then raise exception 'audio_too_big'; end if;
   perform public._sk_voice_cleanup();
   select * into r from public.game_rooms where id = p_room_id;
   if not found or r.game_type <> 'shark_cage' or not r.remote or r.status <> 'playing' then raise exception 'voice_closed'; end if;
@@ -17214,7 +17283,7 @@ begin
     raise exception 'chat_limit';
   end if;
   insert into public.sk_voice_clips (room_id, user_id, channel, audio, duration_ms)
-  values (p_room_id, v.id, v_channel, p_audio, p_duration_ms)
+  values (p_room_id, v.id, v_channel, v_audio, p_duration_ms)
   returning id into v_id;
   update public.room_player_secrets
      set data = data || jsonb_build_object('voice', jsonb_build_object('round', v_round, 'channel', v_channel,
@@ -17875,6 +17944,7 @@ grant execute on function public.voice_ping(uuid) to authenticated;
 grant execute on function public.room_vote_kick(uuid, uuid) to authenticated;
 grant execute on function public.sk_view(uuid) to authenticated;
 grant execute on function public.sk_history(uuid) to authenticated;
+grant execute on function public.sk_pick_role(uuid, text) to authenticated;
 grant execute on function public.sk_start(uuid) to authenticated;
 grant execute on function public.sk_ready(uuid) to authenticated;
 grant execute on function public.sk_night_action(uuid, text, uuid) to authenticated;

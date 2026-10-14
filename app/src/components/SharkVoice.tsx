@@ -44,7 +44,7 @@ const CLIP_OPTIONS: RecordingOptions = {
 };
 
 const PTT_REASON =
-  'Bas-konuş: yalnızca düğmeye basılı tuttuğunda en çok 5 saniye kaydedilir. Ses mesajın odadakilere sırayla çalınır ve en geç 10 dakika sonra sunucudan silinir (şikâyet edilirse moderatör bakana kadar en çok 14 gün saklanır). Mikrofonun başka hiçbir zaman açılmaz.';
+  'Bas-konuş düğmesine yalnızca basılı tuttuğunda en çok 5 saniye kaydedilir. Her tartışmada toplam 15 saniye konuşabilirsin. Ses mesajın odadakilere sırayla çalınır ve en geç 10 dakika sonra sunucudan silinir (şikâyet edilirse moderatör bakana kadar en çok 14 gün saklanır). Mikrofonun başka hiçbir zaman açılmaz.';
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
@@ -157,8 +157,8 @@ export function useClipQueue(clips: SkClip[] | undefined, myId: string | null, e
         started = true;
         startedAt = Date.now();
         p.play();
-        // Bitti haberi gelmezse en geç süre + 3 sn sonra sıradakine geçilir
-        timers.push(setTimeout(end, clip.ms + 3000));
+        // Ses bildirilen sürenin sonunda kesilir (uzun ses gönderilse bile); bitti haberi gelmezse de sıradakine geçilir
+        timers.push(setTimeout(end, clip.ms + 800));
       };
       const sub = p.addListener('playbackStatusUpdate', (st) => {
         // Ses yüklenince çalınır; yüklenmeden gelen "bitti" haberi (bazı telefonlarda hemen gelir) yok sayılır
@@ -280,16 +280,16 @@ export function PushToTalk({
     const file = new File(uri);
     try {
       if (ms < 400) {
-        await notify('Basılı tut', 'Konuşmak için düğmeye basılı tut, bitince bırak (en çok 5 sn).', { icon: 'mic' });
+        await notify('Basılı tut', 'Konuşmak için düğmeye basılı tut, bitince bırak (en çok 5 sn).', { icon: null });
         return;
       }
       setSending(true);
       const b64 = await file.base64();
       const err = await postVoiceClip(roomId, b64, Math.max(300, ms));
-      if (err) await notify('Ses gönderilemedi', err, { icon: 'mic-off' });
+      if (err) await notify('Ses gönderilemedi', err, { icon: null });
       else onSent();
     } catch {
-      await notify('Ses gönderilemedi', 'Kayıt okunamadı. Tekrar dene.', { icon: 'mic-off' });
+      await notify('Ses gönderilemedi', 'Kayıt okunamadı. Tekrar dene.', { icon: null });
     } finally {
       setSending(false);
       try {
@@ -314,7 +314,7 @@ export function PushToTalk({
       const ok = await showDialog<boolean>({
         title: 'Bas-konuş',
         message: PTT_REASON,
-        icon: 'mic',
+        icon: null,
         buttons: [
           { label: 'Anladım', value: true, style: 'primary' },
           { label: 'Vazgeç', value: false, style: 'ghost' },
@@ -326,7 +326,7 @@ export function PushToTalk({
       const perm = await requestRecordingPermissionsAsync();
       if (!perm.granted) {
         await notify('Mikrofon izni yok', 'Telefonunun ayarlarından 41. Kat Sosyal için mikrofon iznini açabilirsin.', {
-          icon: 'mic-off',
+          icon: null,
         });
       }
       return; // izin verildiyse kullanıcı tekrar basıp konuşur
@@ -334,7 +334,7 @@ export function PushToTalk({
     const perm = await requestRecordingPermissionsAsync();
     if (!perm.granted) {
       await notify('Mikrofon izni yok', 'Telefonunun ayarlarından 41. Kat Sosyal için mikrofon iznini açabilirsin.', {
-        icon: 'mic-off',
+        icon: null,
       });
       return;
     }
@@ -345,7 +345,7 @@ export function PushToTalk({
       await recorder.prepareToRecordAsync();
       recorder.record({ forDuration: cap.current / 1000 });
     } catch {
-      await notify('Mikrofon açılamadı', 'Tekrar dene.', { icon: 'mic-off' });
+      await notify('Mikrofon açılamadı', 'Tekrar dene.', { icon: null });
       return;
     }
     active.current = true;

@@ -1,4 +1,4 @@
-# Görev Test Rehberi – Köpekbalığı Kafesi ekran paketi
+# Görev Test Rehberi – Köpekbalığı Kafesi düzeltmeleri
 
 ## A. Supabase'i güncelle
 Şema `supabase/parcalar/` klasöründe 3 parça.
@@ -6,54 +6,34 @@
 2. Yeni sorgu aç > `2.sql` > Run.
 3. Yeni sorgu aç > `3.sql` > Run.
 - Sıra önemli: 1, 2, 3. "Run and enable RLS" çıkarsa onu seç.
-- Hata alırsan bana ilet; baştan çalıştırmak zarar vermez.
+- Ses düzeltmesi sunucuda; bu adım yapılmadan ses hatası sürer.
 
-## B. Oyun ekranı (moderatör hesabı + 1 telefon, 13 bot ile 16 kişi dene)
-1. Kaydırma yok:
-   - Avatarlar ekrana sığar.
-   - Avatara dokununca hiçbir şey kaymaz.
-   - 10+ kişide üst tabela küçülür, avatarlar büyük kalır.
-2. Üst satır:
-   - Solda kırmızı çıkış.
-   - Büyük **🌙 1. GECE / ☀️ 1. GÜN** düğmesi.
-   - Daha büyük **DALIŞ / PLAJ** yazısı.
-3. Üst tabela:
-   - Yalnızca yapman gereken iş ve olay akışı var.
-   - Kişiler adla değil, avatardaki gibi **yuvarlak numarayla** görünür.
-4. Komut yazısı:
-   - "⛓️ OY VER: ŞÜPHELİYİ SEÇ", "🦈 AVINI SEÇ" gibi komutlar ortada büyük çıkar.
-   - 2,5 sn sonra kaybolur.
-5. Oylama:
-   - Oy vermeyenin avatarında sarı **?** sallanır, altında "⏳ düşünüyor" yazar.
-   - Tabela adın hemen altında ve daha büyük.
-6. Yetenek animasyonu:
-   - Gece bir avatara dokun; rol simgen senin avatarından ona gider ve orada kalır.
-   - 🛟 şamandıra kavisle atılır ve döner.
-   - 🦈 dalgalanarak yüzer.
-   - 🔨 gelip vurur.
-   - 🔱 zıpkın dümdüz uçar.
-   - 🩹 ve 🔭 süzülür.
-7. Olay olunca:
-   - İlgili avatar büyür, üstünde balon çıkar.
-   - Balonlar: 🦈 AVLANDI, 🔱 VURULDU, ⛓️ KAFESTE, 🏆 KAZANDI.
-   - Sana özel olanlar yalnızca sende görünür: 🛟 KURTARILDI, 🔨 KİLİTLENDİ.
-8. Alt şeritte **Geçmiş**: bütün yazışmalar, 🌙 gece ve ☀️ gündüz başlıklarıyla ayrılır.
-9. Oyun bitince sıralama tablosu çıkar:
-   - Kazananlar 🏆 ile en üstte.
-   - Her satırda herkesin rolü ve oyunda kaldığı süre var: ✓ sona kaldı, 🚪 ayrıldı.
-10. Plajda güneş küçük ve soluk sarı, solda ufuk çizgisinde (süre çubuğuyla karışmaz).
-11. Botlar artık "tartışmayı hızlı geç"i işaretlemez (iki oyunda da).
+## B. Ses kaydı (2 telefon, uzaktan oda)
+1. Plajda bas-konuş düğmesine basılı tut, konuş, bırak. "Ses kaydı alınamadı" çıkmamalı.
+2. Yine hata çıkarsa tam yazısını bana ilet. Artık iki farklı yazı var:
+   - "Ses kaydı okunamadı"
+   - "Ses kaydı çok büyük çıktı"
 
-## C. Uzaktan oda (2 telefon)
-1. Bas-konuş:
-   - Her tartışmada kişi başı toplam **15 sn** konuşma hakkı var.
-   - Düğmede kalan süre yazar. Hak bitince düğme kapanır, yeni tartışmada yenilenir.
-2. Konuşanın avatarı yeşil çerçeveyle öne çıkar ve büyür.
-3. Şikâyet: konuşan oyuncunun **avatarına basılı tut**.
-   - Son 2 dakikada ses mesajı yoksa bunu söyler.
-4. Oyun başladıktan sonra oda sahibi çıkarsa:
-   - Oda kapanmaz, sahiplik başka bir gerçek oyuncuya geçer.
-   - Başka gerçek oyuncu yoksa oda kapanır.
+## C. Köpekbalıklarının av oyu
+1. Köpekbalığı olarak dalışta bir avatara av seç.
+2. Hedefin avatarının sağ üstünde kırmızı **🦈 1** çıkar. Takımdan başkası da aynı kişiyi seçince **🦈 2** olur.
+3. İnsanlar bu sayıyı görmez.
 
-## D. Yan yana oyun
-- Yan yana oda açınca aylık genel oyun hakkından 1 düşer (önceden de böyleydi; kontrol edildi).
+## D. Gece sonucun (görsel)
+1. Oşinograf, Kaplan ya da Cankurtaran ol. İstediğin rolü almak için E bölümündeki yolu kullan.
+2. Dalışta bir kişi seç. Plaj başlayınca **Gece sonucun** penceresi kendiliğinden açılır.
+3. Oşinograf olarak şunları görürsün:
+   - Baktığın kişinin avatarı ve yanında büyük takım rozeti (🦈 / 🏖️ / 🌀, renkli).
+   - Altında **Akıntı haritası**. Her gece için o kişinin avatarı ➜ gittiği kişilerin avatarları.
+4. Kaplan, Cankurtaran ve kilitlenme de aynı şekilde avatarlarla görünür.
+5. Eski sonuçların **Rolüm** penceresinde durur.
+
+## E. Moderatör rol seçimi
+1. Moderatör hesabıyla yan yana oda aç ve **+3 deneme oyuncusu** ekle. Rol seçimi yalnızca deneme odasında geçerli.
+2. Lobide **Rolümü seç (deneme odası)** düğmesine bas ve rolü seç (🎲 Rastgele de var).
+3. Oyunu başlat. Çark seçtiğin rolde durur.
+4. Gerçek oyuncuların olduğu (deneme olmayan) odada seçim uygulanmaz.
+
+## F. Uyarı pencereleri
+- Köpekbalığı oyunundaki uyarı pencerelerinde simge yok.
+- Bu oyundaki uyarı ve bilgi yazılarında iki nokta üst üste kullanılmıyor.

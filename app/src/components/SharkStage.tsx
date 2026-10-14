@@ -20,7 +20,16 @@ import {
 import { Text } from '@/components/AppText';
 import { Avatar } from '@/components/Avatar';
 import { KeyboardLift } from '@/components/KeyboardLift';
-import { getSharkHistory, SK_ROLES, SK_WHEEL, type SkMsg, type SkPlayer, type SkRole } from '@/lib/shark';
+import {
+  getSharkHistory,
+  SK_ROLES,
+  SK_TEAMS,
+  SK_WHEEL,
+  type SkMsg,
+  type SkNote,
+  type SkPlayer,
+  type SkRole,
+} from '@/lib/shark';
 import { fonts } from '@/theme';
 
 // Köpekbalığı Kafesi sahnesi: görsel dosya kullanmadan, kodla çizilen deniz/plaj efektleri. Animasyonlar yerel
@@ -526,6 +535,8 @@ export type Seat = {
   sign?: { text: string; kind: 'vote' | 'pass' | 'hunt' | 'double'; target?: string | null } | null;
   /** Aldığı (ağırlıklı) kafes oyu */
   votesIn?: number;
+  /** Dalışta köpekbalıklarının bu kişiye verdiği toplam av oyu (yalnızca köpekbalıkları ve anlatıcı görür) */
+  huntIn?: number;
   /** Avatarın sağ altındaki durum rozeti (emoji) */
   badge?: string | null;
   /** Adın altındaki satır (tabela yoksa görünür) */
@@ -721,6 +732,7 @@ function SeatTile({
     dead ? (seat.deadLabel ?? 'elendi') : 'hayatta',
     seat.event ? seat.event.text : null,
     seat.votesIn ? `${seat.votesIn} oy aldı` : null,
+    seat.huntIn ? `${seat.huntIn} av oyu` : null,
     seat.sign ? (seat.sign.kind === 'pass' ? 'pas geçti' : `oyu: ${seat.sign.text}`) : null,
     seat.label?.text ?? null,
   ]
@@ -793,6 +805,13 @@ function SeatTile({
         <View style={[styles.seatNo, small && styles.seatNoSmall]}>
           <Text style={[styles.seatNoText, small && styles.seatNoTextSmall]}>{p.seat}</Text>
         </View>
+        {/* Köpekbalıklarının toplam av oyu */}
+        {seat.huntIn ? (
+          <View style={[styles.votesIn, styles.huntIn]}>
+            <Text style={styles.huntInIcon}>🦈</Text>
+            <Text style={styles.votesInText}>{seat.huntIn}</Text>
+          </View>
+        ) : null}
         {/* Aldığı kafes oyu */}
         {seat.votesIn ? (
           <View style={styles.votesIn}>
@@ -1401,6 +1420,161 @@ export function HistoryList({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Gece sonucun: rol yeteneğinin sonucu görsel olarak (avatarlar, takım rozeti, akıntı haritası)
+// ---------------------------------------------------------------------------
+
+/** Küçük avatar + koltuk numarası (sonuç kartlarında) */
+function MiniSeat({ p, size = 40, name }: { p: SkPlayer | undefined; size?: number; name?: string }) {
+  return (
+    <View style={[styles.mini, { width: size + 18 }]}>
+      <View style={{ width: size, height: size }}>
+        <Avatar index={p?.avatar ?? 1} size={size} />
+        {p ? (
+          <View style={styles.miniChip}>
+            <SeatChip n={p.seat} size={Math.max(16, Math.round(size * 0.42))} />
+          </View>
+        ) : null}
+      </View>
+      <Text style={styles.miniName} numberOfLines={1}>
+        {p?.name ?? name ?? '?'}
+      </Text>
+    </View>
+  );
+}
+
+function NoteCard({ note, byId }: { note: SkNote; byId: Map<string, SkPlayer> }) {
+  const target = note.id ? byId.get(note.id) : undefined;
+  const visitRow = (v: { round: number; names: string[]; ids?: string[] }, i: number) => (
+    <View key={i} style={styles.visitRow}>
+      <Text style={styles.visitNight}>{`${v.round}. gece`}</Text>
+      <MiniSeat p={target} size={30} name={note.name} />
+      <Text style={styles.visitArrow}>➜</Text>
+      {v.names.length === 0 ? (
+        <Text style={styles.resultMuted}>kimseye gitmedi</Text>
+      ) : (
+        v.names.map((n, j) => <MiniSeat key={j} p={v.ids?.[j] ? byId.get(v.ids[j]) : undefined} name={n} size={30} />)
+      )}
+    </View>
+  );
+  if (note.kind === 'blocked') {
+    return (
+      <View style={[styles.result, { borderColor: '#B7791F' }]}>
+        <Text style={styles.resultBig}>🔨</Text>
+        <Text style={styles.resultTitle}>Yeteneğin kilitlendi</Text>
+        <Text style={styles.resultMuted}>Çekiç Köpekbalığı seni bu gece engelledi, seçimin işlemedi.</Text>
+      </View>
+    );
+  }
+  if (note.kind === 'saved') {
+    return (
+      <View style={[styles.result, { borderColor: '#34D399' }]}>
+        <View style={styles.resultRow}>
+          <Text style={styles.resultBig}>🛟</Text>
+          <MiniSeat p={target} size={56} name={note.name} />
+        </View>
+        <Text style={styles.resultTitle}>Köpekbalıkları saldırdı, sen kurtardın</Text>
+      </View>
+    );
+  }
+  if (note.kind === 'scan') {
+    const team = note.team ? SK_TEAMS[note.team] : null;
+    return (
+      <View style={[styles.result, { borderColor: team?.color ?? '#48CAE4' }]}>
+        <Text style={styles.resultHead}>🔭 Baktığın kişi</Text>
+        <View style={styles.resultRow}>
+          <MiniSeat p={target} size={56} name={note.name} />
+          <Text style={styles.visitArrow}>=</Text>
+          <View style={[styles.teamBadge, { borderColor: team?.color ?? '#FFFFFF', backgroundColor: (team?.color ?? '#FFFFFF') + '33' }]}>
+            <Text style={styles.teamEmoji}>{team?.emoji ?? '?'}</Text>
+            <Text style={[styles.teamName, { color: team?.color ?? '#FFFFFF' }]}>{team?.name ?? '?'}</Text>
+          </View>
+        </View>
+        <Text style={styles.resultHead}>🌊 Akıntı haritası, son 2 gece kime gitti</Text>
+        {(note.visits ?? []).length === 0 ? (
+          <Text style={styles.resultMuted}>Son 2 gecede kimseye gitmedi.</Text>
+        ) : (
+          (note.visits ?? []).map(visitRow)
+        )}
+      </View>
+    );
+  }
+  // Kaplan: hedefin bu gece kime gittiği
+  return (
+    <View style={[styles.result, { borderColor: '#E07A00' }]}>
+      <Text style={styles.resultHead}>🐯 İzlediğin kişi bu gece kime gitti</Text>
+      {(note.visits ?? []).length === 0 ? (
+        <View style={styles.resultRow}>
+          <MiniSeat p={target} size={48} name={note.name} />
+          <Text style={styles.resultMuted}>kimseye gitmedi</Text>
+        </View>
+      ) : (
+        (note.visits ?? []).map(visitRow)
+      )}
+    </View>
+  );
+}
+
+/** Bir ya da birkaç gecenin sonuç kartları (en yeni üstte) */
+export function NightResult({ notes, players }: { notes: SkNote[]; players: SkPlayer[] }) {
+  const byId = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
+  const rounds = [...new Set(notes.map((n) => n.round))].sort((a, b) => b - a);
+  if (notes.length === 0) return <Text style={styles.resultMuted}>Henüz bir sonucun yok.</Text>;
+  return (
+    <View style={styles.chat}>
+      {rounds.map((r) => (
+        <View key={r} style={styles.chat}>
+          <View style={[styles.msgHead, styles.msgHeadNight]}>
+            <Text style={styles.msgHeadText}>{`🌙 ${r}. gece sonucun`}</Text>
+          </View>
+          {notes
+            .filter((n) => n.round === r)
+            .map((n, i) => (
+              <NoteCard key={i} note={n} byId={byId} />
+            ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** Moderatör: deneme odasında kendi rolünü seç */
+export function RolePicker({ value, busy, onPick }: {
+  value: SkRole | null;
+  busy: boolean;
+  onPick: (role: SkRole | null) => void;
+}) {
+  return (
+    <View style={styles.pickGrid}>
+      <Pressable
+        onPress={() => onPick(null)}
+        disabled={busy}
+        style={[styles.pickItem, value === null && styles.pickOn]}
+        accessibilityRole="radio"
+        accessibilityState={{ selected: value === null }}
+      >
+        <Text style={styles.pickEmoji}>🎲</Text>
+        <Text style={styles.pickName}>Rastgele</Text>
+      </Pressable>
+      {SK_WHEEL.map((k) => (
+        <Pressable
+          key={k}
+          onPress={() => onPick(k)}
+          disabled={busy}
+          style={[styles.pickItem, { borderColor: SK_ROLES[k].color }, value === k && styles.pickOn]}
+          accessibilityRole="radio"
+          accessibilityState={{ selected: value === k }}
+        >
+          <Text style={styles.pickEmoji}>{SK_ROLES[k].emoji}</Text>
+          <Text style={[styles.pickName, { color: SK_ROLES[k].color }]} numberOfLines={2}>
+            {SK_ROLES[k].name}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   flex: { flex: 1 },
@@ -1535,6 +1709,36 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowRadius: 10,
   },
+  mini: { alignItems: 'center', gap: 2 },
+  miniChip: { position: 'absolute', top: -4, left: -6 },
+  miniName: { color: '#FFFFFF', fontFamily: fonts.semi, fontSize: 10.5, maxWidth: '100%' },
+  result: { gap: 8, padding: 12, borderRadius: 16, borderWidth: 2, backgroundColor: 'rgba(255,255,255,0.06)' },
+  resultRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 },
+  resultBig: { fontSize: 40, textAlign: 'center' },
+  resultTitle: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 16, textAlign: 'center' },
+  resultHead: { color: '#48CAE4', fontFamily: fonts.black, fontSize: 13.5 },
+  resultMuted: { color: 'rgba(255,255,255,0.75)', fontFamily: fonts.semi, fontSize: 13, textAlign: 'center' },
+  visitRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
+  visitNight: { color: '#FFB703', fontFamily: fonts.black, fontSize: 12, width: 52 },
+  visitArrow: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 20 },
+  teamBadge: { alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8 },
+  teamEmoji: { fontSize: 34 },
+  teamName: { fontFamily: fonts.black, fontSize: 15 },
+  pickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
+  pickItem: {
+    width: 92,
+    height: 82,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 4,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  pickOn: { backgroundColor: 'rgba(72, 202, 228, 0.3)', borderWidth: 3 },
+  pickEmoji: { fontSize: 28 },
+  pickName: { color: '#FFFFFF', fontFamily: fonts.extra, fontSize: 11.5, textAlign: 'center' },
   rankBox: { flex: 1, justifyContent: 'center' },
   rankPanel: {
     borderRadius: 16,
@@ -1619,6 +1823,8 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
   },
   votesInText: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 13, lineHeight: 14 },
+  huntIn: { flexDirection: 'row', gap: 1, paddingHorizontal: 5, backgroundColor: '#7A0A1A', borderColor: '#FF4D4D' },
+  huntInIcon: { fontSize: 11, lineHeight: 14 },
   votesInSub: { color: '#FFFFFF', fontFamily: fonts.semi, fontSize: 7.5, lineHeight: 8 },
   badge: {
     position: 'absolute',

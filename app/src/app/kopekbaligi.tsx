@@ -27,10 +27,12 @@ import {
   CommandFlash,
   HistoryList,
   isLightScene,
+  NightResult,
   PhaseFlash,
   Prompt,
   RankTable,
   RichLine,
+  RolePicker,
   RoleWheel,
   SeatGrid,
   seatTag,
@@ -67,6 +69,7 @@ import {
   SK_TEAMS,
   sharkNext,
   sharkNight,
+  sharkPickRole,
   sharkReady,
   sharkRevealMarshal,
   sharkSay,
@@ -151,7 +154,9 @@ function Game({ roomId }: { roomId: string }) {
   /** Seçili kişi: hangi aşamada / hangi iş için */
   const [pick, setPick] = useState<{ key: string; id: string } | null>(null);
   const [slot, setSlot] = useState<{ key: string; slot: Slot } | null>(null);
-  const [sheet, setSheet] = useState<'role' | 'shark' | 'dead' | 'chat' | 'history' | null>(null);
+  const [sheet, setSheet] = useState<'role' | 'shark' | 'dead' | 'chat' | 'history' | 'pick' | 'result' | null>(null);
+  /** Gece sonucu penceresi bu turda kapatıldı mı (plaj başlayınca kendiliğinden açılır) */
+  const [resultClosed, setResultClosed] = useState(-1);
   /** Herkese açık yazışmada en son görülen mesaj sayısı (yeni mesaj gelince çubuk yanar) */
   const [chatSeen, setChatSeen] = useState(0);
   const [pointsOpen, setPointsOpen] = useState(false);
@@ -423,6 +428,14 @@ function Game({ roomId }: { roomId: string }) {
   if (showVotes) {
     for (const v of view.votes) if (v.to) votesIn.set(v.to, (votesIn.get(v.to) ?? 0) + v.weight);
   }
+  // Dalışta köpekbalıklarının av oyları: hedefin avatarında toplam (sunucu bu seçimleri yalnızca köpekbalıklarına ve
+  // anlatıcıya gönderir)
+  const huntIn = new Map<string, number>();
+  if (phase === 'night' && (isShark || me.is_omniscient)) {
+    for (const p of view.players) {
+      if (p.hunt_pick && p.is_alive && !p.left) huntIn.set(p.hunt_pick, (huntIn.get(p.hunt_pick) ?? 0) + 1);
+    }
+  }
   // Notlarım: Oşinograf'ın baktığı kişinin takımı avatarın altında görünür
   const scanned = new Map<string, string>();
   for (const n of me.notes) if (n.kind === 'scan' && n.id && n.team) scanned.set(n.id, n.team);
@@ -509,6 +522,7 @@ function Game({ roomId }: { roomId: string }) {
       dim: activeSlot !== null && !selectable && p.is_alive,
       sign,
       votesIn: votesIn.get(p.id),
+      huntIn: huntIn.get(p.id),
       badge,
       label,
       deadLabel,
@@ -577,7 +591,7 @@ function Game({ roomId }: { roomId: string }) {
       void notify(
         'Ses mesajı yok',
         `${plain(s.p.id)} son 2 dakikada ses mesajı göndermedi. Yazılı mesajları, yazışmada mesaja uzun basarak bildirebilirsin.`,
-        { icon: 'mic-off' },
+        { icon: null },
       );
       return;
     }
@@ -619,7 +633,7 @@ function Game({ roomId }: { roomId: string }) {
     const who = n.id ? tag(n.id) : (n.name ?? '?');
     if (n.kind === 'blocked') return `🔨 ${n.round}. gece yeteneğin kilitlendi`;
     if (n.kind === 'saved') return `🛟 ${who} saldırıya uğradı, şamandıran kurtardı`;
-    if (n.kind === 'scan') return `🔭 ${who}: ${n.team ? SK_TEAMS[n.team].name : '?'} (akıntı: Rolüm)`;
+    if (n.kind === 'scan') return `🔭 ${who} ${n.team ? SK_TEAMS[n.team].name : '?'} (ayrıntı Rolüm’de)`;
     const names = (n.visits ?? []).map((x) => x.names.join(', ')).filter(Boolean).join(', ');
     return `🐯 ${who} → ${names || 'kimseyi ziyaret etmedi'}`;
   };
@@ -629,8 +643,8 @@ function Game({ roomId }: { roomId: string }) {
     flowItems.push({
       k: ln.round * 10 + 1,
       text: ln.dead.length
-        ? `🦈 ${ln.round}. gece: ${ln.dead.map((d) => tag(d.id)).join(' ')} maskesi kırıldı`
-        : `🌊 ${ln.round}. gece: kimsenin maskesi kırılmadı`,
+        ? `🦈 ${ln.round}. gece ${ln.dead.map((d) => tag(d.id)).join(' ')} maskesi kırıldı`
+        : `🌊 ${ln.round}. gece kimsenin maskesi kırılmadı`,
     });
   }
   for (const n of me.notes) if (n.round >= round - 1) flowItems.push({ k: n.round * 10 + 2, text: noteLine(n) });
@@ -651,7 +665,7 @@ function Game({ roomId }: { roomId: string }) {
       text: lvote.caged
         ? `⛓️ ${tag(lvote.caged.id)} kafese girdi · ${SK_ROLES[lvote.caged.role].emoji} ${SK_ROLES[lvote.caged.role].name}`
         : lvote.tie
-          ? '⛓️ Oylar eşit: kimse kafese girmedi'
+          ? '⛓️ Oylar eşit, kimse kafese girmedi'
           : '⛓️ Kimse kafese girmedi',
     });
   }
@@ -672,10 +686,10 @@ function Game({ roomId }: { roomId: string }) {
     const canReady = n >= view.min_players;
     const need = Math.floor(n / 2) + 1;
     prompt = {
-      title: canReady ? `HAZIR: ${readyCount} / ${n}` : `🌊 LOBİ · ${n} kişi`,
+      title: canReady ? `HAZIR ${readyCount} / ${n}` : `🌊 LOBİ · ${n} kişi`,
       lines: canReady
         ? [`Başlamak için ${need} kişinin “Hazırım” demesi yeter.`, 'Beklersen ya da davet edersen kalabalık oyun daha çok puan verir.']
-        : [`“Hazırım” ${view.min_players} kişide açılır (şu an ${n}).`, 'Arkadaşını davet et: kalabalık oyun daha çok puan verir.'],
+        : [`“Hazırım” ${view.min_players} kişide açılır (şu an ${n}).`, 'Arkadaşını davet et, kalabalık oyun daha çok puan verir.'],
       color: canReady ? '#34D399' : '#48CAE4',
       pulse: canReady && !myReady,
     };
@@ -734,13 +748,13 @@ function Game({ roomId }: { roomId: string }) {
     const modeText =
       view.mode === 'narrator'
         ? me.is_omniscient
-          ? 'Anlatıcısın: oynamazsın, herkesin rolünü görür, aşamaları sen ilerletirsin. Anlatıcılı oyunda kimse puan almaz, hak düşmez.'
-          : `Anlatıcı: ${view.host.name}. Anlatıcılı oyunda puan yok, hak düşmez.`
+          ? 'Anlatıcısın. Oynamazsın, herkesin rolünü görür, aşamaları sen ilerletirsin. Anlatıcılı oyunda kimse puan almaz, hak düşmez.'
+          : `Anlatıcı ${view.host.name}. Anlatıcılı oyunda puan yok, hak düşmez.`
         : view.mode === 'host'
           ? me.is_host
-            ? 'Ben Yöneticiyim: aşamaları sen ilerletirsin ve sen de oynarsın (rolleri görmezsin).'
+            ? 'Ben Yöneticiyim. Aşamaları sen ilerletirsin ve sen de oynarsın (rolleri görmezsin).'
             : `${view.host.name} aşamaları ilerletir ve o da oynar.`
-          : 'Otomatik: süreler dolunca oyun kendiliğinden ilerler.';
+          : 'Otomatik. Süreler dolunca oyun kendiliğinden ilerler.';
     actions = (
       <>
         <Text style={styles.pText}>{modeText}</Text>
@@ -762,14 +776,29 @@ function Game({ roomId }: { roomId: string }) {
                     confirm: () =>
                       confirmAction(
                         'Deneme oyuncusu eklensin mi?',
-                        'Kendi kendine oynayan 3 deneme oyuncusu eklenir. Oda deneme odası olur: kimseye puan, başarım ya da istatistik yazılmaz.',
+                        'Kendi kendine oynayan 3 deneme oyuncusu eklenir. Oda deneme odası olur, kimseye puan, başarım ya da istatistik yazılmaz.',
                         'Ekle',
+                        false,
+                        { icon: null },
                       ),
                   })
                 }
               />
             ) : null}
           </View>
+        ) : null}
+        {/* GEÇİCİ: moderatör deneme odasında rolünü seçebilir */}
+        {me.is_admin && me.is_player ? (
+          <GameButton
+            label={
+              me.picked_role
+                ? `Rolüm ${SK_ROLES[me.picked_role].emoji} ${SK_ROLES[me.picked_role].name} · değiştir`
+                : 'Rolümü seç (deneme odası)'
+            }
+            variant="ghost"
+            onPress={() => setSheet('pick')}
+            testID="sk-pick-role"
+          />
         ) : null}
         {me.is_host && !me.is_player && view.mode !== 'narrator' && view.code ? (
           <GameButton
@@ -795,7 +824,7 @@ function Game({ roomId }: { roomId: string }) {
                     `${n} oyuncuya roller çarktan dağıtılacak. Başladıktan sonra yeni oyuncu giremez.`,
                     'Başlat',
                     false,
-                    { icon: 'water' },
+                    { icon: null },
                   ),
               })
             }
@@ -823,7 +852,7 @@ function Game({ roomId }: { roomId: string }) {
               <Text style={styles.roleGoal}>{roleInfo.goal}</Text>
               {isShark ? (
                 <Text style={styles.allies}>
-                  {'Takımın: ' +
+                  {'Takım arkadaşların ' +
                     (view.players
                       .filter((p) => p.ally)
                       .map((p) => `#${p.seat} ${p.name} (${p.role ? SK_ROLES[p.role].name : '?'})`)
@@ -837,7 +866,7 @@ function Game({ roomId }: { roomId: string }) {
     }
     prompt = {
       title: !me.is_player ? 'Roller dağıtılıyor' : wheelDone ? 'ROLÜN BU' : 'ÇARK DÖNÜYOR…',
-      lines: wheelDone || !me.is_player ? [`Rolünü gören: ${view.ready_count} / ${present.length}`, 'Ekranı kimseye gösterme.'] : [],
+      lines: wheelDone || !me.is_player ? [`Rolünü gören ${view.ready_count} / ${present.length}`, 'Ekranı kimseye gösterme.'] : [],
     };
     if (me.is_player && wheelDone && !me.ready) command = { text: '👀 ROLÜNÜ OKU, HAZIRIM DE', color: '#48CAE4' };
     actions = (
@@ -865,7 +894,7 @@ function Game({ roomId }: { roomId: string }) {
         ? {
             title: '🌊 Okyanus karanlık',
             lines: [
-              `Seçim yapanlar: ${view.players.filter((p) => p.is_alive && p.acted).length} / ${view.players.filter((p) => p.is_alive).length}`,
+              `Seçim yapanlar ${view.players.filter((p) => p.is_alive && p.acted).length} / ${view.players.filter((p) => p.is_alive).length}`,
               ...flow,
             ],
           }
@@ -873,9 +902,9 @@ function Game({ roomId }: { roomId: string }) {
     } else if (activeSlot === 'hunt') {
       const picks = view.players.filter((p) => (p.ally || p.is_me) && p.hunt_pick);
       prompt = {
-        title: huntDone ? `🦈 Avın: ${tag(me.hunt_target)}${needAbility ? ' · şimdi yeteneğin' : ''}` : '🦈 AVINI SEÇ',
+        title: huntDone ? `🦈 Avın ${tag(me.hunt_target)}${needAbility ? ' · şimdi yeteneğin' : ''}` : '🦈 AVINI SEÇ',
         lines: [
-          ...(picks.length ? [`Takım: ${picks.map((p) => `${seatTag(p.seat)}→${tag(p.hunt_pick)}`).join('  ')}`] : []),
+          ...(picks.length ? [`Takım ${picks.map((p) => `${seatTag(p.seat)}→${tag(p.hunt_pick)}`).join('  ')}`] : []),
           ...flow,
         ],
         color: '#FF4D4D',
@@ -887,7 +916,7 @@ function Game({ roomId }: { roomId: string }) {
         title: abilityDone
           ? me.ignite
             ? '📻 Telsiz bu gece patlayacak!'
-            : `${roleInfo.emoji} Seçimin: ${me.night_target ? tag(me.night_target) : 'pas'}`
+            : `${roleInfo.emoji} Seçimin ${me.night_target ? tag(me.night_target) : 'pas'}`
           : `${roleInfo.emoji} ${abilityVerb(role).toUpperCase()}: KİŞİ SEÇ`,
         lines: flow,
         color: roleInfo.color,
@@ -962,6 +991,7 @@ function Game({ roomId }: { roomId: string }) {
                     'İşaretlediğin herkes bu gece derinlere çekilir (korunan kurtulur). İşaretler sıfırlanır.',
                     'Patlat',
                     true,
+                    { icon: null },
                   ),
               })
             }
@@ -999,7 +1029,7 @@ function Game({ roomId }: { roomId: string }) {
                   if (!target) return;
                   void act('spear', () => sharkSpear(roomId, target), {
                     confirm: () =>
-                      confirmAction(`${plain(target)} vurulsun mu?`, 'Tek zıpkının var; geri dönüşü yok.', 'Vur', true),
+                      confirmAction(`${plain(target)} vurulsun mu?`, 'Tek zıpkının var; geri dönüşü yok.', 'Vur', true, { icon: null }),
                     after: () => setSlot(null),
                   });
                 }}
@@ -1022,6 +1052,8 @@ function Game({ roomId }: { roomId: string }) {
                     'Kimliğini açıyor musun?',
                     'Herkes Sahil Güvenlik Komutanı olduğunu görür; kafes oyun 2 sayılır ama köpekbalıklarının hedefi olabilirsin.',
                     'Kimliğimi aç',
+                    false,
+                    { icon: null },
                   ),
               })
             }
@@ -1047,10 +1079,10 @@ function Game({ roomId }: { roomId: string }) {
     );
   } else if (phase === 'vote') {
     const myVote = voteOf.get(me.is_player ? (view.players.find((p) => p.is_me)?.id ?? '') : '');
-    const pendingLine = view.pending ? [`🗳️ Oy verenler: ${view.pending.done} / ${view.pending.total}`] : [];
+    const pendingLine = view.pending ? [`🗳️ Oy verenler ${view.pending.done} / ${view.pending.total}`] : [];
     prompt = alivePlayer
       ? {
-          title: me.voted ? `⛓️ OYUN: ${me.vote_target ? tag(me.vote_target) : 'PAS'}` : '⛓️ OY VER: ŞÜPHELİYİ SEÇ',
+          title: me.voted ? `⛓️ OYUN ${me.vote_target ? tag(me.vote_target) : 'PAS'}` : '⛓️ OY VER: ŞÜPHELİYİ SEÇ',
           lines: [...pendingLine, ...flow],
           color: '#C1121F',
           pulse: !me.voted,
@@ -1106,7 +1138,7 @@ function Game({ roomId }: { roomId: string }) {
           lines: [...(lv.skips ? [`${lv.skips} kişi pas geçti`] : []), ...flow.slice(1)],
           color: '#C1121F',
         }
-      : { title: lv?.tie ? 'Oylar eşit: kimse kafese girmedi' : 'Kimse kafese girmedi', lines: flow.slice(1) };
+      : { title: lv?.tie ? 'Oylar eşit, kimse kafese girmedi' : 'Kimse kafese girmedi', lines: flow.slice(1) };
     actions = (
       <>
         {!me.can_control ? (
@@ -1226,7 +1258,7 @@ function Game({ roomId }: { roomId: string }) {
     const reason = await showDialog<string | null>({
       title: 'Mesajı bildir',
       message: `“${m.body}”\n\nBu mesaj moderatörlere iletilir. ${m.name}, kimin bildirdiğini bilmez.`,
-      icon: 'flag',
+      icon: null,
       buttons: [
         { label: 'Hakaret / taciz', value: 'Hakaret ya da taciz', style: 'primary' },
         { label: 'Cinsel içerik', value: 'Cinsel içerik', style: 'primary' },
@@ -1237,15 +1269,15 @@ function Game({ roomId }: { roomId: string }) {
     });
     if (!reason) return;
     const res = await reportDeadMessage(m.id, reason);
-    if (res.error) return void notify('Bildirilemedi', res.error, { icon: 'alert-circle' });
-    await notify('Bildirimin alındı', 'Moderatörler inceleyecek.', { icon: 'flag', tone: 'success' });
+    if (res.error) return void notify('Bildirilemedi', res.error, { icon: null });
+    await notify('Bildirimin alındı', 'Moderatörler inceleyecek.', { icon: null, tone: 'success' });
   }
 
   async function reportClip(clipId: string, who: string) {
     const reason = await showDialog<string | null>({
       title: 'Ses mesajını bildir',
       message: `${who} kişisinin ses mesajı moderatörlere iletilir ve inceleme için en çok 14 gün saklanır. Kimin bildirdiğini bilmez.`,
-      icon: 'flag',
+      icon: null,
       buttons: [
         { label: 'Hakaret / taciz', value: 'Hakaret ya da taciz', style: 'primary' },
         { label: 'Cinsel içerik', value: 'Cinsel içerik', style: 'primary' },
@@ -1256,8 +1288,8 @@ function Game({ roomId }: { roomId: string }) {
     });
     if (!reason) return;
     const res = await reportVoiceClip(clipId, reason);
-    if (res.error) return void notify('Bildirilemedi', res.error, { icon: 'alert-circle' });
-    await notify('Bildirimin alındı', 'Moderatörler inceleyecek.', { icon: 'flag', tone: 'success' });
+    if (res.error) return void notify('Bildirilemedi', res.error, { icon: null });
+    await notify('Bildirimin alındı', 'Moderatörler inceleyecek.', { icon: null, tone: 'success' });
   }
 
   const roomIsMatch = view.match === true;
@@ -1275,7 +1307,7 @@ function Game({ roomId }: { roomId: string }) {
         ? { title: 'Odadan ayrıl', msg: 'Bekleme odasından çıkarsın; oda sahipliği başka bir oyuncuya geçer.', ok: 'Odadan ayrıl' }
         : {
             title: 'Oyundan ayrıl',
-            msg: 'Ayrılırsan elenirsin ve geri dönemezsin. Oyun sürer: oda sahipliği başka bir oyuncuya geçer (başka gerçek oyuncu yoksa oda kapanır).',
+            msg: 'Ayrılırsan elenirsin ve geri dönemezsin. Oyun sürer, oda sahipliği başka bir oyuncuya geçer (başka gerçek oyuncu yoksa oda kapanır).',
             ok: 'Oyundan ayrıl',
           }
       : me.is_host
@@ -1286,7 +1318,7 @@ function Game({ roomId }: { roomId: string }) {
         ? { title: 'Odadan ayrıl', msg: 'Bekleme odasından çıkarsın.', ok: 'Odadan ayrıl' }
         : { title: 'Oyundan ayrıl', msg: 'Ayrılırsan elenirsin, rolün açıklanır ve geri dönemezsin.', ok: 'Oyundan ayrıl' };
     void act('leave', () => leaveRoom(roomId), {
-      confirm: () => confirmAction(copy.title, copy.msg, copy.ok, true, { icon: 'exit-outline' }),
+      confirm: () => confirmAction(copy.title, copy.msg, copy.ok, true, { icon: null }),
       after: () => {
         leaving.current = true;
         goToGames();
@@ -1295,6 +1327,9 @@ function Game({ roomId }: { roomId: string }) {
   }
 
   const sharkChatOpen = phase === 'night' && isShark && alivePlayer;
+  // Plaj başlayınca bu gecenin sonucun varsa (Oşinograf, Kaplan, Cankurtaran, kilit) görsel kart kendiliğinden açılır
+  const autoResult =
+    phase === 'day' && me.is_player && !me.left && sheet === null && resultClosed !== round && me.notes.some((n) => n.round === round);
   const voiceLeft = me.voice_left_ms ?? 15000;
   const chat = view.chat ?? [];
   const chatOpen = alivePlayer && (phase === 'day' || phase === 'vote' || phase === 'vote_result');
@@ -1383,10 +1418,10 @@ function Game({ roomId }: { roomId: string }) {
               )}
               {view.test || connError || (playing && me.is_player && !me.is_alive && !me.left) ? (
                 <View style={styles.pills} pointerEvents="none">
-                  {view.test ? <Pill icon="hardware-chip-outline" text="Deneme odası · puan yazılmaz" tone="danger" /> : null}
-                  {connError ? <Pill icon="cloud-offline" text="Bağlantı koptu, yeniden deniyor…" tone="warn" /> : null}
+                  {view.test ? <Pill text="Deneme odası, puan yazılmaz" tone="danger" /> : null}
+                  {connError ? <Pill text="Bağlantı koptu, yeniden deniyor…" tone="warn" /> : null}
                   {playing && me.is_player && !me.is_alive && !me.left ? (
-                    <Pill text="🤿 Maskeni kırdılar · izliyorsun" tone="danger" />
+                    <Pill text="Maskeni kırdılar, izliyorsun" tone="danger" />
                   ) : null}
                 </View>
               ) : null}
@@ -1411,7 +1446,7 @@ function Game({ roomId }: { roomId: string }) {
                       />
                     </Pressable>
                   ) : (
-                    <Text style={styles.voiceError}>{`⚠️ ${clipQueue.error}. Sorun sürerse bana bildir.`}</Text>
+                    <Text style={styles.voiceError}>{`${clipQueue.error}. Sorun sürerse bana bildir.`}</Text>
                   )}
                 </View>
               ) : null}
@@ -1429,7 +1464,7 @@ function Game({ roomId }: { roomId: string }) {
                 leftMs={voiceLeft}
                 closedText={
                   !me.is_alive
-                    ? '🔇 Elendin: konuşamazsın'
+                    ? '🔇 Elendin, konuşamazsın'
                     : phase === 'night' && !isShark
                       ? '🔇 Dalışta mikrofonlar kapalı'
                       : voiceLeft < 500 && phase !== 'reveal'
@@ -1551,7 +1586,7 @@ function Game({ roomId }: { roomId: string }) {
           ) : null}
           {isShark ? (
             <Text style={styles.sheetMuted}>
-              {'Takımın: ' +
+              {'Takım arkadaşların ' +
                 (view.players
                   .filter((p) => p.ally)
                   .map((p) => `#${p.seat} ${p.name}${p.is_alive ? '' : ' (öldü)'}`)
@@ -1560,22 +1595,8 @@ function Game({ roomId }: { roomId: string }) {
           ) : null}
           {me.notes.length ? (
             <>
-              <Text style={styles.sheetHead}>Notların</Text>
-              {[...me.notes].reverse().map((n, i) => (
-                <Text key={i} style={styles.sheetText}>
-                  {`${n.round}. gece · ` +
-                    (n.kind === 'blocked'
-                      ? 'yeteneğin kilitlendi'
-                      : n.kind === 'saved'
-                        ? `${n.name} kişisini kurtardın`
-                        : n.kind === 'scan'
-                          ? `${n.name}: ${n.team ? SK_TEAMS[n.team].name : '?'} · akıntı: ${
-                              n.visits?.map((x) => `${x.round}. gece → ${x.names.join(', ') || 'kimse'}`).join(' · ') ||
-                              'yok'
-                            }`
-                          : `${n.name} → ${n.visits?.map((x) => x.names.join(', ')).join(', ') || 'kimseyi ziyaret etmedi'}`)}
-                </Text>
-              ))}
+              <Text style={styles.sheetHead}>Gece sonuçların</Text>
+              <NightResult notes={me.notes} players={view.players} />
             </>
           ) : null}
         </SkSheet>
@@ -1595,6 +1616,32 @@ function Game({ roomId }: { roomId: string }) {
             onReport={(m) => void report(m)}
             seatOf={seatOf}
           />
+        </SkSheet>
+      ) : null}
+      {sheet === 'pick' && phase === 'lobby' && me.is_admin ? (
+        <SkSheet title="Rolünü seç" icon="🎭" onClose={() => setSheet(null)}>
+          <Text style={styles.sheetMuted}>
+            Yalnızca moderatör ve yalnızca deneme odasında (deneme oyuncusu eklenmiş, puan yazılmayan) geçerlidir. Seçtiğin
+            rol dağıtımda varsa sahibiyle yer değiştirir, yoksa senin rolün o olur.
+          </Text>
+          <RolePicker
+            value={me.picked_role ?? null}
+            busy={busy === 'pick'}
+            onPick={(r) => void act('pick', () => sharkPickRole(roomId, r))}
+          />
+          {actionError ? <Text style={styles.error}>{actionError}</Text> : null}
+        </SkSheet>
+      ) : null}
+      {(sheet === 'result' || autoResult) && me.notes.length ? (
+        <SkSheet
+          title="Gece sonucun"
+          icon="🌙"
+          onClose={() => {
+            setResultClosed(round);
+            setSheet(null);
+          }}
+        >
+          <NightResult notes={me.notes.filter((n) => n.round === round)} players={view.players} />
         </SkSheet>
       ) : null}
       {sheet === 'history' ? (

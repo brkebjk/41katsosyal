@@ -45,7 +45,8 @@ export type DialogOptions<T> = {
   check?: DialogCheck;
   /** Kırmızı, belirgin uyarı satırı (ör. “Gerçek adın görünür”). Mesajın altında çerçeveli kutuda çıkar. */
   warning?: string;
-  icon?: IconName;
+  /** null: simgesiz pencere (oyun ekranlarında) */
+  icon?: IconName | null;
   tone?: DialogTone;
   buttons: DialogButton<T>[];
   /** Pencerenin dışına dokunulunca ya da Geri tuşuna basılınca dönen değer */
@@ -59,7 +60,7 @@ export type DialogRequest = {
   toggle?: DialogToggle;
   check?: DialogCheck;
   warning?: string;
-  icon: IconName;
+  icon: IconName | null;
   tone: DialogTone;
   buttons: DialogButton<unknown>[];
   cancelValue: unknown;
@@ -114,7 +115,7 @@ export function showDialog<T>(options: DialogOptions<T>): Promise<T> {
       toggle: options.toggle,
       check: options.check,
       warning: options.warning,
-      icon: options.icon ?? DEFAULT_ICONS[tone],
+      icon: options.icon === null ? null : (options.icon ?? DEFAULT_ICONS[tone]),
       tone,
       buttons: options.buttons as DialogButton<unknown>[],
       cancelValue: options.cancelValue,
@@ -138,7 +139,7 @@ export function confirmAction(
   message: string,
   confirmLabel: string,
   destructive = false,
-  options: { icon?: IconName; tone?: DialogTone; cancelLabel?: string; warning?: string } = {},
+  options: { icon?: IconName | null; tone?: DialogTone; cancelLabel?: string; warning?: string } = {},
 ): Promise<boolean> {
   return showDialog<boolean>({
     title,
@@ -158,7 +159,7 @@ export function confirmAction(
 export function notify(
   title: string,
   message?: string,
-  options: { icon?: IconName; tone?: DialogTone; okLabel?: string; warning?: string } = {},
+  options: { icon?: IconName | null; tone?: DialogTone; okLabel?: string; warning?: string } = {},
 ): Promise<void> {
   return showDialog<void>({
     title,
