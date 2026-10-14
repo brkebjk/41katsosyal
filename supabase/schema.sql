@@ -5194,6 +5194,8 @@ begin
      where s.room_id = p_room_id and rp.is_alive
        and coalesce((s.data->'vote'->>'round')::int, 0) <> v_round;
     if v_pending = 0 then perform public._vv_resolve_vote(p_room_id); end if;
+  elsif r.state->>'phase' = 'dawn' then
+    perform public._vv_skip_check(p_room_id);
   end if;
 end $$;
 
@@ -5952,6 +5954,9 @@ begin
     'composition', coalesce(r.state->'composition', public._vv_composition(v_count)),
     'last_night', r.state->'last_night',
     'last_vote', r.state->'last_vote',
+    -- "Tartışmayı hızlı geç": sabah tartışmasında yaşayanların yarısından fazlası işaretlerse oylama hemen başlar
+    'skip', case when v_phase = 'dawn' then public._skip_tally(p_room_id, v_round)
+                   || jsonb_build_object('mine', coalesce((me.data->>'skip_round')::int, 0) = v_round) end,
     -- Asılma oyları açıktır: oylama ve sonucu sırasında herkes kimin kime oy verdiğini görür (to boş = pas)
     'votes', case when v_phase in ('vote', 'vote_result') then (
                select coalesce(jsonb_agg(jsonb_build_object('from', s.user_id, 'to', s.data->'vote'->>'target')
@@ -15829,6 +15834,9 @@ begin
            set data = data || jsonb_build_object('night', jsonb_build_object('round', v_round, 'target', v_t))
          where room_id = p_room_id and user_id = b.user_id;
       end if;
+    elsif v_phase = 'dawn' and v_age >= 5 and coalesce((b.data->>'skip_round')::int, 0) <> v_round then
+      update public.room_player_secrets set data = data || jsonb_build_object('skip_round', v_round)
+       where room_id = p_room_id and user_id = b.user_id;
     elsif v_phase = 'vote' and v_age >= 6 and coalesce((b.data->'vote'->>'round')::int, 0) <> v_round then
       v_t := null;
       if random() > 0.2 then
@@ -15841,6 +15849,7 @@ begin
        where room_id = p_room_id and user_id = b.user_id;
     end if;
   end loop;
+  if v_phase = 'dawn' then perform public._vv_skip_check(p_room_id); end if;
   -- Herkes oy verdiyse oylama sonuçlanır (oyuncunun oy vermesindeki gibi)
   if v_phase = 'vote' then
     select count(*)::int into v_pending
@@ -15874,7 +15883,7 @@ on conflict (key) do nothing;
 -- Köpekbalıklarının gece sohbeti de elenenlerin sohbet tablosunda durur (kanal: dead | shark)
 alter table public.vv_dead_chat add column if not exists channel text not null default 'dead';
 alter table public.vv_dead_chat drop constraint if exists vv_dead_chat_channel_check;
-alter table public.vv_dead_chat add constraint vv_dead_chat_channel_check check (channel in ('dead', 'shark'));
+alter table public.vv_dead_chat add constraint vv_dead_chat_channel_check check (channel in ('dead', 'shark', 'all'));
 
 create or replace function public._sk_team(p_role text)
 returns text language sql immutable set search_path = public as $$
@@ -16344,6 +16353,8 @@ begin
     perform public._sk_resolve_night(p_room_id);
   elsif r.state->>'phase' = 'vote' and public._sk_vote_pending(p_room_id, v_round) = 0 then
     perform public._sk_resolve_vote(p_room_id);
+  elsif r.state->>'phase' = 'day' then
+    perform public._sk_skip_check(p_room_id);
   end if;
 end $$;
 
@@ -16465,6 +16476,9 @@ begin
                       else jsonb_build_object('round', v_round, 'target', v_t) end)
          where room_id = p_room_id and user_id = b.user_id;
       end if;
+    elsif v_phase = 'day' and v_age >= 5 and coalesce((b.data->>'skip_round')::int, 0) <> v_round then
+      update public.room_player_secrets set data = data || jsonb_build_object('skip_round', v_round)
+       where room_id = p_room_id and user_id = b.user_id;
     elsif v_phase = 'vote' and v_age >= 6 and coalesce((b.data->'vote'->>'round')::int, 0) <> v_round then
       v_t := null;
       if random() > 0.2 then
@@ -16480,6 +16494,7 @@ begin
   if v_phase = 'vote' and public._sk_vote_pending(p_room_id, v_round) = 0 then
     perform public._sk_resolve_vote(p_room_id);
   end if;
+  if v_phase = 'day' then perform public._sk_skip_check(p_room_id); end if;
 end $$;
 
 -- Odayı kilitleyerek okur; temizlik, "buradayım", botlar ve otomatik ilerleme
@@ -16765,7 +16780,8 @@ begin
   else raise exception 'wrong_phase'; end if;
 end $$;
 
--- Sohbet: 'shark' (yaşayan köpekbalıkları, yalnızca gece) ya da 'dead' (elenenler; Medyum plajda ve oylamada da yazar)
+-- Sohbet: 'all' (herkese açık; plajda ve oylamada yaşayanlar yazar, odadaki herkes okur), 'shark' (yaşayan
+-- köpekbalıkları, yalnızca gece) ya da 'dead' (elenenler; Medyum plajda ve oylamada da yazar). Fısıltı yoktur.
 create or replace function public.sk_say(p_room_id uuid, p_channel text, p_body text)
 returns void language plpgsql security definer set search_path = public as $$
 declare
@@ -16787,7 +16803,10 @@ begin
     join public.room_player_secrets s on s.room_id = rp.room_id and s.user_id = rp.user_id
    where rp.room_id = p_room_id and rp.user_id = v.id and rp.left_at is null;
   if v_name is null then raise exception 'not_in_room'; end if;
-  if p_channel = 'shark' then
+  if p_channel = 'all' then
+    if not v_alive then raise exception 'not_alive'; end if;
+    if r.state->>'phase' not in ('day', 'vote', 'vote_result') then raise exception 'day_only'; end if;
+  elsif p_channel = 'shark' then
     if not v_alive or public._sk_team(v_role) <> 'shark' then raise exception 'forbidden'; end if;
     if r.state->>'phase' <> 'night' then raise exception 'night_only'; end if;
   elsif p_channel = 'dead' then
@@ -16803,7 +16822,8 @@ begin
     raise exception 'chat_limit';
   end if;
   insert into public.vv_dead_chat (room_id, user_id, name, body, channel)
-  values (p_room_id, v.id, case when v_role = 'medium' and v_alive then v_name || ' (Medyum)' else v_name end,
+  -- "(Medyum)" etiketi yalnızca ölülerin sohbetinde (herkese açık yazışmada Medyum'un kimliği belli olmamalı)
+  values (p_room_id, v.id, case when v_role = 'medium' and v_alive and p_channel = 'dead' then v_name || ' (Medyum)' else v_name end,
           v_body, p_channel);
 end $$;
 
@@ -16918,6 +16938,9 @@ begin
                  join public.room_players rp on rp.room_id = s.room_id and rp.user_id = s.user_id
                 where s.room_id = p_room_id and (s.data->'vote'->>'round')::int = v_round)
              else '[]'::jsonb end,
+    -- "Tartışmayı hızlı geç": plajda yaşayanların yarısından fazlası işaretlerse kafes oylaması hemen başlar
+    'skip', case when v_phase = 'day' then public._skip_tally(p_room_id, v_round)
+                   || jsonb_build_object('mine', coalesce((me.data->>'skip_round')::int, 0) = v_round) end,
     'pending', case when v_phase = 'vote' then jsonb_build_object(
                  'total', (select count(*) from public.room_players where room_id = p_room_id and is_alive and left_at is null),
                  'done', (select count(*) from public.room_player_secrets s
@@ -16959,6 +16982,12 @@ begin
     'voice', case when r.remote and r.status = 'playing' then public._sk_clips_for(p_room_id, v.id) else '[]'::jsonb end,
     'server_now', now(),
     -- Sohbetler: köpekbalıkları (yaşayan köpekbalıkları), elenenler (elenenler; Medyum plajda/oylamada); bitince herkes
+    -- Herkese açık yazışma: odadaki herkes okur
+    'chat', case when r.status in ('playing', 'finished') then (
+              select coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'name', d.name, 'body', d.body, 'at', d.created_at,
+                                                           'mine', d.user_id = v.id) order by d.created_at), '[]'::jsonb)
+                from (select * from public.vv_dead_chat where room_id = p_room_id and channel = 'all'
+                       order by created_at desc limit 60) d) end,
     'shark_chat', case when (v_shark and v_alive) or v_omni or r.status = 'finished' then (
                     select coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'name', d.name, 'body', d.body, 'at', d.created_at,
                                                                  'mine', d.user_id = v.id) order by d.created_at), '[]'::jsonb)
@@ -17069,7 +17098,7 @@ end $$;
 
 -- Ses mesajının kendisi (dinleyebilen kişiye)
 create or replace function public.sk_voice_get(p_id uuid)
-returns text language plpgsql stable security definer set search_path = public as $$
+returns text language plpgsql volatile security definer set search_path = public as $$
 declare
   v public.profiles;
   c public.sk_voice_clips;
@@ -17082,7 +17111,7 @@ end $$;
 
 -- Moderatör: şikâyet edilen ses mesajını dinler (web panel)
 create or replace function public.admin_get_voice_clip(p_id uuid)
-returns text language plpgsql stable security definer set search_path = public as $$
+returns text language plpgsql volatile security definer set search_path = public as $$
 begin
   perform public._require_admin();
   return (select audio from public.sk_voice_clips where id = p_id);
@@ -17101,7 +17130,7 @@ $$;
 
 -- Uzaktan oyunda bugün ve bu ay kalan puanlı oyun hakkı (oyun giriş ekranındaki sayaç). Yan yana oyunda sınır yoktur.
 create or replace function public.my_remote_caps()
-returns jsonb language plpgsql stable security definer set search_path = public as $$
+returns jsonb language plpgsql volatile security definer set search_path = public as $$
 declare
   v public.profiles;
   v_today timestamptz := date_trunc('day', now() at time zone 'Europe/Istanbul') at time zone 'Europe/Istanbul';
@@ -17117,6 +17146,83 @@ begin
     'pct', least(80, greatest(10, public.setting_int('pts_remote_pct', 50))),
     'top_cap', public.setting_int('pts_game_top_cap', 12),
     'min_players', public.setting_int('pts_game_min_players', 4));
+end $$;
+
+
+-- ---- "Tartışmayı hızlı geç" (Vampir–Köylü sabahı, Köpekbalığı Kafesi plajı) ---------------------------------------
+-- Yaşayan her oyuncu işaretleyebilir / işaretini kaldırabilir. Yaşayanların yarısından fazlası işaretlerse tartışma
+-- hemen biter ve oylama başlar (bütün oyun şekillerinde). İşaret o tura aittir (gizli kayıtta skip_round).
+create or replace function public._skip_tally(p_room_id uuid, p_round int)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('yes', t.yes, 'alive', t.alive, 'needed', t.alive / 2 + 1)
+    from (select (count(*) filter (where coalesce((s.data->>'skip_round')::int, 0) = p_round))::int as yes,
+                 count(*)::int as alive
+            from public.room_players rp
+            join public.room_player_secrets s on s.room_id = rp.room_id and s.user_id = rp.user_id
+           where rp.room_id = p_room_id and rp.is_alive and rp.left_at is null) t;
+$$;
+
+create or replace function public._skip_set(p_room_id uuid, p_user uuid, p_round int, p_on boolean)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from public.room_players
+                  where room_id = p_room_id and user_id = p_user and is_alive and left_at is null) then
+    raise exception 'you_are_dead';
+  end if;
+  update public.room_player_secrets
+     set data = case when coalesce(p_on, false) then data || jsonb_build_object('skip_round', p_round)
+                     else data - 'skip_round' end
+   where room_id = p_room_id and user_id = p_user;
+end $$;
+
+create or replace function public._vv_skip_check(p_room_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  t jsonb;
+begin
+  select * into r from public.game_rooms where id = p_room_id;
+  if r.status <> 'playing' or r.state->>'phase' <> 'dawn' then return; end if;
+  t := public._skip_tally(p_room_id, (r.state->>'round')::int);
+  if (t->>'alive')::int > 0 and (t->>'yes')::int >= (t->>'needed')::int then perform public._vv_go_vote(p_room_id); end if;
+end $$;
+
+create or replace function public._sk_skip_check(p_room_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  t jsonb;
+begin
+  select * into r from public.game_rooms where id = p_room_id;
+  if r.status <> 'playing' or r.state->>'phase' <> 'day' then return; end if;
+  t := public._skip_tally(p_room_id, (r.state->>'round')::int);
+  if (t->>'alive')::int > 0 and (t->>'yes')::int >= (t->>'needed')::int then perform public._sk_go_vote(p_room_id); end if;
+end $$;
+
+create or replace function public.vv_skip_discussion(p_room_id uuid, p_on boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+begin
+  v := public._require_user();
+  r := public._vv_room(p_room_id);
+  if r.status <> 'playing' or r.state->>'phase' <> 'dawn' then raise exception 'wrong_phase'; end if;
+  perform public._skip_set(p_room_id, v.id, (r.state->>'round')::int, p_on);
+  perform public._vv_skip_check(p_room_id);
+end $$;
+
+create or replace function public.sk_skip_discussion(p_room_id uuid, p_on boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+begin
+  v := public._require_user();
+  r := public._sk_room(p_room_id);
+  if r.status <> 'playing' or r.state->>'phase' <> 'day' then raise exception 'wrong_phase'; end if;
+  perform public._skip_set(p_room_id, v.id, (r.state->>'round')::int, p_on);
+  perform public._sk_skip_check(p_room_id);
 end $$;
 
 -- ---- GEÇİCİ: Yazı düzenleme modu ---------------------------------------------------------------------------------
@@ -17454,6 +17560,8 @@ grant execute on function public.sk_say(uuid, text, text) to authenticated;
 grant execute on function public.sk_voice_post(uuid, text, int) to authenticated;
 grant execute on function public.sk_voice_get(uuid) to authenticated;
 grant execute on function public.my_remote_caps() to authenticated;
+grant execute on function public.vv_skip_discussion(uuid, boolean) to authenticated;
+grant execute on function public.sk_skip_discussion(uuid, boolean) to authenticated;
 grant execute on function public.admin_get_voice_clip(uuid) to authenticated;
 grant execute on function public.get_room_code(uuid) to authenticated;
 grant execute on function public.leave_all_rooms() to authenticated;

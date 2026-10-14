@@ -5197,6 +5197,8 @@ begin
      where s.room_id = p_room_id and rp.is_alive
        and coalesce((s.data->'vote'->>'round')::int, 0) <> v_round;
     if v_pending = 0 then perform public._vv_resolve_vote(p_room_id); end if;
+  elsif r.state->>'phase' = 'dawn' then
+    perform public._vv_skip_check(p_room_id);
   end if;
 end $$;
 
@@ -5955,6 +5957,9 @@ begin
     'composition', coalesce(r.state->'composition', public._vv_composition(v_count)),
     'last_night', r.state->'last_night',
     'last_vote', r.state->'last_vote',
+    -- "Tartışmayı hızlı geç": sabah tartışmasında yaşayanların yarısından fazlası işaretlerse oylama hemen başlar
+    'skip', case when v_phase = 'dawn' then public._skip_tally(p_room_id, v_round)
+                   || jsonb_build_object('mine', coalesce((me.data->>'skip_round')::int, 0) = v_round) end,
     -- Asılma oyları açıktır: oylama ve sonucu sırasında herkes kimin kime oy verdiğini görür (to boş = pas)
     'votes', case when v_phase in ('vote', 'vote_result') then (
                select coalesce(jsonb_agg(jsonb_build_object('from', s.user_id, 'to', s.data->'vote'->>'target')

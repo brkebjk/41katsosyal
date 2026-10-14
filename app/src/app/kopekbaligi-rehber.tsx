@@ -30,6 +30,7 @@ export default function SharkGuideScreen() {
       onBack={() => (router.canGoBack() ? router.back() : router.replace('/games'))}
       backLabel="Geri"
     >
+      <RoleTable />
       {sec(
         'amac',
         '🦈',
@@ -70,8 +71,12 @@ export default function SharkGuideScreen() {
         <>
           <P>Oylar herkese açıktır. Her avatarın sol üstünde büyük, sarı bir koltuk numarası vardır (1–16).</P>
           <P>
-            Avatarın üstündeki tahta tabela, o kişinin kime oy verdiğini koltuk numarasıyla gösterir: “→7” = 7 numaraya oy
-            verdi. “PAS” = oy kullanmadı.
+            Avatarın altındaki tahta tabela, o kişinin kime oy verdiğini koltuk numarasıyla gösterir; tabeladaki ok oy
+            verdiği kişinin avatarına döner. “PAS” = oy kullanmadı.
+          </P>
+          <P>
+            Avatarın içinde, alt ortadaki küçük simge rolü gösterir. Bunu yalnızca görmeye hakkı olanlar görür: sen kendi
+            rolünü, köpekbalıkları takım arkadaşlarını, herkes açıklanan rolleri; oyun bitince herkes hepsini.
           </P>
           <P>Avatarın sağ üstündeki kırmızı sayı, o kişinin aldığı kafes oyudur.</P>
           <P>Kimliğini açmış Sahil Güvenlik Komutanı’nın oyu 2 sayılır; tabelası sarıdır ve “×2” yazar.</P>
@@ -206,6 +211,70 @@ export default function SharkGuideScreen() {
   );
 }
 
+/** Bütün rollerin kısa özeti (rehberin en üstünde) */
+const SHORT: Record<SkRole, string> = {
+  alpha: 'Dalışta avı seçer; oylar eşitse son söz onundur.',
+  tiger: 'Dalışta av + birini izler: o gece kimi ziyaret ettiğini öğrenir.',
+  hammer: 'Dalışta av + bir insanın yeteneğini kilitler.',
+  nurse: 'Dalışta av + bir köpekbalığını korur (Sörfçü ve ertesi gün Zıpkın).',
+  shark: 'Dalışta takımıyla avı seçer.',
+  lifeguard: 'Dalışta birini korur; kendini yalnızca 1 kez.',
+  oceanographer: 'Dalışta birine bakar: takımı + son 2 gecenin akıntısı.',
+  spearman: 'Plajda tek zıpkın (2. günden). Masum vursa da ölmez.',
+  marshal: 'Plajda kimliğini açar; kafes oyu 2 sayılır.',
+  medium: 'Plajda ve oylamada ölülerin sohbetini okur, yazar.',
+  tourist: 'Özel yeteneği yok; konuşur, oy verir.',
+  squid: 'Dalışta birini boğar (kalkan deler); ısırılamaz. Tek kalırsa kazanır.',
+  surfer: 'Dalışta işaretler ya da Telsiz Patlat. Tek kalırsa kazanır.',
+  scavenger: 'Oylamayla kafese atılırsa oyun biter, yalnız o kazanır.',
+};
+
+const TABLE_ORDER: SkRole[] = [
+  'alpha',
+  'tiger',
+  'hammer',
+  'nurse',
+  'shark',
+  'lifeguard',
+  'oceanographer',
+  'spearman',
+  'marshal',
+  'medium',
+  'tourist',
+  'squid',
+  'surfer',
+  'scavenger',
+];
+
+function RoleTable() {
+  return (
+    <View style={styles.rtable} accessibilityLabel="Bütün roller tablosu">
+      <View style={[styles.rrow, styles.rhead]}>
+        <Text style={[styles.rth, styles.rcol1]}>Rol</Text>
+        <Text style={[styles.rth, styles.rcol2]}>Takım</Text>
+        <Text style={[styles.rth, styles.rcol3]}>Özelliği</Text>
+      </View>
+      {TABLE_ORDER.map((k) => {
+        const r = SK_ROLES[k];
+        const t = SK_TEAMS[r.team];
+        return (
+          <View key={k} style={styles.rrow}>
+            <View style={[styles.rcol1, styles.rname]}>
+              <Text style={styles.remoji}>{r.emoji}</Text>
+              <Text style={[styles.rnameText, { color: r.color }]} numberOfLines={2}>
+                {r.name}
+              </Text>
+            </View>
+            <Text style={[styles.rteam, styles.rcol2, { color: t.color }]}>{t.emoji}</Text>
+            <Text style={[styles.rtext, styles.rcol3]}>{SHORT[k]}</Text>
+          </View>
+        );
+      })}
+      <Text style={styles.rnote}>🦈 Köpekbalığı · 🏖️ İnsan · 🌀 Tarafsız. Ayrıntılar aşağıdaki bölümlerde.</Text>
+    </View>
+  );
+}
+
 function Section({ open, onToggle, icon, title, children }: {
   open: boolean;
   onToggle: () => void;
@@ -311,6 +380,33 @@ const styles = StyleSheet.create({
   roleEmoji: { fontSize: 28 },
   roleName: { fontFamily: fonts.black, fontSize: fontSizes.md },
   roleNight: { color: colors.textMuted, fontSize: 12.5, lineHeight: 18 },
+  rtable: {
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: '#48CAE4',
+    backgroundColor: colors.surface,
+    overflow: 'hidden',
+  },
+  rrow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  rhead: { backgroundColor: colors.surfaceAlt, borderTopWidth: 0 },
+  rth: { color: colors.text, fontFamily: fonts.extra, fontSize: 12.5 },
+  rcol1: { flex: 1.25 },
+  rcol2: { width: 40, textAlign: 'center' },
+  rcol3: { flex: 2 },
+  rname: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  remoji: { fontSize: 18 },
+  rnameText: { flexShrink: 1, fontFamily: fonts.extra, fontSize: 12.5 },
+  rteam: { fontSize: 16 },
+  rtext: { color: colors.text, fontSize: 12.5, lineHeight: 17 },
+  rnote: { color: colors.textMuted, fontSize: 11.5, padding: spacing.sm },
   table: { borderRadius: radii.md, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
   tr: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   thRow: { backgroundColor: colors.surfaceAlt, borderTopWidth: 0 },

@@ -29,7 +29,7 @@ import {
 import { PushToTalk, useClipQueue } from '@/components/SharkVoice';
 import { SoundToggle } from '@/components/SoundToggle';
 import { InfoCard, useElapsedSeconds } from '@/components/VampireParts';
-import { G, GameButton, Glass, Pill, ToolButton } from '@/components/VampireStage';
+import { G, GameButton, Glass, Pill, SkipToggle, ToolButton } from '@/components/VampireStage';
 import { confirmAction, notify, showDialog } from '@/lib/dialog';
 import { SHARK_RANK_ITEM } from '@/lib/gameInfo';
 import { fmtPts } from '@/lib/labels';
@@ -51,6 +51,7 @@ import {
   sharkReady,
   sharkRevealMarshal,
   sharkSay,
+  sharkSkip,
   sharkSpear,
   sharkVote,
   startShark,
@@ -129,7 +130,9 @@ function Game({ roomId }: { roomId: string }) {
   /** Seçili kişi: hangi aşamada / hangi iş için */
   const [pick, setPick] = useState<{ key: string; id: string } | null>(null);
   const [slot, setSlot] = useState<{ key: string; slot: Slot } | null>(null);
-  const [sheet, setSheet] = useState<'role' | 'shark' | 'dead' | null>(null);
+  const [sheet, setSheet] = useState<'role' | 'shark' | 'dead' | 'chat' | null>(null);
+  /** Herkese açık yazışmada en son görülen mesaj sayısı (yeni mesaj gelince çubuk yanar) */
+  const [chatSeen, setChatSeen] = useState(0);
   const [pointsOpen, setPointsOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   /** Bu oyunda rol çarkı döndü mü (bu telefonda) */
@@ -405,10 +408,10 @@ function Game({ roomId }: { roomId: string }) {
     let sign: Seat['sign'] = null;
     if (showVotes && v) {
       sign = v.to
-        ? { text: `→${seatOf(v.to) ?? '?'}${v.weight > 1 ? ' ×2' : ''}`, kind: v.weight > 1 ? 'double' : 'vote' }
+        ? { text: `${seatOf(v.to) ?? '?'}${v.weight > 1 ? ' ×2' : ''}`, kind: v.weight > 1 ? 'double' : 'vote', target: v.to }
         : { text: 'PAS', kind: 'pass' };
     } else if (phase === 'night' && (isShark || me.is_omniscient) && p.hunt_pick && (p.ally || p.is_me || me.is_omniscient)) {
-      sign = { text: `🦈${seatOf(p.hunt_pick) ?? '?'}`, kind: 'hunt' };
+      sign = { text: `🦈${seatOf(p.hunt_pick) ?? '?'}`, kind: 'hunt', target: p.hunt_pick };
     }
     const known = p.role && (!p.is_me || phase === 'ended') ? SK_ROLES[p.role] : null;
     let label: Seat['label'] = null;
@@ -449,6 +452,8 @@ function Game({ roomId }: { roomId: string }) {
       deadLabel,
       ally: p.ally,
       marked: role === 'surfer' && marks.has(p.id),
+      // Rol simgesi: sunucu yalnızca görmeye hakkın olan rolleri gönderir (kendin, takımın, açıklananlar, anlatıcı, oyun sonu)
+      roleEmoji: p.role ? { emoji: SK_ROLES[p.role].emoji, color: SK_ROLES[p.role].color } : null,
     };
   });
 
@@ -818,6 +823,13 @@ function Game({ roomId }: { roomId: string }) {
             }
           />
         ) : null}
+        {view.skip && alivePlayer && !spearMode ? (
+          <SkipToggle
+            skip={view.skip}
+            busy={busy === 'skipdisc'}
+            onToggle={(on) => void act('skipdisc', () => sharkSkip(roomId, on))}
+          />
+        ) : null}
         {role === 'medium' && alivePlayer ? (
           <GameButton label="🪸 Ölülerin frekansını aç" variant="ghost" onPress={() => setSheet('dead')} />
         ) : null}
@@ -981,7 +993,7 @@ function Game({ roomId }: { roomId: string }) {
   const fg = light ? '#0B132B' : '#FFFFFF';
 
   // ---- Sohbet gönderme / bildirme ----------------------------------------------------------------
-  async function say(channel: 'shark' | 'dead', text: string): Promise<string | null> {
+  async function say(channel: 'all' | 'shark' | 'dead', text: string): Promise<string | null> {
     const res = await sharkSay(roomId, channel, text);
     if (res.error) return res.error;
     await load();
@@ -1048,6 +1060,14 @@ function Game({ roomId }: { roomId: string }) {
   }
 
   const sharkChatOpen = phase === 'night' && isShark && alivePlayer;
+  const chat = view.chat ?? [];
+  const chatOpen = alivePlayer && (phase === 'day' || phase === 'vote' || phase === 'vote_result');
+  const lastChat = chat.length > 0 ? chat[chat.length - 1] : null;
+  const chatHot = chat.length > chatSeen && !!lastChat && !lastChat.mine;
+  const openChat = () => {
+    setChatSeen(chat.length);
+    setSheet('chat');
+  };
   const deadCount = view.dead_chat?.length ?? 0;
 
   return (
@@ -1055,7 +1075,8 @@ function Game({ roomId }: { roomId: string }) {
       <StatusBar style={light ? 'dark' : 'light'} />
       <SharkBackdrop scene={scene} />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <BackBlocker enabled={blocking} onBack={requestLeave} />
+        {/* Oyun ekranında Geri tuşu ve kaydırarak geri dönme çalışmaz: yalnızca kırmızı çıkış düğmesiyle çıkılır */}
+        <BackBlocker enabled onBack={() => {}} />
         <Shake shakeKey={shakeKey}>
           {/* Üst şerit */}
           <View style={styles.top}>
@@ -1064,9 +1085,10 @@ function Game({ roomId }: { roomId: string }) {
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel={blocking ? 'Oyundan ayrıl' : 'Oyunlara dön'}
-              style={({ pressed }) => [styles.topBtn, light && styles.topBtnLight, pressed && styles.pressed]}
+              style={({ pressed }) => [styles.topBtn, styles.exitBtn, pressed && styles.pressed]}
+              testID="sk-exit"
             >
-              <Ionicons name={blocking ? 'exit-outline' : 'chevron-back'} size={20} color={fg} />
+              <Ionicons name="exit-outline" size={21} color="#FFFFFF" />
             </Pressable>
             <View style={styles.flex} accessibilityRole="header">
               <Text style={[styles.title, { color: fg }, !light && styles.shadow]} numberOfLines={1}>
@@ -1107,6 +1129,9 @@ function Game({ roomId }: { roomId: string }) {
             {/* Bas-konuş (uzaktan oda) */}
             {view.remote && playing && me.is_player && !me.left ? (
               <>
+                {clipQueue.error && !clipQueue.speaking ? (
+                  <Text style={styles.voiceError}>{`⚠️ ${clipQueue.error}. Sorun sürerse bana bildir.`}</Text>
+                ) : null}
                 {clipQueue.speaking ? (
                   <Pressable
                     onLongPress={() => {
@@ -1156,6 +1181,29 @@ function Game({ roomId }: { roomId: string }) {
                   ) : null}
                 </ScrollView>
               </Glass>
+            ) : null}
+
+            {/* Herkese açık yazışma: son mesaj + yazma çubuğu (dokununca açılır) */}
+            {view.chat && (playing || phase === 'ended') && !me.left ? (
+              <Pressable
+                onPress={openChat}
+                accessibilityRole="button"
+                accessibilityLabel="Yazışmayı aç"
+                style={({ pressed }) => [styles.chatBar, chatHot && styles.chatBarHot, pressed && styles.pressed]}
+                testID="sk-chat-bar"
+              >
+                <Ionicons name="chatbubble-ellipses" size={16} color={chatHot ? '#06201D' : '#FFFFFF'} />
+                <Text style={[styles.chatBarText, chatHot && styles.chatBarTextHot]} numberOfLines={1}>
+                  {lastChat
+                    ? `${lastChat.mine ? 'Sen' : lastChat.name}: ${lastChat.body}`
+                    : chatOpen
+                      ? 'Mesaj yaz…'
+                      : phase === 'night'
+                        ? 'Dalışta herkes susar'
+                        : 'Henüz mesaj yok'}
+                </Text>
+                {chatOpen ? <Ionicons name="create-outline" size={17} color={chatHot ? '#06201D' : '#48CAE4'} /> : null}
+              </Pressable>
             ) : null}
 
             {/* Alt şerit */}
@@ -1248,6 +1296,22 @@ function Game({ roomId }: { roomId: string }) {
           ) : null}
         </SkSheet>
       ) : null}
+      {sheet === 'chat' && view.chat ? (
+        <SkSheet title="Yazışma" icon="💬" onClose={() => setSheet(null)}>
+          <Text style={styles.sheetMuted}>
+            Plajda ve oylamada yaşayanlar yazar; odadaki herkes okur. Dalışta yazışma kapalıdır. Mesaja uzun basarak
+            bildirebilirsin.
+          </Text>
+          <ChatBox
+            messages={view.chat}
+            canWrite={chatOpen}
+            placeholder="Herkese yaz…"
+            emptyText="Henüz mesaj yok."
+            onSend={(t) => say('all', t)}
+            onReport={(m) => void report(m)}
+          />
+        </SkSheet>
+      ) : null}
       {sheet === 'shark' && view.shark_chat ? (
         <SkSheet title="Köpekbalığı frekansı" icon="🦈" onClose={() => setSheet(null)}>
           <Text style={styles.sheetMuted}>Yalnızca köpekbalıkları görür. Yalnızca dalışta (gece) yazılabilir.</Text>
@@ -1322,6 +1386,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(8, 10, 20, 0.5)',
   },
   topBtnLight: { backgroundColor: 'rgba(255,255,255,0.7)' },
+  exitBtn: { backgroundColor: '#D9304F', borderWidth: 2, borderColor: '#FFFFFF' },
   title: { fontFamily: fonts.black, fontSize: 18 },
   shadow: { textShadowColor: 'rgba(0,0,0,0.8)', textShadowRadius: 8 },
   subtitle: { fontFamily: fonts.semi, fontSize: 11.5 },
@@ -1351,6 +1416,20 @@ const styles = StyleSheet.create({
   error: { color: G.redSoft, fontSize: 12.5, lineHeight: 17 },
   tools: { flexDirection: 'row', justifyContent: 'space-around', gap: 4, paddingTop: 2 },
   toolsLight: { backgroundColor: 'rgba(11, 19, 43, 0.75)', borderRadius: 14, paddingVertical: 4 },
+  chatBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    height: 38,
+    paddingHorizontal: 12,
+    borderRadius: 19,
+    backgroundColor: 'rgba(11, 19, 43, 0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(72, 202, 228, 0.5)',
+  },
+  chatBarHot: { backgroundColor: '#48CAE4', borderColor: '#48CAE4' },
+  chatBarText: { flex: 1, color: '#FFFFFF', fontFamily: fonts.semi, fontSize: 13 },
+  chatBarTextHot: { color: '#06201D' },
   speaking: {
     alignSelf: 'center',
     paddingHorizontal: 12,
@@ -1359,6 +1438,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(52, 211, 153, 0.9)',
   },
   speakingText: { color: '#06201D', fontFamily: fonts.extra, fontSize: 12.5 },
+  voiceError: { alignSelf: 'center', color: '#FF8A98', fontFamily: fonts.extra, fontSize: 12.5 },
   chip: {
     flex: 1,
     height: 36,

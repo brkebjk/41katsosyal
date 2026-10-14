@@ -129,8 +129,12 @@ export type SkView = {
     self_used: boolean;
     spear_used: boolean;
   };
+  /** Herkese açık yazışma (plajda ve oylamada yaşayanlar yazar) */
+  chat?: SkMsg[] | null;
   shark_chat: SkMsg[] | null;
   dead_chat: SkMsg[] | null;
+  /** "Tartışmayı hızlı geç": plajda kaç kişi işaretledi, kaç gerekli, ben işaretledim mi */
+  skip?: { yes: number; alive: number; needed: number; mine: boolean } | null;
   /** Uzaktan oda: son 2 dakikanın dinleyebildiğin ses mesajları (künye; ses ayrıca alınır) */
   voice?: SkClip[];
 };
@@ -164,6 +168,8 @@ const TEXT: Record<string, string> = {
   invalid_body: 'Mesaj 1–120 karakter olmalı.',
   links_not_allowed: 'Bağlantı (link), web adresi ve e-posta paylaşılamaz.',
   night_only: 'Köpekbalıkları yalnızca dalışta (gece) yazışabilir.',
+  day_only: 'Herkese açık yazışma plajda ve oylamada açıktır; dalışta herkes susar.',
+  not_alive: 'Elenenler buraya yazamaz; ölülerin sohbetini kullan.',
   not_dead: 'Bu sohbete yalnızca elenenler (ve plajda Medyum) yazabilir.',
   rate_limited: 'Biraz yavaş: art arda çok hızlı yazıyorsun.',
   chat_limit: 'Bu oyunda yazabileceğin mesaj sınırına ulaştın.',
@@ -194,9 +200,11 @@ export const sharkSpear = (roomId: string, target: string) => call('sk_spear', r
 export const sharkRevealMarshal = (roomId: string) => call('sk_reveal_marshal', roomId);
 /** Kafes oyu: hedef boş = pas */
 export const sharkVote = (roomId: string, target: string | null) => call('sk_vote', roomId, { p_target: target });
+/** "Tartışmayı hızlı geç" işaretini koy / kaldır */
+export const sharkSkip = (roomId: string, on: boolean) => call('sk_skip_discussion', roomId, { p_on: on });
 /** Yönetici / anlatıcı: sıradaki aşamaya geç */
 export const sharkNext = (roomId: string) => call('sk_next', roomId);
-export const sharkSay = (roomId: string, channel: 'shark' | 'dead', body: string) =>
+export const sharkSay = (roomId: string, channel: 'all' | 'shark' | 'dead', body: string) =>
   call('sk_say', roomId, { p_channel: channel, p_body: body });
 
 const VOICE_TEXT: Record<string, string> = {

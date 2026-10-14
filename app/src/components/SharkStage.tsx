@@ -511,8 +511,11 @@ export type Seat = {
   selectable?: boolean;
   /** Seçilemez (soluk) */
   dim?: boolean;
-  /** Başının üstündeki tabela: kime oy verdi (koltuk no) ya da 'PAS'; köpekbalığı av seçimi için 'hunt' türü */
-  sign?: { text: string; kind: 'vote' | 'pass' | 'hunt' | 'double' } | null;
+  /**
+   * Avatarın altındaki tabela: kime oy verdi (koltuk no) ya da 'PAS'; köpekbalığı av seçimi için 'hunt' türü.
+   * `target` doluysa tabeladaki ok o kişinin avatarına döner.
+   */
+  sign?: { text: string; kind: 'vote' | 'pass' | 'hunt' | 'double'; target?: string | null } | null;
   /** Aldığı (ağırlıklı) kafes oyu */
   votesIn?: number;
   /** Avatarın sağ altındaki durum rozeti (emoji) */
@@ -525,11 +528,13 @@ export type Seat = {
   ally?: boolean;
   /** Sörfçü'nün işaretlediği kişi */
   marked?: boolean;
+  /** Rol simgesi (avatarın alt ortasında). Yalnızca görmeye hakkın olan roller gelir (sunucu süzer). */
+  roleEmoji?: { emoji: string; color: string } | null;
 };
 
 const GAP = 6;
-/** Avatarın dışındaki yükseklik: tabela, ad ve alt satır */
-const EXTRA = 66;
+/** Avatarın dışındaki yükseklik: ad, alt satır ve alttaki tabela */
+const EXTRA = 70;
 const MAX_AVATAR = 78;
 
 function fit(n: number, w: number, h: number): { cols: number; size: number } {
@@ -566,6 +571,24 @@ export function SeatGrid({
   };
   const { cols, size } = box ? fit(seats.length, box.w, box.h) : { cols: 4, size: 0 };
   const tileW = box ? Math.floor((box.w - GAP * (cols - 1)) / cols) : 0;
+  // Tabeladaki okun yönü: oy verenin avatarından oy verilenin avatarına (ızgaradaki konumlarından hesaplanır;
+  // satırlar ortalandığı için eksik son satırın kayması da hesaba katılır)
+  const tileH = size + EXTRA;
+  const center = new Map<string, { x: number; y: number }>();
+  seats.forEach((s, i) => {
+    const row = Math.floor(i / cols);
+    const inRow = Math.min(cols, seats.length - row * cols);
+    const offset = box ? (box.w - (inRow * tileW + (inRow - 1) * GAP)) / 2 : 0;
+    const col = i - row * cols;
+    center.set(s.p.id, { x: offset + col * (tileW + GAP) + tileW / 2, y: row * (tileH + GAP) });
+  });
+  const angleOf = (from: string, to: string | null | undefined): number | null => {
+    if (!to) return null;
+    const a = center.get(from);
+    const b = center.get(to);
+    if (!a || !b) return null;
+    return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+  };
   return (
     <View style={styles.gridBox} onLayout={onLayout}>
       {box && size > 0 ? (
@@ -580,6 +603,7 @@ export function SeatGrid({
                 selected={selected === s.p.id}
                 accent={accent}
                 light={!!light}
+                arrow={angleOf(s.p.id, s.sign?.target)}
                 onPress={onPress}
               />
             ))}
@@ -597,6 +621,7 @@ function SeatTile({
   selected,
   accent,
   light,
+  arrow,
   onPress,
 }: {
   seat: Seat;
@@ -605,6 +630,8 @@ function SeatTile({
   selected: boolean;
   accent: string;
   light: boolean;
+  /** Tabeladaki okun açısı (derece; 0 = sağa) */
+  arrow: number | null;
   onPress?: (s: Seat) => void;
 }) {
   const p = seat.p;
@@ -633,26 +660,7 @@ function SeatTile({
       accessibilityLabel={label}
       style={({ pressed }) => [styles.tile, { width }, seat.dim && styles.dim, pressed && styles.pressed]}
     >
-      {/* Tabela: kime oy verdiği (koltuk numarası) */}
-      <View style={styles.signSlot}>
-        {seat.sign ? (
-          <View style={styles.signWrap}>
-            <View
-              style={[
-                styles.sign,
-                seat.sign.kind === 'pass' && styles.signPass,
-                seat.sign.kind === 'hunt' && styles.signHunt,
-                seat.sign.kind === 'double' && styles.signDouble,
-              ]}
-            >
-              <Text style={[styles.signText, seat.sign.kind === 'hunt' && styles.signTextHunt]}>{seat.sign.text}</Text>
-            </View>
-            <View style={styles.signStick} />
-          </View>
-        ) : null}
-      </View>
-
-      <View style={{ width: outer, height: outer }}>
+      <View style={{ width: outer, height: outer, marginTop: 6 }}>
         {selected ? (
           <Animated.View
             style={[
@@ -700,6 +708,11 @@ function SeatTile({
             <Text style={styles.badgeText}>{seat.badge}</Text>
           </View>
         ) : null}
+        {seat.roleEmoji ? (
+          <View style={[styles.roleBadge, { borderColor: seat.roleEmoji.color }]}>
+            <Text style={styles.badgeText}>{seat.roleEmoji.emoji}</Text>
+          </View>
+        ) : null}
         {p.marshal ? (
           <View style={[styles.badge, styles.badgeLeft]}>
             <Text style={styles.badgeText}>🎖️</Text>
@@ -727,6 +740,29 @@ function SeatTile({
       >
         {dead ? (seat.deadLabel ?? 'Elendi') : (seat.label?.text ?? ' ')}
       </Text>
+      {/* Tabela (avatarın altında): kime oy verdiği; ok oy verilen kişinin avatarına döner */}
+      <View style={styles.signSlot}>
+        {seat.sign ? (
+          <View
+            style={[
+              styles.sign,
+              seat.sign.kind === 'pass' && styles.signPass,
+              seat.sign.kind === 'hunt' && styles.signHunt,
+              seat.sign.kind === 'double' && styles.signDouble,
+            ]}
+          >
+            {arrow !== null ? (
+              <Ionicons
+                name="arrow-forward"
+                size={15}
+                color={seat.sign.kind === 'hunt' ? '#FF8A98' : '#3B220B'}
+                style={{ transform: [{ rotate: `${Math.round(arrow)}deg` }] }}
+              />
+            ) : null}
+            <Text style={[styles.signText, seat.sign.kind === 'hunt' && styles.signTextHunt]}>{seat.sign.text}</Text>
+          </View>
+        ) : null}
+      </View>
     </Pressable>
   );
 }
@@ -981,9 +1017,10 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', columnGap: GAP, rowGap: GAP },
   tile: { alignItems: 'center' },
   dim: { opacity: 0.38 },
-  signSlot: { height: 30, justifyContent: 'flex-end', alignItems: 'center', marginBottom: -2, zIndex: 3 },
-  signWrap: { alignItems: 'center' },
+  signSlot: { height: 26, justifyContent: 'flex-start', alignItems: 'center', marginTop: 2 },
   sign: {
+    flexDirection: 'row',
+    gap: 2,
     minWidth: 34,
     paddingHorizontal: 6,
     height: 22,
@@ -999,7 +1036,6 @@ const styles = StyleSheet.create({
   signDouble: { backgroundColor: '#FFB703', borderColor: '#7A4A1E' },
   signText: { color: '#3B220B', fontFamily: fonts.black, fontSize: 13.5 },
   signTextHunt: { color: '#FF8A98' },
-  signStick: { width: 3, height: 7, backgroundColor: '#7A4A1E' },
   selGlow: { position: 'absolute', left: -5, top: -5, borderWidth: 3 },
   ring: { flex: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   allyGlow: { shadowColor: '#FF4D4D', shadowOpacity: 0.9, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } },
@@ -1059,6 +1095,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(11, 19, 43, 0.85)',
   },
   badgeLeft: { right: undefined, left: -4 },
+  roleBadge: {
+    position: 'absolute',
+    // Avatarın içinde, alt ortada (avatarın üstüne biner)
+    bottom: 6,
+    left: '50%',
+    marginLeft: -12,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(11, 19, 43, 0.92)',
+  },
   badgeText: { fontSize: 12 },
   name: { marginTop: 4, maxWidth: '100%', fontFamily: fonts.extra, fontSize: 12 },
   nameDark: { textShadowColor: 'rgba(0,0,0,0.9)', textShadowRadius: 4 },

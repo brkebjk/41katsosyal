@@ -64,6 +64,9 @@ function RootNavigator() {
           <Stack.Screen name="acik-odalar" />
           {/* Oyun sırasında kaydırarak geri dönülemez: ayrılmak için “Oyundan ayrıl” düğmesi kullanılır */}
           <Stack.Screen name="vampir" options={{ gestureEnabled: false }} />
+          <Stack.Screen name="kopekbaligi" options={{ gestureEnabled: false }} />
+          <Stack.Screen name="kopekbaligi-giris" />
+          <Stack.Screen name="kopekbaligi-rehber" />
           <Stack.Screen name="abonelik" />
           <Stack.Screen name="basarimlar" />
           <Stack.Screen name="balonlar" />

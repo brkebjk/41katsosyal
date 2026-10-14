@@ -142,6 +142,39 @@ export function ClockBar({ label, left, limit }: { label: string; left: number; 
   );
 }
 
+/** "Tartışmayı hızlı geç" işareti: yaşayanların yarısından fazlası işaretlerse oylama hemen başlar */
+export function SkipToggle({
+  skip,
+  busy,
+  onToggle,
+}: {
+  skip: { yes: number; alive: number; needed: number; mine: boolean };
+  busy?: boolean;
+  onToggle: (on: boolean) => void;
+}) {
+  const ratio = skip.needed > 0 ? Math.min(1, skip.yes / skip.needed) : 0;
+  return (
+    <Pressable
+      onPress={() => onToggle(!skip.mine)}
+      disabled={busy}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: skip.mine, disabled: !!busy }}
+      accessibilityLabel={`Tartışmayı hızlı geç. ${skip.yes} kişi işaretledi, ${skip.needed} gerekli.`}
+      testID="skip-discussion"
+      style={({ pressed }) => [styles.skip, skip.mine && styles.skipOn, pressed && styles.pressed]}
+    >
+      <Ionicons name={skip.mine ? 'checkbox' : 'square-outline'} size={22} color={skip.mine ? G.teal : G.text} />
+      <View style={styles.skipBody}>
+        <Text style={styles.skipTitle}>Tartışmayı hızlı geç</Text>
+        <View style={styles.skipBar}>
+          <View style={[styles.skipFill, { width: `${Math.round(ratio * 100)}%` }]} />
+        </View>
+      </View>
+      <Text style={styles.skipCount}>{`${skip.yes}/${skip.needed}`}</Text>
+    </Pressable>
+  );
+}
+
 /** Kısa bilgi hapı (ör. "Deneme odası", "Elendin") */
 export function Pill({ icon, text, tone = 'info' }: { icon?: IconName; text: string; tone?: 'info' | 'danger' | 'warn' }) {
   const color = tone === 'danger' ? G.redSoft : tone === 'warn' ? G.gold : G.text;
@@ -435,6 +468,23 @@ const styles = StyleSheet.create({
   clockBar: { height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.15)', overflow: 'hidden' },
   clockFill: { height: '100%', borderRadius: 2, backgroundColor: G.teal },
   clockFillLow: { backgroundColor: G.red },
+  skip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  skipOn: { borderColor: G.teal, backgroundColor: 'rgba(34, 211, 197, 0.15)' },
+  skipBody: { flex: 1, gap: 4 },
+  skipTitle: { color: G.text, fontFamily: fonts.extra, fontSize: 13.5 },
+  skipBar: { height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.15)', overflow: 'hidden' },
+  skipFill: { height: '100%', borderRadius: 2, backgroundColor: G.teal },
+  skipCount: { color: G.text, fontFamily: fonts.black, fontSize: 14 },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',

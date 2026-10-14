@@ -31,7 +31,17 @@ import { Screen } from '@/components/Screen';
 import { DeadChat, RoleGallery } from '@/components/VampireExtras';
 import { WhisperCompose, WhisperPanel } from '@/components/VampireWhispers';
 import { clock, InfoCard, useElapsedSeconds } from '@/components/VampireParts';
-import { ClockBar, G, GameButton, Glass, Pill, PlayerGrid, ToolButton, type Tile } from '@/components/VampireStage';
+import {
+  ClockBar,
+  G,
+  GameButton,
+  Glass,
+  Pill,
+  PlayerGrid,
+  SkipToggle,
+  ToolButton,
+  type Tile,
+} from '@/components/VampireStage';
 import { useAuth } from '@/lib/auth';
 import { confirmAction, notify, showDialog } from '@/lib/dialog';
 import { fmtPts } from '@/lib/labels';
@@ -59,6 +69,7 @@ import {
   addTestBots,
   sceneFor,
   sendWhisper,
+  skipDiscussion,
   startVampireGame,
   VV_NOT_IN_ROOM,
   VV_ROOM_GONE,
@@ -1063,6 +1074,13 @@ function Game({ roomId }: { roomId: string }) {
               : `Oylamayı ${managerName} başlatacak.`
             : ''}
         </Text>
+        {view.skip && me.is_player && me.is_alive && !me.left ? (
+          <SkipToggle
+            skip={view.skip}
+            busy={busy === 'skipdisc'}
+            onToggle={(on) => void act('skipdisc', () => skipDiscussion(roomId, on))}
+          />
+        ) : null}
         {hostButton}
       </>
     );
@@ -1226,7 +1244,8 @@ function Game({ roomId }: { roomId: string }) {
         style={[styles.fill, styles.noTouch]}
       />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <BackBlocker enabled={blocking} onBack={requestLeave} />
+        {/* Oyun ekranında Geri tuşu ve kaydırarak geri dönme çalışmaz: yalnızca kırmızı çıkış düğmesiyle çıkılır */}
+        <BackBlocker enabled onBack={() => {}} />
 
         {/* Üst şerit: çık, aşama başlığı, sesler, güvenlik */}
         <View style={styles.top}>
@@ -1235,10 +1254,10 @@ function Game({ roomId }: { roomId: string }) {
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel={blocking ? (me.is_host ? 'Oyunu kapat' : 'Oyundan ayrıl') : 'Oyunlara dön'}
-            style={({ pressed }) => [styles.topBtn, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.topBtn, styles.exitBtn, pressed && styles.pressed]}
             testID="vv-back"
           >
-            <Ionicons name={blocking ? 'exit-outline' : 'chevron-back'} size={20} color={G.text} />
+            <Ionicons name="exit-outline" size={21} color="#FFFFFF" />
           </Pressable>
           <View style={styles.flex} accessibilityRole="header">
             <Text style={styles.title} numberOfLines={1}>
@@ -1535,6 +1554,7 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 6,
   },
+  exitBtn: { backgroundColor: '#D9304F', borderWidth: 2, borderColor: '#FFFFFF' },
   topBtn: {
     width: 38,
     height: 38,

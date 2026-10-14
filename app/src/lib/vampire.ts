@@ -63,6 +63,8 @@ export type VvView = {
     absent: number;
     tie: boolean;
   } | null;
+  /** "Tartışmayı hızlı geç": sabahta kaç kişi işaretledi, kaç gerekli, ben işaretledim mi (eski sunucuda gelmez) */
+  skip?: { yes: number; alive: number; needed: number; mine: boolean } | null;
   /** Asılma oyları açıktır: oylama ve sonucu sırasında kim kime oy verdi (to boş = pas). Eski sunucuda gelmez. */
   votes?: { from: string; to: string | null }[];
   players: VvPlayer[];
@@ -166,6 +168,8 @@ export const beginVote = (roomId: string) => call('vv_begin_vote', roomId);
 /** `target` boşsa "oy kullanmıyorum" demektir. */
 export const castVote = (roomId: string, target: string | null) => call('vv_cast_vote', roomId, { p_target: target });
 export const endVote = (roomId: string) => call('vv_end_vote', roomId);
+/** "Tartışmayı hızlı geç" işaretini koy / kaldır */
+export const skipDiscussion = (roomId: string, on: boolean) => call('vv_skip_discussion', roomId, { p_on: on });
 
 /** Fısıltı gönder. `replyTo` doluysa bana gelen fısıltıya cevaptır (alıcı onu gönderen kişi olur). */
 export const sendWhisper = (roomId: string, to: string, body: string, replyTo: string | null = null) =>

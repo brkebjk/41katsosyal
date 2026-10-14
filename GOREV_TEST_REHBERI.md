@@ -23,6 +23,29 @@
 6. **YAN YANA** ya da **UZAKTAN** düğmesi doğrudan oda açar ("nasıl oynanacak" sorusu çıkmaz).
 7. **Açık odalar · kodla katıl**, var olan odaları listeler. **Rehber** düğmesi oyun rehberini açar.
 
+## A3. Bu paketteki yenilikler (iki oyun)
+- **Tartışmayı hızlı geç:**
+  - Vampir–Köylü'de sabahta, Köpekbalığı'nda plajda alttaki kutuyu işaretle.
+  - Yaşayanların yarısından fazlası işaretleyince oylama hemen başlar.
+  - Botlu odada botlar da işaretler, bu yüzden tartışma çabuk geçer.
+- **Çıkış:**
+  - Oyun ekranında telefonun Geri tuşu ve kenardan kaydırma çalışmaz.
+  - Çıkış yalnızca sol üstteki kırmızı, kapı simgeli düğmeyle olur.
+- **Köpekbalığı oy tabelası:**
+  - Tabela artık avatarın altında.
+  - İçindeki ok, oy verilen kişinin avatarına döner.
+- **Rol simgesi:**
+  - Avatarın içinde, alt ortada küçük rol simgesi var.
+  - Yalnızca görmeye hakkı olan görür: kendin, takımın, açıklananlar, oyun sonunda herkes.
+- **Yazışma (Köpekbalığı):**
+  - Altta "💬 Mesaj yaz…" çubuğu var; dokununca yazışma açılır.
+  - Plajda ve oylamada yaşayanlar yazar, herkes okur.
+  - Dalışta kapalıdır. Fısıltı yoktur.
+- **Rehber:** En üstte bütün rollerin özelliklerini gösteren tablo var.
+- **Bas-konuş:**
+  - Biri kaydederken gelen ses kesilmeden çalmaya devam eder.
+  - Ses çalınamazsa altta kırmızı uyarı çıkar ("Ses indirilemedi / kaydedilemedi / çalınamadı"). Hangisi çıkarsa bana yaz.
+
 ## B. Köpekbalığı Kafesi (moderatör hesabı + 1 telefon, botlarla)
 1. Oyunlar > **Köpekbalığı Kafesi** > Oda aç > **Yan yana** > **Otomatik Oyun**.
 2. Kıyı ekranında **+3 deneme oyuncusu**'na 2 kez bas (6 kişi olmalı) > **Oyunu başlat**.

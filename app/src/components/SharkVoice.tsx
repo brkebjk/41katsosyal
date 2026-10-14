@@ -46,27 +46,56 @@ const CLIP_OPTIONS: RecordingOptions = {
 const PTT_REASON =
   'Bas-konuş: yalnızca düğmeye basılı tuttuğunda en çok 5 saniye kaydedilir. Ses mesajın odadakilere sırayla çalınır ve en geç 10 dakika sonra sunucudan silinir (şikâyet edilirse moderatör bakana kadar en çok 14 gün saklanır). Mikrofonun başka hiçbir zaman açılmaz.';
 
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/** base64 yazıyı baytlara çevirir (dosyaya ham bayt olarak yazılır; kodlama seçeneğine güvenilmez) */
+function base64ToBytes(b64: string): Uint8Array {
+  const clean = b64.replace(/[^A-Za-z0-9+/]/g, '');
+  const out = new Uint8Array(Math.floor((clean.length * 3) / 4));
+  let o = 0;
+  for (let i = 0; i < clean.length; i += 4) {
+    const a = B64.indexOf(clean[i]);
+    const b = B64.indexOf(clean[i + 1]);
+    const c = i + 2 < clean.length ? B64.indexOf(clean[i + 2]) : -1;
+    const d = i + 3 < clean.length ? B64.indexOf(clean[i + 3]) : -1;
+    out[o++] = (a << 2) | (b >> 4);
+    if (c >= 0) out[o++] = ((b & 15) << 4) | (c >> 2);
+    if (d >= 0) out[o++] = ((c & 3) << 6) | d;
+  }
+  return out.subarray(0, o);
+}
+
+/** Çalma sırasında ses telefon sessizdeyken de hoparlörden duyulsun (kayıt açıkken de) */
+function playbackMode(recording: boolean) {
+  return setAudioModeAsync({
+    playsInSilentMode: true,
+    interruptionMode: 'mixWithOthers',
+    allowsRecording: recording,
+    shouldRouteThroughEarpiece: false,
+  }).catch(() => {});
+}
+
 /**
  * Gelen ses mesajlarını sırayla çalar. Ekrana girmeden önceki mesajlar çalınmaz; kendi mesajın çalınmaz.
- * `paused` iken (sen kaydederken) sıradaki mesaj beklemeye alınır.
+ * Sen kaydederken de çalmaya devam eder (başkasının sesi kesilmez).
  */
-export function useClipQueue(clips: SkClip[] | undefined, myId: string | null, enabled: boolean, paused: boolean) {
+export function useClipQueue(clips: SkClip[] | undefined, myId: string | null, enabled: boolean, recording: boolean) {
   const played = useRef<Set<string>>(new Set());
   const ready = useRef(false);
   const queue = useRef<SkClip[]>([]);
   const busy = useRef(false);
-  const pausedRef = useRef(paused);
+  const recordingRef = useRef(recording);
   const player = useRef<AudioPlayer | null>(null);
   const [now, setNow] = useState<SkClip | null>(null);
   const [waiting, setWaiting] = useState(0);
+  /** Son çalma hatası (ekranda kısa süre görünür; sorun bildirmek için) */
+  const [error, setError] = useState<string | null>(null);
   const pumpRef = useRef<() => void>(() => {});
 
   // Uzaktan oyunda ses mesajları telefon sessizdeyken de duyulsun
   useEffect(() => {
     if (!enabled) return;
-    void setAudioModeAsync({ playsInSilentMode: true, interruptionMode: 'mixWithOthers', allowsRecording: false }).catch(
-      () => {},
-    );
+    void playbackMode(false);
     return () => {
       void setAudioModeAsync({ playsInSilentMode: false, allowsRecording: false }).catch(() => {});
     };
@@ -91,37 +120,56 @@ export function useClipQueue(clips: SkClip[] | undefined, myId: string | null, e
   }, []);
 
   const pump = useCallback(async () => {
-    if (busy.current || pausedRef.current || queue.current.length === 0) return;
+    if (busy.current || queue.current.length === 0) return;
     busy.current = true;
     const clip = queue.current.shift() as SkClip;
     setWaiting(queue.current.length);
     setNow(clip);
+    setError(null);
     let file: File | null = null;
+    let step = 'indirilemedi';
     try {
       const b64 = await getVoiceClip(clip.id);
-      if (!b64) throw new Error('missing');
+      if (!b64) throw new Error('fetch');
+      step = 'kaydedilemedi';
       file = new File(Paths.cache, `sk-${clip.id}.m4a`);
       if (file.exists) file.delete();
       file.create();
-      file.write(b64, { encoding: 'base64' });
+      file.write(base64ToBytes(b64));
+      step = 'çalınamadı';
+      await playbackMode(recordingRef.current);
       const p = createAudioPlayer({ uri: file.uri });
       player.current = p;
       const f = file;
       let done = false;
+      let started = false;
+      let startedAt = 0;
+      const timers: ReturnType<typeof setTimeout>[] = [];
       const end = () => {
         if (done) return;
         done = true;
-        clearTimeout(guard);
+        timers.forEach(clearTimeout);
         sub.remove();
         finish(f);
       };
+      const start = () => {
+        if (started || done) return;
+        started = true;
+        startedAt = Date.now();
+        p.play();
+        // Bitti haberi gelmezse en geç süre + 3 sn sonra sıradakine geçilir
+        timers.push(setTimeout(end, clip.ms + 3000));
+      };
       const sub = p.addListener('playbackStatusUpdate', (st) => {
-        if (st.didJustFinish) end();
+        // Ses yüklenince çalınır; yüklenmeden gelen "bitti" haberi (bazı telefonlarda hemen gelir) yok sayılır
+        if (st.isLoaded) start();
+        if (st.didJustFinish && started && Date.now() - startedAt > 250) end();
       });
-      // Bitti haberi gelmezse en geç süre + 2 sn sonra sıradakine geçilir
-      const guard = setTimeout(end, clip.ms + 2000);
-      p.play();
+      // Yüklendi haberi gelmezse 1,5 sn sonra yine de çalmayı dene
+      timers.push(setTimeout(start, 1500));
     } catch {
+      setError(`Ses ${step}`);
+      setTimeout(() => setError(null), 3000);
       finish(file);
     }
   }, [finish]);
@@ -130,14 +178,16 @@ export function useClipQueue(clips: SkClip[] | undefined, myId: string | null, e
     pumpRef.current = () => void pump();
   }, [pump]);
 
+  // Kayıt başlayınca / bitince ses oturumu değişir; çalan ses durmasın diye yeniden çalınır
   useEffect(() => {
-    pausedRef.current = paused;
-    if (paused) player.current?.pause();
-    else {
-      if (player.current) player.current.play();
-      pumpRef.current();
+    recordingRef.current = recording;
+    const p = player.current;
+    if (p) {
+      void playbackMode(recording).then(() => {
+        if (player.current === p && !p.playing) p.play();
+      });
     }
-  }, [paused]);
+  }, [recording]);
 
   // Yeni gelen mesajlar sıraya girer
   useEffect(() => {
@@ -177,7 +227,7 @@ export function useClipQueue(clips: SkClip[] | undefined, myId: string | null, e
     [],
   );
 
-  return { speaking: now, waiting };
+  return { speaking: now, waiting, error };
 }
 
 /** Basılı tut, konuş düğmesi. `canTalk` değilse kapalı görünür ve nedeni yazar. */
@@ -219,7 +269,7 @@ export function PushToTalk({
     }
     setRec(false);
     onRecording(false);
-    void setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
+    void playbackMode(false);
     const uri = recorder.uri;
     if (!uri) return;
     const file = new File(uri);
@@ -285,7 +335,7 @@ export function PushToTalk({
     }
     if (!holding.current) return; // izin sorulurken parmak kalktı
     try {
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await playbackMode(true);
       await recorder.prepareToRecordAsync();
       recorder.record({ forDuration: MAX_MS / 1000 });
     } catch {

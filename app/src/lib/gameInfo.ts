@@ -227,7 +227,7 @@ export const HOW_TO_PLAY: Record<string, InfoItem[]> = {
     {
       icon: 'eye',
       lead: 'Açık oy.',
-      text: 'Her avatarın büyük bir koltuk numarası var. Başının üstündeki tabela kime oy verdiğini (→7), kırmızı sayı aldığı oyu gösterir. Ayrıntılar oyunun içindeki Rehber’de.',
+      text: 'Her avatarın büyük bir koltuk numarası var. Altındaki tabela kime oy verdiğini gösterir (ok o kişiye döner), kırmızı sayı aldığı oyu gösterir. Ayrıntılar oyunun içindeki Rehber’de.',
     },
     {
       icon: 'trophy',
