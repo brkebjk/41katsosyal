@@ -51,6 +51,8 @@ export type SkPlayer = {
   hunt_pick: string | null;
   /** Yalnızca anlatıcıya: gece seçimini yaptı / rolünü gördü */
   acted: boolean | null;
+  /** Oyunda kaldığı süre (sn): elenince / ayrılınca ya da oyun bitince dolar */
+  alive_sec?: number | null;
 };
 
 export type SkNote = {
@@ -62,7 +64,20 @@ export type SkNote = {
   visits?: { round: number; names: string[] }[];
 };
 
-export type SkMsg = { id: string; name: string; body: string; at: string; mine: boolean };
+export type SkMsg = {
+  id: string;
+  name: string;
+  body: string;
+  at: string;
+  mine: boolean;
+  /** Yazanın kimliği (koltuk numarasını bulmak için) */
+  from?: string;
+  /** Yazıldığı tur ve aşama (gece / gündüz ayrımı; eski mesajlarda boş) */
+  round?: number | null;
+  phase?: string | null;
+  /** Yalnızca mesaj geçmişinde: hangi frekans */
+  channel?: 'all' | 'shark' | 'dead';
+};
 
 export type SkVote = { from: string; to: string | null; weight: number };
 
@@ -132,6 +147,8 @@ export type SkView = {
     marks: string[];
     self_used: boolean;
     spear_used: boolean;
+    /** Bu tartışmada kalan bas-konuş süresi (ms; her tartışmada en çok 15 sn) */
+    voice_left_ms?: number;
   };
   /** Herkese açık yazışma (plajda ve oylamada yaşayanlar yazar) */
   chat?: SkMsg[] | null;
@@ -195,6 +212,12 @@ export async function getSharkView(roomId: string): Promise<{ view: SkView | nul
   return { view: data, error };
 }
 
+/** Mesaj geçmişi: görmeye hakkın olan bütün yazışmalar (herkese açık, takım, ölüler), tur ve aşamasıyla */
+export async function getSharkHistory(roomId: string): Promise<{ messages: SkMsg[]; error: string | null }> {
+  const { data, error } = await callRpc<SkMsg[]>('sk_history', { p_room_id: roomId }, TEXT);
+  return { messages: data ?? [], error };
+}
+
 const call = (fn: string, roomId: string, extra: Record<string, unknown> = {}): Promise<Result> =>
   callRpcVoid(fn, { p_room_id: roomId, ...extra }, TEXT);
 
@@ -238,6 +261,7 @@ export const sharkSay = (roomId: string, channel: 'all' | 'shark' | 'dead', body
 const VOICE_TEXT: Record<string, string> = {
   voice_closed: 'Şu an konuşamazsın: dalışta yalnızca köpekbalıkları konuşur, elenenler konuşamaz.',
   invalid_audio: 'Ses kaydı alınamadı. Tekrar dene.',
+  voice_quota: 'Bu tartışmadaki 15 saniyelik konuşma hakkın doldu. Bir sonraki tartışmada yine konuşabilirsin.',
   rate_limited: 'Biraz bekle: art arda çok hızlı ses gönderiyorsun.',
   chat_limit: 'Bu oyunda gönderebileceğin ses mesajı sınırına ulaştın.',
   muted: 'Şu an susturulmuşsun.',

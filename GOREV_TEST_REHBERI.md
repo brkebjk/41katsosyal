@@ -1,117 +1,59 @@
-# Görev Test Rehberi – Köpekbalığı Kafesi, bas-konuş, oyun ses düğmesi
+# Görev Test Rehberi – Köpekbalığı Kafesi ekran paketi
 
 ## A. Supabase'i güncelle
-Şema dosyası SQL Editor için çok büyüdüğü için 3 parçaya bölündü: `supabase/parcalar/` klasöründe.
+Şema `supabase/parcalar/` klasöründe 3 parça.
 1. Supabase > **SQL Editor** > **+ New query** > `1.sql` dosyasının tamamını yapıştır > **Run** > yeşil "Success".
-2. Yeni sorgu aç > `2.sql` > Run > Success.
-3. Yeni sorgu aç > `3.sql` > Run > Success.
-- Sıra önemli: 1, 2, 3. Yarıda hata alırsan hatayı bana ilet; baştan tekrar çalıştırmak zarar vermez.
-- Vampir–Köylü olduğu gibi duruyor.
+2. Yeni sorgu aç > `2.sql` > Run.
+3. Yeni sorgu aç > `3.sql` > Run.
+- Sıra önemli: 1, 2, 3. "Run and enable RLS" çıkarsa onu seç.
+- Hata alırsan bana ilet; baştan çalıştırmak zarar vermez.
 
-## A2. Köpekbalığı Kafesi giriş ekranı (yeni)
-1. Oyunlar > **Köpekbalığı Kafesi** kutusuna dokun: tema ekranı açılır, kaydırma yok.
-2. Arka plan:
-   - Üstte gökyüzü, güneş ve dalgalar var.
-   - Altta su altı, kabarcıklar ve ışık hüzmeleri var.
-   - Bir 🤿 dalgıç sürekli denize dalar.
-   - Yazılar okunur kalmalı.
-3. Sayaçlar:
-   - 🏖️ Yan yana: "∞ puan sınırı yok" + bu ay kalan oda hakkın.
-   - 🌊 Uzaktan: "bugün kalan 2/2" ve "bu ay kalan 6/6" puanlı oyun.
-4. Ortadaki rol kartlarını sağa-sola kaydır: 14 rol tek tek. Alttaki noktalar takım rengindedir.
-5. Puan kutusuna dokun: puan tablosu açılır.
-6. **YAN YANA** ya da **UZAKTAN** düğmesi doğrudan oda açar ("nasıl oynanacak" sorusu çıkmaz).
-7. **Açık odalar · kodla katıl**, var olan odaları listeler. **Rehber** düğmesi oyun rehberini açar.
+## B. Oyun ekranı (moderatör hesabı + 1 telefon, 13 bot ile 16 kişi dene)
+1. Kaydırma yok:
+   - Avatarlar ekrana sığar.
+   - Avatara dokununca hiçbir şey kaymaz.
+   - 10+ kişide üst tabela küçülür, avatarlar büyük kalır.
+2. Üst satır:
+   - Solda kırmızı çıkış.
+   - Büyük **🌙 1. GECE / ☀️ 1. GÜN** düğmesi.
+   - Daha büyük **DALIŞ / PLAJ** yazısı.
+3. Üst tabela:
+   - Yalnızca yapman gereken iş ve olay akışı var.
+   - Kişiler adla değil, avatardaki gibi **yuvarlak numarayla** görünür.
+4. Komut yazısı:
+   - "⛓️ OY VER: ŞÜPHELİYİ SEÇ", "🦈 AVINI SEÇ" gibi komutlar ortada büyük çıkar.
+   - 2,5 sn sonra kaybolur.
+5. Oylama:
+   - Oy vermeyenin avatarında sarı **?** sallanır, altında "⏳ düşünüyor" yazar.
+   - Tabela adın hemen altında ve daha büyük.
+6. Yetenek animasyonu:
+   - Gece bir avatara dokun; rol simgen senin avatarından ona gider ve orada kalır.
+   - 🛟 şamandıra kavisle atılır ve döner.
+   - 🦈 dalgalanarak yüzer.
+   - 🔨 gelip vurur.
+   - 🔱 zıpkın dümdüz uçar.
+   - 🩹 ve 🔭 süzülür.
+7. Olay olunca:
+   - İlgili avatar büyür, üstünde balon çıkar.
+   - Balonlar: 🦈 AVLANDI, 🔱 VURULDU, ⛓️ KAFESTE, 🏆 KAZANDI.
+   - Sana özel olanlar yalnızca sende görünür: 🛟 KURTARILDI, 🔨 KİLİTLENDİ.
+8. Alt şeritte **Geçmiş**: bütün yazışmalar, 🌙 gece ve ☀️ gündüz başlıklarıyla ayrılır.
+9. Oyun bitince sıralama tablosu çıkar:
+   - Kazananlar 🏆 ile en üstte.
+   - Her satırda herkesin rolü ve oyunda kaldığı süre var: ✓ sona kaldı, 🚪 ayrıldı.
+10. Plajda güneş küçük ve soluk sarı, solda ufuk çizgisinde (süre çubuğuyla karışmaz).
+11. Botlar artık "tartışmayı hızlı geç"i işaretlemez (iki oyunda da).
 
-## A3. Bu paketteki yenilikler (iki oyun)
-- **Tartışmayı hızlı geç:**
-  - Vampir–Köylü'de sabahta, Köpekbalığı'nda plajda alttaki kutuyu işaretle.
-  - Yaşayanların yarısından fazlası işaretleyince oylama hemen başlar.
-  - Botlu odada botlar da işaretler, bu yüzden tartışma çabuk geçer.
-- **Çıkış:**
-  - Oyun ekranında telefonun Geri tuşu ve kenardan kaydırma çalışmaz.
-  - Çıkış yalnızca sol üstteki kırmızı, kapı simgeli düğmeyle olur.
-- **Köpekbalığı oy tabelası:**
-  - Tabela artık avatarın altında.
-  - İçindeki ok, oy verilen kişinin avatarına döner.
-- **Rol simgesi:**
-  - Avatarın içinde, alt ortada küçük rol simgesi var.
-  - Yalnızca görmeye hakkı olan görür: kendin, takımın, açıklananlar, oyun sonunda herkes.
-- **Yazışma (Köpekbalığı):**
-  - Altta "💬 Mesaj yaz…" çubuğu var; dokununca yazışma açılır.
-  - Plajda ve oylamada yaşayanlar yazar, herkes okur.
-  - Dalışta kapalıdır. Fısıltı yoktur.
-- **Rehber:** En üstte bütün rollerin özelliklerini gösteren tablo var.
-- **Bas-konuş:**
-  - Biri kaydederken gelen ses kesilmeden çalmaya devam eder.
-  - Ses çalınamazsa altta kırmızı uyarı çıkar ("Ses indirilemedi / kaydedilemedi / çalınamadı"). Hangisi çıkarsa bana yaz.
+## C. Uzaktan oda (2 telefon)
+1. Bas-konuş:
+   - Her tartışmada kişi başı toplam **15 sn** konuşma hakkı var.
+   - Düğmede kalan süre yazar. Hak bitince düğme kapanır, yeni tartışmada yenilenir.
+2. Konuşanın avatarı yeşil çerçeveyle öne çıkar ve büyür.
+3. Şikâyet: konuşan oyuncunun **avatarına basılı tut**.
+   - Son 2 dakikada ses mesajı yoksa bunu söyler.
+4. Oyun başladıktan sonra oda sahibi çıkarsa:
+   - Oda kapanmaz, sahiplik başka bir gerçek oyuncuya geçer.
+   - Başka gerçek oyuncu yoksa oda kapanır.
 
-## A4. Uzaktan eşleştirme ve çerçeveler (yeni)
-1. Giriş ekranında **UZAKTAN EŞLEŞ**: harita açılır, 🤿 maskeli avatarın dolaşır.
-2. Moderatör hesabıyla **Sıraya +3 deneme oyuncusu**'na bas. 3 kişi olunca bekleme odasına geçilir.
-3. Lobi:
-   - Herkes rumuzuyla görünür.
-   - "Hazırım" 6 kişiye kadar kapalıdır. "+3 deneme oyuncusu" ile 6'yı geç.
-   - Botlar hazır der. Hazır diyenler demeyenlerden fazla olunca oyun kendiliğinden başlar.
-4. **🔗 Davet bağlantısı oluştur**: paylaşma penceresi açılır, bağlantı ve kod gelir.
-   - Bağlantıya dokunan, uygulamada o odaya katılır.
-   - Expo Go'da bağlantı yalnızca aynı ağda çalışabilir; kod her zaman çalışır.
-5. Oda sahibi lobiden çıkarsa oda kapanmaz, sahiplik başkasına geçer.
-6. **Özel uzaktan oda** düğmesi eskisi gibi elle oda açar.
-7. Oyunda avatar çerçeveleri:
-   - Takımından olduğunu bildiğin oyuncu ince yeşil.
-   - Bilinmeyen sarı.
-   - Rolü açığa çıkan rakip kırmızı.
-
-## B. Köpekbalığı Kafesi (moderatör hesabı + 1 telefon, botlarla)
-1. Oyunlar > **Köpekbalığı Kafesi** > Oda aç > **Yan yana** > **Otomatik Oyun**.
-2. Kıyı ekranında **+3 deneme oyuncusu**'na 2 kez bas (6 kişi olmalı) > **Oyunu başlat**.
-3. **Rol çarkı** döner ve rolünde durur > **Rolümü gördüm, hazırım**.
-4. **Dalış (gece)**:
-   - Ekran kararır, kabarcıklar yükselir, uzakta köpekbalığı gölgeleri süzülür.
-   - Üstte "Oksijen %" çubuğu azalır.
-   - Rolün varsa ortada büyük yazı çıkar ("AVINI SEÇ" gibi) > avatara dokun > alttaki düğmeyle onayla.
-5. **Plaj (gündüz)**:
-   - Ekran aydınlanır: güneş, deniz, dalga, kum.
-   - Ortada maskesi kırılanlar yazar.
-   - Ölen avatar soluklaşır, üstünde 🤿 ve "Maske kırıldı" yazar.
-6. **Kafes oylaması**:
-   - Her avatarın sol üstünde büyük sarı numara var.
-   - Oy verince başının üstünde tahta tabela çıkar: "→7".
-   - Avatarın sağ üstündeki kırmızı sayı, aldığı oy.
-7. Oyun bitince kazanan takım rengi ve herkesin rolü avatarların altında görünür.
-8. Alt şerit:
-   - **Rolüm**: rolün ve notların.
-   - **Takım**: köpekbalığıysan takım sohbeti.
-   - **Ölüler**: elenenlerin sohbeti.
-   - **Rehber**: açılır bölümlü oyun rehberi.
-
-## C. Uzaktan oda ve bas-konuş (2 telefon; Expo Go'da da çalışır)
-1. Telefon 1: Köpekbalığı Kafesi > **Uzaktan** > oda aç, botları ekle. Telefon 2: Açık odalar'dan katıl.
-2. Plajda **BASILI TUT, KONUŞ** düğmesine basılı tut, konuş, bırak.
-   - İlk seferde açıklama ve mikrofon izni çıkar. Sonra tekrar bas.
-3. Diğer telefonda ses çalmalı.
-   - Üstte yeşil "🔊 #1 Ad konuşuyor" çıkar.
-   - Konuşanın avatarında 🔊 görünür.
-4. İki telefon art arda konuşursa mesajlar sırayla çalar.
-5. Dalışta düğme "🔇 Dalışta mikrofonlar kapalı" olur. Köpekbalıkları yalnızca birbirini duyar.
-6. Kötü bir ses mesajını bildirmek için yeşil "konuşuyor" yazısına uzun bas.
-   - Moderatör web panel > Şikayetler'de **Ses mesajını dinle**.
-
-## D. Etkinlikte anlatıcı
-- Etkinlik sahibi > Etkinlik oyunu aç > **Köpekbalığı Kafesi** > **Anlatıcı olurum (oynamam)**.
-- Anlatıcı herkesin rolünü görür ve aşamaları ilerletir.
-- Hak düşmez, kimse puan almaz.
-- Etkinlik dışında anlatıcı seçeneği çıkmaz.
-
-## E. Bilgi Yarışması'nda ses düğmesi
-- Maç, Solo Maraton ve Yan yana ekranlarının üstünde 🔊 düğmesi var.
-- Yalnızca oyun seslerini kapatır.
-
-## F. KVKK metnine eklenecek paragraf
-Web panel > Sistem > Uygulama metinleri > **KVKK aydınlatma metni** ve **Gizlilik politikası**'na ekle:
-
-```
-## Uzaktan oyunlarda bas-konuş ses mesajları
-Köpekbalığı Kafesi'nin uzaktan odalarında, yalnızca konuşma düğmesine basılı tuttuğunuz sürece (en çok 5 saniye) sesiniz kaydedilir ve odadaki oyunculara sırayla çalınması için sunucumuza gönderilir. Ses mesajları en geç 10 dakika sonra kalıcı olarak silinir ve yedeklere alınmaz. Bir oyuncu ses mesajını şikâyet ederse, o mesaj moderatörün incelemesi için en çok 14 gün saklanır, sonra silinir. Mikrofonunuz başka hiçbir zaman açılmaz.
-```
+## D. Yan yana oyun
+- Yan yana oda açınca aylık genel oyun hakkından 1 düşer (önceden de böyleydi; kontrol edildi).

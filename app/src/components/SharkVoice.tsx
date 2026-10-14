@@ -236,12 +236,15 @@ export function PushToTalk({
   canTalk,
   closedText,
   channelText,
+  leftMs = MAX_MS,
   onRecording,
   onSent,
 }: {
   roomId: string;
   canTalk: boolean;
   closedText: string;
+  /** Bu tartışmada kalan konuşma süresi (ms): kayıt en çok bu kadar sürer */
+  leftMs?: number;
   /** Kimlerin duyacağı (ör. "Herkes duyar", "Yalnızca köpekbalıkları duyar") */
   channelText: string;
   onRecording: (on: boolean) => void;
@@ -255,13 +258,15 @@ export function PushToTalk({
   const holding = useRef(false);
   const active = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Bu kaydın üst sınırı: 5 sn ya da tartışmada kalan süre (hangisi azsa) */
+  const cap = useRef(MAX_MS);
 
   const stop = useCallback(async () => {
     if (!active.current) return;
     active.current = false;
     if (timer.current) clearTimeout(timer.current);
     progress.stopAnimation();
-    const ms = Math.min(MAX_MS, Date.now() - startedAt.current);
+    const ms = Math.min(cap.current, Date.now() - startedAt.current);
     try {
       await recorder.stop();
     } catch {
@@ -334,10 +339,11 @@ export function PushToTalk({
       return;
     }
     if (!holding.current) return; // izin sorulurken parmak kalktı
+    cap.current = Math.max(300, Math.min(MAX_MS, leftMs));
     try {
       await playbackMode(true);
       await recorder.prepareToRecordAsync();
-      recorder.record({ forDuration: MAX_MS / 1000 });
+      recorder.record({ forDuration: cap.current / 1000 });
     } catch {
       await notify('Mikrofon açılamadı', 'Tekrar dene.', { icon: 'mic-off' });
       return;
@@ -347,8 +353,8 @@ export function PushToTalk({
     setRec(true);
     onRecording(true);
     progress.setValue(0);
-    Animated.timing(progress, { toValue: 1, duration: MAX_MS, easing: Easing.linear, useNativeDriver: false }).start();
-    timer.current = setTimeout(() => void stop(), MAX_MS + 50);
+    Animated.timing(progress, { toValue: 1, duration: cap.current, easing: Easing.linear, useNativeDriver: false }).start();
+    timer.current = setTimeout(() => void stop(), cap.current + 50);
     if (!holding.current) void stop();
   }
 
@@ -385,7 +391,13 @@ export function PushToTalk({
       </View>
       <View style={styles.pttTexts}>
         <Text style={[styles.pttTitle, !canTalk && styles.pttTitleOff, rec && styles.pttTitleRec]} numberOfLines={1}>
-          {sending ? 'Gönderiliyor…' : rec ? 'KAYDEDİYOR · bırakınca gider' : canTalk ? 'BASILI TUT, KONUŞ (5 sn)' : closedText}
+          {sending
+            ? 'Gönderiliyor…'
+            : rec
+              ? 'KAYDEDİYOR · bırakınca gider'
+              : canTalk
+                ? `BASILI TUT, KONUŞ (${Math.max(1, Math.round(Math.min(MAX_MS, leftMs) / 1000))} sn)`
+                : closedText}
         </Text>
         {canTalk && !rec ? <Text style={styles.pttSub}>{channelText}</Text> : null}
       </View>

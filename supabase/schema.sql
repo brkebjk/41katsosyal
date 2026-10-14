@@ -2408,7 +2408,8 @@ begin
   v_winner := r.state->>'winner';
   if r.game_type in ('vampire_villager', 'shark_cage') and v_winner is null then return; end if;
   -- Köpekbalığı Kafesi anlatıcılı oyun (etkinlik eğlencesi): kimse puan almaz
-  if r.game_type = 'shark_cage' and coalesce(r.config->>'mode', 'auto') = 'narrator' then return; end if;
+  if r.game_type = 'shark_cage' and (coalesce(r.config->>'mode', 'auto') = 'narrator'
+                                      or coalesce((r.config->>'no_points')::boolean, false)) then return; end if;
   v_cap := case when r.game_type = 'quiz' then public.setting_int('pts_quiz_top_cap', 3)
                 else public.setting_int('pts_game_top_cap', 12) end;
   return query
@@ -4852,15 +4853,22 @@ begin
   if not found or r.status not in ('lobby', 'playing') then return null; end if;
   if not exists (select 1 from public.game_types where key = r.game_type and presence_required) then return null; end if;
 
-  -- Köpekbalığı Kafesi eşleştirme odası: sahibi ayrılınca oda kapanmaz, sahiplik sıradaki oyuncuya geçer
-  if r.host_id = p_user_id and coalesce((r.config->>'match')::boolean, false)
-     and exists (select 1 from public.room_players where room_id = p_room_id and user_id <> p_user_id and left_at is null) then
+  -- Köpekbalığı Kafesi: eşleştirme odasında (lobide de) ve başlamış her uzaktan oyunda sahibi ayrılınca oda kapanmaz,
+  -- sahiplik sıradaki gerçek oyuncuya geçer (önce hayatta olanlar, sonra katılma sırası). Yalnızca botlar kaldıysa kapanır.
+  -- Anlatıcı ayrılırsa oyun otomatik ilerler ama yine puansız kalır (no_points).
+  if r.host_id = p_user_id and r.game_type = 'shark_cage'
+     and (coalesce((r.config->>'match')::boolean, false) or (r.remote and r.status = 'playing'))
+     and exists (select 1 from public.room_players rp join public.profiles bp on bp.id = rp.user_id
+                  where rp.room_id = p_room_id and rp.user_id <> p_user_id and rp.left_at is null and not bp.is_bot) then
     update public.game_rooms
-       set host_id = (select rp.user_id from public.room_players rp
-                       where rp.room_id = p_room_id and rp.user_id <> p_user_id and rp.left_at is null
-                       order by rp.joined_at limit 1),
+       set host_id = (select rp.user_id from public.room_players rp join public.profiles bp on bp.id = rp.user_id
+                       where rp.room_id = p_room_id and rp.user_id <> p_user_id and rp.left_at is null and not bp.is_bot
+                       order by rp.is_alive desc, rp.joined_at limit 1),
            host_seen_at = now(),
-           state = jsonb_set(state, '{ready}', coalesce(state->'ready', '[]'::jsonb) - p_user_id::text)
+           config = case when coalesce(config->>'mode', 'auto') = 'narrator'
+                         then config || jsonb_build_object('mode', 'auto', 'no_points', true) else config end,
+           state = case when state ? 'ready' then jsonb_set(state, '{ready}', (state->'ready') - p_user_id::text)
+                        else state end
      where id = p_room_id;
     select * into r from public.game_rooms where id = p_room_id;
   end if;
@@ -15854,9 +15862,6 @@ begin
            set data = data || jsonb_build_object('night', jsonb_build_object('round', v_round, 'target', v_t))
          where room_id = p_room_id and user_id = b.user_id;
       end if;
-    elsif v_phase = 'dawn' and v_age >= 5 and coalesce((b.data->>'skip_round')::int, 0) <> v_round then
-      update public.room_player_secrets set data = data || jsonb_build_object('skip_round', v_round)
-       where room_id = p_room_id and user_id = b.user_id;
     elsif v_phase = 'vote' and v_age >= 6 and coalesce((b.data->'vote'->>'round')::int, 0) <> v_round then
       v_t := null;
       if random() > 0.2 then
@@ -15904,6 +15909,9 @@ on conflict (key) do nothing;
 alter table public.vv_dead_chat add column if not exists channel text not null default 'dead';
 alter table public.vv_dead_chat drop constraint if exists vv_dead_chat_channel_check;
 alter table public.vv_dead_chat add constraint vv_dead_chat_channel_check check (channel in ('dead', 'shark', 'all'));
+-- Mesaj geçmişinde gece / gündüz ayrımı için yazıldığı tur ve aşama (eski mesajlarda boş)
+alter table public.vv_dead_chat add column if not exists round int;
+alter table public.vv_dead_chat add column if not exists phase text;
 
 create or replace function public._sk_team(p_role text)
 returns text language sql immutable set search_path = public as $$
@@ -16508,9 +16516,6 @@ begin
                       else jsonb_build_object('round', v_round, 'target', v_t) end)
          where room_id = p_room_id and user_id = b.user_id;
       end if;
-    elsif v_phase = 'day' and v_age >= 5 and coalesce((b.data->>'skip_round')::int, 0) <> v_round then
-      update public.room_player_secrets set data = data || jsonb_build_object('skip_round', v_round)
-       where room_id = p_room_id and user_id = b.user_id;
     elsif v_phase = 'vote' and v_age >= 6 and coalesce((b.data->'vote'->>'round')::int, 0) <> v_round then
       v_t := null;
       if random() > 0.2 then
@@ -16866,10 +16871,10 @@ begin
   if (select count(*) from public.vv_dead_chat where room_id = p_room_id and user_id = v.id) >= 80 then
     raise exception 'chat_limit';
   end if;
-  insert into public.vv_dead_chat (room_id, user_id, name, body, channel)
+  insert into public.vv_dead_chat (room_id, user_id, name, body, channel, round, phase)
   -- "(Medyum)" etiketi yalnızca ölülerin sohbetinde (herkese açık yazışmada Medyum'un kimliği belli olmamalı)
   values (p_room_id, v.id, case when v_role = 'medium' and v_alive and p_channel = 'dead' then v_name || ' (Medyum)' else v_name end,
-          v_body, p_channel);
+          v_body, p_channel, coalesce((r.state->>'round')::int, 0), r.state->>'phase');
 end $$;
 
 -- Kişiye özel görünüm. Rol yalnızca: kendin, köpekbalığıysan takım arkadaşların, açıklananlar (kafes, zıpkın, ayrılan,
@@ -16937,6 +16942,11 @@ begin
            'ally', v_shark and public._sk_team(x.role) = 'shark' and x.user_id <> v.id,
            'revealed', r.state->'reveals' ? x.user_id::text,
            'marshal', r.state->>'marshal' = x.user_id::text,
+           -- Oyunda kaldığı süre (sn): elenen / ayrılan için elendiği ana kadar; oyun bitince sona kalanlar için bitişe kadar
+           'alive_sec', case when r.started_at is not null and r.status in ('playing', 'finished')
+                              and (not x.is_alive or r.status = 'finished')
+                             then greatest(0, extract(epoch from coalesce(x.out_at, x.left_at, r.finished_at, now())
+                                                                 - r.started_at)::int) end,
            'hunt_pick', case when (v_shark or v_omni) and public._sk_team(x.role) = 'shark'
                               and (x.data->'hunt'->>'round')::int = v_round then x.data->'hunt'->>'target' end,
            'acted', case when v_omni and v_phase = 'night' then public._sk_night_done(x.role, x.data, v_round)
@@ -17028,7 +17038,12 @@ begin
       'notes', coalesce(me.data->'notes', '[]'::jsonb),
       'marks', coalesce(me.data->'marks', '[]'::jsonb),
       'self_used', coalesce((me.data->>'self_used')::boolean, false),
-      'spear_used', coalesce((me.data->>'spear_used')::boolean, false)),
+      'spear_used', coalesce((me.data->>'spear_used')::boolean, false),
+      -- Bu tartışmada kalan bas-konuş süresi (ms): plaj+oylama bir tartışma, her dalış ayrı (köpekbalığı frekansı)
+      'voice_left_ms', greatest(0, public.setting_int('sk_voice_round_ms', 15000)
+                         - case when (me.data->'voice'->>'round')::int = v_round
+                                 and me.data->'voice'->>'channel' = (case when v_phase = 'night' then 'shark' else 'all' end)
+                                then coalesce((me.data->'voice'->>'ms')::int, 0) else 0 end)),
     -- Bas-konuş ses mesajları (yalnızca uzaktan odada; künye, ses sk_voice_get ile alınır)
     'voice', case when r.remote and r.status = 'playing' then public._sk_clips_for(p_room_id, v.id) else '[]'::jsonb end,
     'server_now', now(),
@@ -17036,21 +17051,65 @@ begin
     -- Herkese açık yazışma: odadaki herkes okur
     'chat', case when r.status in ('playing', 'finished') then (
               select coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'name', d.name, 'body', d.body, 'at', d.created_at,
-                                                           'mine', d.user_id = v.id) order by d.created_at), '[]'::jsonb)
+                                                           'mine', d.user_id = v.id, 'from', d.user_id,
+                                                           'round', d.round, 'phase', d.phase) order by d.created_at), '[]'::jsonb)
                 from (select * from public.vv_dead_chat where room_id = p_room_id and channel = 'all'
                        order by created_at desc limit 60) d) end,
     'shark_chat', case when (v_shark and v_alive) or v_omni or r.status = 'finished' then (
                     select coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'name', d.name, 'body', d.body, 'at', d.created_at,
-                                                                 'mine', d.user_id = v.id) order by d.created_at), '[]'::jsonb)
+                                                                 'mine', d.user_id = v.id, 'from', d.user_id,
+                                                                 'round', d.round, 'phase', d.phase) order by d.created_at), '[]'::jsonb)
                       from (select * from public.vv_dead_chat where room_id = p_room_id and channel = 'shark'
                              order by created_at desc limit 60) d) end,
     'dead_chat', case when (v_is_player and not v_alive and v_left is null) or v_omni or r.status = 'finished'
                         or (me.role = 'medium' and v_alive and v_phase in ('day', 'vote')) then (
                     select coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'name', d.name, 'body', d.body, 'at', d.created_at,
-                                                                 'mine', d.user_id = v.id) order by d.created_at), '[]'::jsonb)
+                                                                 'mine', d.user_id = v.id, 'from', d.user_id,
+                                                                 'round', d.round, 'phase', d.phase) order by d.created_at), '[]'::jsonb)
                       from (select * from public.vv_dead_chat where room_id = p_room_id and channel = 'dead'
                              order by created_at desc limit 60) d) end
   );
+end $$;
+
+-- Mesaj geçmişi: kişinin görmeye hakkı olan bütün yazışmalar (herkese açık, köpekbalığı frekansı, ölülerin frekansı),
+-- tur ve aşamasıyla (gece / gündüz ayrımı için). Görünürlük kuralları sk_view ile aynıdır; en çok 400 mesaj.
+create or replace function public.sk_history(p_room_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+  v_is_player boolean;
+  v_alive boolean;
+  v_left timestamptz;
+  v_role text;
+  v_omni boolean;
+  v_phase text;
+  v_shark boolean;
+  v_dead boolean;
+begin
+  v := public._require_user();
+  select * into r from public.game_rooms where id = p_room_id;
+  if not found or r.game_type <> 'shark_cage' then raise exception 'room_not_found'; end if;
+  select rp.is_alive, rp.left_at into v_alive, v_left from public.room_players rp
+   where rp.room_id = p_room_id and rp.user_id = v.id;
+  v_is_player := found;
+  v_alive := coalesce(v_alive, false);
+  v_omni := public._sk_is_omni(r, v.id);
+  if not (v_is_player or r.host_id = v.id or v.role = 'admin') then raise exception 'forbidden'; end if;
+  select s.role into v_role from public.room_player_secrets s where s.room_id = p_room_id and s.user_id = v.id;
+  v_phase := case when r.status = 'finished' then 'ended' else coalesce(r.state->>'phase', '') end;
+  v_shark := (public._sk_team(v_role) = 'shark' and v_alive) or v_omni or r.status = 'finished';
+  v_dead := (v_is_player and not v_alive and v_left is null) or v_omni or r.status = 'finished'
+            or (v_role = 'medium' and v_alive and v_phase in ('day', 'vote'));
+  if r.status not in ('playing', 'finished') then return '[]'::jsonb; end if;
+  return (
+    select coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'name', d.name, 'body', d.body, 'at', d.created_at,
+                                                 'mine', d.user_id = v.id, 'from', d.user_id, 'channel', d.channel,
+                                                 'round', d.round, 'phase', d.phase) order by d.created_at), '[]'::jsonb)
+      from (select * from public.vv_dead_chat
+             where room_id = p_room_id
+               and (channel = 'all' or (channel = 'shark' and v_shark) or (channel = 'dead' and v_dead))
+             order by created_at desc limit 400) d);
 end $$;
 
 insert into public.app_settings (key, value, description) values
@@ -17060,6 +17119,9 @@ insert into public.app_settings (key, value, description) values
   ('sk_vote_seconds', '60', 'Köpekbalığı Kafesi: kafes oylaması süresi, saniye'),
   ('sk_result_seconds', '12', 'Köpekbalığı Kafesi: oylama sonucunun ekranda kalma süresi, saniye'),
   ('sk_force_end_seconds', '45', 'Köpekbalığı Kafesi: oynayan yönetici geceyi ya da oylamayı bu kadar saniye dolmadan bitiremez')
+on conflict (key) do nothing;
+insert into public.app_settings (key, value, description) values
+  ('sk_voice_round_ms', '15000', 'Köpekbalığı Kafesi: bir oyuncunun her tartışmada (plaj+oylama ya da dalış) toplam bas-konuş süresi, milisaniye')
 on conflict (key) do nothing;
 
 
@@ -17115,6 +17177,9 @@ declare
   v_role text;
   v_channel text;
   v_id uuid;
+  v_round int;
+  v_data jsonb;
+  v_used int;
 begin
   v := public._require_user();
   if v.muted_until is not null and v.muted_until > now() then raise exception 'muted'; end if;
@@ -17122,6 +17187,8 @@ begin
     raise exception 'invalid_audio';
   end if;
   if p_duration_ms is null or p_duration_ms not between 300 and 6000 then raise exception 'invalid_audio'; end if;
+  -- Ses uzunluğu bildirilen süreyle uyumlu olmalı (32 kbps kayıt; geniş pay): kısa diye bildirilen uzun ses kabul edilmez
+  if char_length(p_audio) > 8000 + p_duration_ms * 14 then raise exception 'invalid_audio'; end if;
   perform public._sk_voice_cleanup();
   select * into r from public.game_rooms where id = p_room_id;
   if not found or r.game_type <> 'shark_cage' or not r.remote or r.status <> 'playing' then raise exception 'voice_closed'; end if;
@@ -17133,6 +17200,12 @@ begin
   v_channel := case when r.state->>'phase' in ('day', 'vote', 'vote_result') then 'all'
                     when r.state->>'phase' = 'night' and public._sk_team(v_role) = 'shark' then 'shark' end;
   if v_channel is null then raise exception 'voice_closed'; end if;
+  -- Her tartışmada (tur + kanal) kişi başı en çok 15 sn konuşma (ayar: sk_voice_round_ms). Sayaç gizli kayıtta tutulur.
+  v_round := coalesce((r.state->>'round')::int, 0);
+  select s.data into v_data from public.room_player_secrets s where s.room_id = p_room_id and s.user_id = v.id for update;
+  v_used := case when (v_data->'voice'->>'round')::int = v_round and v_data->'voice'->>'channel' = v_channel
+                 then coalesce((v_data->'voice'->>'ms')::int, 0) else 0 end;
+  if v_used + p_duration_ms > public.setting_int('sk_voice_round_ms', 15000) + 500 then raise exception 'voice_quota'; end if;
   if exists (select 1 from public.sk_voice_clips where room_id = p_room_id and user_id = v.id
               and created_at > now() - interval '3 seconds') then
     raise exception 'rate_limited';
@@ -17143,6 +17216,10 @@ begin
   insert into public.sk_voice_clips (room_id, user_id, channel, audio, duration_ms)
   values (p_room_id, v.id, v_channel, p_audio, p_duration_ms)
   returning id into v_id;
+  update public.room_player_secrets
+     set data = data || jsonb_build_object('voice', jsonb_build_object('round', v_round, 'channel', v_channel,
+                                                                       'ms', v_used + p_duration_ms))
+   where room_id = p_room_id and user_id = v.id;
   perform public._room_touch(p_room_id, v.id);
   return v_id;
 end $$;
@@ -17797,6 +17874,7 @@ grant execute on function public.voice_yield(uuid) to authenticated;
 grant execute on function public.voice_ping(uuid) to authenticated;
 grant execute on function public.room_vote_kick(uuid, uuid) to authenticated;
 grant execute on function public.sk_view(uuid) to authenticated;
+grant execute on function public.sk_history(uuid) to authenticated;
 grant execute on function public.sk_start(uuid) to authenticated;
 grant execute on function public.sk_ready(uuid) to authenticated;
 grant execute on function public.sk_night_action(uuid, text, uuid) to authenticated;

@@ -191,15 +191,21 @@ export default function SharkGuideScreen() {
         <>
           <P>
             Uzaktan odada herkes kendi telefonundan oynar. Konuşmak için mikrofon düğmesine basılı tut: en çok 5 saniyelik
-            bir ses mesajı kaydedilir. Mesajlar sırayla çalar; biri konuşurken sen de basabilirsin, senin mesajın onunki
-            bitince duyulur.
+            bir ses mesajı kaydedilir. Her tartışmada (plaj + oylama ya da bir dalış) toplam en çok 15 saniye
+            konuşabilirsin. Mesajlar sırayla çalar; konuşanın avatarı öne çıkar. Biri konuşurken sen de basabilirsin,
+            senin mesajın onunki bitince duyulur.
           </P>
+          <P>Kötü bir ses mesajını şikâyet etmek için konuşan oyuncunun avatarına basılı tut.</P>
           <P>
             “Uzaktan Eşleş” dersen haritada oyuncu aranır; 3 kişi olunca bekleme odası açılır. Odada 6 kişi olunca
             “Hazırım” düğmesi açılır; hazır diyenler demeyenlerden fazla olunca oyun başlar. Beklersen ya da “Davet
             bağlantısı” ile arkadaşını çağırırsan kalabalık oyun daha çok puan verir. Eşleştirmede herkes rumuzuyla görünür.
           </P>
           <P>Dalışta mikrofonlar kapalıdır; yalnızca köpekbalıkları kendi frekanslarında konuşabilir.</P>
+          <P>
+            Oyun başladıktan sonra oda sahibi ayrılırsa oda kapanmaz: sahiplik başka bir oyuncuya geçer ve oyun sürer.
+            Eşleştirme lobisinde de böyledir.
+          </P>
           <P>
             Ses mesajları en geç 10 dakika sonra sunucudan silinir. Şikâyet edilen mesaj, moderatör inceleyene kadar en çok
             14 gün saklanır.

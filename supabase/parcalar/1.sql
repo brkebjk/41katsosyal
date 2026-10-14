@@ -2411,7 +2411,8 @@ begin
   v_winner := r.state->>'winner';
   if r.game_type in ('vampire_villager', 'shark_cage') and v_winner is null then return; end if;
   -- Köpekbalığı Kafesi anlatıcılı oyun (etkinlik eğlencesi): kimse puan almaz
-  if r.game_type = 'shark_cage' and coalesce(r.config->>'mode', 'auto') = 'narrator' then return; end if;
+  if r.game_type = 'shark_cage' and (coalesce(r.config->>'mode', 'auto') = 'narrator'
+                                      or coalesce((r.config->>'no_points')::boolean, false)) then return; end if;
   v_cap := case when r.game_type = 'quiz' then public.setting_int('pts_quiz_top_cap', 3)
                 else public.setting_int('pts_game_top_cap', 12) end;
   return query
@@ -4855,15 +4856,22 @@ begin
   if not found or r.status not in ('lobby', 'playing') then return null; end if;
   if not exists (select 1 from public.game_types where key = r.game_type and presence_required) then return null; end if;
 
-  -- Köpekbalığı Kafesi eşleştirme odası: sahibi ayrılınca oda kapanmaz, sahiplik sıradaki oyuncuya geçer
-  if r.host_id = p_user_id and coalesce((r.config->>'match')::boolean, false)
-     and exists (select 1 from public.room_players where room_id = p_room_id and user_id <> p_user_id and left_at is null) then
+  -- Köpekbalığı Kafesi: eşleştirme odasında (lobide de) ve başlamış her uzaktan oyunda sahibi ayrılınca oda kapanmaz,
+  -- sahiplik sıradaki gerçek oyuncuya geçer (önce hayatta olanlar, sonra katılma sırası). Yalnızca botlar kaldıysa kapanır.
+  -- Anlatıcı ayrılırsa oyun otomatik ilerler ama yine puansız kalır (no_points).
+  if r.host_id = p_user_id and r.game_type = 'shark_cage'
+     and (coalesce((r.config->>'match')::boolean, false) or (r.remote and r.status = 'playing'))
+     and exists (select 1 from public.room_players rp join public.profiles bp on bp.id = rp.user_id
+                  where rp.room_id = p_room_id and rp.user_id <> p_user_id and rp.left_at is null and not bp.is_bot) then
     update public.game_rooms
-       set host_id = (select rp.user_id from public.room_players rp
-                       where rp.room_id = p_room_id and rp.user_id <> p_user_id and rp.left_at is null
-                       order by rp.joined_at limit 1),
+       set host_id = (select rp.user_id from public.room_players rp join public.profiles bp on bp.id = rp.user_id
+                       where rp.room_id = p_room_id and rp.user_id <> p_user_id and rp.left_at is null and not bp.is_bot
+                       order by rp.is_alive desc, rp.joined_at limit 1),
            host_seen_at = now(),
-           state = jsonb_set(state, '{ready}', coalesce(state->'ready', '[]'::jsonb) - p_user_id::text)
+           config = case when coalesce(config->>'mode', 'auto') = 'narrator'
+                         then config || jsonb_build_object('mode', 'auto', 'no_points', true) else config end,
+           state = case when state ? 'ready' then jsonb_set(state, '{ready}', (state->'ready') - p_user_id::text)
+                        else state end
      where id = p_room_id;
     select * into r from public.game_rooms where id = p_room_id;
   end if;

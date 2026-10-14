@@ -13,12 +13,14 @@ import {
   View,
   useWindowDimensions,
   type LayoutChangeEvent,
+  type StyleProp,
+  type TextStyle,
 } from 'react-native';
 
 import { Text } from '@/components/AppText';
 import { Avatar } from '@/components/Avatar';
 import { KeyboardLift } from '@/components/KeyboardLift';
-import { SK_ROLES, SK_WHEEL, type SkMsg, type SkPlayer, type SkRole } from '@/lib/shark';
+import { getSharkHistory, SK_ROLES, SK_WHEEL, type SkMsg, type SkPlayer, type SkRole } from '@/lib/shark';
 import { fonts } from '@/theme';
 
 // Köpekbalığı Kafesi sahnesi: görsel dosya kullanmadan, kodla çizilen deniz/plaj efektleri. Animasyonlar yerel
@@ -226,11 +228,14 @@ function Waves({ color, top }: { color: string; top: number }) {
   );
 }
 
-/** Parlayan güneş */
-function Sun() {
-  const p = usePingPong(2200);
+/**
+ * Ufuktaki güneş: küçük ve soluk sarı (üstteki süre çubuğunun turuncusuyla karışmasın). Ufuk çizgisinin hemen üstünde,
+ * solda durur; alt yarısı arkasından çizilen deniz bandının altında kalır (batan güneş görünümü).
+ */
+function Sun({ top }: { top: number }) {
+  const p = usePingPong(2600);
   return (
-    <View style={styles.sunWrap} pointerEvents="none">
+    <View style={[styles.sunWrap, { top: top - 30 }]} pointerEvents="none">
       <Animated.View
         style={[
           styles.sunGlow,
@@ -301,7 +306,7 @@ export function SharkIntroBackdrop() {
   return (
     <View style={styles.fill} pointerEvents="none">
       <LinearGradient colors={['#6CC9F2', '#BDE9FA']} style={[styles.band, { top: 0, height: surface }]} />
-      <Sun />
+      <Sun top={surface} />
       <LinearGradient
         colors={['#1C6E8C', '#0F3B5C', '#0B132B', '#050A18']}
         locations={[0, 0.25, 0.6, 1]}
@@ -331,7 +336,7 @@ export function SharkBackdrop({ scene }: { scene: SkScene }) {
     return (
       <View style={styles.fill} pointerEvents="none">
         <LinearGradient colors={['#6CC9F2', '#B8E7FA', '#F8F9FA']} locations={[0, 0.45, 0.7]} style={styles.fill} />
-        <Sun />
+        <Sun top={height * 0.6} />
         {/* Deniz bandı ve kum */}
         <LinearGradient
           colors={['#2BB3D9', '#5ED0E8']}
@@ -351,7 +356,7 @@ export function SharkBackdrop({ scene }: { scene: SkScene }) {
     return (
       <View style={styles.fill} pointerEvents="none">
         <LinearGradient colors={['#48CAE4', '#BDE9FA', '#FFF4D6']} style={styles.fill} />
-        <Sun />
+        <Sun top={height * 0.62} />
         <Bubbles count={20} color="rgba(255,255,255,0.9)" seed={11} />
       </View>
     );
@@ -505,6 +510,9 @@ export function RoleWheel({ role, size, onDone }: { role: SkRole; size: number; 
 // Koltuklar: numaralı avatarlar, oy tabelası, aldığı oy
 // ---------------------------------------------------------------------------
 
+/** Bu oyuncuyu ilgilendiren olay (avlandı, vuruldu, kafeste, kurtarıldı…): avatar büyür, üstünde simge ve kelime çıkar */
+export type SeatEvent = { icon: string; text: string; color: string };
+
 export type Seat = {
   p: SkPlayer;
   /** Dokununca seçilir */
@@ -520,7 +528,7 @@ export type Seat = {
   votesIn?: number;
   /** Avatarın sağ altındaki durum rozeti (emoji) */
   badge?: string | null;
-  /** Adın altındaki satır */
+  /** Adın altındaki satır (tabela yoksa görünür) */
   label?: { text: string; color: string } | null;
   /** Ölüyse nasıl elendi */
   deadLabel?: string | null;
@@ -532,24 +540,44 @@ export type Seat = {
   marked?: boolean;
   /** Rol simgesi (avatarın alt ortasında). Yalnızca görmeye hakkın olan roller gelir (sunucu süzer). */
   roleEmoji?: { emoji: string; color: string } | null;
+  /** Bu oyuncuyu ilgilendiren olay */
+  event?: SeatEvent | null;
+  /** Oylamada henüz oy vermedi: avatarda soru işareti sallanır */
+  thinking?: boolean;
+  /** Şu an bas-konuş sesi çalınan kişi: avatar öne çıkar, büyür */
+  speaking?: boolean;
 };
 
-const GAP = 6;
-/** Avatarın dışındaki yükseklik: ad, alt satır ve alttaki tabela */
-const EXTRA = 70;
-const MAX_AVATAR = 78;
+/**
+ * Rol yeteneğinin hedefe "atılması": simge senin avatarından seçtiğin avatara rolüne uygun hareketle gider ve orada
+ * kalır. throw = kavisli atış ve dönme (şamandıra, işaret), swim = dalgalanarak yüzme (köpekbalığı, kaplan, mürekkep),
+ * shot = dümdüz hızlı atış (zıpkın), smash = gelip vurma (çekiç), float = süzülme (hemşire, dürbün).
+ */
+export type MarkKind = 'throw' | 'swim' | 'shot' | 'smash' | 'float';
+export type SeatMark = { from: string | null; to: string; icon: string; kind: MarkKind };
 
+const GAP = 6;
+/**
+ * Avatarın dışındaki SABİT yükseklik: üst boşluk 4 + çerçeve 8 + ad 4+16 + alt satır (tabela) 28. Olay balonu üst
+ * satırın üstüne biner (yer kaplamaz). Kutucuk yüksekliği hep avatar + EXTRA'dır; dokununca, oy verince ya da yazı
+ * değişince hiçbir şey kaymaz.
+ */
+const EXTRA = 60;
+const MAX_AVATAR = 108;
+const MIN_AVATAR = 26;
+
+/** Ekranı kaydırmadan bütün avatarlar sığsın: en büyük avatarı veren sütun sayısı seçilir */
 function fit(n: number, w: number, h: number): { cols: number; size: number } {
-  let best = { cols: Math.min(4, Math.max(1, n)), size: 24 };
+  let best = { cols: Math.min(4, Math.max(1, n)), size: 0 };
   for (let cols = 2; cols <= 6; cols++) {
     const rows = Math.ceil(n / cols);
     const tileW = (w - GAP * (cols - 1)) / cols;
-    const byW = tileW - 14;
+    const byW = tileW - 10;
     const byH = (h - GAP * (rows - 1)) / rows - EXTRA;
     const size = Math.floor(Math.min(byW, byH, MAX_AVATAR));
     if (size > best.size) best = { cols, size };
   }
-  return best;
+  return { cols: best.cols, size: Math.max(MIN_AVATAR, best.size) };
 }
 
 export function SeatGrid({
@@ -558,6 +586,8 @@ export function SeatGrid({
   accent,
   light,
   onPress,
+  onLongPress,
+  mark,
 }: {
   seats: Seat[];
   selected?: string | null;
@@ -565,6 +595,10 @@ export function SeatGrid({
   /** Açık zemin (plaj): yazılar koyu */
   light?: boolean;
   onPress?: (s: Seat) => void;
+  /** Avatara basılı tutunca (ör. ses mesajını şikâyet et) */
+  onLongPress?: (s: Seat) => void;
+  /** Rol yeteneğinin seçilen avatara atılan simgesi */
+  mark?: SeatMark | null;
 }) {
   const [box, setBox] = useState<{ w: number; h: number } | null>(null);
   const onLayout = (e: LayoutChangeEvent) => {
@@ -591,26 +625,40 @@ export function SeatGrid({
     if (!a || !b) return null;
     return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
   };
+  // Kaydırma yok: ızgara ayrılan alana sığdırılır ve ortalanır
   return (
     <View style={styles.gridBox} onLayout={onLayout}>
       {box && size > 0 ? (
-        <ScrollView contentContainerStyle={styles.gridScroll} showsVerticalScrollIndicator={false}>
-          <View style={styles.grid}>
-            {seats.map((s) => (
-              <SeatTile
-                key={s.p.id}
-                seat={s}
-                width={tileW}
-                size={size}
-                selected={selected === s.p.id}
-                accent={accent}
-                light={!!light}
-                arrow={angleOf(s.p.id, s.sign?.target)}
-                onPress={onPress}
-              />
-            ))}
-          </View>
-        </ScrollView>
+        <View style={styles.grid}>
+          {seats.map((s) => (
+            <SeatTile
+              key={s.p.id}
+              seat={s}
+              width={tileW}
+              size={size}
+              selected={selected === s.p.id}
+              accent={accent}
+              light={!!light}
+              arrow={angleOf(s.p.id, s.sign?.target)}
+              onPress={onPress}
+              onLongPress={onLongPress}
+            />
+          ))}
+          {mark && center.has(mark.to) ? (
+            <FlyingMark
+              key={`${mark.to}|${mark.icon}|${mark.kind}`}
+              mark={mark}
+              // Avatarın ortasının biraz üstü (kutucuğun üstünden: boşluk 4 + çerçevenin %42'si)
+              to={{ x: center.get(mark.to)!.x, y: center.get(mark.to)!.y + 4 + (size + 8) * 0.42 }}
+              from={
+                mark.from && center.has(mark.from) && mark.from !== mark.to
+                  ? { x: center.get(mark.from)!.x, y: center.get(mark.from)!.y + 4 + (size + 8) / 2 }
+                  : null
+              }
+              size={Math.max(24, Math.min(46, Math.round(size * 0.5)))}
+            />
+          ) : null}
+        </View>
       ) : null}
     </View>
   );
@@ -625,6 +673,7 @@ function SeatTile({
   light,
   arrow,
   onPress,
+  onLongPress,
 }: {
   seat: Seat;
   width: number;
@@ -635,10 +684,32 @@ function SeatTile({
   /** Tabeladaki okun açısı (derece; 0 = sağa) */
   arrow: number | null;
   onPress?: (s: Seat) => void;
+  onLongPress?: (s: Seat) => void;
 }) {
   const p = seat.p;
   const dead = !p.is_alive;
   const pulse = usePingPong(700);
+  // Olay: avatar bir kez zıplayarak büyür ve olay sürdükçe biraz büyük kalır (yerleşimi değiştirmez, kaydırmaz)
+  const [pop] = useState(() => new Animated.Value(1));
+  const evKey = seat.event ? `${seat.event.icon}|${seat.event.text}` : null;
+  useEffect(() => {
+    pop.stopAnimation();
+    if (!evKey) {
+      pop.setValue(1);
+      return;
+    }
+    pop.setValue(1);
+    Animated.sequence([
+      Animated.timing(pop, { toValue: 1.3, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: NATIVE }),
+      Animated.timing(pop, { toValue: 1.12, duration: 320, easing: Easing.inOut(Easing.cubic), useNativeDriver: NATIVE }),
+    ]).start();
+  }, [evKey, pop]);
+  // Konuşan kişi: avatar öne çıkar (büyür), ses bitince yerine döner
+  const [talk] = useState(() => new Animated.Value(1));
+  const speaking = !!seat.speaking;
+  useEffect(() => {
+    Animated.spring(talk, { toValue: speaking ? 1.38 : 1, friction: 5, useNativeDriver: NATIVE }).start();
+  }, [speaking, talk]);
   const ring = selected
     ? accent
     : (seat.frame ?? (p.is_me ? '#48CAE4' : light ? 'rgba(11,19,43,0.35)' : 'rgba(255,255,255,0.5)'));
@@ -648,6 +719,7 @@ function SeatTile({
     p.name,
     p.is_me ? 'sen' : null,
     dead ? (seat.deadLabel ?? 'elendi') : 'hayatta',
+    seat.event ? seat.event.text : null,
     seat.votesIn ? `${seat.votesIn} oy aldı` : null,
     seat.sign ? (seat.sign.kind === 'pass' ? 'pas geçti' : `oyu: ${seat.sign.text}`) : null,
     seat.label?.text ?? null,
@@ -655,16 +727,33 @@ function SeatTile({
     .filter(Boolean)
     .join(', ');
   const outer = size + 8;
+  const small = size < 44;
+  const lineText = dead ? (seat.deadLabel ?? 'Elendi') : (seat.label?.text ?? null);
+  const lineColor = dead
+    ? light
+      ? '#9B1C2E'
+      : '#FF8A98'
+    : (seat.label?.color ?? (light ? '#24324F' : 'rgba(255,255,255,0.7)'));
   return (
     <Pressable
       onPress={onPress ? () => onPress(seat) : undefined}
-      disabled={!onPress}
+      onLongPress={onLongPress ? () => onLongPress(seat) : undefined}
+      delayLongPress={500}
+      disabled={!onPress && !onLongPress}
       accessibilityRole={seat.selectable ? 'radio' : 'button'}
       accessibilityState={seat.selectable ? { selected, disabled: seat.dim } : undefined}
       accessibilityLabel={label}
-      style={({ pressed }) => [styles.tile, { width }, seat.dim && styles.dim, pressed && styles.pressed]}
+      style={[
+        styles.tile,
+        { width, height: size + EXTRA },
+        (seat.event || speaking) && styles.tileTop,
+        speaking && styles.tileTalk,
+        seat.dim && styles.dim,
+      ]}
     >
-      <View style={{ width: outer, height: outer, marginTop: 6 }}>
+      <Animated.View
+        style={{ width: outer, height: outer, marginTop: 4, transform: [{ scale: Animated.multiply(pop, talk) }] }}
+      >
         {selected ? (
           <Animated.View
             style={[
@@ -683,7 +772,11 @@ function SeatTile({
         <View
           style={[
             styles.ring,
-            { borderRadius: outer / 2, borderColor: ring, borderWidth: selected ? 3 : 2 },
+            {
+              borderRadius: outer / 2,
+              borderColor: speaking ? '#34D399' : seat.event ? seat.event.color : ring,
+              borderWidth: selected || seat.event || speaking ? 3 : 2,
+            },
             seat.ally && styles.allyGlow,
           ]}
         >
@@ -697,8 +790,8 @@ function SeatTile({
           ) : null}
         </View>
         {/* Koltuk numarası: büyük ve belirgin */}
-        <View style={[styles.seatNo, size < 44 && styles.seatNoSmall]}>
-          <Text style={[styles.seatNoText, size < 44 && styles.seatNoTextSmall]}>{p.seat}</Text>
+        <View style={[styles.seatNo, small && styles.seatNoSmall]}>
+          <Text style={[styles.seatNoText, small && styles.seatNoTextSmall]}>{p.seat}</Text>
         </View>
         {/* Aldığı kafes oyu */}
         {seat.votesIn ? (
@@ -726,7 +819,16 @@ function SeatTile({
             <Text style={styles.badgeText}>📍</Text>
           </View>
         ) : null}
-      </View>
+        {seat.thinking && !dead ? <Thinking size={size} /> : null}
+        {/* Olay balonu: avatarın üstünde simge ve kelime */}
+        {seat.event ? (
+          <View style={styles.eventWrap} pointerEvents="none">
+            <View style={[styles.event, { backgroundColor: seat.event.color }]}>
+              <Text style={styles.eventText} numberOfLines={1}>{`${seat.event.icon} ${seat.event.text}`}</Text>
+            </View>
+          </View>
+        ) : null}
+      </Animated.View>
 
       <Text
         style={[styles.name, { color: nameColor }, light ? styles.nameLight : styles.nameDark, dead && styles.nameDead]}
@@ -734,17 +836,7 @@ function SeatTile({
       >
         {p.is_me ? `${p.name} (sen)` : p.name}
       </Text>
-      <Text
-        style={[
-          styles.label,
-          { color: dead ? (light ? '#9B1C2E' : '#FF8A98') : (seat.label?.color ?? (light ? '#24324F' : 'rgba(255,255,255,0.7)')) },
-          !light && styles.nameDark,
-        ]}
-        numberOfLines={1}
-      >
-        {dead ? (seat.deadLabel ?? 'Elendi') : (seat.label?.text ?? ' ')}
-      </Text>
-      {/* Tabela (avatarın altında): kime oy verdiği; ok oy verilen kişinin avatarına döner */}
+      {/* Alt satır: oy tabelası varsa tabela (ok oy verilen kişinin avatarına döner), yoksa durum yazısı */}
       <View style={styles.signSlot}>
         {seat.sign ? (
           <View
@@ -758,45 +850,322 @@ function SeatTile({
             {arrow !== null ? (
               <Ionicons
                 name="arrow-forward"
-                size={15}
+                size={19}
                 color={seat.sign.kind === 'hunt' ? '#FF8A98' : '#3B220B'}
                 style={{ transform: [{ rotate: `${Math.round(arrow)}deg` }] }}
               />
             ) : null}
             <Text style={[styles.signText, seat.sign.kind === 'hunt' && styles.signTextHunt]}>{seat.sign.text}</Text>
           </View>
+        ) : lineText ? (
+          <Text style={[styles.label, { color: lineColor }, !light && styles.nameDark]} numberOfLines={1}>
+            {lineText}
+          </Text>
         ) : null}
       </View>
     </Pressable>
   );
 }
 
+/** Rol simgesinin hedefe uçuşu (rolüne uygun hareketle) ve hedefte hafifçe sallanarak kalması */
+function FlyingMark({ mark, from, to, size }: {
+  mark: SeatMark;
+  from: { x: number; y: number } | null;
+  to: { x: number; y: number };
+  size: number;
+}) {
+  const [t] = useState(() => new Animated.Value(0));
+  const [hit] = useState(() => new Animated.Value(0));
+  const bob = usePingPong(1100);
+  const start = from ?? { x: to.x, y: to.y - 90 };
+  const kind = mark.kind;
+  useEffect(() => {
+    t.setValue(0);
+    hit.setValue(0);
+    const dur = kind === 'shot' ? 260 : kind === 'swim' ? 900 : kind === 'float' ? 800 : 620;
+    Animated.sequence([
+      Animated.timing(t, {
+        toValue: 1,
+        duration: dur,
+        easing: kind === 'shot' ? Easing.in(Easing.quad) : Easing.inOut(Easing.cubic),
+        useNativeDriver: NATIVE,
+      }),
+      // Varışta vurma / sıçrama
+      Animated.timing(hit, { toValue: 1, duration: kind === 'smash' ? 360 : 260, useNativeDriver: NATIVE }),
+    ]).start();
+  }, [t, hit, kind]);
+  const half = size / 2;
+  const tx = t.interpolate({ inputRange: [0, 1], outputRange: [start.x - half, to.x - half] });
+  // Atışta kavis: yolun ortasında yukarı kalkar
+  const peak = Math.min(start.y, to.y) - (kind === 'throw' ? 70 : kind === 'smash' ? 40 : 0);
+  const ty =
+    kind === 'throw' || kind === 'smash'
+      ? t.interpolate({ inputRange: [0, 0.5, 1], outputRange: [start.y - half, peak - half, to.y - half] })
+      : kind === 'swim'
+        ? t.interpolate({
+            inputRange: [0, 0.25, 0.5, 0.75, 1],
+            outputRange: [
+              start.y - half,
+              (start.y * 3 + to.y) / 4 - half - 14,
+              (start.y + to.y) / 2 - half + 14,
+              (start.y + to.y * 3) / 4 - half - 10,
+              to.y - half,
+            ],
+          })
+        : t.interpolate({ inputRange: [0, 1], outputRange: [start.y - half, to.y - half] });
+  const angle = (Math.atan2(to.y - start.y, to.x - start.x) * 180) / Math.PI;
+  const rotate =
+    kind === 'throw'
+      ? t.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '720deg'] })
+      : kind === 'swim'
+        ? t.interpolate({ inputRange: [0, 0.25, 0.5, 0.75, 1], outputRange: ['-18deg', '18deg', '-18deg', '18deg', '0deg'] })
+        : kind === 'smash'
+          ? hit.interpolate({ inputRange: [0, 0.4, 1], outputRange: ['0deg', '-55deg', '15deg'] })
+          : kind === 'shot'
+            ? `${Math.round(angle + 45)}deg`
+            : '0deg';
+  const scale = Animated.multiply(
+    t.interpolate({ inputRange: [0, 1], outputRange: [kind === 'shot' ? 1 : 1.7, 1] }),
+    hit.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1, kind === 'float' ? 1.15 : 1.3, 1] }),
+  );
+  const bobY = bob.interpolate({ inputRange: [0, 1], outputRange: [-3, 3] });
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.mark, { width: size, height: size, transform: [{ translateX: tx }, { translateY: ty }] }]}
+    >
+      <Animated.View style={{ transform: [{ translateY: bobY }, { rotate }, { scale }] }}>
+        <Text style={[styles.markText, { fontSize: Math.round(size * 0.8), lineHeight: size }]}>{mark.icon}</Text>
+      </Animated.View>
+    </Animated.View>
+  );
+}
+
+/** Oy vermeyi düşünen oyuncu: avatarın üstünde sallanan soru işareti */
+function Thinking({ size }: { size: number }) {
+  const swing = usePingPong(650);
+  return (
+    <View style={styles.thinkWrap} pointerEvents="none">
+      <Animated.Text
+        style={[
+          styles.thinkText,
+          {
+            fontSize: Math.max(16, Math.round(size * 0.34)),
+            transform: [{ rotate: swing.interpolate({ inputRange: [0, 1], outputRange: ['-20deg', '20deg'] }) }],
+          },
+        ]}
+      >
+        ?
+      </Animated.Text>
+    </View>
+  );
+}
+
 // ---------------------------------------------------------------------------
-// Ortadaki karar yazısı ve oksijen / güneş sayacı
+// Yuvarlak koltuk numarası (yazıların içinde de avatardaki gibi görünür)
 // ---------------------------------------------------------------------------
 
-export function Prompt({ title, sub, color, light, pulse }: {
+/** Yazıların içinde koltuk numarası: `seatTag(7)` → "⟦7⟧"; ekranda avatardaki gibi yuvarlak rozet olur */
+export const seatTag = (n: number | undefined | null): string => (n ? `⟦${n}⟧` : '?');
+
+export function SeatChip({ n, size = 20 }: { n: number; size?: number }) {
+  return (
+    <View style={[styles.seatChip, { minWidth: size, height: size, borderRadius: size / 2 }]}>
+      <Text style={[styles.seatChipText, { fontSize: Math.round(size * 0.58), lineHeight: Math.round(size * 0.72) }]}>
+        {n}
+      </Text>
+    </View>
+  );
+}
+
+/** Metindeki ⟦7⟧ işaretlerini yuvarlak koltuk numarasına çevirir; kelimeler ortalanarak alt satıra geçer */
+export function RichLine({
+  text,
+  style,
+  chip = 20,
+  align = 'center',
+}: {
+  text: string;
+  style?: StyleProp<TextStyle>;
+  chip?: number;
+  align?: 'center' | 'left';
+}) {
+  const nodes: ReactNode[] = [];
+  text.split(/(⟦\d+⟧)/).forEach((part, i) => {
+    const m = /^⟦(\d+)⟧$/.exec(part);
+    if (m) {
+      nodes.push(<SeatChip key={i} n={Number(m[1])} size={chip} />);
+      return;
+    }
+    part.split(/\s+/).forEach((w, j) => {
+      if (w) {
+        nodes.push(
+          <Text key={`${i}-${j}`} style={style}>
+            {w}
+          </Text>,
+        );
+      }
+    });
+  });
+  return <View style={[styles.richLine, align === 'left' && styles.richLeft]}>{nodes}</View>;
+}
+
+// ---------------------------------------------------------------------------
+// Üstteki tabela: yapman gereken şey + olay akışı (oyuncu çoğaldıkça küçülür, yüksekliği sabittir)
+// ---------------------------------------------------------------------------
+
+export function Prompt({ title, lines, color, light, pulse, compact }: {
   title: string;
-  sub?: string | null;
+  /** Olay akışı (en yenisi üstte). İçindeki ⟦7⟧ koltuk numarası rozeti olur. */
+  lines?: string[];
   color?: string;
   light?: boolean;
   pulse?: boolean;
+  /** Kalabalık oyun: tabela küçülür, avatarlara yer kalır */
+  compact?: boolean;
 }) {
   const p = usePingPong(900);
   const scale = pulse ? p.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] }) : 1;
+  const max = compact ? 2 : 3;
+  const sub = light ? '#24324F' : 'rgba(255,255,255,0.82)';
   return (
-    <View style={[styles.prompt, light ? styles.promptLight : styles.promptDark]} accessibilityLiveRegion="polite">
-      <Animated.Text
-        style={[styles.promptTitle, { color: color ?? (light ? '#0B132B' : '#FFFFFF'), transform: [{ scale }] }]}
-        numberOfLines={2}
+    <View
+      style={[styles.prompt, compact ? styles.promptCompact : styles.promptNormal, light ? styles.promptLight : styles.promptDark]}
+      accessibilityLiveRegion="polite"
+    >
+      <Animated.View style={{ transform: [{ scale }] }}>
+        <RichLine
+          text={title}
+          chip={compact ? 20 : 24}
+          style={[styles.promptTitle, compact && styles.promptTitleCompact, { color: color ?? (light ? '#0B132B' : '#FFFFFF') }]}
+        />
+      </Animated.View>
+      {(lines ?? []).slice(0, max).map((l, i) => (
+        <RichLine
+          key={i}
+          text={l}
+          chip={compact ? 16 : 18}
+          style={[styles.promptSub, compact && styles.promptSubCompact, { color: sub }, i > 0 && styles.promptOld]}
+        />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * Komut yazısı ("⛓️ OY VER: ŞÜPHELİYİ SEÇ" gibi): ekranın ortasında büyük çıkar, 2,5 sn durur, kaybolur. Aşama yeni
+ * değiştiyse aşama yazısı ("DALIŞ", "PLAJ") bitince gelir. Dokunmaları engellemez.
+ */
+export function CommandFlash({ cmdKey, phaseKey, text, color }: {
+  cmdKey: string | null;
+  phaseKey: string;
+  text: string | null;
+  color: string;
+}) {
+  const [v] = useState(() => new Animated.Value(0));
+  const lastKey = useRef<string | null>(null);
+  const lastPhase = useRef<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [shown, setShown] = useState<{ text: string; color: string } | null>(null);
+  useEffect(() => {
+    const phaseChanged = lastPhase.current !== null && lastPhase.current !== phaseKey;
+    lastPhase.current = phaseKey;
+    if (!cmdKey || !text || lastKey.current === cmdKey) return;
+    lastKey.current = cmdKey;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(
+      () => {
+        setShown({ text, color });
+        v.setValue(0);
+        Animated.sequence([
+          Animated.timing(v, { toValue: 1, duration: 220, easing: Easing.out(Easing.back(1.6)), useNativeDriver: NATIVE }),
+          Animated.delay(2300),
+          Animated.timing(v, { toValue: 0, duration: 280, useNativeDriver: NATIVE }),
+        ]).start(() => setShown(null));
+      },
+      phaseChanged ? 1900 : 0,
+    );
+  }, [cmdKey, phaseKey, text, color, v]);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+  if (!shown) return null;
+  return (
+    <Animated.View style={[styles.fill, styles.cmdWrap, { opacity: v }]} pointerEvents="none">
+      <Animated.View
+        style={[
+          styles.cmdBox,
+          { borderColor: shown.color, transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }) }] },
+        ]}
       >
-        {title}
-      </Animated.Text>
-      {sub ? (
-        <Text style={[styles.promptSub, { color: light ? '#24324F' : 'rgba(255,255,255,0.78)' }]} numberOfLines={3}>
-          {sub}
-        </Text>
-      ) : null}
+        <Text style={styles.cmdText}>{shown.text}</Text>
+      </Animated.View>
+    </Animated.View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Oyun sonu sıralama tablosu: herkesin rolü ve oyunda kaldığı süre (kaydırmasız, ekrana sığar)
+// ---------------------------------------------------------------------------
+
+export type RankRow = {
+  id: string;
+  rank: number;
+  seat: number;
+  name: string;
+  me: boolean;
+  won: boolean;
+  role: { emoji: string; name: string; color: string } | null;
+  /** "12:34" ya da "Sona kaldı" */
+  time: string;
+  out: boolean;
+};
+
+export function RankTable({ rows }: { rows: RankRow[] }) {
+  const [h, setH] = useState(0);
+  const head = 26;
+  const rowH = h > 0 ? Math.max(20, Math.min(40, Math.floor((h - head - 12) / Math.max(1, rows.length)))) : 30;
+  const font = Math.min(14, Math.max(10.5, rowH * 0.42));
+  return (
+    <View
+      style={styles.rankBox}
+      onLayout={(e) => {
+        const nh = e.nativeEvent.layout.height;
+        if (Math.abs(nh - h) > 1) setH(nh);
+      }}
+    >
+      <View style={styles.rankPanel}>
+        <View style={[styles.rankRow, { height: head }]}>
+          <Text style={[styles.rankHead, styles.rankNo]}>#</Text>
+          <Text style={[styles.rankHead, styles.rankName]}>Oyuncu</Text>
+          <Text style={[styles.rankHead, styles.rankRole]}>Rol</Text>
+          <Text style={[styles.rankHead, styles.rankTime]}>Süre</Text>
+        </View>
+        {rows.map((r) => (
+          <View
+            key={r.id}
+            style={[styles.rankRow, { height: rowH }, r.won && styles.rankWon, r.me && styles.rankMe]}
+            accessibilityLabel={`${r.rank}. ${r.seat} numara ${r.name}, ${r.role?.name ?? ''}, ${r.time}${r.won ? ', kazandı' : ''}`}
+          >
+            <Text style={[styles.rankCell, styles.rankNo, { fontSize: font }]}>{r.won ? '🏆' : String(r.rank)}</Text>
+            <View style={[styles.rankName, styles.rankWho]}>
+              <SeatChip n={r.seat} size={Math.min(22, rowH - 4)} />
+              <Text style={[styles.rankCell, { fontSize: font }, r.out && styles.rankOut]} numberOfLines={1}>
+                {r.me ? `${r.name} (sen)` : r.name}
+              </Text>
+            </View>
+            <Text style={[styles.rankCell, styles.rankRole, { fontSize: font, color: r.role?.color ?? '#FFFFFF' }]} numberOfLines={1}>
+              {r.role ? `${r.role.emoji} ${r.role.name}` : '—'}
+            </Text>
+            <Text style={[styles.rankCell, styles.rankTime, { fontSize: font }]} numberOfLines={1}>
+              {r.time}
+            </Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -868,8 +1237,68 @@ export function SkSheet({ title, icon, onClose, children }: {
 }
 
 // ---------------------------------------------------------------------------
-// Sohbet kutusu (köpekbalıkları / elenenler)
+// Sohbet kutusu ve mesaj geçmişi: mesajlar gece / gündüz başlıklarıyla ayrılır
 // ---------------------------------------------------------------------------
+
+function groupOf(m: SkMsg): string {
+  if (m.round == null || !m.phase) return 'old';
+  return m.phase === 'night' ? `n${m.round}` : `d${m.round}`;
+}
+
+function groupTitle(m: SkMsg): string {
+  if (m.round == null || !m.phase) return 'Önceki mesajlar';
+  return m.phase === 'night' ? `🌙 ${m.round}. gece · dalış` : `☀️ ${m.round}. gün · plaj`;
+}
+
+const CHANNEL_TAG: Record<string, string> = { shark: '🦈 Takım', dead: '🪸 Ölüler' };
+
+/** Mesaj listesi: aşama değişince başlık; gece mesajları koyu mavi, gündüz mesajları açık zeminde */
+function MessageList({
+  messages,
+  seatOf,
+  showChannel,
+  onReport,
+}: {
+  messages: SkMsg[];
+  seatOf?: (id: string | undefined) => number | undefined;
+  showChannel?: boolean;
+  onReport: (m: SkMsg) => void;
+}) {
+  let last: string | null = null;
+  const out: ReactNode[] = [];
+  for (const m of messages) {
+    const g = groupOf(m);
+    if (g !== last) {
+      last = g;
+      out.push(
+        <View key={`h-${m.id}`} style={[styles.msgHead, m.phase === 'night' ? styles.msgHeadNight : styles.msgHeadDay]}>
+          <Text style={styles.msgHeadText}>{groupTitle(m)}</Text>
+        </View>,
+      );
+    }
+    const seat = seatOf?.(m.from);
+    const tag = showChannel && m.channel ? CHANNEL_TAG[m.channel] : undefined;
+    out.push(
+      <Pressable
+        key={m.id}
+        onLongPress={m.mine ? undefined : () => onReport(m)}
+        delayLongPress={400}
+        accessibilityHint={m.mine ? undefined : 'Bildirmek için uzun bas'}
+        style={[styles.msg, m.mine ? styles.mine : styles.theirs, m.phase === 'night' && styles.msgNight]}
+      >
+        {!m.mine || tag ? (
+          <View style={styles.msgWho}>
+            {!m.mine && seat ? <SeatChip n={seat} size={16} /> : null}
+            {!m.mine ? <Text style={styles.msgName}>{m.name}</Text> : null}
+            {tag ? <Text style={styles.msgTag}>{tag}</Text> : null}
+          </View>
+        ) : null}
+        <Text style={styles.msgBody}>{m.body}</Text>
+      </Pressable>,
+    );
+  }
+  return <>{out}</>;
+}
 
 export function ChatBox({
   messages,
@@ -878,6 +1307,7 @@ export function ChatBox({
   onSend,
   onReport,
   emptyText,
+  seatOf,
 }: {
   messages: SkMsg[];
   canWrite: boolean;
@@ -885,6 +1315,7 @@ export function ChatBox({
   onSend: (body: string) => Promise<string | null>;
   onReport: (m: SkMsg) => void;
   emptyText: string;
+  seatOf?: (id: string | undefined) => number | undefined;
 }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -904,18 +1335,7 @@ export function ChatBox({
       {messages.length === 0 ? (
         <Text style={styles.chatEmpty}>{emptyText}</Text>
       ) : (
-        messages.slice(-40).map((m) => (
-          <Pressable
-            key={m.id}
-            onLongPress={m.mine ? undefined : () => onReport(m)}
-            delayLongPress={400}
-            accessibilityHint={m.mine ? undefined : 'Bildirmek için uzun bas'}
-            style={[styles.msg, m.mine ? styles.mine : styles.theirs]}
-          >
-            {!m.mine ? <Text style={styles.msgName}>{m.name}</Text> : null}
-            <Text style={styles.msgBody}>{m.body}</Text>
-          </Pressable>
-        ))
+        <MessageList messages={messages.slice(-60)} seatOf={seatOf} onReport={onReport} />
       )}
       {canWrite ? (
         <View style={styles.inputRow}>
@@ -946,6 +1366,41 @@ export function ChatBox({
   );
 }
 
+/**
+ * Mesaj geçmişi: görmeye hakkın olan bütün yazışmalar (herkese açık, takım, ölüler) baştan sona, gece / gündüz
+ * başlıklarıyla. Açılınca ve aşama değişince sunucudan okunur.
+ */
+export function HistoryList({
+  roomId,
+  refreshKey,
+  seatOf,
+  onReport,
+}: {
+  roomId: string;
+  refreshKey: string;
+  seatOf?: (id: string | undefined) => number | undefined;
+  onReport: (m: SkMsg) => void;
+}) {
+  const [state, setState] = useState<{ messages: SkMsg[]; error: string | null } | null>(null);
+  useEffect(() => {
+    let active = true;
+    void getSharkHistory(roomId).then((res) => {
+      if (active) setState(res);
+    });
+    return () => {
+      active = false;
+    };
+  }, [roomId, refreshKey]);
+  if (!state) return <Text style={styles.chatEmpty}>Yükleniyor…</Text>;
+  if (state.error) return <Text style={styles.chatError}>{state.error}</Text>;
+  if (state.messages.length === 0) return <Text style={styles.chatEmpty}>Henüz yazışma yok.</Text>;
+  return (
+    <View style={styles.chat}>
+      <MessageList messages={state.messages} seatOf={seatOf} showChannel onReport={onReport} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   flex: { flex: 1 },
@@ -958,9 +1413,9 @@ const styles = StyleSheet.create({
   band: { position: 'absolute', left: 0, right: 0 },
   waveRow: { position: 'absolute', left: 0, height: 18, flexDirection: 'row' },
   waveCrest: { height: 18, marginRight: -18 },
-  sunWrap: { position: 'absolute', top: 70, right: 28, width: 90, height: 90, alignItems: 'center', justifyContent: 'center' },
-  sunGlow: { position: 'absolute', width: 120, height: 120, borderRadius: 60, backgroundColor: '#FFD166' },
-  sun: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#FFB703' },
+  sunWrap: { position: 'absolute', left: 14, width: 60, height: 60, alignItems: 'center', justifyContent: 'center' },
+  sunGlow: { position: 'absolute', width: 58, height: 58, borderRadius: 29, backgroundColor: '#FFF3C4' },
+  sun: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#FFE7A3' },
   sparkle: { position: 'absolute', width: 6, height: 6, borderRadius: 3, backgroundColor: '#FFFFFF' },
   voteTint: { backgroundColor: 'rgba(255, 77, 77, 0.08)' },
   flash: { alignItems: 'center', justifyContent: 'center', zIndex: 50 },
@@ -1016,19 +1471,97 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   wheelHubText: { color: '#FFB703', fontFamily: fonts.black, fontSize: 26 },
-  gridBox: { flex: 1, minHeight: 60 },
-  gridScroll: { flexGrow: 1, justifyContent: 'center' },
+  gridBox: { flex: 1, minHeight: 60, justifyContent: 'center' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', columnGap: GAP, rowGap: GAP },
   tile: { alignItems: 'center' },
+  tileTop: { zIndex: 5, elevation: 5 },
+  tileTalk: { zIndex: 8, elevation: 8 },
+  mark: { position: 'absolute', left: 0, top: 0, alignItems: 'center', justifyContent: 'center', zIndex: 20, elevation: 20 },
+  markText: { textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 6 },
   dim: { opacity: 0.38 },
-  signSlot: { height: 26, justifyContent: 'flex-start', alignItems: 'center', marginTop: 2 },
+  signSlot: { height: 28, justifyContent: 'flex-start', alignItems: 'center', marginTop: 0, maxWidth: '100%' },
+  thinkWrap: { position: 'absolute', top: '18%', left: 0, right: 0, alignItems: 'center' },
+  thinkText: {
+    color: '#FFB703',
+    fontFamily: fonts.black,
+    textShadowColor: 'rgba(0,0,0,0.85)',
+    textShadowRadius: 6,
+  },
+  eventWrap: { position: 'absolute', top: -16, left: -40, right: -40, alignItems: 'center' },
+  event: {
+    paddingHorizontal: 7,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  eventText: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 10.5, letterSpacing: 0.3 },
+  seatChip: {
+    paddingHorizontal: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0B132B',
+    borderWidth: 1.5,
+    borderColor: '#FFB703',
+  },
+  seatChipText: { color: '#FFB703', fontFamily: fonts.black },
+  richLine: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'center',
+    columnGap: 4,
+    rowGap: 2,
+  },
+  richLeft: { justifyContent: 'flex-start' },
+  cmdWrap: { alignItems: 'center', justifyContent: 'center', zIndex: 60 },
+  cmdBox: {
+    maxWidth: '88%',
+    paddingHorizontal: 22,
+    paddingVertical: 16,
+    borderRadius: 24,
+    borderWidth: 3,
+    backgroundColor: 'rgba(11, 19, 43, 0.9)',
+  },
+  cmdText: {
+    color: '#FFFFFF',
+    fontFamily: fonts.black,
+    fontSize: 30,
+    lineHeight: 38,
+    textAlign: 'center',
+    letterSpacing: 1,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowRadius: 10,
+  },
+  rankBox: { flex: 1, justifyContent: 'center' },
+  rankPanel: {
+    borderRadius: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(11, 19, 43, 0.86)',
+    borderWidth: 1,
+    borderColor: 'rgba(72, 202, 228, 0.35)',
+  },
+  rankRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, borderRadius: 8 },
+  rankWon: { backgroundColor: 'rgba(255, 183, 3, 0.18)' },
+  rankMe: { borderWidth: 1, borderColor: '#48CAE4' },
+  rankHead: { color: '#48CAE4', fontFamily: fonts.black, fontSize: 11.5 },
+  rankCell: { color: '#FFFFFF', fontFamily: fonts.extra },
+  rankNo: { width: 26, textAlign: 'center' },
+  rankName: { flex: 1 },
+  rankWho: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  rankRole: { width: '36%' },
+  rankTime: { width: 64, textAlign: 'right' },
+  rankOut: { color: 'rgba(255,255,255,0.6)' },
   sign: {
     flexDirection: 'row',
-    gap: 2,
-    minWidth: 34,
-    paddingHorizontal: 6,
-    height: 22,
-    borderRadius: 4,
+    gap: 3,
+    minWidth: 42,
+    paddingHorizontal: 7,
+    height: 27,
+    borderRadius: 5,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#E0A96D',
@@ -1038,7 +1571,7 @@ const styles = StyleSheet.create({
   signPass: { backgroundColor: '#C9CED6', borderColor: '#5B6472' },
   signHunt: { backgroundColor: '#3A0710', borderColor: '#FF4D4D' },
   signDouble: { backgroundColor: '#FFB703', borderColor: '#7A4A1E' },
-  signText: { color: '#3B220B', fontFamily: fonts.black, fontSize: 13.5 },
+  signText: { color: '#3B220B', fontFamily: fonts.black, fontSize: 17 },
   signTextHunt: { color: '#FF8A98' },
   selGlow: { position: 'absolute', left: -5, top: -5, borderWidth: 3 },
   ring: { flex: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
@@ -1114,22 +1647,28 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(11, 19, 43, 0.92)',
   },
   badgeText: { fontSize: 12 },
-  name: { marginTop: 4, maxWidth: '100%', fontFamily: fonts.extra, fontSize: 12 },
+  name: { marginTop: 4, height: 16, lineHeight: 16, maxWidth: '100%', fontFamily: fonts.extra, fontSize: 12 },
   nameDark: { textShadowColor: 'rgba(0,0,0,0.9)', textShadowRadius: 4 },
   nameLight: {},
   nameDead: { textDecorationLine: 'line-through' },
-  label: { maxWidth: '100%', fontFamily: fonts.semi, fontSize: 10.5 },
+  label: { maxWidth: '100%', fontFamily: fonts.extra, fontSize: 11 },
   prompt: {
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 2,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     borderRadius: 16,
+    overflow: 'hidden',
   },
+  promptNormal: { height: 92, paddingVertical: 6 },
+  promptCompact: { height: 64, paddingVertical: 4 },
   promptDark: { backgroundColor: 'rgba(11, 19, 43, 0.62)', borderWidth: 1, borderColor: 'rgba(72, 202, 228, 0.35)' },
   promptLight: { backgroundColor: 'rgba(255, 255, 255, 0.78)', borderWidth: 1, borderColor: 'rgba(224, 169, 109, 0.6)' },
-  promptTitle: { fontFamily: fonts.black, fontSize: 21, textAlign: 'center', letterSpacing: 0.5 },
-  promptSub: { fontFamily: fonts.semi, fontSize: 12.5, lineHeight: 17, textAlign: 'center' },
+  promptTitle: { fontFamily: fonts.black, fontSize: 20, lineHeight: 26, textAlign: 'center', letterSpacing: 0.5 },
+  promptTitleCompact: { fontSize: 16.5, lineHeight: 21 },
+  promptSub: { fontFamily: fonts.extra, fontSize: 13, lineHeight: 18, textAlign: 'center' },
+  promptSubCompact: { fontSize: 11.5, lineHeight: 15 },
+  promptOld: { opacity: 0.7, fontFamily: fonts.semi },
   time: { gap: 3 },
   timeText: { fontFamily: fonts.extra, fontSize: 12.5, textAlign: 'center' },
   timeBar: { height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.15)', overflow: 'hidden' },
@@ -1154,7 +1693,14 @@ const styles = StyleSheet.create({
   msg: { maxWidth: '85%', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
   mine: { alignSelf: 'flex-end', backgroundColor: 'rgba(72, 202, 228, 0.3)' },
   theirs: { alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.1)' },
+  msgNight: { backgroundColor: 'rgba(28, 37, 90, 0.75)' },
+  msgWho: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 1 },
   msgName: { color: '#B7A8FF', fontSize: 11, fontFamily: fonts.semi },
+  msgTag: { color: '#FF8A98', fontSize: 10.5, fontFamily: fonts.extra },
+  msgHead: { alignSelf: 'center', paddingHorizontal: 12, paddingVertical: 3, borderRadius: 10, marginTop: 4 },
+  msgHeadNight: { backgroundColor: '#1C2541', borderWidth: 1, borderColor: '#48CAE4' },
+  msgHeadDay: { backgroundColor: '#C2560C' },
+  msgHeadText: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 12 },
   msgBody: { color: '#FFFFFF', fontSize: 14, lineHeight: 19 },
   inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   input: {
