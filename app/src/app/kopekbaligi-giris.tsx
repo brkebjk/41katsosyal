@@ -237,25 +237,36 @@ export default function SharkIntroScreen() {
               <Text style={styles.playSub}>Aynı masada · tam puan</Text>
             </Pressable>
             <Pressable
-              onPress={() => void actions.createForGame('shark_cage', 'remote')}
+              onPress={() => router.push('/kopekbaligi-ara')}
               accessibilityRole="button"
               style={({ pressed }) => [styles.play, styles.playRemote, pressed && styles.pressed]}
-              testID="sk-intro-remote"
+              testID="sk-intro-match"
             >
               <Text style={styles.playEmoji}>🌊</Text>
-              <Text style={[styles.playTitle, styles.playTitleLight]}>UZAKTAN</Text>
-              <Text style={[styles.playSub, styles.playSubLight]}>Bas-konuş · hak yemez</Text>
+              <Text style={[styles.playTitle, styles.playTitleLight]}>UZAKTAN EŞLEŞ</Text>
+              <Text style={[styles.playSub, styles.playSubLight]}>Haritada oyuncu ara</Text>
             </Pressable>
           </View>
-          <Pressable
-            onPress={() => router.push({ pathname: '/acik-odalar', params: { game: 'shark_cage' } })}
-            accessibilityRole="button"
-            style={({ pressed }) => [styles.rooms, pressed && styles.pressed]}
-            testID="sk-intro-rooms"
-          >
-            <Ionicons name="enter-outline" size={17} color="#FFFFFF" />
-            <Text style={styles.roomsText}>Açık odalar · kodla katıl</Text>
-          </Pressable>
+          <View style={styles.playRow}>
+            <Pressable
+              onPress={() => void actions.createForGame('shark_cage', 'remote')}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.rooms, styles.flex, pressed && styles.pressed]}
+              testID="sk-intro-remote"
+            >
+              <Ionicons name="people" size={16} color="#FFFFFF" />
+              <Text style={styles.roomsText}>Özel uzaktan oda</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => router.push({ pathname: '/acik-odalar', params: { game: 'shark_cage' } })}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.rooms, styles.flex, pressed && styles.pressed]}
+              testID="sk-intro-rooms"
+            >
+              <Ionicons name="enter-outline" size={16} color="#FFFFFF" />
+              <Text style={styles.roomsText}>Açık odalar · kod</Text>
+            </Pressable>
+          </View>
           {actions.hint ? <Text style={styles.hint}>{actions.hint}</Text> : null}
         </View>
       </SafeAreaView>

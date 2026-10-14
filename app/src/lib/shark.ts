@@ -76,6 +76,10 @@ export type SkView = {
   event: boolean;
   test: boolean;
   code: string | null;
+  /** Uzaktan eşleştirme odası (herkes rumuzuyla; 6 kişiden sonra "Hazırım" çoğunluğuyla başlar) */
+  match?: boolean;
+  /** Eşleştirme lobisinde "Hazırım" diyenlerin kimlikleri */
+  lobby_ready?: string[] | null;
   close_reason: string | null;
   counts: { shark: number; human: number; neutral: number };
   players: SkPlayer[];
@@ -174,6 +178,9 @@ const TEXT: Record<string, string> = {
   rate_limited: 'Biraz yavaş: art arda çok hızlı yazıyorsun.',
   chat_limit: 'Bu oyunda yazabileceğin mesaj sınırına ulaştın.',
   room_not_found: 'Bu oyun odası artık yok.',
+  match_room: 'Eşleştirme odası “Hazırım” diyenler çoğunluğa geçince kendiliğinden başlar.',
+  already_in_game: 'Zaten başka bir oyundasın. Önce o oyundan çık.',
+  game_not_available: 'Bu oyun şu an kapalı.',
 };
 
 export const SK_NOT_IN_ROOM = 'Bu odaya katılmamışsın. Oda kodunu Oyunlar sekmesinden girerek katıl.';
@@ -200,6 +207,27 @@ export const sharkSpear = (roomId: string, target: string) => call('sk_spear', r
 export const sharkRevealMarshal = (roomId: string) => call('sk_reveal_marshal', roomId);
 /** Kafes oyu: hedef boş = pas */
 export const sharkVote = (roomId: string, target: string | null) => call('sk_vote', roomId, { p_target: target });
+// ---------------------------------------------------------------------------
+// Uzaktan eşleştirme
+// ---------------------------------------------------------------------------
+
+export type MatchState = { room: string | null; waiting: number; searching?: boolean };
+
+/** Eşleşme sırasına gir (eşleşirse oda kimliği döner) */
+export async function matchJoin(): Promise<{ data: MatchState | null; error: string | null }> {
+  return callRpc<MatchState>('sk_match_join', {}, TEXT);
+}
+/** Arama sürerken birkaç saniyede bir: eşleştim mi, sırada kaç kişi var */
+export async function matchPoll(): Promise<MatchState | null> {
+  const res = await callRpc<MatchState>('sk_match_poll', {}, TEXT);
+  return res.data ?? null;
+}
+export const matchCancel = () => callRpcVoid('sk_match_cancel', {}, TEXT);
+/** Eşleştirme lobisinde "Hazırım" / vazgeç */
+export const lobbyReady = (roomId: string, on: boolean) => call('sk_lobby_ready', roomId, { p_on: on });
+/** GEÇİCİ: moderatör deneme oyuncularını eşleştirme sırasına koyar */
+export const queueTestBots = (count: number) => callRpcVoid('admin_queue_test_bots', { p_count: count }, TEXT);
+
 /** "Tartışmayı hızlı geç" işaretini koy / kaldır */
 export const sharkSkip = (roomId: string, on: boolean) => call('sk_skip_discussion', roomId, { p_on: on });
 /** Yönetici / anlatıcı: sıradaki aşamaya geç */

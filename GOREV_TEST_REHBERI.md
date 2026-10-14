@@ -46,6 +46,23 @@
   - Biri kaydederken gelen ses kesilmeden çalmaya devam eder.
   - Ses çalınamazsa altta kırmızı uyarı çıkar ("Ses indirilemedi / kaydedilemedi / çalınamadı"). Hangisi çıkarsa bana yaz.
 
+## A4. Uzaktan eşleştirme ve çerçeveler (yeni)
+1. Giriş ekranında **UZAKTAN EŞLEŞ**: harita açılır, 🤿 maskeli avatarın dolaşır.
+2. Moderatör hesabıyla **Sıraya +3 deneme oyuncusu**'na bas. 3 kişi olunca bekleme odasına geçilir.
+3. Lobi:
+   - Herkes rumuzuyla görünür.
+   - "Hazırım" 6 kişiye kadar kapalıdır. "+3 deneme oyuncusu" ile 6'yı geç.
+   - Botlar hazır der. Hazır diyenler demeyenlerden fazla olunca oyun kendiliğinden başlar.
+4. **🔗 Davet bağlantısı oluştur**: paylaşma penceresi açılır, bağlantı ve kod gelir.
+   - Bağlantıya dokunan, uygulamada o odaya katılır.
+   - Expo Go'da bağlantı yalnızca aynı ağda çalışabilir; kod her zaman çalışır.
+5. Oda sahibi lobiden çıkarsa oda kapanmaz, sahiplik başkasına geçer.
+6. **Özel uzaktan oda** düğmesi eskisi gibi elle oda açar.
+7. Oyunda avatar çerçeveleri:
+   - Takımından olduğunu bildiğin oyuncu ince yeşil.
+   - Bilinmeyen sarı.
+   - Rolü açığa çıkan rakip kırmızı.
+
 ## B. Köpekbalığı Kafesi (moderatör hesabı + 1 telefon, botlarla)
 1. Oyunlar > **Köpekbalığı Kafesi** > Oda aç > **Yan yana** > **Otomatik Oyun**.
 2. Kıyı ekranında **+3 deneme oyuncusu**'na 2 kez bas (6 kişi olmalı) > **Oyunu başlat**.

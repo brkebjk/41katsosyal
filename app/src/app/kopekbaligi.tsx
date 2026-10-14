@@ -3,7 +3,18 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AppState, BackHandler, Pressable, ScrollView, StyleSheet, Vibration, View, useWindowDimensions } from 'react-native';
+import * as Linking from 'expo-linking';
+import {
+  AppState,
+  BackHandler,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Vibration,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/AppText';
@@ -41,6 +52,7 @@ import {
   getSharkView,
   hasAbility,
   isWinner,
+  lobbyReady,
   reportVoiceClip,
   SK_NOT_IN_ROOM,
   SK_ROLES,
@@ -419,6 +431,10 @@ function Game({ roomId }: { roomId: string }) {
     else if (scanned.has(p.id)) {
       const t = scanned.get(p.id) as keyof typeof SK_TEAMS;
       label = { text: `🔭 ${SK_TEAMS[t].name}`, color: SK_TEAMS[t].color };
+    } else if (phase === 'lobby' && view.match) {
+      label = (view.lobby_ready ?? []).includes(p.id)
+        ? { text: '✓ Hazır', color: '#34D399' }
+        : { text: '… bekliyor', color: light ? '#5B6472' : 'rgba(255,255,255,0.6)' };
     } else if (phase === 'lobby' && p.is_host) label = { text: '⭐ Oda sahibi', color: '#FFB703' };
     else if (phase === 'vote' && p.is_alive && !v) label = { text: '⏳ düşünüyor', color: light ? '#5B6472' : 'rgba(255,255,255,0.6)' };
     const deadLabel = p.left
@@ -451,11 +467,24 @@ function Game({ roomId }: { roomId: string }) {
       label,
       deadLabel,
       ally: p.ally,
+      frame: frameOf(p),
       marked: role === 'surfer' && marks.has(p.id),
       // Rol simgesi: sunucu yalnızca görmeye hakkın olan rolleri gönderir (kendin, takımın, açıklananlar, anlatıcı, oyun sonu)
       roleEmoji: p.role ? { emoji: SK_ROLES[p.role].emoji, color: SK_ROLES[p.role].color } : null,
     };
   });
+
+  /**
+   * Avatar çerçevesi: kendi takımından olduğu bilinen yeşil, bilinmeyen sarı, rolü açığa çıkan rakip kırmızı.
+   * Takım yalnızca sunucunun gönderdiği (görmeye hakkın olan) rolden anlaşılır. Tarafsızın takım arkadaşı yoktur.
+   * Anlatıcı / izleyici takımların kendi renklerini görür.
+   */
+  function frameOf(p: SkPlayer): string | undefined {
+    if (p.is_me || phase === 'lobby') return undefined;
+    if (!p.team) return '#FFC93C';
+    if (!me.team) return SK_TEAMS[p.team].color;
+    return me.team !== 'neutral' && p.team === me.team ? '#34D399' : '#FF4D4D';
+  }
 
   function pressSeat(s: Seat) {
     if (!s.selectable || !activeSlot) return;
@@ -511,6 +540,59 @@ function Game({ roomId }: { roomId: string }) {
   } else if (phase === 'cancelled') {
     prompt = { title: 'Oda kapandı', sub: closedText(view.close_reason, me.is_host) };
     actions = <GameButton label="Oyunlara dön" onPress={goToGames} />;
+  } else if (phase === 'lobby' && view.match) {
+    // Uzaktan eşleştirme lobisi: 6 kişi olunca "Hazırım" açılır; hazır diyenler demeyenlerden fazla olunca başlar
+    const n = present.length;
+    const readyIds = new Set(view.lobby_ready ?? []);
+    const readyCount = present.filter((p) => readyIds.has(p.id)).length;
+    const myReady = myPlayerId !== null && readyIds.has(myPlayerId);
+    const canReady = n >= view.min_players;
+    const need = Math.floor(n / 2) + 1;
+    prompt = {
+      title: canReady ? `HAZIR: ${readyCount} / ${n}` : `🌊 LOBİ · ${n} kişi`,
+      sub: canReady
+        ? `Başlamak için ${need} kişinin “Hazırım” demesi yeter. Beklersen ya da arkadaşını davet edersen kalabalık oyun daha çok puan verir (en çok 16 kişi).`
+        : `“Hazırım” ${view.min_players} kişi olunca açılır (şu an ${n}). Arkadaşlarını davet et: kalabalık oyun daha çok puan verir.`,
+      color: canReady ? '#34D399' : '#48CAE4',
+      pulse: canReady && !myReady,
+    };
+    actions = (
+      <>
+        <GameButton
+          label={myReady ? '✓ Hazırım · vazgeç' : canReady ? 'HAZIRIM' : `Hazırım (${view.min_players} kişi gerekir)`}
+          variant={myReady ? 'ghost' : 'primary'}
+          disabled={!canReady && !myReady}
+          loading={busy === 'lready'}
+          onPress={() => void act('lready', () => lobbyReady(roomId, !myReady))}
+          testID="sk-lobby-ready"
+        />
+        {view.code ? (
+          <GameButton
+            label="🔗 Davet bağlantısı oluştur"
+            variant="ghost"
+            onPress={() => {
+              const code = view.code as string;
+              const url = Linking.createURL('/kopekbaligi-katil', { queryParams: { kod: code } });
+              void Share.share({
+                message: `41. Kat Sosyal'de Köpekbalığı Kafesi oynuyoruz, gel! 🦈\n${url}\nUygulamada Oyunlar > Kodla katıl: ${code}`,
+              }).catch(() => {});
+            }}
+            testID="sk-invite-link"
+          />
+        ) : null}
+        {/* GEÇİCİ: moderatör tek telefonla deneyebilsin */}
+        {me.is_admin ? (
+          <GameButton
+            label="+3 deneme oyuncusu"
+            icon="hardware-chip-outline"
+            variant="ghost"
+            loading={busy === 'bots'}
+            onPress={() => void act('bots', () => addTestBots(roomId, 3))}
+          />
+        ) : null}
+        <Text style={styles.pText}>Herkes rumuzuyla görünür. Uzaktan oyun hak yemez; puanı yan yana oyunun yarısıdır.</Text>
+      </>
+    );
   } else if (phase === 'lobby') {
     const n = present.length;
     const sh = Math.floor(n * 0.3 + 0.5);

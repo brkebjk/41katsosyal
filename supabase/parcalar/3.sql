@@ -2920,6 +2920,18 @@ begin
   update public.room_players rp set last_seen_at = now()
     from public.profiles p
    where p.id = rp.user_id and p.is_bot and rp.room_id = p_room_id and rp.left_at is null;
+  -- Eşleştirme lobisinde botlar (6 kişi olunca) "Hazırım" der
+  if r.status = 'lobby' and coalesce((r.config->>'match')::boolean, false)
+     and (select count(*) from public.room_players where room_id = p_room_id and left_at is null) >= 6 then
+    update public.game_rooms
+       set state = jsonb_set(state, '{ready}', coalesce((
+             select jsonb_agg(distinct y.x) from (
+               select jsonb_array_elements_text(coalesce(r.state->'ready', '[]'::jsonb)) as x
+               union
+               select rp.user_id::text from public.room_players rp join public.profiles p on p.id = rp.user_id and p.is_bot
+                where rp.room_id = p_room_id and rp.left_at is null) y), '[]'::jsonb))
+     where id = p_room_id;
+  end if;
   if r.status <> 'playing' then return; end if;
   v_phase := r.state->>'phase';
   v_round := coalesce((r.state->>'round')::int, 0);
@@ -3007,19 +3019,17 @@ begin
 end $$;
 
 -- Oyunu başlatır: roller dağıtılır (yalnızca oda sahibi ya da moderatör). Anlatıcı oyuncu sayılmaz.
-create or replace function public.sk_start(p_room_id uuid)
+-- Rolleri dağıtır ve oyunu başlatır (iç kullanım; çağıran odayı kilitlemiş olmalı)
+create or replace function public._sk_begin(p_room_id uuid)
 returns void language plpgsql security definer set search_path = public as $$
 declare
-  v public.profiles;
   r public.game_rooms;
   v_n int;
   v_min int;
   v_max int;
   v_roles text[];
 begin
-  v := public._require_user();
-  r := public._sk_room(p_room_id);
-  if r.host_id <> v.id and v.role <> 'admin' then raise exception 'forbidden'; end if;
+  select * into r from public.game_rooms where id = p_room_id for update;
   if r.status <> 'lobby' then raise exception 'invalid_transition'; end if;
   if public._sk_mode(r) = 'narrator' then
     delete from public.room_players where room_id = p_room_id and user_id = r.host_id;
@@ -3049,6 +3059,21 @@ begin
                                       'vote', public.setting_int('sk_vote_seconds', 60),
                                       'result', public.setting_int('sk_result_seconds', 12)))
    where id = p_room_id;
+end $$;
+
+create or replace function public.sk_start(p_room_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+begin
+  v := public._require_user();
+  r := public._sk_room(p_room_id);
+  if r.host_id <> v.id and v.role <> 'admin' then raise exception 'forbidden'; end if;
+  if r.status <> 'lobby' then raise exception 'invalid_transition'; end if;
+  -- Eşleştirme odası "Hazırım" çoğunluğuyla kendiliğinden başlar
+  if coalesce((r.config->>'match')::boolean, false) then raise exception 'match_room'; end if;
+  perform public._sk_begin(p_room_id);
 end $$;
 
 -- "Rolümü gördüm"
@@ -3347,6 +3372,7 @@ begin
     perform public._room_touch(p_room_id, v.id);
     perform public._sk_bots_act(p_room_id);
     if r.status = 'playing' then perform public._sk_auto_tick(p_room_id); end if;
+    if r.status = 'lobby' then perform public._sk_match_autostart(p_room_id); end if;
     select * into r from public.game_rooms where id = p_room_id;
   end if;
 
@@ -3408,7 +3434,12 @@ begin
     'remote', r.remote,
     'event', r.event_id is not null,
     'test', coalesce((r.config->>'test')::boolean, false),
-    'code', case when r.host_id = v.id then (select c.code from public.room_codes c where c.room_id = r.id) end,
+    -- Kod: oda sahibine; eşleştirme odasında (davet bağlantısı için) bekleme salonundaki herkese
+    'code', case when r.host_id = v.id
+                   or (coalesce((r.config->>'match')::boolean, false) and v_is_player and r.status = 'lobby')
+                 then (select c.code from public.room_codes c where c.room_id = r.id) end,
+    'match', coalesce((r.config->>'match')::boolean, false),
+    'lobby_ready', case when r.status = 'lobby' then coalesce(r.state->'ready', '[]'::jsonb) end,
     'close_reason', r.state->>'close_reason',
     'counts', coalesce(r.state->'counts', public._sk_counts(greatest(6, v_count))),
     'players', v_players,
@@ -3711,6 +3742,203 @@ begin
   if r.status <> 'playing' or r.state->>'phase' <> 'day' then raise exception 'wrong_phase'; end if;
   perform public._skip_set(p_room_id, v.id, (r.state->>'round')::int, p_on);
   perform public._sk_skip_check(p_room_id);
+end $$;
+
+
+-- ---- Köpekbalığı Kafesi: uzaktan eşleştirme ------------------------------------------------------------------------
+-- "Eşleş" diyenler sıraya girer (harita üstünde aranır). Açık bir eşleştirme lobisi varsa (16 kişiden az) oraya girilir;
+-- yoksa sırada 3 kişi olunca yeni lobi açılır. Lobide 6 kişi olunca "Hazırım" düğmesi açılır; hazır diyenler
+-- demeyenlerden fazla olunca oyun kendiliğinden başlar (Otomatik Oyun, uzaktan, puan yarı). Herkes rumuzuyla görünür.
+-- Lobideki herkes davet bağlantısı (oda kodu) paylaşabilir; kalabalık oyun daha çok puan verir.
+create table if not exists public.sk_queue (
+  user_id uuid primary key references public.profiles (id) on delete cascade,
+  joined_at timestamptz not null default now(),
+  last_seen timestamptz not null default now()
+);
+alter table public.sk_queue enable row level security;
+
+-- Sıradakiyle eşleştirmeyi dener. Döner: kişinin girdiği eşleştirme odası (yoksa boş).
+create or replace function public._sk_match_try(p_user uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v_room uuid;
+  v_code text;
+  v_try int := 0;
+  v_host uuid;
+  v_n int;
+begin
+  perform pg_advisory_xact_lock(hashtext('sk_match'));
+  -- 20 sn'dir haber vermeyen (ekrandan çıkmış) sıradan düşer; deneme oyuncuları düşmez
+  delete from public.sk_queue q
+   where q.last_seen < now() - interval '20 seconds'
+     and not exists (select 1 from public.profiles p where p.id = q.user_id and p.is_bot);
+  -- Zaten bir eşleştirme odasındaysa oraya
+  select rp.room_id into v_room
+    from public.room_players rp join public.game_rooms r on r.id = rp.room_id
+   where rp.user_id = p_user and rp.left_at is null and r.status in ('lobby', 'playing')
+     and coalesce((r.config->>'match')::boolean, false)
+   order by r.created_at desc limit 1;
+  if v_room is not null then
+    delete from public.sk_queue where user_id = p_user;
+    return v_room;
+  end if;
+  if not exists (select 1 from public.sk_queue where user_id = p_user) then return null; end if;
+
+  -- 1) Yer olan açık eşleştirme lobisi
+  select r.id into v_room
+    from public.game_rooms r
+   where r.game_type = 'shark_cage' and r.status = 'lobby' and coalesce((r.config->>'match')::boolean, false)
+     and (select count(*) from public.room_players rp where rp.room_id = r.id) < 16
+     and not exists (select 1 from public.room_bans b where b.room_id = r.id and b.user_id = p_user)
+   order by r.created_at
+   limit 1;
+  if v_room is not null then
+    insert into public.room_players (room_id, user_id, display_name)
+    select v_room, p.id, p.alias from public.profiles p where p.id = p_user
+    on conflict (room_id, user_id) do nothing;
+    if exists (select 1 from public.profiles where id = p_user and is_bot) then
+      update public.game_rooms set config = config || '{"test": true}'::jsonb where id = v_room;
+    end if;
+    delete from public.sk_queue where user_id = p_user;
+    return v_room;
+  end if;
+
+  -- 2) Sırada en az 3 kişi: yeni lobi
+  select count(*)::int into v_n from public.sk_queue;
+  if v_n < 3 then return null; end if;
+  select user_id into v_host from public.sk_queue order by joined_at limit 1;
+  insert into public.game_rooms (game_type, host_id, config, remote, state)
+  values ('shark_cage', v_host, jsonb_build_object('mode', 'auto', 'match', true), true, '{"ready": []}'::jsonb)
+  returning id into v_room;
+  loop
+    v_code := public._random_code(5);
+    begin
+      insert into public.room_codes (room_id, code) values (v_room, v_code);
+      exit;
+    exception when unique_violation then
+      v_try := v_try + 1;
+      if v_try > 20 then raise exception 'code_generation_failed'; end if;
+    end;
+  end loop;
+  insert into public.room_players (room_id, user_id, display_name)
+  select v_room, q.user_id, p.alias
+    from (select user_id from public.sk_queue order by joined_at limit 16) q
+    join public.profiles p on p.id = q.user_id;
+  if exists (select 1 from public.room_players rp join public.profiles p on p.id = rp.user_id and p.is_bot
+              where rp.room_id = v_room) then
+    update public.game_rooms set config = config || '{"test": true}'::jsonb where id = v_room;
+  end if;
+  delete from public.sk_queue where user_id in (select user_id from public.room_players where room_id = v_room);
+  return case when exists (select 1 from public.room_players where room_id = v_room and user_id = p_user) then v_room end;
+end $$;
+
+-- Eşleşmek için sıraya gir. Döner: { room (eşleştiyse), waiting (sıradaki kişi sayısı) }
+create or replace function public.sk_match_join()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_room uuid;
+  v_live uuid;
+begin
+  v := public._require_user();
+  if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
+  if not exists (select 1 from public.game_types where key = 'shark_cage' and enabled) then
+    raise exception 'game_not_available';
+  end if;
+  v_live := public._user_live_room(v.id);
+  if v.role <> 'admin' and v_live is not null
+     and not exists (select 1 from public.game_rooms r where r.id = v_live and coalesce((r.config->>'match')::boolean, false)) then
+    raise exception 'already_in_game';
+  end if;
+  insert into public.sk_queue (user_id) values (v.id)
+  on conflict (user_id) do update set last_seen = now();
+  v_room := public._sk_match_try(v.id);
+  return jsonb_build_object('room', v_room, 'waiting', (select count(*) from public.sk_queue));
+end $$;
+
+-- Arama ekranı birkaç saniyede bir sorar (aynı zamanda "hâlâ arıyorum" işareti)
+create or replace function public.sk_match_poll()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_room uuid;
+begin
+  v := public._require_user();
+  update public.sk_queue set last_seen = now() where user_id = v.id;
+  v_room := public._sk_match_try(v.id);
+  return jsonb_build_object('room', v_room, 'waiting', (select count(*) from public.sk_queue),
+                            'searching', exists (select 1 from public.sk_queue where user_id = v.id));
+end $$;
+
+create or replace function public.sk_match_cancel()
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+begin
+  v := public._require_user();
+  delete from public.sk_queue where user_id = v.id;
+end $$;
+
+-- Lobide 6 kişi varsa ve hazır diyenler demeyenlerden fazlaysa oyun başlar
+create or replace function public._sk_match_autostart(p_room_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  v_n int;
+  v_ready int;
+begin
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found or r.status <> 'lobby' or not coalesce((r.config->>'match')::boolean, false) then return; end if;
+  select count(*)::int into v_n from public.room_players where room_id = p_room_id and left_at is null;
+  select count(*)::int into v_ready
+    from jsonb_array_elements_text(coalesce(r.state->'ready', '[]'::jsonb)) x
+   where exists (select 1 from public.room_players rp where rp.room_id = p_room_id and rp.user_id::text = x and rp.left_at is null);
+  if v_n >= 6 and v_ready > v_n - v_ready then perform public._sk_begin(p_room_id); end if;
+end $$;
+
+-- Eşleştirme lobisinde "Hazırım" (6 kişi olmadan basılamaz) / vazgeç
+create or replace function public.sk_lobby_ready(p_room_id uuid, p_on boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+begin
+  v := public._require_user();
+  r := public._sk_room(p_room_id);
+  if r.status <> 'lobby' or not coalesce((r.config->>'match')::boolean, false) then raise exception 'wrong_phase'; end if;
+  if not exists (select 1 from public.room_players where room_id = p_room_id and user_id = v.id and left_at is null) then
+    raise exception 'not_in_room';
+  end if;
+  if coalesce(p_on, false) and (select count(*) from public.room_players where room_id = p_room_id and left_at is null) < 6 then
+    raise exception 'not_enough_players';
+  end if;
+  update public.game_rooms
+     set state = jsonb_set(state, '{ready}',
+           (coalesce(state->'ready', '[]'::jsonb) - v.id::text)
+           || (case when coalesce(p_on, false) then jsonb_build_array(v.id::text) else '[]'::jsonb end))
+   where id = p_room_id;
+  perform public._sk_match_autostart(p_room_id);
+end $$;
+
+-- GEÇİCİ: moderatör tek telefonla deneyebilsin diye deneme oyuncularını eşleştirme sırasına koyar
+create or replace function public.admin_queue_test_bots(p_count int default 3)
+returns int language plpgsql security definer set search_path = public as $$
+declare
+  n int;
+begin
+  perform public._require_user();
+  perform public._require_admin();
+  insert into public.sk_queue (user_id)
+  select p.id from public.profiles p
+   where p.is_bot
+     and not exists (select 1 from public.sk_queue q where q.user_id = p.id)
+     and not exists (select 1 from public.room_players rp join public.game_rooms r on r.id = rp.room_id
+                      where rp.user_id = p.id and rp.left_at is null and r.status in ('lobby', 'playing'))
+   order by p.full_name
+   limit least(8, greatest(1, coalesce(p_count, 3)));
+  get diagnostics n = row_count;
+  perform public._audit('test_bots', null, jsonb_build_object('queue', n));
+  return n;
 end $$;
 
 -- ---- GEÇİCİ: Yazı düzenleme modu ---------------------------------------------------------------------------------
@@ -4050,6 +4278,11 @@ grant execute on function public.sk_voice_get(uuid) to authenticated;
 grant execute on function public.my_remote_caps() to authenticated;
 grant execute on function public.vv_skip_discussion(uuid, boolean) to authenticated;
 grant execute on function public.sk_skip_discussion(uuid, boolean) to authenticated;
+grant execute on function public.sk_match_join() to authenticated;
+grant execute on function public.sk_match_poll() to authenticated;
+grant execute on function public.sk_match_cancel() to authenticated;
+grant execute on function public.sk_lobby_ready(uuid, boolean) to authenticated;
+grant execute on function public.admin_queue_test_bots(int) to authenticated;
 grant execute on function public.admin_get_voice_clip(uuid) to authenticated;
 grant execute on function public.get_room_code(uuid) to authenticated;
 grant execute on function public.leave_all_rooms() to authenticated;

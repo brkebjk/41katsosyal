@@ -3589,8 +3589,9 @@ begin
     raise exception 'room_too_far';
   end if;
 
+  -- Eşleştirme odasında herkes yabancıdır: gerçek ad yerine rumuz görünür
   insert into public.room_players (room_id, user_id, display_name)
-  values (v_room.id, v.id, v.full_name);
+  values (v_room.id, v.id, case when coalesce((v_room.config->>'match')::boolean, false) then v.alias else v.full_name end);
 
   -- Petek Kocaeli içindeyse kimse görünmeden haritadaki yoğunluğa sayılır (aynı odada bir kez)
   if public._game_cell_given(p_cell_q, p_cell_r) and not v_room.remote
@@ -4854,6 +4855,19 @@ begin
   if not found or r.status not in ('lobby', 'playing') then return null; end if;
   if not exists (select 1 from public.game_types where key = r.game_type and presence_required) then return null; end if;
 
+  -- Köpekbalığı Kafesi eşleştirme odası: sahibi ayrılınca oda kapanmaz, sahiplik sıradaki oyuncuya geçer
+  if r.host_id = p_user_id and coalesce((r.config->>'match')::boolean, false)
+     and exists (select 1 from public.room_players where room_id = p_room_id and user_id <> p_user_id and left_at is null) then
+    update public.game_rooms
+       set host_id = (select rp.user_id from public.room_players rp
+                       where rp.room_id = p_room_id and rp.user_id <> p_user_id and rp.left_at is null
+                       order by rp.joined_at limit 1),
+           host_seen_at = now(),
+           state = jsonb_set(state, '{ready}', coalesce(state->'ready', '[]'::jsonb) - p_user_id::text)
+     where id = p_room_id;
+    select * into r from public.game_rooms where id = p_room_id;
+  end if;
+
   if r.host_id = p_user_id then
     perform public._room_close(p_room_id, p_reason);
     return 'closed';
@@ -4861,7 +4875,13 @@ begin
 
   if r.status = 'lobby' then
     delete from public.room_players where room_id = p_room_id and user_id = p_user_id;
-    if found then return 'removed'; end if;
+    if found then
+      if r.state ? 'ready' then
+        update public.game_rooms set state = jsonb_set(state, '{ready}', (state->'ready') - p_user_id::text)
+         where id = p_room_id;
+      end if;
+      return 'removed';
+    end if;
     return null;
   end if;
 

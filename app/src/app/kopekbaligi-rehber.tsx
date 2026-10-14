@@ -79,6 +79,10 @@ export default function SharkGuideScreen() {
             rolünü, köpekbalıkları takım arkadaşlarını, herkes açıklanan rolleri; oyun bitince herkes hepsini.
           </P>
           <P>Avatarın sağ üstündeki kırmızı sayı, o kişinin aldığı kafes oyudur.</P>
+          <P>
+            Avatar çerçevesi: kendi takımından olduğunu bildiğin oyuncu ince yeşil, bilinmeyenler sarı, rolü açığa çıkan
+            rakip kırmızı çerçeveyle görünür.
+          </P>
           <P>Kimliğini açmış Sahil Güvenlik Komutanı’nın oyu 2 sayılır; tabelası sarıdır ve “×2” yazar.</P>
         </>,
       )}
@@ -189,6 +193,11 @@ export default function SharkGuideScreen() {
             Uzaktan odada herkes kendi telefonundan oynar. Konuşmak için mikrofon düğmesine basılı tut: en çok 5 saniyelik
             bir ses mesajı kaydedilir. Mesajlar sırayla çalar; biri konuşurken sen de basabilirsin, senin mesajın onunki
             bitince duyulur.
+          </P>
+          <P>
+            “Uzaktan Eşleş” dersen haritada oyuncu aranır; 3 kişi olunca bekleme odası açılır. Odada 6 kişi olunca
+            “Hazırım” düğmesi açılır; hazır diyenler demeyenlerden fazla olunca oyun başlar. Beklersen ya da “Davet
+            bağlantısı” ile arkadaşını çağırırsan kalabalık oyun daha çok puan verir. Eşleştirmede herkes rumuzuyla görünür.
           </P>
           <P>Dalışta mikrofonlar kapalıdır; yalnızca köpekbalıkları kendi frekanslarında konuşabilir.</P>
           <P>

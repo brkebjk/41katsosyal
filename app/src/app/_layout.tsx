@@ -67,6 +67,8 @@ function RootNavigator() {
           <Stack.Screen name="kopekbaligi" options={{ gestureEnabled: false }} />
           <Stack.Screen name="kopekbaligi-giris" />
           <Stack.Screen name="kopekbaligi-rehber" />
+          <Stack.Screen name="kopekbaligi-ara" />
+          <Stack.Screen name="kopekbaligi-katil" />
           <Stack.Screen name="abonelik" />
           <Stack.Screen name="basarimlar" />
           <Stack.Screen name="balonlar" />

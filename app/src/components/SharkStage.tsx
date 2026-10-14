@@ -524,8 +524,10 @@ export type Seat = {
   label?: { text: string; color: string } | null;
   /** Ölüyse nasıl elendi */
   deadLabel?: string | null;
-  /** Köpekbalığıysan: takım arkadaşın (kırmızı neon çerçeve) */
+  /** Köpekbalığıysan: takım arkadaşın */
   ally?: boolean;
+  /** Çerçeve rengi: takım arkadaşı yeşil, bilinmeyen sarı, rolü açığa çıkan rakip kırmızı (ince) */
+  frame?: string;
   /** Sörfçü'nün işaretlediği kişi */
   marked?: boolean;
   /** Rol simgesi (avatarın alt ortasında). Yalnızca görmeye hakkın olan roller gelir (sunucu süzer). */
@@ -637,7 +639,9 @@ function SeatTile({
   const p = seat.p;
   const dead = !p.is_alive;
   const pulse = usePingPong(700);
-  const ring = selected ? accent : seat.ally ? '#FF4D4D' : p.is_me ? '#48CAE4' : light ? 'rgba(11,19,43,0.35)' : 'rgba(255,255,255,0.5)';
+  const ring = selected
+    ? accent
+    : (seat.frame ?? (p.is_me ? '#48CAE4' : light ? 'rgba(11,19,43,0.35)' : 'rgba(255,255,255,0.5)'));
   const nameColor = dead ? (light ? 'rgba(11,19,43,0.45)' : 'rgba(255,255,255,0.45)') : light ? '#0B132B' : '#FFFFFF';
   const label = [
     `${p.seat} numara`,
@@ -679,7 +683,7 @@ function SeatTile({
         <View
           style={[
             styles.ring,
-            { borderRadius: outer / 2, borderColor: ring, borderWidth: selected || seat.ally ? 3 : 2 },
+            { borderRadius: outer / 2, borderColor: ring, borderWidth: selected ? 3 : 2 },
             seat.ally && styles.allyGlow,
           ]}
         >
@@ -1038,7 +1042,7 @@ const styles = StyleSheet.create({
   signTextHunt: { color: '#FF8A98' },
   selGlow: { position: 'absolute', left: -5, top: -5, borderWidth: 3 },
   ring: { flex: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  allyGlow: { shadowColor: '#FF4D4D', shadowOpacity: 0.9, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } },
+  allyGlow: { shadowColor: '#34D399', shadowOpacity: 0.9, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } },
   deadAvatar: { opacity: 0.32 },
   deadMark: {
     position: 'absolute',
