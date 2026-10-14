@@ -26,7 +26,8 @@ import { Popup } from '@/components/Popup';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { RoleCard } from '@/components/RoleCard';
 import { useSafetyMenu } from '@/components/SafetyMenu';
-import { useVoiceRoom, VoiceBar } from '@/components/VoicePanel';
+import { PushToTalk, useClipQueue } from '@/components/SharkVoice';
+import { useVoiceRoom } from '@/components/VoicePanel';
 import { Screen } from '@/components/Screen';
 import { DeadChat, RoleGallery } from '@/components/VampireExtras';
 import { WhisperCompose, WhisperPanel } from '@/components/VampireWhispers';
@@ -80,6 +81,7 @@ import {
   type VvView,
   type VvWhisper,
 } from '@/lib/vampire';
+import { reportVoiceClip } from '@/lib/shark';
 import { colors, fonts, fontSizes, spacing } from '@/theme';
 
 const POLL_MS = 2500;
@@ -337,10 +339,13 @@ function Game({ roomId }: { roomId: string }) {
     }
   }, [whisperCount, view]);
 
-  // Uzaktan oda: sesli sohbet (sırayla konuşma, mikrofon, ses filtresi, oylamayla atma)
+  // Uzaktan oda: bas-konuş ses mesajları (Köpekbalığı Kafesi'ndeki gibi). Eski sırayla sesli sohbet (Agora) kodda
+  // duruyor ama Vampir–Köylü'de kullanılmıyor (oda verilmez, bağlanmaz).
   const voiceOn =
     !gone && !!view && view.remote === true && !view.me.left && view.phase !== 'ended' && view.phase !== 'cancelled';
-  const voice = useVoiceRoom(voiceOn && myId ? roomId : null, myId);
+  const voice = useVoiceRoom(null, myId);
+  const [recording, setRecording] = useState(false);
+  const clipQueue = useClipQueue(view?.voice, myId, voiceOn && view?.status === 'playing', recording);
 
   /** Bir işlemi yapar: çift dokunmayı engeller, istenirse önce onay sorar, sonunda görünümü tazeler. */
   async function act(
@@ -662,6 +667,10 @@ function Game({ roomId }: { roomId: string }) {
   }
 
   function voiceFor(p: VvPlayer): Tile['voice'] {
+    // Bas-konuş: sesi çalınan kişinin avatarında konuşuyor işareti
+    if (clipQueue.speaking?.from === p.id) {
+      return { speaking: true, micOff: false, filter: false, away: false, offline: false };
+    }
     if (!vs?.allowed) return null;
     const m = voice.member(p.id);
     if (!m) return null;
@@ -718,6 +727,19 @@ function Game({ roomId }: { roomId: string }) {
         },
       });
     }
+    // Uzaktan oda: bu oyuncunun son ses mesajını şikâyet et
+    const clip = view?.remote ? [...(view.voice ?? [])].reverse().find((c) => c.from === p.id) : undefined;
+    if (clip && !p.is_me) {
+      opts.push({
+        label: 'Ses mesajını şikâyet et',
+        icon: 'flag-outline',
+        destructive: true,
+        onPress: () => {
+          setMenuFor(null);
+          void reportClip(clip.id, p.name);
+        },
+      });
+    }
     const m = kickOpen ? voice.member(p.id) : undefined;
     if (m && m.kickable) {
       opts.push({
@@ -754,6 +776,25 @@ function Game({ roomId }: { roomId: string }) {
     setCompose(null);
     await load();
     return null;
+  }
+
+  async function reportClip(clipId: string, who: string) {
+    const reason = await showDialog<string | null>({
+      title: 'Ses mesajını bildir',
+      message: `${who} kişisinin ses mesajı moderatörlere iletilir ve inceleme için en çok 14 gün saklanır. Kimin bildirdiğini bilmez.`,
+      icon: null,
+      buttons: [
+        { label: 'Hakaret / taciz', value: 'Hakaret ya da taciz', style: 'primary' },
+        { label: 'Cinsel içerik', value: 'Cinsel içerik', style: 'primary' },
+        { label: 'Kişisel bilgi / dolandırıcılık', value: 'Kişisel bilgi isteme ya da dolandırıcılık', style: 'primary' },
+        { label: 'Vazgeç', value: null, style: 'ghost' },
+      ],
+      cancelValue: null,
+    });
+    if (!reason) return;
+    const res = await reportVoiceClip(clipId, reason);
+    if (res.error) return void notify('Bildirilemedi', res.error, { icon: null });
+    await notify('Bildirimin alındı', 'Moderatörler inceleyecek.', { icon: null, tone: 'success' });
   }
 
   async function report(w: VvWhisper) {
@@ -1119,12 +1160,10 @@ function Game({ roomId }: { roomId: string }) {
             : 'Köy sağ salim uyandı. Vampirler ısıramadı ya da doktor yetişti.'}
         </Text>
         <Text style={styles.pText}>
-          {view.remote ? 'Sırayla konuşun: kim şüpheli?' : 'Masada konuşun: kim şüpheli?'}{' '}
+          {view.remote ? 'Bas-konuş ile konuşun, kim şüpheli?' : 'Masada konuşun, kim şüpheli?'}{' '}
           {!canControl
             ? mode === 'auto'
-              ? view.remote
-                ? 'Herkes konuşunca oylama başlar.'
-                : 'Süre dolunca oylama başlar.'
+              ? 'Süre dolunca oylama başlar.'
               : `Oylamayı ${managerName} başlatacak.`
             : ''}
         </Text>
@@ -1400,7 +1439,53 @@ function Game({ roomId }: { roomId: string }) {
             </Pressable>
           ) : null}
 
-          {vs?.allowed && myId ? <VoiceBar voice={voice} myId={myId} /> : null}
+          {/* Uzaktan oda: bas-konuş (sabahta ve oylamada herkes, gece yalnızca vampirler kendi aralarında) */}
+          {view.remote && playing && me.is_player && !me.left ? (
+            <>
+              {clipQueue.speaking ? (
+                <Pressable
+                  onLongPress={() => {
+                    const c = clipQueue.speaking;
+                    if (c) void reportClip(c.id, nameOf(c.from));
+                  }}
+                  delayLongPress={450}
+                  accessibilityHint="Bildirmek için uzun bas"
+                  style={styles.speaking}
+                >
+                  <Text style={styles.speakingText} numberOfLines={1}>
+                    {`🔊 ${nameOf(clipQueue.speaking.from)} konuşuyor${clipQueue.speaking.channel === 'shark' ? ' (vampirler)' : ''}${
+                      clipQueue.waiting ? ` · sırada ${clipQueue.waiting}` : ''
+                    }`}
+                  </Text>
+                </Pressable>
+              ) : clipQueue.error ? (
+                <Text style={styles.voiceError}>{`${clipQueue.error}. Sorun sürerse bana bildir.`}</Text>
+              ) : null}
+              <PushToTalk
+                roomId={roomId}
+                canTalk={
+                  me.is_alive &&
+                  (view.voice_left_ms ?? 15000) >= 500 &&
+                  (phase === 'dawn' || phase === 'vote' || phase === 'vote_result' || (phase === 'night' && me.role === 'vampire'))
+                }
+                leftMs={view.voice_left_ms ?? 15000}
+                closedText={
+                  !me.is_alive
+                    ? '🔇 Elendin, konuşamazsın'
+                    : phase === 'night' && me.role !== 'vampire'
+                      ? '🔇 Gece herkes susar'
+                      : (view.voice_left_ms ?? 15000) < 500
+                        ? '🔇 Bu tartışmadaki 15 sn hakkın bitti'
+                        : '🔇 Sabah konuşulur'
+                }
+                channelText={`${phase === 'night' ? 'Yalnızca vampirler duyar' : 'Herkes duyar'} · bu tartışmada kalan ${Math.round(
+                  (view.voice_left_ms ?? 15000) / 1000,
+                )} sn`}
+                onRecording={setRecording}
+                onSent={() => void load()}
+              />
+            </>
+          ) : null}
 
           <Glass style={[styles.panel, { maxHeight: Math.round(height * 0.42) }]}>
             <ScrollView style={styles.panelScroll} contentContainerStyle={styles.panelInner} bounces={false}>
@@ -1610,6 +1695,15 @@ const HERO_TITLE: Record<VvView['phase'], string> = {
 };
 
 const styles = StyleSheet.create({
+  speaking: {
+    alignSelf: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: 'rgba(52, 211, 153, 0.9)',
+  },
+  speakingText: { color: '#06201D', fontFamily: fonts.extra, fontSize: 12.5 },
+  voiceError: { alignSelf: 'center', color: '#FF8A98', fontFamily: fonts.extra, fontSize: 12.5 },
   root: { flex: 1, backgroundColor: '#05060E' },
   fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   noTouch: { pointerEvents: 'none' },

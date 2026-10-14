@@ -3789,8 +3789,10 @@ returns boolean language sql stable security definer set search_path = public as
           or exists (select 1 from public.game_rooms r where r.id = c.room_id and public._sk_is_omni(r, p_user))
           or exists (select 1 from public.room_players rp
                        join public.room_player_secrets s on s.room_id = rp.room_id and s.user_id = rp.user_id
+                      join public.game_rooms gr on gr.id = rp.room_id
                       where rp.room_id = c.room_id and rp.user_id = p_user and rp.is_alive and rp.left_at is null
-                        and public._sk_team(s.role) = 'shark'));
+                        and (case when gr.game_type = 'vampire_villager' then s.role = 'vampire'
+                                  else public._sk_team(s.role) = 'shark' end)));
 $$;
 
 -- Ses mesajı gönder (base64, en çok ~65 KB, 0,3–6 sn). Döner: mesajın kimliği.
@@ -3818,13 +3820,19 @@ begin
   if char_length(v_audio) > least(240000, 12000 + p_duration_ms * 40) then raise exception 'audio_too_big'; end if;
   perform public._sk_voice_cleanup();
   select * into r from public.game_rooms where id = p_room_id;
-  if not found or r.game_type <> 'shark_cage' or not r.remote or r.status <> 'playing' then raise exception 'voice_closed'; end if;
+  if not found or r.game_type not in ('shark_cage', 'vampire_villager') or not r.remote or r.status <> 'playing' then
+    raise exception 'voice_closed';
+  end if;
   select rp.is_alive, s.role into v_alive, v_role
     from public.room_players rp
     join public.room_player_secrets s on s.room_id = rp.room_id and s.user_id = rp.user_id
    where rp.room_id = p_room_id and rp.user_id = v.id and rp.left_at is null;
   if not coalesce(v_alive, false) then raise exception 'voice_closed'; end if;
-  v_channel := case when r.state->>'phase' in ('day', 'vote', 'vote_result') then 'all'
+  -- Kanal: tartışmada herkes ('all'); gecede yalnızca kötü takım kendi frekansında ('shark': köpekbalıkları / vampirler)
+  v_channel := case when r.game_type = 'vampire_villager' then
+                      case when r.state->>'phase' in ('dawn', 'vote', 'vote_result') then 'all'
+                           when r.state->>'phase' = 'night' and v_role = 'vampire' then 'shark' end
+                    when r.state->>'phase' in ('day', 'vote', 'vote_result') then 'all'
                     when r.state->>'phase' = 'night' and public._sk_team(v_role) = 'shark' then 'shark' end;
   if v_channel is null then raise exception 'voice_closed'; end if;
   -- Her tartışmada (tur + kanal) kişi başı en çok 15 sn konuşma (ayar: sk_voice_round_ms). Sayaç gizli kayıtta tutulur.

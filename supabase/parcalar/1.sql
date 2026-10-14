@@ -5143,18 +5143,9 @@ begin
     end if;
 
   elsif v_phase = 'dawn' then
-    -- Sabah: masadakiler konuşur, süre bitince oylama kendiliğinden başlar.
-    -- Uzaktan odada sırayla sesli konuşulur: herkesin sırası bitince (en az 20 sn sonra) oylama başlar; en geç
-    -- (hayatta olan oyuncu × konuşma süresi + 15 sn) ya da ayarlı tartışma süresi, hangisi uzunsa.
-    if r.remote then
-      if (v_age >= 20 and public._voice_turns_done(p_room_id))
-         or v_age >= greatest(coalesce((v_t->>'discuss')::int, 120),
-                              (select count(*)::int from public.room_players rp
-                                where rp.room_id = p_room_id and rp.left_at is null and rp.is_alive)
-                              * public._voice_turn_secs() + 15) then
-        perform public._vv_go_vote(p_room_id);
-      end if;
-    elsif v_age >= coalesce((v_t->>'discuss')::int, 120) then
+    -- Sabah: konuşulur, süre bitince oylama kendiliğinden başlar. Uzaktan odada da aynı süre geçerlidir: artık
+    -- bas-konuş ses mesajlarıyla konuşulur (eski sırayla sesli sohbet kullanılmıyor).
+    if v_age >= coalesce((v_t->>'discuss')::int, 120) then
       perform public._vv_go_vote(p_room_id);
     end if;
 
@@ -6037,7 +6028,7 @@ begin
     'test', coalesce((r.config->>'test')::boolean, false),
     'close_reason', r.state->>'close_reason',
     -- Uzaktan odada sabahın süresi konuşma sırasına bağlıdır (sesli sohbet panelinde sıra ve süre görünür)
-    'phase_limit', (case when v_mode = 'auto' and r.status = 'playing' and not (r.remote and v_phase = 'dawn')
+    'phase_limit', (case when v_mode = 'auto' and r.status = 'playing'
                          then (r.state->'timers'->>(case v_phase when 'reveal' then 'reveal' when 'night' then 'night'
                                                      when 'dawn' then 'discuss' when 'vote' then 'vote'
                                                      when 'vote_result' then 'result' else 'none' end))::int
@@ -6053,6 +6044,12 @@ begin
     'whispers', case when r.status in ('playing', 'finished') then public._vv_whispers_for(p_room_id, v.id)
                      else '[]'::jsonb end,
     'whisper_limit', greatest(0, public.setting_int('vv_whisper_limit', 3)),
+    -- Uzaktan oda: bas-konuş ses mesajları (künye; ses sk_voice_get ile) ve bu tartışmada kalan konuşma süresi
+    'voice', case when r.remote and r.status = 'playing' then public._sk_clips_for(p_room_id, v.id) else '[]'::jsonb end,
+    'voice_left_ms', greatest(0, public.setting_int('sk_voice_round_ms', 15000)
+                       - case when (me.data->'voice'->>'round')::int = v_round
+                               and me.data->'voice'->>'channel' = (case when v_phase = 'night' then 'shark' else 'all' end)
+                              then coalesce((me.data->'voice'->>'ms')::int, 0) else 0 end),
     -- Elenenlerin sohbeti: yalnızca elenen oyuncuya (ve oyun bitince oynayanlara) gelir
     'dead_chat', case when (v_is_player and not v_alive and v_left is null) or r.status = 'finished'
                       then (select coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'name', d.name, 'body', d.body,

@@ -5140,18 +5140,9 @@ begin
     end if;
 
   elsif v_phase = 'dawn' then
-    -- Sabah: masadakiler konuşur, süre bitince oylama kendiliğinden başlar.
-    -- Uzaktan odada sırayla sesli konuşulur: herkesin sırası bitince (en az 20 sn sonra) oylama başlar; en geç
-    -- (hayatta olan oyuncu × konuşma süresi + 15 sn) ya da ayarlı tartışma süresi, hangisi uzunsa.
-    if r.remote then
-      if (v_age >= 20 and public._voice_turns_done(p_room_id))
-         or v_age >= greatest(coalesce((v_t->>'discuss')::int, 120),
-                              (select count(*)::int from public.room_players rp
-                                where rp.room_id = p_room_id and rp.left_at is null and rp.is_alive)
-                              * public._voice_turn_secs() + 15) then
-        perform public._vv_go_vote(p_room_id);
-      end if;
-    elsif v_age >= coalesce((v_t->>'discuss')::int, 120) then
+    -- Sabah: konuşulur, süre bitince oylama kendiliğinden başlar. Uzaktan odada da aynı süre geçerlidir: artık
+    -- bas-konuş ses mesajlarıyla konuşulur (eski sırayla sesli sohbet kullanılmıyor).
+    if v_age >= coalesce((v_t->>'discuss')::int, 120) then
       perform public._vv_go_vote(p_room_id);
     end if;
 
@@ -6034,7 +6025,7 @@ begin
     'test', coalesce((r.config->>'test')::boolean, false),
     'close_reason', r.state->>'close_reason',
     -- Uzaktan odada sabahın süresi konuşma sırasına bağlıdır (sesli sohbet panelinde sıra ve süre görünür)
-    'phase_limit', (case when v_mode = 'auto' and r.status = 'playing' and not (r.remote and v_phase = 'dawn')
+    'phase_limit', (case when v_mode = 'auto' and r.status = 'playing'
                          then (r.state->'timers'->>(case v_phase when 'reveal' then 'reveal' when 'night' then 'night'
                                                      when 'dawn' then 'discuss' when 'vote' then 'vote'
                                                      when 'vote_result' then 'result' else 'none' end))::int
@@ -6050,6 +6041,12 @@ begin
     'whispers', case when r.status in ('playing', 'finished') then public._vv_whispers_for(p_room_id, v.id)
                      else '[]'::jsonb end,
     'whisper_limit', greatest(0, public.setting_int('vv_whisper_limit', 3)),
+    -- Uzaktan oda: bas-konuş ses mesajları (künye; ses sk_voice_get ile) ve bu tartışmada kalan konuşma süresi
+    'voice', case when r.remote and r.status = 'playing' then public._sk_clips_for(p_room_id, v.id) else '[]'::jsonb end,
+    'voice_left_ms', greatest(0, public.setting_int('sk_voice_round_ms', 15000)
+                       - case when (me.data->'voice'->>'round')::int = v_round
+                               and me.data->'voice'->>'channel' = (case when v_phase = 'night' then 'shark' else 'all' end)
+                              then coalesce((me.data->'voice'->>'ms')::int, 0) else 0 end),
     -- Elenenlerin sohbeti: yalnızca elenen oyuncuya (ve oyun bitince oynayanlara) gelir
     'dead_chat', case when (v_is_player and not v_alive and v_left is null) or r.status = 'finished'
                       then (select coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'name', d.name, 'body', d.body,
@@ -17359,8 +17356,10 @@ returns boolean language sql stable security definer set search_path = public as
           or exists (select 1 from public.game_rooms r where r.id = c.room_id and public._sk_is_omni(r, p_user))
           or exists (select 1 from public.room_players rp
                        join public.room_player_secrets s on s.room_id = rp.room_id and s.user_id = rp.user_id
+                      join public.game_rooms gr on gr.id = rp.room_id
                       where rp.room_id = c.room_id and rp.user_id = p_user and rp.is_alive and rp.left_at is null
-                        and public._sk_team(s.role) = 'shark'));
+                        and (case when gr.game_type = 'vampire_villager' then s.role = 'vampire'
+                                  else public._sk_team(s.role) = 'shark' end)));
 $$;
 
 -- Ses mesajı gönder (base64, en çok ~65 KB, 0,3–6 sn). Döner: mesajın kimliği.
@@ -17388,13 +17387,19 @@ begin
   if char_length(v_audio) > least(240000, 12000 + p_duration_ms * 40) then raise exception 'audio_too_big'; end if;
   perform public._sk_voice_cleanup();
   select * into r from public.game_rooms where id = p_room_id;
-  if not found or r.game_type <> 'shark_cage' or not r.remote or r.status <> 'playing' then raise exception 'voice_closed'; end if;
+  if not found or r.game_type not in ('shark_cage', 'vampire_villager') or not r.remote or r.status <> 'playing' then
+    raise exception 'voice_closed';
+  end if;
   select rp.is_alive, s.role into v_alive, v_role
     from public.room_players rp
     join public.room_player_secrets s on s.room_id = rp.room_id and s.user_id = rp.user_id
    where rp.room_id = p_room_id and rp.user_id = v.id and rp.left_at is null;
   if not coalesce(v_alive, false) then raise exception 'voice_closed'; end if;
-  v_channel := case when r.state->>'phase' in ('day', 'vote', 'vote_result') then 'all'
+  -- Kanal: tartışmada herkes ('all'); gecede yalnızca kötü takım kendi frekansında ('shark': köpekbalıkları / vampirler)
+  v_channel := case when r.game_type = 'vampire_villager' then
+                      case when r.state->>'phase' in ('dawn', 'vote', 'vote_result') then 'all'
+                           when r.state->>'phase' = 'night' and v_role = 'vampire' then 'shark' end
+                    when r.state->>'phase' in ('day', 'vote', 'vote_result') then 'all'
                     when r.state->>'phase' = 'night' and public._sk_team(v_role) = 'shark' then 'shark' end;
   if v_channel is null then raise exception 'voice_closed'; end if;
   -- Her tartışmada (tur + kanal) kişi başı en çok 15 sn konuşma (ayar: sk_voice_round_ms). Sayaç gizli kayıtta tutulur.

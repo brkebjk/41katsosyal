@@ -3,6 +3,7 @@
 // kişiye özel hazırlanmış görünümü okur ve oyuncunun seçimini sunucuya gönderir.
 
 import type { VampireImageKey } from '@/lib/images';
+import type { SkClip } from '@/lib/shark';
 import { callRpc, callRpcVoid, type Result } from '@/lib/rpc';
 
 export type VvRole = 'villager' | 'vampire' | 'doctor' | 'detective';
@@ -47,6 +48,10 @@ export type VvWhisper = {
 export type VvInvestigation = { round: number; id: string; name: string; is_vampire: boolean };
 
 export type VvView = {
+  /** Uzaktan oda: bas-konuş ses mesajlarının künyesi (ses sk_voice_get ile alınır) */
+  voice?: SkClip[];
+  /** Bu tartışmada kalan bas-konuş süresi (ms; her tartışmada en çok 15 sn) */
+  voice_left_ms?: number;
   /** Eşleştirme (uzaktan) lobisi */
   match?: boolean;
   /** "Hazırım" diyenler (eşleştirme lobisi ve yeni el bekleme odası) */
