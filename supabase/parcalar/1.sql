@@ -1,4 +1,4 @@
--- PARÇA 1 / 3 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
+-- PARÇA 1 / 4 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
 -- =====================================================================
@@ -275,6 +275,18 @@ begin
 end $$;
 drop trigger if exists rp_seat on public.room_players;
 create trigger rp_seat before insert on public.room_players for each row execute function public._rp_seat();
+
+-- Oyun başlarken boşluklar kapanır: oyuncular sıralarını koruyarak 1'den başlayan numaralara geçer
+-- (ör. 10 kişilik odada 16 numaraya oturan, en baştaki boş numaraya geçer)
+create or replace function public._rp_compact_seats(p_room_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform pg_advisory_xact_lock(hashtext('rp_seat:' || p_room_id::text));
+  update public.room_players rp set seat = x.rn
+    from (select user_id, row_number() over (order by seat nulls last, joined_at, user_id)::int as rn
+            from public.room_players where room_id = p_room_id) x
+   where rp.room_id = p_room_id and rp.user_id = x.user_id and rp.seat is distinct from x.rn;
+end $$;
 -- Eski satırlar: katılma sırasına göre numara
 update public.room_players rp set seat = x.rn
   from (select room_id, user_id, row_number() over (partition by room_id order by joined_at, user_id)::int as rn
@@ -5518,6 +5530,7 @@ begin
   select min_players into v_min from public.game_types where key = 'vampire_villager';
   select count(*)::int into v_n from public.room_players where room_id = p_room_id;
   if v_n < coalesce(v_min, 5) then raise exception 'not_enough_players'; end if;
+  perform public._rp_compact_seats(p_room_id);
 
   v_comp := public._vv_composition(v_n);
   v_v := (v_comp->>'vampire')::int;
@@ -5973,6 +5986,7 @@ begin
 
   select coalesce(jsonb_agg(jsonb_build_object(
            'id', rp.user_id,
+           'seat', coalesce(rp.seat, 0),
            'name', rp.display_name,
            'is_alive', rp.is_alive,
            'is_host', (rp.user_id = r.host_id),
@@ -6131,7 +6145,7 @@ begin
     'whispers_left', greatest(0, public.setting_int('vv_whisper_limit', 3)
                                - (select count(*)::int from public.vv_whispers w
                                    where w.room_id = p_room_id and w.from_user = v.id))
-  );
+  ) || public._vv_view_extra(p_room_id, v.id);
 end $$;
 
 -- ("Devam eden odalarım" kaldırıldı: yan yana oyunlarda ayrılan kişi geri dönemez.)

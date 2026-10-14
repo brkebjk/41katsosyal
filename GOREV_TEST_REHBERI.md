@@ -1,51 +1,54 @@
-# Görev Test Rehberi – Oyuncu penceresi, atma penceresi, puan kuralları, açık odalar, Vampir girişi
+# Görev Test Rehberi – Bas-konuş düzeltmesi, 16 kutucuk, yeni Vampir–Köylü ekranı
 
 ## A. Supabase'i güncelle
-Şema `supabase/parcalar/` klasöründe 3 parça.
+Şema artık `supabase/parcalar/` klasöründe **4 parça**.
 1. Supabase > **SQL Editor** > **+ New query** > `1.sql` dosyasının tamamını yapıştır > **Run** > yeşil "Success".
 2. Yeni sorgu aç > `2.sql` > Run.
 3. Yeni sorgu aç > `3.sql` > Run.
-- Sıra önemli: 1, 2, 3. "Run and enable RLS" çıkarsa onu seç.
+4. Yeni sorgu aç > `4.sql` > Run.
+- Sıra önemli: 1, 2, 3, 4. "Run and enable RLS" çıkarsa onu seç.
 
-## B. Oyun ekranı (iki oyun)
-1. Üst tabela küçüldü. Yalnızca başlık ve altında en son olay yazar (ör. "Konuşun! Köpekbalığı kim?" / "3. gece maskesi kırıldı › ⑤").
-2. Avatarlar biraz büyüdü. Adın altında rol yazmaz. Rol ikonu avatarın altında küçük yuvarlak çerçevededir.
-3. Avatara bir kez dokun > küçük oyuncu penceresi açılır:
-   - Rolü açıksa rolü ve özelliği görünür.
-   - **Atma oylaması başlat**, **Arkadaş ekle**, **Ses mesajını şikâyet et** (uzaktan) düğmeleri vardır.
-   - Arkadaş eklerken gerçek ad uyarısı çıkar.
-4. Sağ üstteki kırmızı 👥 > oyuncuya dokun > aynı pencere açılır, artık önde açılır.
-5. Atma oylaması başlayınca kırmızı 👥 düğmesinin altında küçük pencere açılır: "③ Ali, ⑤ Veli için atma oylaması başlattı" > **Atılsın / Atılmasın**.
-6. Mikrofonun üstünde yeşil yazı vardır: "Oyun zevkini arttırmak için sırayla konuş."
-   - Senin sesin çalınırken bu yazı "👂 Seni dinliyorlar" olur.
-7. Oyun sonu tablosunda rol ikonları küçüldü, adların üstüne binmez.
-8. Bekleme odasında ve yeni elde herkes aynı numarada kalır. Biri çıkarsa yeri boş kalır, yeni gelen o numarayı alır.
+## B. Bas-konuş (iki oyun, uzaktan)
+1. Düğmeye basılı tut, konuş, bırak. Kayıt artık hemen kesilmemeli; karşı telefonda ses duyulmalı.
+2. Konuşurken oyun sesleri susar; senin mikrofonuna gitmez.
+3. Her tartışmada toplam **10 sn** konuşma hakkı var.
 
-## C. Oyunda gelen arkadaşlık isteği
-1. Telefon 1 oyundayken telefon 2 ona istek atsın.
-2. Telefon 1'de üstte bildirim çıkar > **Onayla / Reddet** (15 sn durur).
-3. Seçmezsen harita > bildirim kutusunda aynı düğmelerle bekler.
+## C. Oda düzeni: 16 kutucuk (iki oyun)
+1. Bekleme odasında 16 kutucuk görünür. Boş kutucukta numara yazmaz; biri oturunca numarası belirir.
+2. Boş kutucuğa (+) dokun > oraya geçersin.
+3. Oyun başlayınca boşluklar kapanır. Ör. 10 kişilik odada 16'ya oturan, en baştaki boş numaraya geçer.
+4. Moderatör: **Odayı doldur (16 kişi)** ile oda deneme oyuncularıyla dolar (artık 15 deneme oyuncusu var).
 
-## D. Giriş ekranları ve açık odalar
-1. Oyunlar > Vampir–Köylü artık Köpekbalığı gibi kendi giriş ekranıyla açılır: rol kartları kaydırmalı, Yan yana, Uzaktan eşleş.
-2. **Yan yana** düğmesine basınca pencere hemen açılır. Düğmenin üstünde kırmızı **5x Puan** etiketi var.
-3. Açık odalar ekranında:
-   - **Oda oluştur** yok. Odalar en üstte listelenir.
-   - **Puan tablosu** dokununca açılır.
-   - **Kodla katıl** altta yüzen yuvarlak düğmedir.
-4. Listede uzaktan odalar yoktur. Yan yana, etkinlik ve 41. Kat Özel oyunlar görünür. Hepsine kod ve konumla girilir.
-   - Moderatör odasında "41. Kat Özel Oyun" etiketi var.
-   - Etkinlik odasında "Etkinlik Oyunu" etiketi var. Dokununca etkinliğin penceresi açılır.
-5. Uzaktan eşleşte bekleyen bir uzaktan oda varsa önce oraya alınırsın.
+## D. Köpekbalığı Kafesi
+- Avatarın altında yalnızca rumuz yazar (#kod yok). Sağ alttaki güneş / maske simgeleri kalktı.
+- "Maske kırıldı" yerine **Avlandı** yazar. Avlandı yazısı avatarın ortasında çıkar.
+- Ölen avatarında nasıl öldüğü görünür:
+  - ⛓️ kafes,
+  - 🦈 avlandı,
+  - 🔱 zıpkın,
+  - 🚪 ayrıldı.
+- **Wolvesville kuralı:** kim nasıl ölürse ölsün rolü herkese açıklanır. Ölüler yaşayanların rolünü görmez.
+- **Rol çarkı:** her rolün altında gelme oranı (%) yazar. Güçlü rollerin şansı daha düşüktür.
+- **Rolüm:** ekran artık kararmaz. "Bu oyundaki roller" listesinde:
+  - her rolün sayısı yazar,
+  - rolü açılanın numarası yanında görünür,
+  - ölenin numarasının üstü çizilir.
+- Alt satırda eksik kalan avatarlar sağa yaslanır (üstte 4, altta 2).
+- Köpekbalığıysan dalışta sohbet baloncuğu **Takım** sekmesiyle açılır. Oyun akışı orada da akar.
 
-## E. Puan kuralları (bir kez çevrilir, web panelden değiştirilebilir)
-| Ne | Yeni değer |
-|---|---|
-| Uzaktan oyun puanı | Yan yananın %20'si (yan yana 5 kat) |
-| Uzaktan puanlı oyun sınırı | Günde 10, ayda 100 |
-| Bilgi Yarışması | Günde 15 puan, aylık sınır pratikte yok (450) |
-| Oda hakkı | Ücretsiz 3, abone 12 / ay |
-| Etkinlik açma | Ücretsiz 1, abone 4, lider 8 (aynı) |
-| Etkinlik oyunu | Oyun Geceleri ×1,5; Sosyal Buluşmalar ve Müzik & Eğlence ×1,25 |
+## E. Vampir–Köylü (yeni ekran)
+- Ekran Köpekbalığı'nın aynısı:
+  - numaralı kutucuklar, üst tabela, ortada çıkan komut,
+  - yüzen sohbet: Genel / 🧛 Vampirler / 💀 Ölüler,
+  - rol çarkı (oranlarıyla), oyuncu penceresi, atma oylaması, bas-konuş, oyun sonu sıralama tablosu.
+- Gece:
+  - vampir ısıracağını seçer,
+  - doktor korur,
+  - dedektif bakar; sonuç sabah kendiliğinden açılır.
+- Ölenin rolü herkese açıklanır.
+- Fısıltı ve eski sesli oda bu ekranda yok.
 
-- Oyunlu etkinlik yalnızca bu üç kategoride açılır. Diğer kategorilerde formda "Etkinlikte oyun" seçeneği hiç çıkmaz.
+## F. Açık odalar ve bildirim
+- Odada oynandığı petek adı yazar. Petek adına dokununca haritada o petek açılır.
+- Oda sahibi rumuzuyla görünür.
+- Oyunda gelen arkadaşlık isteği üstte **5 sn** durur. Seçmezsen bildirim kutusunda Onayla / Reddet ile bekler.

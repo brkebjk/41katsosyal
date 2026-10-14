@@ -3,7 +3,7 @@
 // kişiye özel hazırlanmış görünümü okur ve oyuncunun seçimini sunucuya gönderir.
 
 import type { VampireImageKey } from '@/lib/images';
-import type { KickState, SkClip } from '@/lib/shark';
+import type { KickState, SkClip, SkMsg } from '@/lib/shark';
 import { callRpc, callRpcVoid, type Result } from '@/lib/rpc';
 
 export type VvRole = 'villager' | 'vampire' | 'doctor' | 'detective';
@@ -15,6 +15,8 @@ export type VvPhase = 'lobby' | 'reveal' | 'night' | 'dawn' | 'vote' | 'vote_res
 
 export type VvPlayer = {
   id: string;
+  /** Koltuk numarası (bekleme odasında seçilen kutucuk; oyun başlarken boşluklar kapanır) */
+  seat: number;
   name: string;
   is_alive: boolean;
   is_host: boolean;
@@ -29,6 +31,30 @@ export type VvPlayer = {
   night_done: boolean | null;
   voted: boolean | null;
   ready: boolean | null;
+  /** Vampirsen: bu kişi de vampir */
+  ally?: boolean;
+  /** Rolü herkese açıklandı (ölen, köyden çıkarılan, ayrılan) */
+  revealed?: boolean;
+  /** Oyunda kaldığı süre (sn) ve oyun sonu puanı */
+  alive_sec?: number | null;
+  points?: number | string | null;
+  /** Vampirler birbirinin bu geceki ısırma seçimini görür */
+  hunt_pick?: string | null;
+};
+
+/** Oyun akışı günlüğü (herkese açık olaylar) */
+export type VvLog = {
+  k: 'phase' | 'night' | 'vote' | 'left' | 'end';
+  at: string;
+  round: number;
+  ph: 'night' | 'day';
+  phase?: 'reveal' | 'night' | 'day' | 'vote';
+  night?: number;
+  ids?: string[];
+  id?: string | null;
+  role?: VvRole | null;
+  tie?: boolean;
+  winner?: 'villager' | 'vampire';
 };
 
 /** Fısıltı: herkes kimin kime fısıldadığını görür; `body` yalnızca gönderen ve alana dolu gelir */
@@ -132,7 +158,17 @@ export type VvView = {
   whisper_limit: number;
   whispers_left: number;
   /** Elenenlerin sohbeti: yalnızca elenen oyuncuya (ve oyun bitince) gelir; yoksa boş */
-  dead_chat?: VvDeadMsg[] | null;
+  dead_chat?: SkMsg[] | null;
+  /** Herkese açık yazışma (sabah ve oylamada yaşayanlar yazar) ve vampirlerin gece frekansı */
+  chat?: SkMsg[] | null;
+  shark_chat?: SkMsg[] | null;
+  /** Oyun akışı günlüğü */
+  log?: VvLog[];
+  /** Bu oyunda dağıtılan roller ve sayıları */
+  roles?: Partial<Record<VvRole, number>> | null;
+  /** Etkinlik oyunu */
+  event?: boolean;
+  server_now?: string;
 };
 
 export type VvDeadMsg = { id: string; name: string; body: string; at: string; mine: boolean };
@@ -162,6 +198,10 @@ const VV_TEXT: Record<string, string> = {
   not_dead: 'Bu sohbete yalnızca elenenler yazabilir.',
   rate_limited: 'Biraz yavaş: art arda çok hızlı yazıyorsun.',
   chat_limit: 'Bu oyunda yazabileceğin mesaj sınırına ulaştın.',
+  not_alive: 'Elendin; yalnızca ölülerin frekansına yazabilirsin.',
+  day_only: 'Gece herkes susar. Sabah ve oylamada yazılır.',
+  night_only: 'Vampirler yalnızca gece yazışır.',
+  invalid_channel: 'Bu yazışmaya yazamazsın.',
 };
 
 /** Odada olmayan ya da odadan çıkarılan kişiye gösterilen cevaplar (ekran bunlardan "çıkarıldın" ekranını açar). */
@@ -200,6 +240,28 @@ export const sendWhisper = (roomId: string, to: string, body: string, replyTo: s
 
 /** Elenenlerin sohbetine yaz */
 export const sayAsDead = (roomId: string, body: string) => call('vv_dead_say', roomId, { p_body: body });
+
+/** Yazışma: 'all' herkese (sabah ve oylama), 'shark' vampirlerin gece frekansı, 'dead' ölüler */
+export const vvSay = (roomId: string, channel: 'all' | 'shark' | 'dead', body: string) =>
+  call('vv_say', roomId, { p_channel: channel, p_body: body });
+
+/** Mesaj geçmişi (yazışma penceresi) */
+export async function getVampireHistory(roomId: string): Promise<{ messages: SkMsg[]; error: string | null }> {
+  const { data, error } = await callRpc<SkMsg[]>('vv_history', { p_room_id: roomId }, VV_TEXT);
+  return { messages: data ?? [], error };
+}
+
+/** Kazanan takımın yazısı ve rengi */
+export function vvWinnerText(w: 'villager' | 'vampire' | null): { title: string; color: string } {
+  if (w === 'vampire') return { title: 'Vampirler kazandı', color: '#9B7BFF' };
+  if (w === 'villager') return { title: 'Köylüler kazandı', color: '#FFB020' };
+  return { title: 'Oyun bitti', color: '#9AA4B2' };
+}
+
+export function vvIsWinner(w: 'villager' | 'vampire' | null, role: VvRole | null): boolean {
+  if (!w || !role) return false;
+  return w === 'vampire' ? role === 'vampire' : role !== 'vampire';
+}
 
 /** Elenenlerin sohbetindeki bir mesajı bildir */
 export const reportDeadMessage = (id: string, reason: string) =>

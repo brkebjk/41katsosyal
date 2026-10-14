@@ -1,4 +1,4 @@
--- PARÇA 2 / 3 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
+-- PARÇA 2 / 4 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
 -- Puan ayarları (moderatör SQL ile değiştirebilir; yoksa varsayılan kullanılır)

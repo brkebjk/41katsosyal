@@ -77,6 +77,7 @@ import {
   SK_TEAMS,
   kickStart,
   kickVote,
+  takeSeat,
   sharkNext,
   sharkNight,
   sharkPickRole,
@@ -1672,6 +1673,12 @@ function Game({ roomId }: { roomId: string }) {
                   }}
                   mark={mark}
                   stickyKey={roomId}
+                  slots={phase === 'lobby' ? view.max_players : undefined}
+                  onEmptyPress={
+                    phase === 'lobby' && me.is_player && !me.left
+                      ? (n) => void act('seat', () => takeSeat(roomId, n))
+                      : undefined
+                  }
                 />
               )}
               {view.test || connError || (playing && me.is_player && !me.is_alive && !me.left) ? (

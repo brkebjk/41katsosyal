@@ -2,8 +2,9 @@ import { Image } from 'expo-image';
 import { View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Text } from '@/components/AppText';
-import { sharkRoleImages } from '@/lib/images';
-import { SK_ROLES, type SkRole } from '@/lib/shark';
+import { sharkRoleImages, vampireImages } from '@/lib/images';
+import { roleInfo } from '@/lib/roles';
+import { ROLES as VV_ROLES, type VvRole } from '@/lib/vampire';
 
 /**
  * Rol ikonu (çıkartma görseli). Görseli olmayan rolde (ileride eklenecek roller) rolün emojisi görünür.
@@ -16,7 +17,8 @@ export function RoleIcon({
   style,
   framed,
 }: {
-  role: SkRole;
+  /** Köpekbalığı ya da Vampir–Köylü rolü */
+  role: string;
   size?: number;
   style?: StyleProp<ViewStyle>;
   framed?: boolean;
@@ -31,7 +33,7 @@ export function RoleIcon({
             height: size,
             borderRadius: size / 2,
             borderWidth: border,
-            borderColor: SK_ROLES[role]?.color ?? '#FFFFFF',
+            borderColor: roleInfo(role)?.color ?? '#FFFFFF',
             backgroundColor: 'rgba(11, 19, 43, 0.88)',
             alignItems: 'center',
             justifyContent: 'center',
@@ -44,11 +46,22 @@ export function RoleIcon({
       </View>
     );
   }
+  // Vampir–Köylü rolü: kart görseli yuvarlak kırpılır (özel ikonlar gelene kadar)
+  if (role in VV_ROLES) {
+    return (
+      <Image
+        source={vampireImages[VV_ROLES[role as VvRole].image]}
+        style={[{ width: size, height: size, borderRadius: size / 2 }, style as never]}
+        contentFit="cover"
+        accessibilityLabel={roleInfo(role)?.name}
+      />
+    );
+  }
   const src = sharkRoleImages[role];
   if (!src) {
     return (
       <View style={[{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }, style]}>
-        <Text style={{ fontSize: Math.round(size * 0.8), lineHeight: size }}>{SK_ROLES[role]?.emoji ?? '?'}</Text>
+        <Text style={{ fontSize: Math.round(size * 0.8), lineHeight: size }}>{roleInfo(role)?.emoji ?? '?'}</Text>
       </View>
     );
   }
@@ -57,7 +70,7 @@ export function RoleIcon({
       source={src}
       style={[{ width: size, height: size }, style as never]}
       contentFit="contain"
-      accessibilityLabel={SK_ROLES[role]?.name}
+      accessibilityLabel={roleInfo(role)?.name}
     />
   );
 }

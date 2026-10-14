@@ -278,6 +278,8 @@ export const startShark = (roomId: string) => call('sk_start', roomId);
 /** Oyuncu atma oylaması başlat / oy ver (iki oyunda ortak) */
 export const kickStart = (roomId: string, target: string) => call('room_kick_start', roomId, { p_target: target });
 export const kickVote = (roomId: string, yes: boolean) => call('room_kick_vote', roomId, { p_yes: yes });
+/** Bekleme odasında boş kutucuğa geç (iki oyunda ortak) */
+export const takeSeat = (roomId: string, seat: number) => call('room_take_seat', roomId, { p_seat: seat });
 /** Moderatör: deneme odasında kendi rolünü seç (boş = rastgele) */
 export const sharkPickRole = (roomId: string, role: SkRole | null) => call('sk_pick_role', roomId, { p_role: role });
 export const sharkReady = (roomId: string) => call('sk_ready', roomId);
@@ -325,6 +327,8 @@ const VOICE_TEXT: Record<string, string> = {
   kick_closed: 'Atma oylaması yalnızca bekleme odasında ve tartışmada açılır.',
   not_kickable: 'Bu oyuncu için atma oylaması açılamaz.',
   kick_poll_open: 'Şu an başka bir atma oylaması sürüyor.',
+  seat_taken: 'Bu kutucuk az önce doldu. Başka bir boş kutucuk seç.',
+  invalid_seat: 'Bu kutucuk seçilemez.',
   kick_poll_limit: 'Bu odada atma oylaması başlatma hakkın bitti.',
   mic_banned: 'Mikrofonun bir süreliğine kapatıldı.',
   report_banned: 'Haksız şikâyetlerin yüzünden bir süre ses şikâyeti yapamazsın.',

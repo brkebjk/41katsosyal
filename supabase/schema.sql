@@ -272,6 +272,18 @@ begin
 end $$;
 drop trigger if exists rp_seat on public.room_players;
 create trigger rp_seat before insert on public.room_players for each row execute function public._rp_seat();
+
+-- Oyun başlarken boşluklar kapanır: oyuncular sıralarını koruyarak 1'den başlayan numaralara geçer
+-- (ör. 10 kişilik odada 16 numaraya oturan, en baştaki boş numaraya geçer)
+create or replace function public._rp_compact_seats(p_room_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform pg_advisory_xact_lock(hashtext('rp_seat:' || p_room_id::text));
+  update public.room_players rp set seat = x.rn
+    from (select user_id, row_number() over (order by seat nulls last, joined_at, user_id)::int as rn
+            from public.room_players where room_id = p_room_id) x
+   where rp.room_id = p_room_id and rp.user_id = x.user_id and rp.seat is distinct from x.rn;
+end $$;
 -- Eski satırlar: katılma sırasına göre numara
 update public.room_players rp set seat = x.rn
   from (select room_id, user_id, row_number() over (partition by room_id order by joined_at, user_id)::int as rn
@@ -5515,6 +5527,7 @@ begin
   select min_players into v_min from public.game_types where key = 'vampire_villager';
   select count(*)::int into v_n from public.room_players where room_id = p_room_id;
   if v_n < coalesce(v_min, 5) then raise exception 'not_enough_players'; end if;
+  perform public._rp_compact_seats(p_room_id);
 
   v_comp := public._vv_composition(v_n);
   v_v := (v_comp->>'vampire')::int;
@@ -5970,6 +5983,7 @@ begin
 
   select coalesce(jsonb_agg(jsonb_build_object(
            'id', rp.user_id,
+           'seat', coalesce(rp.seat, 0),
            'name', rp.display_name,
            'is_alive', rp.is_alive,
            'is_host', (rp.user_id = r.host_id),
@@ -6128,7 +6142,7 @@ begin
     'whispers_left', greatest(0, public.setting_int('vv_whisper_limit', 3)
                                - (select count(*)::int from public.vv_whispers w
                                    where w.room_id = p_room_id and w.from_user = v.id))
-  );
+  ) || public._vv_view_extra(p_room_id, v.id);
 end $$;
 
 -- ("Devam eden odalarım" kaldırıldı: yan yana oyunlarda ayrılan kişi geri dönemez.)
@@ -15913,7 +15927,7 @@ begin
     from public.profiles p
    where p.is_bot
      and not exists (select 1 from public.room_players rp where rp.room_id = p_room_id and rp.user_id = p.id)
-   order by p.full_name
+   order by p.id
    limit least(15, greatest(1, coalesce(p_count, 3)));
   get diagnostics n = row_count;
   perform public._audit('test_bots', null, jsonb_build_object('room', p_room_id, 'count', n));
@@ -16838,6 +16852,7 @@ begin
   select count(*)::int into v_n from public.room_players where room_id = p_room_id and left_at is null;
   if v_n < coalesce(v_min, 6) then raise exception 'not_enough_players'; end if;
   if v_n > coalesce(v_max, 16) then raise exception 'room_full'; end if;
+  perform public._rp_compact_seats(p_room_id);
   v_roles := public._sk_roles(v_n);
 
   delete from public.room_player_secrets where room_id = p_room_id;
@@ -17385,6 +17400,31 @@ begin
   );
 end $$;
 
+-- Bekleme odasında boş kutucuğa geç (iki oyun). Kutucuklar 1..en çok oyuncu; dolu kutucuğa geçilmez.
+create or replace function public.room_take_seat(p_room_id uuid, p_seat int)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+  v_max int;
+begin
+  v := public._require_user();
+  select * into r from public.game_rooms where id = p_room_id;
+  if not found or r.game_type not in ('shark_cage', 'vampire_villager') then raise exception 'room_not_found'; end if;
+  if r.status <> 'lobby' then raise exception 'wrong_phase'; end if;
+  select coalesce(max_players, 16) into v_max from public.game_types where key = r.game_type;
+  if p_seat is null or p_seat < 1 or p_seat > v_max then raise exception 'invalid_seat'; end if;
+  if not exists (select 1 from public.room_players where room_id = p_room_id and user_id = v.id and left_at is null) then
+    raise exception 'not_in_room';
+  end if;
+  perform pg_advisory_xact_lock(hashtext('rp_seat:' || p_room_id::text));
+  if exists (select 1 from public.room_players where room_id = p_room_id and seat = p_seat and user_id <> v.id) then
+    raise exception 'seat_taken';
+  end if;
+  update public.room_players set seat = p_seat where room_id = p_room_id and user_id = v.id;
+  perform public._room_touch(p_room_id, v.id);
+end $$;
+
 -- Mesaj geçmişi: kişinin görmeye hakkı olan bütün yazışmalar (herkese açık, köpekbalığı frekansı, ölülerin frekansı),
 -- tur ve aşamasıyla (gece / gündüz ayrımı için). Görünürlük kuralları sk_view ile aynıdır; en çok 400 mesaj.
 create or replace function public.sk_history(p_room_id uuid)
@@ -17425,6 +17465,249 @@ begin
                and (channel = 'all' or (channel = 'shark' and v_shark) or (channel = 'dead' and v_dead))
              order by created_at desc limit 400) d);
 end $$;
+
+
+-- ---------------------------------------------------------------------
+-- Vampir–Köylü, Köpekbalığı Kafesi ekranıyla aynı: herkese açık yazışma (sabah ve oylamada yaşayanlar), vampirlerin
+-- gece frekansı, ölülerin frekansı; oyun akışı günlüğü; oyuncu numarası, oyunda kalma süresi, oyun sonu puanı.
+-- Kurallar ve roller değişmez. Mesajlar Köpekbalığı'ndaki gibi vv_dead_chat tablosunda kanal, tur ve aşamayla durur.
+-- ---------------------------------------------------------------------
+create or replace function public.vv_say(p_room_id uuid, p_channel text, p_body text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+  v_body text := btrim(regexp_replace(coalesce(p_body, ''), '\s+', ' ', 'g'));
+  v_name text;
+  v_alive boolean;
+  v_role text;
+begin
+  v := public._require_user();
+  if v.muted_until is not null and v.muted_until > now() then raise exception 'muted'; end if;
+  if char_length(v_body) not between 1 and 120 then raise exception 'invalid_body'; end if;
+  if public._has_link(v_body) then raise exception 'links_not_allowed'; end if;
+  r := public._vv_room(p_room_id);
+  if r.status <> 'playing' then raise exception 'wrong_phase'; end if;
+  select rp.display_name, rp.is_alive, s.role into v_name, v_alive, v_role
+    from public.room_players rp
+    join public.room_player_secrets s on s.room_id = rp.room_id and s.user_id = rp.user_id
+   where rp.room_id = p_room_id and rp.user_id = v.id and rp.left_at is null;
+  if v_name is null then raise exception 'not_in_room'; end if;
+  if p_channel = 'all' then
+    if not v_alive then raise exception 'not_alive'; end if;
+    if r.state->>'phase' not in ('dawn', 'vote', 'vote_result') then raise exception 'day_only'; end if;
+  elsif p_channel = 'shark' then
+    if not v_alive or v_role <> 'vampire' then raise exception 'forbidden'; end if;
+    if r.state->>'phase' <> 'night' then raise exception 'night_only'; end if;
+  elsif p_channel = 'dead' then
+    if v_alive then raise exception 'not_dead'; end if;
+  else
+    raise exception 'invalid_channel';
+  end if;
+  if exists (select 1 from public.vv_dead_chat where room_id = p_room_id and user_id = v.id
+              and created_at > now() - interval '1500 milliseconds') then
+    raise exception 'rate_limited';
+  end if;
+  if (select count(*) from public.vv_dead_chat where room_id = p_room_id and user_id = v.id) >= 80 then
+    raise exception 'chat_limit';
+  end if;
+  insert into public.vv_dead_chat (room_id, user_id, name, body, channel, round, phase)
+  values (p_room_id, v.id, v_name, v_body, p_channel, coalesce((r.state->>'round')::int, 0),
+          case when r.state->>'phase' = 'dawn' then 'day' else r.state->>'phase' end);
+end $$;
+
+-- Kişinin görebildiği kanallar (vv_view ve vv_history ortak): vampir frekansı yaşayan vampirlere, ölülerin frekansı
+-- elenenlere (ayrılan hariç); anlatıcı ve oyun bitince herkes hepsini görür
+create or replace function public._vv_chat_rights(p_room_id uuid, p_user uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  v_alive boolean;
+  v_left timestamptz;
+  v_player boolean;
+  v_role text;
+  v_omni boolean;
+begin
+  select * into r from public.game_rooms where id = p_room_id;
+  select rp.is_alive, rp.left_at into v_alive, v_left from public.room_players rp
+   where rp.room_id = p_room_id and rp.user_id = p_user;
+  v_player := found;
+  v_omni := not v_player and exists (select 1 from public.profiles where id = p_user and role = 'admin');
+  select s.role into v_role from public.room_player_secrets s where s.room_id = p_room_id and s.user_id = p_user;
+  return jsonb_build_object(
+    'all', r.status in ('playing', 'finished'),
+    'shark', r.status = 'finished' or v_omni or (r.status = 'playing' and v_role = 'vampire' and coalesce(v_alive, false)),
+    'dead', r.status = 'finished' or v_omni
+            or (r.status = 'playing' and v_player and not coalesce(v_alive, false) and v_left is null));
+end $$;
+
+create or replace function public._vv_chat_list(p_room_id uuid, p_user uuid, p_channel text, p_limit int)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'name', d.name, 'body', d.body, 'at', d.created_at,
+                                               'mine', d.user_id = p_user, 'from', d.user_id, 'channel', d.channel,
+                                               'round', d.round, 'phase', d.phase) order by d.created_at), '[]'::jsonb)
+    from (select * from public.vv_dead_chat
+           where room_id = p_room_id and (p_channel is null or channel = p_channel)
+           order by created_at desc limit p_limit) d;
+$$;
+
+-- Vampir–Köylü mesaj geçmişi (yazışma penceresi; görünürlük vv_view ile aynı, en çok 400 mesaj)
+create or replace function public.vv_history(p_room_id uuid)
+returns jsonb language plpgsql volatile security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+  k jsonb;
+begin
+  v := public._require_user();
+  select * into r from public.game_rooms where id = p_room_id;
+  if not found or r.game_type <> 'vampire_villager' then raise exception 'room_not_found'; end if;
+  if not (exists (select 1 from public.room_players where room_id = p_room_id and user_id = v.id)
+          or r.host_id = v.id or v.role = 'admin') then
+    raise exception 'forbidden';
+  end if;
+  if r.status not in ('playing', 'finished') then return '[]'::jsonb; end if;
+  k := public._vv_chat_rights(p_room_id, v.id);
+  return (
+    select coalesce(jsonb_agg(e order by e->>'at'), '[]'::jsonb)
+      from jsonb_array_elements(public._vv_chat_list(p_room_id, v.id, null, 400)) e
+     where (e->>'channel' = 'all' and (k->>'all')::boolean)
+        or (e->>'channel' = 'shark' and (k->>'shark')::boolean)
+        or (e->>'channel' = 'dead' and (k->>'dead')::boolean));
+end $$;
+
+-- vv_view'e eklenenler: Köpekbalığı ekranındaki oyuncu bilgileri, yazışmalar, oyun akışı, roller ve sunucu saati
+create or replace function public._vv_view_extra(p_room_id uuid, p_user uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  me public.room_player_secrets;
+  v_player boolean;
+  v_alive boolean;
+  v_omni boolean;
+  v_all boolean;
+  v_vamp boolean;
+  v_round int;
+  k jsonb;
+  v_players jsonb;
+begin
+  select * into r from public.game_rooms where id = p_room_id;
+  select rp.is_alive into v_alive from public.room_players rp where rp.room_id = p_room_id and rp.user_id = p_user;
+  v_player := found;
+  v_alive := coalesce(v_alive, false);
+  v_omni := not v_player and exists (select 1 from public.profiles where id = p_user and role = 'admin');
+  v_all := v_omni or r.status = 'finished';
+  select s.* into me from public.room_player_secrets s where s.room_id = p_room_id and s.user_id = p_user;
+  v_vamp := me.role = 'vampire';
+  v_round := coalesce((r.state->>'round')::int, 0);
+  k := public._vv_chat_rights(p_room_id, p_user);
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'id', rp.user_id,
+           'seat', coalesce(rp.seat, 0),
+           'name', rp.display_name,
+           'avatar', pr.avatar_index,
+           'is_alive', rp.is_alive,
+           'left', rp.left_at is not null,
+           'is_host', rp.user_id = r.host_id,
+           'is_me', rp.user_id = p_user,
+           'role', case when v_all or rp.user_id = p_user or (v_vamp and s.role = 'vampire') then s.role
+                        else r.state->'reveals'->>(rp.user_id::text) end,
+           'ally', v_vamp and s.role = 'vampire' and rp.user_id <> p_user,
+           'revealed', coalesce(r.state->'reveals', '{}'::jsonb) ? rp.user_id::text,
+           'alive_sec', case when r.started_at is not null and r.status in ('playing', 'finished')
+                              and (not rp.is_alive or r.status = 'finished')
+                             then greatest(0, extract(epoch from coalesce(rp.out_at, rp.left_at, r.finished_at, now())
+                                                                 - r.started_at)::int) end,
+           'points', case when r.status = 'finished' then
+                       (select coalesce(sum(pe.amount), 0) from public.point_events pe
+                         where pe.room_id = r.id and pe.user_id = rp.user_id
+                           and pe.source in ('game_play', 'game_remote')) end,
+           -- Vampirler (ve anlatıcı) birbirinin gece seçimini görür
+           'hunt_pick', case when ((v_vamp and v_alive) or v_omni) and s.role = 'vampire'
+                              and (s.data->'night'->>'round')::int = v_round then s.data->'night'->>'target' end,
+           'night_done', case when v_omni then coalesce((s.data->'night'->>'round')::int, 0) = v_round end,
+           'voted', case when v_omni then coalesce((s.data->'vote'->>'round')::int, 0) = v_round end,
+           'ready', case when v_omni then coalesce((s.data->>'ready')::boolean, false) end
+         ) order by rp.seat nulls last, rp.joined_at), '[]'::jsonb)
+    into v_players
+    from public.room_players rp
+    left join public.room_player_secrets s on s.room_id = rp.room_id and s.user_id = rp.user_id
+    left join public.profiles pr on pr.id = rp.user_id
+   where rp.room_id = p_room_id;
+
+  return jsonb_build_object(
+    'players', v_players,
+    'event', r.event_id is not null,
+    'server_now', now(),
+    'log', coalesce(r.state->'log', '[]'::jsonb),
+    'roles', case when r.status in ('playing', 'finished') then (
+               select coalesce(jsonb_object_agg(x.role, x.n), '{}'::jsonb)
+                 from (select s.role, count(*)::int as n from public.room_player_secrets s
+                        where s.room_id = p_room_id and s.role is not null group by s.role) x) end,
+    'chat', case when (k->>'all')::boolean then public._vv_chat_list(p_room_id, p_user, 'all', 60) end,
+    'shark_chat', case when (k->>'shark')::boolean then public._vv_chat_list(p_room_id, p_user, 'shark', 60) end,
+    'dead_chat', case when (k->>'dead')::boolean then public._vv_chat_list(p_room_id, p_user, 'dead', 60) end);
+end $$;
+
+-- Oyun akışı günlüğü (Köpekbalığı'ndaki gibi; herkese açık olaylar): aşama, gece ölen, köyden çıkarılan, ayrılan, bitiş
+create or replace function public._vv_state_log()
+returns trigger language plpgsql set search_path = public as $$
+declare
+  o jsonb := coalesce(old.state, '{}'::jsonb);
+  n jsonb := coalesce(new.state, '{}'::jsonb);
+  v_add jsonb := '[]'::jsonb;
+  v_log jsonb := coalesce(n->'log', '[]'::jsonb);
+  v_ph text := n->>'phase';
+  v_rd int := coalesce((n->>'round')::int, 0);
+  v_skip text[];
+  k text;
+begin
+  if v_ph is distinct from o->>'phase' and v_ph in ('reveal', 'night', 'dawn', 'vote') then
+    v_add := v_add || jsonb_build_array(jsonb_build_object('k', 'phase', 'phase', case when v_ph = 'dawn' then 'day' else v_ph end));
+  end if;
+  if n->'last_night' is not null and n->'last_night' is distinct from o->'last_night' then
+    v_add := v_add || jsonb_build_array(jsonb_build_object('k', 'night', 'night', (n->'last_night'->>'round')::int,
+      'ids', coalesce((select jsonb_agg(e->'id') from jsonb_array_elements(n->'last_night'->'killed') e), '[]'::jsonb)));
+  end if;
+  if n->'last_vote' is not null and n->'last_vote' is distinct from o->'last_vote' then
+    v_add := v_add || jsonb_build_array(jsonb_build_object('k', 'vote', 'id', n->'last_vote'->'executed'->'id',
+      'role', n->'last_vote'->'executed'->'role', 'tie', coalesce((n->'last_vote'->>'tie')::boolean, false)));
+  end if;
+  -- Açıklanan rol: gece ölen ve köyden çıkarılan zaten yazıldı; geri kalanı oyundan ayrılanlardır
+  v_skip := array[n->'last_vote'->'executed'->>'id']
+            || coalesce((select array_agg(e->>'id') from jsonb_array_elements(n->'last_night'->'killed') e), '{}');
+  for k in select jsonb_object_keys(coalesce(n->'reveals', '{}'::jsonb)) loop
+    if not coalesce(o->'reveals', '{}'::jsonb) ? k and not coalesce(k = any (v_skip), false)
+       and exists (select 1 from public.room_players rp
+                    where rp.room_id = new.id and rp.user_id::text = k and rp.left_at is not null) then
+      v_add := v_add || jsonb_build_array(jsonb_build_object('k', 'left', 'id', k, 'role', n->'reveals'->k));
+    end if;
+  end loop;
+  if n->>'winner' is not null and n->>'winner' is distinct from o->>'winner' then
+    v_add := v_add || jsonb_build_array(jsonb_build_object('k', 'end', 'winner', n->>'winner'));
+  end if;
+  if jsonb_array_length(v_add) = 0 then return new; end if;
+  v_log := v_log || (select jsonb_agg(e || jsonb_build_object('at', clock_timestamp(), 'round', v_rd,
+                                                              'ph', case when v_ph = 'night' then 'night' else 'day' end)
+                                      order by i)
+                       from jsonb_array_elements(v_add) with ordinality as t(e, i));
+  if jsonb_array_length(v_log) > 250 then
+    v_log := (select jsonb_agg(e order by i) from jsonb_array_elements(v_log) with ordinality as t(e, i)
+               where i > jsonb_array_length(v_log) - 250);
+  end if;
+  new.state := jsonb_set(n, '{log}', v_log);
+  return new;
+end $$;
+drop trigger if exists on_vv_state_log on public.game_rooms;
+create trigger on_vv_state_log
+  before update of state on public.game_rooms
+  for each row
+  when (new.game_type = 'vampire_villager')
+  execute function public._vv_state_log();
+
+-- 16 kutucuklu oda düzeni: Vampir–Köylü de en çok 16 kişi (Köpekbalığı Kafesi gibi)
+update public.game_types set max_players = 16 where key = 'vampire_villager' and max_players > 16;
 
 -- Oyun içinden arkadaşlık isteği: yalnızca aynı odadaki (şu an ya da bu odada oynamış) gerçek bir oyuncuya.
 -- Deneme oyuncularına (bot) istek gönderilmez. Kurallar (engel, sınır, tekrar) _send_friend_request'teki gibidir.
@@ -17887,7 +18170,7 @@ begin
      and not exists (select 1 from public.sk_queue q where q.user_id = p.id)
      and not exists (select 1 from public.room_players rp join public.game_rooms r on r.id = rp.room_id
                       where rp.user_id = p.id and rp.left_at is null and r.status in ('lobby', 'playing'))
-   order by p.full_name
+   order by p.id
    limit least(15, greatest(1, coalesce(p_count, 3)));
   get diagnostics n = row_count;
   perform public._audit('test_bots', null, jsonb_build_object('queue', n));
@@ -18657,6 +18940,9 @@ grant execute on function public.room_vote_kick(uuid, uuid) to authenticated;
 grant execute on function public.sk_view(uuid) to authenticated;
 grant execute on function public.sk_history(uuid) to authenticated;
 grant execute on function public.room_friend_request(uuid, uuid) to authenticated;
+grant execute on function public.room_take_seat(uuid, int) to authenticated;
+grant execute on function public.vv_say(uuid, text, text) to authenticated;
+grant execute on function public.vv_history(uuid) to authenticated;
 grant execute on function public.sk_pick_role(uuid, text) to authenticated;
 grant execute on function public.room_lobby_ready(uuid, boolean) to authenticated;
 grant execute on function public.room_kick_start(uuid, uuid) to authenticated;

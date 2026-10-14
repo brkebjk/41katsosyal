@@ -70,7 +70,10 @@ export function SharkChat({
   onSend,
   onReport,
   preferTab,
+  loadHistory,
 }: {
+  /** Mesaj geçmişini okur (varsayılan: Köpekbalığı Kafesi) */
+  loadHistory?: (roomId: string) => Promise<{ messages: SkMsg[]; error: string | null }>;
   /** Baloncuğa basınca önce açılacak sekme (ör. dalışta köpekbalığına Takım sohbeti) */
   preferTab?: ChatTab | null;
   roomId: string;
@@ -209,12 +212,16 @@ export function SharkChat({
   }, [H, winH, insets.top, win, box]);
 
   // ---- Mesaj geçmişi (pencere açıkken sunucudan; yeni mesaj gelince yenilenir) ----------------------
+  const histLoader = useRef(loadHistory);
+  useEffect(() => {
+    histLoader.current = loadHistory;
+  });
   const [hist, setHist] = useState<SkMsg[] | null>(null);
   const histKey = tabs.map((t) => `${t.key}:${t.messages.length ? t.messages[t.messages.length - 1].id : ''}`).join('|');
   useEffect(() => {
     if (!openTab) return;
     let active = true;
-    void getSharkHistory(roomId).then((res) => {
+    void (histLoader.current ?? getSharkHistory)(roomId).then((res) => {
       if (active && !res.error) setHist(res.messages);
     });
     return () => {

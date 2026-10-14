@@ -20,6 +20,7 @@ import { Text } from '@/components/AppText';
 import { Avatar } from '@/components/Avatar';
 import { KeyboardLift } from '@/components/KeyboardLift';
 import { RoleIcon } from '@/components/RoleIcon';
+import { isRoleKey, roleInfo } from '@/lib/roles';
 import {
   SK_ROLES,
   SK_TEAMS,
@@ -464,16 +465,20 @@ export function RoleWheel({
   size,
   onDone,
   odds,
+  wheel,
 }: {
-  role: SkRole;
+  role: string;
   size: number;
   onDone?: () => void;
   /** Her rolün bu oyundaki kişi başı gelme oranı (yüzde); bu oyunda olamayan rol soluk görünür */
   odds?: Partial<Record<string, number>> | null;
+  /** Çarktaki roller (varsayılan: Köpekbalığı Kafesi rolleri) */
+  wheel?: string[];
 }) {
+  const list: string[] = wheel ?? SK_WHEEL;
   const [rot] = useState(() => new Animated.Value(0));
-  const n = SK_WHEEL.length;
-  const idx = Math.max(0, SK_WHEEL.indexOf(role));
+  const n = list.length;
+  const idx = Math.max(0, list.indexOf(role));
   const step = 360 / n;
   const done = useRef(onDone);
   useEffect(() => {
@@ -497,7 +502,7 @@ export function RoleWheel({
       <Animated.View
         style={[styles.wheel, { width: size, height: size, borderRadius: size / 2, transform: [{ rotate }] }]}
       >
-        {SK_WHEEL.map((k, i) => {
+        {list.map((k, i) => {
           const a = (i * step - 90) * (Math.PI / 180);
           return (
             <View
@@ -507,8 +512,8 @@ export function RoleWheel({
                 {
                   left: size / 2 + r * Math.cos(a) - 18,
                   top: size / 2 + r * Math.sin(a) - 18,
-                  backgroundColor: SK_ROLES[k].color + '33',
-                  borderColor: SK_ROLES[k].color,
+                  backgroundColor: (roleInfo(k)?.color ?? '#FFFFFF') + '33',
+                  borderColor: roleInfo(k)?.color ?? '#FFFFFF',
                   transform: [{ rotate: `${i * step}deg` }],
                 },
               ]}
@@ -570,7 +575,7 @@ export type Seat = {
   /** Sörfçü'nün işaretlediği kişi */
   marked?: boolean;
   /** Rol simgesi (avatarın alt ortasında). Yalnızca görmeye hakkın olan roller gelir (sunucu süzer). */
-  roleEmoji?: { emoji: string; color: string; role?: SkRole } | null;
+  roleEmoji?: { emoji: string; color: string; role?: string } | null;
   /** Bu oyuncuyu ilgilendiren olay */
   event?: SeatEvent | null;
   /** Oylamada henüz oy vermedi: avatarda soru işareti sallanır */
@@ -625,9 +630,17 @@ export function SeatGrid({
   onAlert,
   mark,
   stickyKey,
+  slots,
+  onEmptyPress,
 }: {
   /** Boyutu sabitlemek için (oda kimliği) */
   stickyKey?: string;
+  /**
+   * Bekleme odası: bu kadar numaralı kutucuk çizilir, oyuncular koltuk numaralarındaki kutucukta durur; boş kutucuğa
+   * dokununca oraya geçilir (onEmptyPress). Verilmezse yalnızca oyuncular sırayla dizilir.
+   */
+  slots?: number;
+  onEmptyPress?: (seatNo: number) => void;
   seats: Seat[];
   selected?: string | null;
   accent: string;
@@ -646,11 +659,15 @@ export function SeatGrid({
     const { width, height } = e.nativeEvent.layout;
     if (!box || Math.abs(box.w - width) > 1 || Math.abs(box.h - height) > 1) setBox({ w: width, h: height });
   };
-  const fitted = box ? fit(seats.length, box.w, box.h) : { cols: COLS, size: 0 };
+  // Kutucuklar: bekleme odasında 1..slots (boşlar null), oyunda yalnızca oyuncular
+  const items: (Seat | null)[] = slots
+    ? Array.from({ length: Math.max(slots, ...seats.map((x) => x.p.seat)) }, (_, i) => seats.find((x) => x.p.seat === i + 1) ?? null)
+    : seats;
+  const fitted = box ? fit(items.length, box.w, box.h) : { cols: COLS, size: 0 };
   const cols = fitted.cols;
   let size = fitted.size;
   if (stickyKey && size > 0) {
-    const k = `${stickyKey}:${seats.length}`;
+    const k = `${stickyKey}:${items.length}`;
     const prev = stickySize.get(k);
     if (prev !== undefined && prev < size) size = prev;
     else stickySize.set(k, size);
@@ -660,9 +677,10 @@ export function SeatGrid({
   // satırlar ortalandığı için eksik son satırın kayması da hesaba katılır)
   const tileH = size + EXTRA;
   const center = new Map<string, { x: number; y: number }>();
-  seats.forEach((s, i) => {
+  items.forEach((s, i) => {
+    if (!s) return;
     const row = Math.floor(i / cols);
-    const inRow = Math.min(cols, seats.length - row * cols);
+    const inRow = Math.min(cols, items.length - row * cols);
     const offset = box ? box.w - (inRow * tileW + (inRow - 1) * GAP) : 0;
     const col = i - row * cols;
     center.set(s.p.id, { x: offset + col * (tileW + GAP) + tileW / 2, y: row * (tileH + GAP) });
@@ -679,7 +697,17 @@ export function SeatGrid({
     <View style={styles.gridBox} onLayout={onLayout}>
       {box && size > 0 ? (
         <View style={styles.grid}>
-          {seats.map((s) => (
+          {items.map((s, i) =>
+            s === null ? (
+              <EmptySlot
+                key={`empty-${i + 1}`}
+                seatNo={i + 1}
+                width={tileW}
+                size={size}
+                light={!!light}
+                onPress={onEmptyPress}
+              />
+            ) : (
             <SeatTile
               key={s.p.id}
               seat={s}
@@ -692,8 +720,10 @@ export function SeatGrid({
               onPress={onPress}
               onLongPress={onLongPress}
               onAlert={onAlert}
+              boxed={!!slots}
             />
-          ))}
+            ),
+          )}
           {mark && center.has(mark.to) ? (
             <FlyingMark
               key={`${mark.to}|${mark.icon}|${mark.kind}`}
@@ -714,6 +744,48 @@ export function SeatGrid({
   );
 }
 
+/** Bekleme odasında boş kutucuk: numarası yazmaz (biri oturunca belirir); dokununca oraya geçilir */
+function EmptySlot({
+  seatNo,
+  width,
+  size,
+  light,
+  onPress,
+}: {
+  seatNo: number;
+  width: number;
+  size: number;
+  light: boolean;
+  onPress?: (seatNo: number) => void;
+}) {
+  const outer = size + 8;
+  return (
+    <Pressable
+      onPress={onPress ? () => onPress(seatNo) : undefined}
+      disabled={!onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${seatNo}. kutucuk boş${onPress ? ', buraya geç' : ''}`}
+      style={({ pressed }) => [
+        styles.tile,
+        { width, height: size + EXTRA },
+        light ? styles.slotBoxLight : styles.slotBox,
+        pressed && styles.pressed,
+      ]}
+      testID={`slot-${seatNo}`}
+    >
+      <View
+        style={[
+          styles.emptyRing,
+          { width: outer, height: outer, borderRadius: outer / 2, marginTop: 4 },
+          light && styles.emptyRingLight,
+        ]}
+      >
+        {onPress ? <Ionicons name="add" size={Math.round(size * 0.32)} color={light ? 'rgba(11,19,43,0.35)' : 'rgba(255,255,255,0.4)'} /> : null}
+      </View>
+    </Pressable>
+  );
+}
+
 function SeatTile({
   seat,
   width,
@@ -725,7 +797,10 @@ function SeatTile({
   onPress,
   onLongPress,
   onAlert,
+  boxed,
 }: {
+  /** Bekleme odasında kutucuk içinde */
+  boxed?: boolean;
   seat: Seat;
   width: number;
   size: number;
@@ -799,6 +874,7 @@ function SeatTile({
       style={[
         styles.tile,
         { width, height: size + EXTRA },
+        boxed && (light ? styles.slotBoxLight : styles.slotBox),
         (seat.event || speaking) && styles.tileTop,
         speaking && styles.tileTalk,
         seat.dim && styles.dim,
@@ -1135,19 +1211,28 @@ export function SeatChip({ n, size = 20 }: { n: number; size?: number }) {
  * Bu oyundaki roller (Wolvesville'deki gibi): her rol, sayısı ve rolü açığa çıkmış (ya da senin bildiğin) oyuncuların
  * numarası. Ölenin numarasının üstü çizilir. Sıra: köpekbalıkları, insanlar, tarafsızlar.
  */
-export function RoleRoster({ roles, players }: { roles: Partial<Record<SkRole, number>>; players: SkPlayer[] }) {
-  const order: SkRole[] = (Object.keys(SK_ROLES) as SkRole[]).filter((k) => (roles[k] ?? 0) > 0);
-  const teamRank = { shark: 0, human: 1, neutral: 2 } as const;
-  order.sort((a, b) => teamRank[SK_ROLES[a].team] - teamRank[SK_ROLES[b].team]);
+export function RoleRoster({
+  roles,
+  players,
+  order: given,
+}: {
+  roles: Partial<Record<string, number>>;
+  players: { id: string; seat: number; role: string | null; is_alive: boolean; left: boolean }[];
+  /** Rollerin sırası (varsayılan: Köpekbalığı Kafesi rolleri) */
+  order?: string[];
+}) {
+  const sideRank = { evil: 0, good: 1, neutral: 2 } as const;
+  const order = (given ?? (Object.keys(SK_ROLES) as string[])).filter((k) => (roles[k] ?? 0) > 0 && roleInfo(k));
+  order.sort((a, b) => sideRank[roleInfo(a)!.side] - sideRank[roleInfo(b)!.side]);
   return (
     <View style={styles.roster}>
       {order.map((k) => {
         const who = players.filter((p) => p.role === k).sort((a, b) => a.seat - b.seat);
         return (
-          <View key={k} style={styles.rosterRow} accessibilityLabel={`${SK_ROLES[k].name}, ${roles[k]} kişi`}>
+          <View key={k} style={styles.rosterRow} accessibilityLabel={`${roleInfo(k)!.name}, ${roles[k]} kişi`}>
             <RoleIcon role={k} size={26} framed />
-            <Text style={[styles.rosterName, { color: SK_ROLES[k].color }]} numberOfLines={1}>
-              {SK_ROLES[k].name}
+            <Text style={[styles.rosterName, { color: roleInfo(k)!.color }]} numberOfLines={1}>
+              {roleInfo(k)!.name}
             </Text>
             <Text style={styles.rosterCount}>{`×${roles[k]}`}</Text>
             <View style={styles.rosterSeats}>
@@ -1186,8 +1271,8 @@ export function RichLine({
     }
     // ⟦r:alpha⟧ → rol ikonu
     const r = /^⟦r:([a-z]+)⟧$/.exec(part);
-    if (r && r[1] in SK_ROLES) {
-      nodes.push(<RoleIcon key={i} role={r[1] as SkRole} size={Math.round(chip * 1.1)} framed />);
+    if (r && isRoleKey(r[1])) {
+      nodes.push(<RoleIcon key={i} role={r[1]} size={Math.round(chip * 1.1)} framed />);
       return;
     }
     part.split(/\s+/).forEach((w, j) => {
@@ -1312,7 +1397,7 @@ export type RankRow = {
   name: string;
   me: boolean;
   won: boolean;
-  role: { emoji: string; name: string; color: string; key?: SkRole } | null;
+  role: { emoji: string; name: string; color: string; key?: string } | null;
   /** "12:34" ya da "Sona kaldı" */
   time: string;
   /** Kazandığı puan ("+3,5" ya da "—") */
@@ -1452,7 +1537,7 @@ function groupOf(m: SkMsg): string {
 
 function groupTitle(m: SkMsg): string {
   if (m.round == null || !m.phase) return 'Önceki mesajlar';
-  return m.phase === 'night' ? `🌙 ${m.round}. gece · dalış` : `☀️ ${m.round}. gün · plaj`;
+  return m.phase === 'night' ? `🌙 ${m.round}. gece` : `☀️ ${m.round}. gün`;
 }
 
 const CHANNEL_TAG: Record<string, string> = { shark: '🦈 Takım', dead: '🪸 Ölüler' };
@@ -1795,7 +1880,7 @@ export function PlayerList({ players, onPick }: { players: SkPlayer[]; onPick: (
   return (
     <View style={styles.chat}>
       {players.map((p) => {
-        const role = p.role ? SK_ROLES[p.role] : null;
+        const role = roleInfo(p.role);
         const status = p.left ? 'Ayrıldı' : !p.is_alive ? 'Elendi' : 'Hayatta';
         return (
           <Pressable
@@ -1951,6 +2036,16 @@ const styles = StyleSheet.create({
   // Nizami dizilim: eksik kalan son satır sağa yaslanır (üstte 4, altta 2 ise alttakiler sağdaki iki sütunda)
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', columnGap: GAP, rowGap: GAP },
   tile: { alignItems: 'center' },
+  slotBox: { borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)', backgroundColor: 'rgba(11,19,43,0.22)' },
+  slotBoxLight: { borderRadius: 14, borderWidth: 1, borderColor: 'rgba(11,19,43,0.18)', backgroundColor: 'rgba(255,255,255,0.35)' },
+  emptyRing: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  emptyRingLight: { borderColor: 'rgba(11,19,43,0.25)' },
   tileTop: { zIndex: 5, elevation: 5 },
   tileTalk: { zIndex: 8, elevation: 8 },
   mark: { position: 'absolute', left: 0, top: 0, alignItems: 'center', justifyContent: 'center', zIndex: 20, elevation: 20 },
