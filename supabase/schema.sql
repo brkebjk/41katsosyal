@@ -17009,6 +17009,11 @@ begin
                               and (not x.is_alive or r.status = 'finished')
                              then greatest(0, extract(epoch from coalesce(x.out_at, x.left_at, r.finished_at, now())
                                                                  - r.started_at)::int) end,
+           -- Oyun bitince bu oyundan kazandığı puan (sıralama tablosunda görünür)
+           'points', case when r.status = 'finished' then
+                       (select coalesce(sum(pe.amount), 0) from public.point_events pe
+                         where pe.room_id = r.id and pe.user_id = x.user_id
+                           and pe.source in ('game_play', 'game_remote')) end,
            'hunt_pick', case when (v_shark or v_omni) and public._sk_team(x.role) = 'shark'
                               and (x.data->'hunt'->>'round')::int = v_round then x.data->'hunt'->>'target' end,
            'acted', case when v_omni and v_phase = 'night' then public._sk_night_done(x.role, x.data, v_round)

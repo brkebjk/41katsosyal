@@ -53,6 +53,8 @@ export type SkPlayer = {
   acted: boolean | null;
   /** Oyunda kaldığı süre (sn): elenince / ayrılınca ya da oyun bitince dolar */
   alive_sec?: number | null;
+  /** Oyun bitince bu oyundan kazandığı puan */
+  points?: number | string | null;
 };
 
 export type SkNote = {
@@ -153,6 +155,8 @@ export type SkView = {
     /** Moderatör: deneme odası için seçtiği rol (lobide) */
     picked_role?: SkRole | null;
   };
+  /** Sunucu saati (okunmamış mesaj sayımı için) */
+  server_now: string;
   /** Herkese açık yazışma (plajda ve oylamada yaşayanlar yazar) */
   chat?: SkMsg[] | null;
   shark_chat: SkMsg[] | null;

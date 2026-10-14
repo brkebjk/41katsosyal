@@ -23,14 +23,13 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { useSafetyMenu } from '@/components/SafetyMenu';
 import { Screen } from '@/components/Screen';
 import {
-  ChatBox,
   CommandFlash,
-  HistoryList,
   isLightScene,
   NightResult,
   PhaseFlash,
   Prompt,
   RankTable,
+  circ,
   RichLine,
   RolePicker,
   RoleWheel,
@@ -46,6 +45,7 @@ import {
   type SeatMark,
   type SkScene,
 } from '@/components/SharkStage';
+import { SharkChat, type ChatTab, type ChatTabInfo } from '@/components/SharkChat';
 import { PushToTalk, useClipQueue } from '@/components/SharkVoice';
 import { SoundToggle } from '@/components/SoundToggle';
 import { InfoCard, useElapsedSeconds } from '@/components/VampireParts';
@@ -154,11 +154,11 @@ function Game({ roomId }: { roomId: string }) {
   /** Seçili kişi: hangi aşamada / hangi iş için */
   const [pick, setPick] = useState<{ key: string; id: string } | null>(null);
   const [slot, setSlot] = useState<{ key: string; slot: Slot } | null>(null);
-  const [sheet, setSheet] = useState<'role' | 'shark' | 'dead' | 'chat' | 'history' | 'pick' | 'result' | null>(null);
+  const [sheet, setSheet] = useState<'role' | 'pick' | 'result' | null>(null);
   /** Gece sonucu penceresi bu turda kapatıldı mı (plaj başlayınca kendiliğinden açılır) */
   const [resultClosed, setResultClosed] = useState(-1);
-  /** Herkese açık yazışmada en son görülen mesaj sayısı (yeni mesaj gelince çubuk yanar) */
-  const [chatSeen, setChatSeen] = useState(0);
+  /** Yüzen yazışma penceresinde açık sekme (boş = kapalı) */
+  const [chatTab, setChatTab] = useState<ChatTab | null>(null);
   const [pointsOpen, setPointsOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   /** Bu oyunda rol çarkı döndü mü (bu telefonda) */
@@ -353,7 +353,7 @@ function Game({ roomId }: { roomId: string }) {
   /** Pencerelerde (düz yazı) kişi */
   const plain = (id: string | null | undefined) => {
     const p = id ? byId.get(id) : undefined;
-    return p ? `#${p.seat} ${p.name}` : '—';
+    return p ? `${circ(p.seat)} ${p.name}` : '—';
   };
   const mustConfirmLeave = !me.left && (me.is_player || me.is_host) && phase !== 'ended' && phase !== 'cancelled';
   const blocking = live && mustConfirmLeave;
@@ -478,10 +478,10 @@ function Game({ roomId }: { roomId: string }) {
     let sign: Seat['sign'] = null;
     if (showVotes && v) {
       sign = v.to
-        ? { text: `${seatOf(v.to) ?? '?'}${v.weight > 1 ? ' ×2' : ''}`, kind: v.weight > 1 ? 'double' : 'vote', target: v.to }
+        ? { text: `${seatTag(seatOf(v.to))}${v.weight > 1 ? ' ×2' : ''}`, kind: v.weight > 1 ? 'double' : 'vote', target: v.to }
         : { text: 'PAS', kind: 'pass' };
     } else if (phase === 'night' && (isShark || me.is_omniscient) && p.hunt_pick && (p.ally || p.is_me || me.is_omniscient)) {
-      sign = { text: `🦈${seatOf(p.hunt_pick) ?? '?'}`, kind: 'hunt', target: p.hunt_pick };
+      sign = { text: `🦈 ${seatTag(seatOf(p.hunt_pick))}`, kind: 'hunt', target: p.hunt_pick };
     }
     const known = p.role && (!p.is_me || phase === 'ended') ? SK_ROLES[p.role] : null;
     let label: Seat['label'] = null;
@@ -855,7 +855,7 @@ function Game({ roomId }: { roomId: string }) {
                   {'Takım arkadaşların ' +
                     (view.players
                       .filter((p) => p.ally)
-                      .map((p) => `#${p.seat} ${p.name} (${p.role ? SK_ROLES[p.role].name : '?'})`)
+                      .map((p) => `${circ(p.seat)} ${p.name} (${p.role ? SK_ROLES[p.role].name : '?'})`)
                       .join(', ') || 'yalnızsın')}
                 </Text>
               ) : null}
@@ -934,12 +934,12 @@ function Game({ roomId }: { roomId: string }) {
           <View style={styles.row}>
             <SlotChip
               on={activeSlot === 'hunt'}
-              label={`🦈 Av ${huntDone ? `#${seatOf(me.hunt_target)} ✓` : ''}`}
+              label={`🦈 Av ${huntDone ? `${circ(seatOf(me.hunt_target))} ✓` : ''}`}
               onPress={() => setSlot({ key: phaseKey, slot: 'hunt' })}
             />
             <SlotChip
               on={activeSlot === 'ability'}
-              label={`${roleInfo?.emoji ?? ''} ${abilityVerb(role)} ${abilityDone ? `#${seatOf(me.night_target) ?? '–'} ✓` : ''}`}
+              label={`${roleInfo?.emoji ?? ''} ${abilityVerb(role)} ${abilityDone ? `${circ(seatOf(me.night_target))} ✓` : ''}`}
               onPress={() => setSlot({ key: phaseKey, slot: 'ability' })}
             />
           </View>
@@ -950,9 +950,9 @@ function Game({ roomId }: { roomId: string }) {
               flex
               label={
                 slotSel && slotSel !== saved
-                  ? `${activeSlot === 'hunt' ? '🦈 AVLA' : abilityVerb(role).toUpperCase()}: #${seatOf(slotSel)}`
+                  ? `${activeSlot === 'hunt' ? '🦈 AVLA' : abilityVerb(role).toUpperCase()}: ${circ(seatOf(slotSel))}`
                   : saved
-                    ? `✓ #${seatOf(saved)} seçildi · değiştirmek için dokun`
+                    ? `✓ ${circ(seatOf(saved))} seçildi · değiştirmek için dokun`
                     : 'Bir avatara dokun'
               }
               disabled={!slotSel || slotSel === saved}
@@ -1020,7 +1020,7 @@ function Game({ roomId }: { roomId: string }) {
             <View style={styles.row}>
               <GameButton
                 flex
-                label={selected ? `🔱 #${seatOf(selected)} VUR` : 'Hedefe dokun'}
+                label={selected ? `🔱 ${circ(seatOf(selected))} VUR` : 'Hedefe dokun'}
                 variant="danger"
                 disabled={!selected}
                 loading={busy === 'spear'}
@@ -1067,7 +1067,7 @@ function Game({ roomId }: { roomId: string }) {
           />
         ) : null}
         {role === 'medium' && alivePlayer ? (
-          <GameButton label="🪸 Ölülerin frekansını aç" variant="ghost" onPress={() => setSheet('dead')} />
+          <GameButton label="🪸 Ölülerin frekansını aç" variant="ghost" onPress={() => setChatTab('dead')} />
         ) : null}
         {!me.can_control ? (
           <Text style={styles.pText}>
@@ -1096,9 +1096,9 @@ function Game({ roomId }: { roomId: string }) {
             flex
             label={
               selected && selected !== me.vote_target
-                ? `⛓️ #${seatOf(selected)} KAFESE AT (OY VER)`
+                ? `⛓️ ${circ(seatOf(selected))} KAFESE AT (OY VER)`
                 : myVote?.to
-                  ? `✓ #${seatOf(myVote.to)} · değiştirmek için dokun`
+                  ? `✓ ${circ(seatOf(myVote.to))} · değiştirmek için dokun`
                   : 'Şüpheliye dokun'
             }
             variant="danger"
@@ -1200,6 +1200,7 @@ function Game({ roomId }: { roomId: string }) {
         won: x.won,
         role: x.p.role ? { emoji: SK_ROLES[x.p.role].emoji, name: SK_ROLES[x.p.role].name, color: SK_ROLES[x.p.role].color } : null,
         time: `${mmss(x.p.alive_sec)}${x.p.left ? ' 🚪' : x.p.is_alive ? ' ✓' : ''}`,
+        points: Number(x.p.points ?? 0) > 0 ? `+${fmtPts(Number(x.p.points))}` : '—',
         out: !x.p.is_alive,
       }));
     stage = <RankTable rows={rankRows} />;
@@ -1331,15 +1332,44 @@ function Game({ roomId }: { roomId: string }) {
   const autoResult =
     phase === 'day' && me.is_player && !me.left && sheet === null && resultClosed !== round && me.notes.some((n) => n.round === round);
   const voiceLeft = me.voice_left_ms ?? 15000;
-  const chat = view.chat ?? [];
   const chatOpen = alivePlayer && (phase === 'day' || phase === 'vote' || phase === 'vote_result');
-  const lastChat = chat.length > 0 ? chat[chat.length - 1] : null;
-  const chatHot = chat.length > chatSeen && !!lastChat && !lastChat.mine;
-  const openChat = () => {
-    setChatSeen(chat.length);
-    setSheet('chat');
-  };
-  const deadCount = view.dead_chat?.length ?? 0;
+  const deadWrite =
+    playing && me.is_player && !me.left && (!me.is_alive || (role === 'medium' && (phase === 'day' || phase === 'vote')));
+  // Yüzen yazışma: Genel her zaman; Takım yalnızca köpekbalıklarına; Ölüler elenenlere ve Medyum'a (sunucu süzer)
+  const chatTabs: ChatTabInfo[] = [
+    {
+      key: 'all',
+      label: 'Genel',
+      messages: view.chat ?? [],
+      canWrite: chatOpen,
+      placeholder: 'Herkese yaz…',
+      closedText: !alivePlayer ? 'Yalnızca yaşayanlar yazar, sen okuyabilirsin.' : 'Dalışta herkes susar. Plajda ve oylamada yazılır.',
+    },
+    ...(view.shark_chat
+      ? [
+          {
+            key: 'shark' as const,
+            label: '🦈 Takım',
+            messages: view.shark_chat,
+            canWrite: sharkChatOpen,
+            placeholder: 'Takımına yaz…',
+            closedText: 'Takımınla yalnızca dalışta (gece) yazışırsın.',
+          },
+        ]
+      : []),
+    ...(view.dead_chat
+      ? [
+          {
+            key: 'dead' as const,
+            label: role === 'medium' && me.is_alive ? '🪸 Frekans' : '🪸 Ölüler',
+            messages: view.dead_chat,
+            canWrite: deadWrite,
+            placeholder: 'Frekansa yaz…',
+            closedText: 'Elenenler yazar. Medyum plajda ve oylamada yazabilir.',
+          },
+        ]
+      : []),
+  ];
 
   return (
     <View style={styles.root}>
@@ -1493,55 +1523,10 @@ function Game({ roomId }: { roomId: string }) {
               </Glass>
             ) : null}
 
-            {/* Herkese açık yazışma: son mesaj + yazma çubuğu (dokununca açılır) */}
-            {view.chat && (playing || phase === 'ended') && !me.left ? (
-              <Pressable
-                onPress={openChat}
-                accessibilityRole="button"
-                accessibilityLabel="Yazışmayı aç"
-                style={({ pressed }) => [styles.chatBar, chatHot && styles.chatBarHot, pressed && styles.pressed]}
-                testID="sk-chat-bar"
-              >
-                <Ionicons name="chatbubble-ellipses" size={16} color={chatHot ? '#06201D' : '#FFFFFF'} />
-                <Text style={[styles.chatBarText, chatHot && styles.chatBarTextHot]} numberOfLines={1}>
-                  {lastChat
-                    ? `${lastChat.mine ? 'Sen' : lastChat.name}: ${lastChat.body}`
-                    : chatOpen
-                      ? 'Mesaj yaz…'
-                      : phase === 'night'
-                        ? 'Dalışta herkes susar'
-                        : 'Henüz mesaj yok'}
-                </Text>
-                {chatOpen ? <Ionicons name="create-outline" size={17} color={chatHot ? '#06201D' : '#48CAE4'} /> : null}
-              </Pressable>
-            ) : null}
-
             {/* Alt şerit */}
             <View style={[styles.tools, light && styles.toolsLight]}>
               {me.is_player && role && phase !== 'lobby' && !me.left ? (
                 <ToolButton icon="id-card-outline" label="Rolüm" onPress={() => setSheet('role')} testID="sk-role" />
-              ) : null}
-              {view.shark_chat ? (
-                <ToolButton
-                  icon="chatbubbles"
-                  label="Takım"
-                  hot={sharkChatOpen}
-                  badge={view.shark_chat.length || null}
-                  onPress={() => setSheet('shark')}
-                  testID="sk-shark-chat"
-                />
-              ) : null}
-              {view.dead_chat ? (
-                <ToolButton
-                  icon="skull"
-                  label={role === 'medium' && me.is_alive ? 'Frekans' : 'Ölüler'}
-                  badge={deadCount || null}
-                  onPress={() => setSheet('dead')}
-                  testID="sk-dead-chat"
-                />
-              ) : null}
-              {playing || phase === 'ended' ? (
-                <ToolButton icon="time-outline" label="Geçmiş" onPress={() => setSheet('history')} testID="sk-history" />
               ) : null}
               <ToolButton
                 icon="book-outline"
@@ -1556,6 +1541,20 @@ function Game({ roomId }: { roomId: string }) {
           </View>
         </Shake>
       </SafeAreaView>
+
+      {/* Yüzen yazışma baloncuğu ve sürüklenebilen penceresi */}
+      {view.chat && (playing || phase === 'ended') && !me.left ? (
+        <SharkChat
+          roomId={roomId}
+          tabs={chatTabs}
+          openTab={chatTab && chatTabs.some((t) => t.key === chatTab) ? chatTab : null}
+          onOpenTab={setChatTab}
+          startAt={view.server_now}
+          seatOf={seatOf}
+          onSend={(ch, t) => say(ch, t)}
+          onReport={(m) => void report(m)}
+        />
+      ) : null}
 
       <PhaseFlash flashKey={phaseKey} text={flash.text} sub={flash.sub} color={flash.color} />
       <CommandFlash
@@ -1582,14 +1581,14 @@ function Game({ roomId }: { roomId: string }) {
             <Text style={styles.sheetMuted}>{me.spear_used ? 'Zıpkınını kullandın.' : 'Zıpkının duruyor.'}</Text>
           ) : null}
           {role === 'surfer' && me.marks.length ? (
-            <Text style={styles.sheetMuted}>{`İşaretliler: ${me.marks.map((m) => `#${seatOf(m) ?? '?'}`).join(', ')}`}</Text>
+            <Text style={styles.sheetMuted}>{`İşaretlediklerin ${me.marks.map((m) => `${circ(seatOf(m))}`).join(', ')}`}</Text>
           ) : null}
           {isShark ? (
             <Text style={styles.sheetMuted}>
               {'Takım arkadaşların ' +
                 (view.players
                   .filter((p) => p.ally)
-                  .map((p) => `#${p.seat} ${p.name}${p.is_alive ? '' : ' (öldü)'}`)
+                  .map((p) => `${circ(p.seat)} ${p.name}${p.is_alive ? '' : ' (öldü)'}`)
                   .join(', ') || 'yalnızsın')}
             </Text>
           ) : null}
@@ -1599,23 +1598,6 @@ function Game({ roomId }: { roomId: string }) {
               <NightResult notes={me.notes} players={view.players} />
             </>
           ) : null}
-        </SkSheet>
-      ) : null}
-      {sheet === 'chat' && view.chat ? (
-        <SkSheet title="Yazışma" icon="💬" onClose={() => setSheet(null)}>
-          <Text style={styles.sheetMuted}>
-            Plajda ve oylamada yaşayanlar yazar; odadaki herkes okur. Dalışta yazışma kapalıdır. Mesaja uzun basarak
-            bildirebilirsin.
-          </Text>
-          <ChatBox
-            messages={view.chat}
-            canWrite={chatOpen}
-            placeholder="Herkese yaz…"
-            emptyText="Henüz mesaj yok."
-            onSend={(t) => say('all', t)}
-            onReport={(m) => void report(m)}
-            seatOf={seatOf}
-          />
         </SkSheet>
       ) : null}
       {sheet === 'pick' && phase === 'lobby' && me.is_admin ? (
@@ -1642,54 +1624,6 @@ function Game({ roomId }: { roomId: string }) {
           }}
         >
           <NightResult notes={me.notes.filter((n) => n.round === round)} players={view.players} />
-        </SkSheet>
-      ) : null}
-      {sheet === 'history' ? (
-        <SkSheet title="Mesaj geçmişi" icon="🕰️" onClose={() => setSheet(null)}>
-          <Text style={styles.sheetMuted}>
-            Görmeye hakkın olan bütün yazışmalar, baştan sona. 🌙 gece (dalış) ve ☀️ gündüz (plaj) başlıklarıyla ayrılır.
-          </Text>
-          <HistoryList
-            roomId={roomId}
-            refreshKey={`${phaseKey}:${view.chat?.length ?? 0}:${view.shark_chat?.length ?? 0}:${deadCount}`}
-            seatOf={seatOf}
-            onReport={(m) => void report(m)}
-          />
-        </SkSheet>
-      ) : null}
-      {sheet === 'shark' && view.shark_chat ? (
-        <SkSheet title="Köpekbalığı frekansı" icon="🦈" onClose={() => setSheet(null)}>
-          <Text style={styles.sheetMuted}>Yalnızca köpekbalıkları görür. Yalnızca dalışta (gece) yazılabilir.</Text>
-          <ChatBox
-            messages={view.shark_chat}
-            canWrite={sharkChatOpen}
-            placeholder="Takımına yaz…"
-            emptyText="Henüz mesaj yok."
-            onSend={(t) => say('shark', t)}
-            onReport={(m) => void report(m)}
-            seatOf={seatOf}
-          />
-        </SkSheet>
-      ) : null}
-      {sheet === 'dead' && view.dead_chat ? (
-        <SkSheet title="Ölülerin frekansı" icon="🪸" onClose={() => setSheet(null)}>
-          <Text style={styles.sheetMuted}>
-            Elenenler yazar. Mercan Medyumu plajda ve oylamada okuyup yazabilir. Yaşayanlar göremez.
-          </Text>
-          <ChatBox
-            messages={view.dead_chat}
-            canWrite={
-              playing &&
-              me.is_player &&
-              !me.left &&
-              (!me.is_alive || (role === 'medium' && (phase === 'day' || phase === 'vote')))
-            }
-            placeholder="Frekansa yaz…"
-            emptyText="Henüz mesaj yok."
-            onSend={(t) => say('dead', t)}
-            onReport={(m) => void report(m)}
-            seatOf={seatOf}
-          />
         </SkSheet>
       ) : null}
       <GamePointsModal

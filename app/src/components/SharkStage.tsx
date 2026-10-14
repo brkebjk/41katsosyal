@@ -9,7 +9,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
   useWindowDimensions,
   type LayoutChangeEvent,
@@ -21,7 +20,6 @@ import { Text } from '@/components/AppText';
 import { Avatar } from '@/components/Avatar';
 import { KeyboardLift } from '@/components/KeyboardLift';
 import {
-  getSharkHistory,
   SK_ROLES,
   SK_TEAMS,
   SK_WHEEL,
@@ -733,7 +731,7 @@ function SeatTile({
     seat.event ? seat.event.text : null,
     seat.votesIn ? `${seat.votesIn} oy aldı` : null,
     seat.huntIn ? `${seat.huntIn} av oyu` : null,
-    seat.sign ? (seat.sign.kind === 'pass' ? 'pas geçti' : `oyu: ${seat.sign.text}`) : null,
+    seat.sign ? (seat.sign.kind === 'pass' ? 'pas geçti' : `oyu ${seat.sign.text.replace(/[⟦⟧]/g, '')} numara`) : null,
     seat.label?.text ?? null,
   ]
     .filter(Boolean)
@@ -874,7 +872,11 @@ function SeatTile({
                 style={{ transform: [{ rotate: `${Math.round(arrow)}deg` }] }}
               />
             ) : null}
-            <Text style={[styles.signText, seat.sign.kind === 'hunt' && styles.signTextHunt]}>{seat.sign.text}</Text>
+            <RichLine
+              text={seat.sign.text}
+              chip={20}
+              style={[styles.signText, seat.sign.kind === 'hunt' && styles.signTextHunt]}
+            />
           </View>
         ) : lineText ? (
           <Text style={[styles.label, { color: lineColor }, !light && styles.nameDark]} numberOfLines={1}>
@@ -983,6 +985,13 @@ function Thinking({ size }: { size: number }) {
 // ---------------------------------------------------------------------------
 // Yuvarlak koltuk numarası (yazıların içinde de avatardaki gibi görünür)
 // ---------------------------------------------------------------------------
+
+/**
+ * Düz yazıda (düğme, pencere) koltuk numarası yuvarlak içinde: 7 → "⑦". Rumuzdaki #145 gibi sayılarla karışmasın diye
+ * oyuncu numarası hiçbir yerde "#7" biçiminde yazılmaz.
+ */
+export const circ = (n: number | undefined | null): string =>
+  n && n >= 1 && n <= 20 ? String.fromCharCode(0x2460 + n - 1) : n ? `(${n})` : '?';
 
 /** Yazıların içinde koltuk numarası: `seatTag(7)` → "⟦7⟧"; ekranda avatardaki gibi yuvarlak rozet olur */
 export const seatTag = (n: number | undefined | null): string => (n ? `⟦${n}⟧` : '?');
@@ -1140,6 +1149,8 @@ export type RankRow = {
   role: { emoji: string; name: string; color: string } | null;
   /** "12:34" ya da "Sona kaldı" */
   time: string;
+  /** Kazandığı puan ("+3,5" ya da "—") */
+  points: string;
   out: boolean;
 };
 
@@ -1162,12 +1173,13 @@ export function RankTable({ rows }: { rows: RankRow[] }) {
           <Text style={[styles.rankHead, styles.rankName]}>Oyuncu</Text>
           <Text style={[styles.rankHead, styles.rankRole]}>Rol</Text>
           <Text style={[styles.rankHead, styles.rankTime]}>Süre</Text>
+          <Text style={[styles.rankHead, styles.rankPts]}>Puan</Text>
         </View>
         {rows.map((r) => (
           <View
             key={r.id}
             style={[styles.rankRow, { height: rowH }, r.won && styles.rankWon, r.me && styles.rankMe]}
-            accessibilityLabel={`${r.rank}. ${r.seat} numara ${r.name}, ${r.role?.name ?? ''}, ${r.time}${r.won ? ', kazandı' : ''}`}
+            accessibilityLabel={`${r.rank}. ${r.seat} numara ${r.name}, ${r.role?.name ?? ''}, ${r.time}, ${r.points === '—' ? 'puan yok' : `${r.points} puan`}${r.won ? ', kazandı' : ''}`}
           >
             <Text style={[styles.rankCell, styles.rankNo, { fontSize: font }]}>{r.won ? '🏆' : String(r.rank)}</Text>
             <View style={[styles.rankName, styles.rankWho]}>
@@ -1181,6 +1193,9 @@ export function RankTable({ rows }: { rows: RankRow[] }) {
             </Text>
             <Text style={[styles.rankCell, styles.rankTime, { fontSize: font }]} numberOfLines={1}>
               {r.time}
+            </Text>
+            <Text style={[styles.rankCell, styles.rankPts, { fontSize: font }]} numberOfLines={1}>
+              {r.points}
             </Text>
           </View>
         ))}
@@ -1272,7 +1287,7 @@ function groupTitle(m: SkMsg): string {
 const CHANNEL_TAG: Record<string, string> = { shark: '🦈 Takım', dead: '🪸 Ölüler' };
 
 /** Mesaj listesi: aşama değişince başlık; gece mesajları koyu mavi, gündüz mesajları açık zeminde */
-function MessageList({
+export function MessageList({
   messages,
   seatOf,
   showChannel,
@@ -1317,107 +1332,6 @@ function MessageList({
     );
   }
   return <>{out}</>;
-}
-
-export function ChatBox({
-  messages,
-  canWrite,
-  placeholder,
-  onSend,
-  onReport,
-  emptyText,
-  seatOf,
-}: {
-  messages: SkMsg[];
-  canWrite: boolean;
-  placeholder: string;
-  onSend: (body: string) => Promise<string | null>;
-  onReport: (m: SkMsg) => void;
-  emptyText: string;
-  seatOf?: (id: string | undefined) => number | undefined;
-}) {
-  const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const body = text.trim();
-  async function send() {
-    if (!body || busy) return;
-    setBusy(true);
-    setError(null);
-    const err = await onSend(body);
-    setBusy(false);
-    if (err) setError(err);
-    else setText('');
-  }
-  return (
-    <View style={styles.chat}>
-      {messages.length === 0 ? (
-        <Text style={styles.chatEmpty}>{emptyText}</Text>
-      ) : (
-        <MessageList messages={messages.slice(-60)} seatOf={seatOf} onReport={onReport} />
-      )}
-      {canWrite ? (
-        <View style={styles.inputRow}>
-          <TextInput
-            value={text}
-            onChangeText={setText}
-            placeholder={placeholder}
-            placeholderTextColor="rgba(255,255,255,0.45)"
-            maxLength={120}
-            style={styles.input}
-            onSubmitEditing={() => void send()}
-            returnKeyType="send"
-            accessibilityLabel={placeholder}
-          />
-          <Pressable
-            onPress={() => void send()}
-            disabled={!body || busy}
-            accessibilityRole="button"
-            accessibilityLabel="Gönder"
-            style={[styles.send, (!body || busy) && styles.off]}
-          >
-            <Ionicons name="send" size={18} color="#06201D" />
-          </Pressable>
-        </View>
-      ) : null}
-      {error ? <Text style={styles.chatError}>{error}</Text> : null}
-    </View>
-  );
-}
-
-/**
- * Mesaj geçmişi: görmeye hakkın olan bütün yazışmalar (herkese açık, takım, ölüler) baştan sona, gece / gündüz
- * başlıklarıyla. Açılınca ve aşama değişince sunucudan okunur.
- */
-export function HistoryList({
-  roomId,
-  refreshKey,
-  seatOf,
-  onReport,
-}: {
-  roomId: string;
-  refreshKey: string;
-  seatOf?: (id: string | undefined) => number | undefined;
-  onReport: (m: SkMsg) => void;
-}) {
-  const [state, setState] = useState<{ messages: SkMsg[]; error: string | null } | null>(null);
-  useEffect(() => {
-    let active = true;
-    void getSharkHistory(roomId).then((res) => {
-      if (active) setState(res);
-    });
-    return () => {
-      active = false;
-    };
-  }, [roomId, refreshKey]);
-  if (!state) return <Text style={styles.chatEmpty}>Yükleniyor…</Text>;
-  if (state.error) return <Text style={styles.chatError}>{state.error}</Text>;
-  if (state.messages.length === 0) return <Text style={styles.chatEmpty}>Henüz yazışma yok.</Text>;
-  return (
-    <View style={styles.chat}>
-      <MessageList messages={state.messages} seatOf={seatOf} showChannel onReport={onReport} />
-    </View>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1756,8 +1670,9 @@ const styles = StyleSheet.create({
   rankNo: { width: 26, textAlign: 'center' },
   rankName: { flex: 1 },
   rankWho: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  rankRole: { width: '36%' },
-  rankTime: { width: 64, textAlign: 'right' },
+  rankRole: { width: '30%' },
+  rankTime: { width: 58, textAlign: 'right' },
+  rankPts: { width: 44, textAlign: 'right', color: '#FFB703' },
   rankOut: { color: 'rgba(255,255,255,0.6)' },
   sign: {
     flexDirection: 'row',

@@ -203,6 +203,11 @@ export default function SharkGuideScreen() {
           </P>
           <P>Dalışta mikrofonlar kapalıdır; yalnızca köpekbalıkları kendi frekanslarında konuşabilir.</P>
           <P>
+            Yazışma için ekrandaki yüzen 💬 baloncuğa dokun; baloncuğu istediğin yere sürükleyebilirsin. Açılan pencerenin
+            başlığından tutup pencereyi taşıyabilirsin. Genel, Takım (köpekbalıkları) ve Ölüler sekmelerinde oyunun bütün
+            mesaj geçmişi gece ve gündüz başlıklarıyla görünür. Yeni mesaj gelince baloncukta kırmızı sayı çıkar.
+          </P>
+          <P>
             Oyun başladıktan sonra oda sahibi ayrılırsa oda kapanmaz: sahiplik başka bir oyuncuya geçer ve oyun sürer.
             Eşleştirme lobisinde de böyledir.
           </P>
