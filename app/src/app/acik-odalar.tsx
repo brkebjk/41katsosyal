@@ -174,7 +174,7 @@ export default function OpenRoomsScreen() {
         ))}
       </View>
       {/* Vampir–Köylü: puan tablosu (oyuncu sayısına ve bitirilen sıraya göre) */}
-      {game === 'vampire_villager' ? (
+      {game === 'vampire_villager' || game === 'shark_cage' ? (
         <View style={styles.pointsCard} testID="vv-points-table">
           <View style={styles.pointsHead}>
             <Ionicons name="podium" size={18} color={colors.primary} />

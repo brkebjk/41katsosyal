@@ -14,6 +14,12 @@ export type GameInfo = {
 };
 
 export const GAMES: Record<GameKey, GameInfo> = {
+  shark_cage: {
+    title: 'Köpekbalığı Kafesi',
+    description: 'Dalış, plaj ve kafes: gizli roller denizde',
+    icon: 'water',
+    fallback: ['#0B132B', '#1C6E8C'],
+  },
   vampire_villager: {
     title: 'Vampir–Köylü',
     description: 'Gizli roller, gece ve gündüz',

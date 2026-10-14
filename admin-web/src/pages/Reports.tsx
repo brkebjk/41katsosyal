@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import {
+  adminVoiceClip,
   closeReports,
   listReports,
   revealCommentAuthor,
@@ -22,6 +23,7 @@ const TYPE: Record<ReportGroup['type'], string> = {
   vv_whisper: 'Vampir fısıltısı',
   vv_dead: 'Vampir elenenler sohbeti',
   dm: 'Özel mesaj',
+  sk_voice: 'Köpekbalığı Kafesi ses mesajı',
 };
 
 const HIDEABLE = new Set(['post', 'comment', 'event_comment', 'venue_review']);
@@ -86,7 +88,9 @@ export function ReportsPage({ onNotice, onMember }: { onNotice: (n: Notice) => v
               <span className="muted">{when(g.latest)}</span>
             </div>
             <p className="muted small">Nedenler: {[...new Set(g.reasons)].join(', ')}</p>
-            {g.content ? (
+            {g.type === 'sk_voice' ? (
+              <VoiceClip id={g.targetId} />
+            ) : g.content ? (
               <div className={`quote ${g.content.is_hidden ? 'quote-hidden' : ''}`}>
                 <div className="muted small">
                   {g.content.alias} · {when(g.content.created_at)}
@@ -144,5 +148,28 @@ export function ReportsPage({ onNotice, onMember }: { onNotice: (n: Notice) => v
         ))
       )}
     </section>
+  );
+}
+
+/** Şikâyet edilen ses mesajı: düğmeye basınca sunucudan alınır ve çalınır (inceleme için en çok 14 gün saklanır) */
+function VoiceClip({ id }: { id: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [state, setState] = useState<'idle' | 'loading' | 'gone'>('idle');
+  async function load() {
+    setState('loading');
+    const res = await adminVoiceClip(id);
+    if (!res.data) {
+      setState('gone');
+      return;
+    }
+    setSrc(`data:audio/mp4;base64,${res.data}`);
+    setState('idle');
+  }
+  if (src) return <audio controls autoPlay src={src} />;
+  if (state === 'gone') return <p className="muted">Ses mesajı silinmiş (14 gün geçmiş olabilir).</p>;
+  return (
+    <Button kind="ghost" disabled={state === 'loading'} onClick={() => void load()}>
+      {state === 'loading' ? 'Yükleniyor…' : 'Ses mesajını dinle'}
+    </Button>
   );
 }

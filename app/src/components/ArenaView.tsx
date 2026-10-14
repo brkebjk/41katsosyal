@@ -11,6 +11,7 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { QuizChat } from '@/components/QuizChat';
 import { JokerCard, QuizChest, RewardPopup, type CardLook } from '@/components/QuizBits';
 import { CloseX } from '@/components/CloseX';
+import { SoundToggle } from '@/components/SoundToggle';
 import { confirmAction, notify, showDialog } from '@/lib/dialog';
 import { quizCardImages } from '@/lib/images';
 import { fmtPts } from '@/lib/labels';
@@ -430,6 +431,7 @@ export function ArenaView({ matchId, groupDaily, onLive, onLeave, onExit, onAgai
         ) : (
           <View style={styles.topBtn} />
         )}
+        <SoundToggle />
         <Text style={styles.topTitle} numberOfLines={1}>
           {titleOf(st)}
         </Text>

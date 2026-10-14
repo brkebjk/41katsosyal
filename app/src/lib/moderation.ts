@@ -152,7 +152,8 @@ export type ReportGroup = {
     | 'quiz_chat'
     | 'vv_whisper'
     | 'vv_dead'
-    | 'dm';
+    | 'dm'
+    | 'sk_voice';
   targetId: string;
   /** Bu içerik için açık şikayet kimlikleri (hepsi birlikte kapatılır) */
   reportIds: string[];
@@ -183,6 +184,14 @@ type ReportRow = {
 };
 
 /** Şikayetleri içerik başına gruplayıp içeriğin metniyle birlikte getirir. */
+/** Moderatör: şikâyet edilen Köpekbalığı Kafesi ses mesajı (base64 m4a); silinmişse boş */
+export async function adminVoiceClip(id: string): Promise<{ data: string | null; error: string | null }> {
+  if (!supabase) return { data: null, error: 'Sunucu bağlantısı kurulmadı.' };
+  const { data, error } = await supabase.rpc('admin_get_voice_clip', { p_id: id });
+  if (error) return { data: null, error: 'Ses mesajı okunamadı.' };
+  return { data: typeof data === 'string' && data.length > 0 ? data : null, error: null };
+}
+
 export async function listReports(status: 'open' | 'closed'): Promise<{ data: ReportGroup[]; error: string | null }> {
   if (!supabase) return { data: [], error: 'Sunucu bağlantısı kurulmadı.' };
   const base = supabase.from('reports').select('id, target_type, target_id, reason, status, created_at');

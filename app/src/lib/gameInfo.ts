@@ -100,6 +100,12 @@ export const VAMPIRE_RANK_ITEM: InfoItem = {
   text: 'Kazanan takım üstte yer alır. Takımın içinde oyunda en uzun süre kalan öne geçer; aynı turda elenenler eşit sayılır.',
 };
 
+export const SHARK_RANK_ITEM: InfoItem = {
+  icon: 'water',
+  lead: 'Köpekbalığı Kafesi’nde sıra.',
+  text: 'Kazanan takım (ya da tek başına kazanan tarafsız) üstte yer alır. Diğerleri oyunda ne kadar uzun kaldıysa o kadar önde; aynı anda elenenler eşit sayılır. Anlatıcılı oyunda puan yoktur.',
+};
+
 /** Bilgi Yarışması hakkında kısa bilgi (oyun kutusuna dokununca). */
 export function quizInfo(rules: PointRules, enabled: boolean): InfoContent {
   return {
@@ -212,6 +218,23 @@ export function roomRulesInfo(freeGames: number, subscriptionGames: number): Inf
 
 /** Oyunun kısa “Nasıl oynanır?” rehberi (Açık odalar ekranında). */
 export const HOW_TO_PLAY: Record<string, InfoItem[]> = {
+  shark_cage: [
+    {
+      icon: 'water',
+      lead: 'Dalış ve plaj.',
+      text: 'Çarktan gizli bir rol gelir. Dalışta (gece) köpekbalıkları avlanır, özel roller yeteneğini kullanır; plajda (gündüz) konuşulur, sonra şüpheli oylamayla kafese atılır. 6–16 kişi.',
+    },
+    {
+      icon: 'eye',
+      lead: 'Açık oy.',
+      text: 'Her avatarın büyük bir koltuk numarası var. Başının üstündeki tabela kime oy verdiğini (→7), kırmızı sayı aldığı oyu gösterir. Ayrıntılar oyunun içindeki Rehber’de.',
+    },
+    {
+      icon: 'trophy',
+      lead: 'Kazanmak.',
+      text: 'İnsanlar köpekbalıklarını ve tarafsız katilleri, köpekbalıkları sayıca eşitliği arar; tarafsızların kendi gizli hedefleri var.',
+    },
+  ],
   vampire_villager: [
     {
       icon: 'people',
@@ -343,6 +366,7 @@ export const HOW_TO_PLAY: Record<string, InfoItem[]> = {
 
 /** Oyunun başlaması için gereken en az kişi (sunucu ayarı gelene kadar varsayılan). */
 export const DEFAULT_MIN_PLAYERS: Record<string, number> = {
+  shark_cage: 6,
   vampire_villager: 5,
   find_killer: 5,
   quiz: 1,

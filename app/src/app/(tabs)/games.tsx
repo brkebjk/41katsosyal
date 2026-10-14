@@ -41,6 +41,7 @@ type Tilt = { deg: number; dx: number };
 
 const STRAIGHT: Tilt = { deg: 0, dx: 0 };
 const TILTS: Record<GameKey, Tilt> = {
+  shark_cage: STRAIGHT,
   vampire_villager: STRAIGHT,
   taboo: STRAIGHT,
   charades: STRAIGHT,

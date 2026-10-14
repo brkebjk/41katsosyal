@@ -8,6 +8,7 @@ import { Text } from '@/components/AppText';
 import { Avatar } from '@/components/Avatar';
 import { JokerCard, jokerLook, QuizChest, RewardPopup } from '@/components/QuizBits';
 import { CloseX } from '@/components/CloseX';
+import { SoundToggle } from '@/components/SoundToggle';
 import { fmtPts } from '@/lib/labels';
 import {
   CATEGORY_COLOR,
@@ -220,6 +221,7 @@ export function SoloMarathonView({ runId, onLive, onLeave, onExit, onAgain }: Pr
         ) : (
           <View style={styles.topBtn} />
         )}
+        <SoundToggle />
         <Text style={styles.topTitle}>Solo Maraton</Text>
         <View style={styles.correctChip} accessibilityLabel={`${s.correct_count} doğru`}>
           <Ionicons name="checkmark-circle" size={22} color="#0B0F1A" />

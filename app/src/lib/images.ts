@@ -101,7 +101,16 @@ export const avatarImages: (ImageSourcePropType | null)[] = [
 
 // Oyun kutularının görselleri (kare, 900x900 PNG). Dosyalar `assets/images/games/` klasöründe durur.
 // Bir dosya silinirse o oyunun kutusunda renkli bir yer tutucu görünür; uygulama bozulmaz.
-export const GAME_KEYS = ['quiz', 'treasure_hunt', 'vampire_villager', 'taboo', 'charades', 'find_killer', 'raffle'] as const;
+export const GAME_KEYS = [
+  'quiz',
+  'treasure_hunt',
+  'shark_cage',
+  'vampire_villager',
+  'taboo',
+  'charades',
+  'find_killer',
+  'raffle',
+] as const;
 export type GameKey = (typeof GAME_KEYS)[number];
 
 export const gameTileImages: Record<GameKey, ImageSourcePropType | null> = {
@@ -113,6 +122,8 @@ export const gameTileImages: Record<GameKey, ImageSourcePropType | null> = {
   raffle: require('../../assets/images/games/raffle.png'),
   // Hazine Avı görseli eklenene kadar renkli yer tutucu görünür
   treasure_hunt: null,
+  // Köpekbalığı Kafesi görseli eklenene kadar renkli yer tutucu görünür
+  shark_cage: null,
 };
 
 // Oyunlar ekranındaki iki üst düğmenin (Katıl / Oda Oluştur) görselleri. İsteğe bağlıdır: `null` iken düğmeler kodla

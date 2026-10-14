@@ -8,6 +8,7 @@ import { Text } from '@/components/AppText';
 import { PlayButton } from '@/components/QuizBits';
 import { TextField } from '@/components/TextField';
 import { CloseX } from '@/components/CloseX';
+import { SoundToggle } from '@/components/SoundToggle';
 import {
   CATEGORY_COLOR,
   CATEGORY_ICON,
@@ -318,6 +319,7 @@ export function SideBySideView({
         >
           <CloseX size={16} />
         </Pressable>
+        <SoundToggle />
         <View style={styles.midCenter}>
           <Text style={styles.midScore}>
             <Text style={{ color: P_COLOR[1] }}>{s.score1}</Text>

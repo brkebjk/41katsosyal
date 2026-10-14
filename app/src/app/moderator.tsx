@@ -318,7 +318,8 @@ function ReportsTab({
         g.type === 'quiz_chat' ||
         g.type === 'vv_whisper' ||
         g.type === 'vv_dead' ||
-        g.type === 'dm'
+        g.type === 'dm' ||
+        g.type === 'sk_voice'
       )
         return;
       const hide = !g.content.is_hidden;
@@ -471,14 +472,17 @@ function ReportCard({
                     ? 'Elenenler sohbeti'
                     : group.type === 'dm'
                       ? 'Özel mesaj'
-                      : 'Etkinlik yorumu';
+                      : group.type === 'sk_voice'
+                        ? 'Ses mesajı (web panelde dinlenir)'
+                        : 'Etkinlik yorumu';
   const canHide =
     group.type !== 'room' &&
     group.type !== 'event' &&
     group.type !== 'quiz_chat' &&
     group.type !== 'vv_whisper' &&
     group.type !== 'vv_dead' &&
-    group.type !== 'dm';
+    group.type !== 'dm' &&
+    group.type !== 'sk_voice';
   return (
     <View style={styles.reportCard} accessibilityLabel={`${typeLabel} şikayeti`}>
       <View style={styles.reportHead}>

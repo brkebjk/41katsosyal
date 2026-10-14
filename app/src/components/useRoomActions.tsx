@@ -71,6 +71,8 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
       router.push({ pathname: '/cekilis', params: { id: roomId } });
     } else if (gameType === 'vampire_villager') {
       router.push({ pathname: '/vampir', params: { id: roomId } });
+    } else if (gameType === 'shark_cage') {
+      router.push({ pathname: '/kopekbaligi', params: { id: roomId } });
     } else {
       setHint('Odaya katıldın. Bu oyunun ekranı çok yakında eklenecek.');
     }
@@ -123,7 +125,10 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
     if (lock.current) return;
     const ok = await showDialog<boolean>({
       title: 'Uzaktan odaya katıl',
-      message: `${room.host_name} odasında herkes kendi telefonundan, sesli sohbetle oynar. Sabah tartışmasında sırayla konuşulur. Uzaktan oyun oyun hakkından yemez; puanı yan yana oyunun yarısıdır.`,
+      message:
+        room.game_type === 'shark_cage'
+          ? `${room.host_name} odasında herkes kendi telefonundan oynar. Plajda bas-konuş ses mesajlarıyla konuşulur. Uzaktan oyun oyun hakkından yemez; puanı yan yana oyunun yarısıdır.`
+          : `${room.host_name} odasında herkes kendi telefonundan, sesli sohbetle oynar. Sabah tartışmasında sırayla konuşulur. Uzaktan oyun oyun hakkından yemez; puanı yan yana oyunun yarısıdır.`,
       icon: 'headset',
       buttons: [
         { label: 'Katıl', value: true, style: 'primary' },
@@ -227,6 +232,35 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
   }
 
   /**
+   * Köpekbalığı Kafesi nasıl oynansın? Otomatik ya da Ben Yöneticiyim (ikisinde de oynarsın). Anlatıcı yalnızca etkinlik
+   * oyununda ve yalnızca etkinlik sahibine sunulur (oynamaz, herkesin rolünü görür; puan yok, hak düşmez).
+   */
+  async function askSharkMode(remote = false, event = false): Promise<RoomMode | null> {
+    const quota = isModerator || event
+      ? ''
+      : remote
+        ? ' Uzaktan oda oyun hakkından yemez.'
+        : ` Üyeler ayda ${limits.freeGames} oda açabilir (abone: ${limits.subscriptionGames}). Başlamadan odayı kapatırsan hakkın geri verilir.`;
+    const buttons: { label: string; value: RoomMode | null; style: 'primary' | 'ghost' }[] = [
+      { label: 'Otomatik Oyun', value: 'auto', style: 'primary' },
+      { label: 'Ben Yöneticiyim', value: 'host', style: 'ghost' },
+    ];
+    if (event) buttons.push({ label: 'Anlatıcı olurum (oynamam)', value: 'narrator', style: 'ghost' });
+    buttons.push({ label: 'Vazgeç', value: null, style: 'ghost' });
+    return showDialog<RoomMode | null>({
+      title: 'Köpekbalığı Kafesi nasıl oynansın?',
+      message: `Otomatik Oyun: yönetici gerekmez; dalış, plaj ve oylama süreleri dolunca oyun kendiliğinden ilerler.\n\nBen Yöneticiyim: aşamaları sen ilerletirsin; sen de oynarsın ama rolleri görmezsin.${
+        event
+          ? '\n\nAnlatıcı: oynamazsın, herkesin rolünü görür ve oyunu sen anlatırsın. Anlatıcılı oyunda kimse puan almaz, hak düşmez.'
+          : ''
+      }${quota}`,
+      icon: 'water',
+      buttons,
+      cancelValue: null,
+    });
+  }
+
+  /**
    * Seçilen oyun için yeni oda açar. Vampir–Köylü’de sıra: nasıl oynansın → (anlatıcı değilse) bulunduğun bölge →
    * odanın bölgesi + adres tarifi → oda. Odayı açan kişi (anlatıcı moderatör hariç) oyuncu olarak odaya da girer.
    */
@@ -240,18 +274,20 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
       }
       return;
     }
-    if (key !== 'vampire_villager') {
+    if (key !== 'vampire_villager' && key !== 'shark_cage') {
       setHint(`${gameTitle(key)} hazırlanıyor, çok yakında burada olacak.`);
       return;
     }
+    const shark = key === 'shark_cage';
     lock.current = true;
     try {
       await leaveDone.current;
       // Nerede oynanacak? Yan yana (aynı masada; 2 kat puan, oyun hakkından yer) ya da uzaktan (sesli sohbetle)
       const where = await showDialog<'side' | 'remote' | null>({
         title: 'Nasıl oynanacak?',
-        message:
-          'Yan yana: aynı masada oturursunuz. Puan iki katıdır, oyun hakkından yer.\n\nUzaktan: herkes kendi telefonundan, sesli sohbetle oynar; sabah tartışmasında sırayla konuşulur. Oyun hakkından yemez, puanı yarıdır.',
+        message: shark
+          ? 'Yan yana: aynı masada oturursunuz. Puan iki katıdır, oyun hakkından yer.\n\nUzaktan: herkes kendi telefonundan oynar; plajda bas-konuş ses mesajlarıyla konuşulur. Oyun hakkından yemez, puanı yarıdır.'
+          : 'Yan yana: aynı masada oturursunuz. Puan iki katıdır, oyun hakkından yer.\n\nUzaktan: herkes kendi telefonundan, sesli sohbetle oynar; sabah tartışmasında sırayla konuşulur. Oyun hakkından yemez, puanı yarıdır.',
         icon: 'people',
         buttons: [
           { label: 'Yan yana', value: 'side', style: 'primary' },
@@ -262,9 +298,9 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
       });
       if (!where) return;
       if (where === 'remote') {
-        const rmode = await askVampireMode(true);
+        const rmode = shark ? await askSharkMode(true) : await askVampireMode(true);
         if (!rmode) return;
-        const created = await createRoom('vampire_villager', rmode, undefined, undefined, undefined, true);
+        const created = await createRoom(key, rmode, undefined, undefined, undefined, true);
         if (created.error || !created.room) {
           await notify('Oda açılamadı', created.error ?? 'Biraz sonra tekrar dene.', {
             tone: 'danger',
@@ -277,10 +313,10 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
           if (joined.error) await notify('Odaya girilemedi', joined.error, { tone: 'danger', icon: 'alert-circle' });
         }
         onChanged?.();
-        openGameScreen(created.room.id, 'vampire_villager');
+        openGameScreen(created.room.id, key);
         return;
       }
-      const mode = await askVampireMode();
+      const mode = shark ? await askSharkMode() : await askVampireMode();
       if (!mode) return;
       // Yan yana oynanan oyunu açarken (oyuncu olarak girecekse) konum izni zorunludur; izin yoksa oda hiç açılmaz.
       let phone: Cell | undefined;
@@ -293,9 +329,9 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
         phone = loc.cell;
       }
       const maxDistance = await getJoinMaxDistance();
-      const place = await askPlace(GAMES.vampire_villager.title, phone ?? null, maxDistance);
+      const place = await askPlace(GAMES[key].title, phone ?? null, maxDistance);
       if (!place) return;
-      const res = await createRoom('vampire_villager', mode, phone, place);
+      const res = await createRoom(key, mode, phone, place);
       if (res.error || !res.room) {
         await notify('Oda açılamadı', res.error ?? 'Biraz sonra tekrar dene.', {
           tone: 'danger',
@@ -311,7 +347,7 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
         }
       }
       onChanged?.();
-      openGameScreen(res.room.id, 'vampire_villager');
+      openGameScreen(res.room.id, key);
     } finally {
       lock.current = false;
     }
@@ -324,21 +360,22 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
   async function createEventGame(ev: { id: string; title: string; cell: Cell | null }) {
     if (lock.current) return;
     setHint(null);
-    const ok = await showDialog<boolean>({
+    const game = await showDialog<'vampire_villager' | 'shark_cage' | null>({
       title: 'Etkinlik oyunu aç',
-      message: `“${ev.title}” etkinliğinde Vampir–Köylü odası açılır.\n\nOda kodu, katılımını doğrulamış katılımcılara bildirimle gider; odaya yalnızca onlar girebilir. Etkinlik oyunlarında puan 1,25 kat. Etkinlik odası aylık oda hakkından yemez.\n\nDiğer oyunlar hazır olunca buraya eklenecek.`,
+      message: `“${ev.title}” etkinliğinde oyun odası açılır.\n\nOda kodu, katılımını doğrulamış katılımcılara bildirimle gider; odaya yalnızca onlar girebilir. Etkinlik oyunlarında puan 1,25 kat. Etkinlik odası aylık oda hakkından yemez.\n\nKöpekbalığı Kafesi’nde anlatıcı olabilirsin (oynamazsın; anlatıcılı oyunda puan yok).`,
       icon: 'game-controller',
       buttons: [
-        { label: 'Vampir–Köylü aç', value: true, style: 'primary' },
-        { label: 'Vazgeç', value: false, style: 'ghost' },
+        { label: 'Köpekbalığı Kafesi', value: 'shark_cage', style: 'primary' },
+        { label: 'Vampir–Köylü', value: 'vampire_villager', style: 'ghost' },
+        { label: 'Vazgeç', value: null, style: 'ghost' },
       ],
-      cancelValue: false,
+      cancelValue: null,
     });
-    if (!ok) return;
+    if (!game) return;
     lock.current = true;
     try {
       await leaveDone.current;
-      const mode = await askVampireMode();
+      const mode = game === 'shark_cage' ? await askSharkMode(false, true) : await askVampireMode();
       if (!mode) return;
       let phone: Cell | undefined;
       if (mode !== 'narrator') {
@@ -356,7 +393,7 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
         return;
       }
       const res = await createRoom(
-        'vampire_villager',
+        game,
         mode,
         phone,
         { cell, note: `Etkinlik: ${ev.title}`.slice(0, 120) },
@@ -376,7 +413,7 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
         }
       }
       onChanged?.();
-      openGameScreen(res.room.id, 'vampire_villager');
+      openGameScreen(res.room.id, game);
     } finally {
       lock.current = false;
     }
