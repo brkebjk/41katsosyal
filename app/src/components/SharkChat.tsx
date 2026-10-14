@@ -243,30 +243,42 @@ export function SharkChat({
 
   return (
     <>
-      {!openTab ? (
-        <Animated.View
-          style={[styles.bubbleWrap, { transform: bubble.getTranslateTransform() }]}
-          {...bubbleDrag.panHandlers}
-        >
+      {/* Baloncuk hep görünür: kapalıyken açar, açıkken kapatır */}
+      <Animated.View
+        style={[styles.bubbleWrap, { transform: bubble.getTranslateTransform() }]}
+        {...bubbleDrag.panHandlers}
+      >
           <Pressable
             onPress={() => {
+              if (openTab) {
+                switchTo(null);
+                return;
+              }
               placeWin();
               switchTo(tabs.find((t) => unreadOf(t) > 0)?.key ?? 'all');
             }}
             accessibilityRole="button"
-            accessibilityLabel={unread ? `Yazışma, ${unread} yeni mesaj` : 'Yazışma'}
+            accessibilityLabel={openTab ? 'Yazışmayı kapat' : unread ? `Yazışma, ${unread} yeni mesaj` : 'Yazışma'}
             style={({ pressed }) => [styles.bubble, pressed && styles.pressed]}
             testID="sk-chat-bubble"
           >
-            <Ionicons name="chatbubbles" size={26} color="#06201D" />
+            <Ionicons name={openTab ? 'close' : 'chatbubbles'} size={26} color="#06201D" />
             {unread > 0 ? (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{unread > 99 ? '99+' : String(unread)}</Text>
               </View>
             ) : null}
           </Pressable>
-        </Animated.View>
-      ) : (
+      </Animated.View>
+      {openTab ? (
+        <>
+          {/* Pencerenin dışına dokununca kapanır */}
+          <Pressable
+            style={styles.backdrop}
+            onPress={() => switchTo(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Yazışmayı kapat"
+          />
         <Animated.View
           style={[styles.win, { width: winW, height: winH, transform: win.getTranslateTransform() }]}
           accessibilityViewIsModal
@@ -349,7 +361,8 @@ export function SharkChat({
           ) : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </Animated.View>
-      )}
+        </>
+      ) : null}
     </>
   );
 }
@@ -358,6 +371,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   pressed: { opacity: 0.8 },
   bubbleWrap: { position: 'absolute', left: 0, top: 0, zIndex: 40, elevation: 40 },
+  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 44, elevation: 44 },
   bubble: {
     width: BUBBLE,
     height: BUBBLE,

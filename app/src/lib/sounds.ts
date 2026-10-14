@@ -83,9 +83,24 @@ export function onSoundChange(fn: (on: boolean) => void): () => void {
   };
 }
 
+/** Bas-konuş kaydı sürerken oyun sesleri susar (hoparlörden mikrofona, oradan karşı tarafa gitmesin) */
+let muted = false;
+export function setSoundMuted(on: boolean) {
+  muted = on;
+  if (on) {
+    for (const k of Object.keys(players) as SoundName[]) {
+      try {
+        players[k]?.pause();
+      } catch {
+        // yok say
+      }
+    }
+  }
+}
+
 /** Kısa bir ses çalar (aynı ses tekrar çalınırsa baştan başlar) */
 export function playSound(name: SoundName, volume = 0.8) {
-  if (!enabled) return;
+  if (!enabled || muted) return;
   try {
     let p = players[name];
     if (!p) {

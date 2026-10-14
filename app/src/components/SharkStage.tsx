@@ -1345,13 +1345,12 @@ export function MessageList({
         accessibilityHint={m.mine ? undefined : 'Bildirmek için uzun bas'}
         style={[styles.msg, m.mine ? styles.mine : styles.theirs, m.phase === 'night' && styles.msgNight]}
       >
-        {!m.mine || tag ? (
-          <View style={styles.msgWho}>
-            {!m.mine && seat ? <SeatChip n={seat} size={16} /> : null}
-            {!m.mine ? <Text style={styles.msgName}>{m.name}</Text> : null}
-            {tag ? <Text style={styles.msgTag}>{tag}</Text> : null}
-          </View>
-        ) : null}
+        {/* Yazan: koltuk numarası (kendin dahil) ve adı */}
+        <View style={styles.msgWho}>
+          {seat ? <SeatChip n={seat} size={16} /> : null}
+          <Text style={styles.msgName}>{m.mine ? 'Sen' : m.name}</Text>
+          {tag ? <Text style={styles.msgTag}>{tag}</Text> : null}
+        </View>
         <Text style={styles.msgBody}>{m.body}</Text>
       </Pressable>,
     );

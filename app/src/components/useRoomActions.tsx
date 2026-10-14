@@ -17,7 +17,6 @@ import {
   getJoinMaxDistance,
   getRoom,
   joinRemoteRoom,
-  joinRoom,
   joinRoomWithLocation,
   type OpenRoom,
   type RoomMode,
@@ -291,34 +290,15 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
         icon: 'people',
         buttons: [
           { label: 'Yan yana', value: 'side', style: 'primary' },
-          { label: isModerator ? 'Uzaktan (deneme odası)' : 'Uzaktan eşleş', value: 'remote', style: 'ghost' },
+          { label: 'Uzaktan eşleş', value: 'remote', style: 'ghost' },
           { label: 'Vazgeç', value: null, style: 'ghost' },
         ],
         cancelValue: null,
       });
       if (!where) return;
       if (where === 'remote') {
-        // Özel uzaktan oda yok: uzaktan oyun eşleştirmeyle açılır (moderatör deneme için yine oda açabilir)
-        if (!isModerator) {
-          router.push({ pathname: '/kopekbaligi-ara', params: { oyun: key } });
-          return;
-        }
-        const rmode = shark ? await askSharkMode(true) : await askVampireMode(true);
-        if (!rmode) return;
-        const created = await createRoom(key, rmode, undefined, undefined, undefined, true);
-        if (created.error || !created.room) {
-          await notify('Oda açılamadı', created.error ?? 'Biraz sonra tekrar dene.', {
-            tone: 'danger',
-            icon: 'alert-circle',
-          });
-          return;
-        }
-        if (rmode !== 'narrator') {
-          const joined = await joinRoom(created.room.code);
-          if (joined.error) await notify('Odaya girilemedi', joined.error, { tone: 'danger', icon: 'alert-circle' });
-        }
-        onChanged?.();
-        openGameScreen(created.room.id, key);
+        // Uzaktan oda açılmaz: uzaktan oyun eşleştirmeyle başlar
+        router.push({ pathname: '/kopekbaligi-ara', params: { oyun: key } });
         return;
       }
       // İzin varsa konum, oyun şekli sorulurken arka planda bulunur (oda yeri ekranı beklemeden açılsın)

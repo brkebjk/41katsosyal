@@ -4153,8 +4153,8 @@ begin
   if p_remote and (p_game_type not in ('vampire_villager', 'shark_cage') or p_event_id is not null) then
     raise exception 'remote_not_allowed';
   end if;
-  -- Özel uzaktan oda yok: uzaktan oyun yalnızca eşleştirmeyle açılır (moderatör deneme için açabilir)
-  if p_remote and v.role <> 'admin' then raise exception 'remote_match_only'; end if;
+  -- Uzaktan oda açılmaz: uzaktan oyun yalnızca eşleştirmeyle başlar (oyun bitince bekleyenlerin odası açık kalır)
+  if p_remote then raise exception 'remote_match_only'; end if;
   perform public._sweep_live_rooms();
   -- Paket 27: etkinlik oyunu / etkinlik çekilişi. Yalnızca etkinliği açan kişi (ya da moderatör) açar; en az
   -- pts_event_min_attendees (4) doğrulanmış katılımcı gerekir. Oyun: etkinlik "oyunlu" olmalı, başlamış olmalı, en az 4

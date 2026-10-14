@@ -17,6 +17,7 @@ import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '@/components/AppText';
 import { notify, showDialog } from '@/lib/dialog';
 import { getVoiceClip, postVoiceClip, type SkClip } from '@/lib/shark';
+import { setSoundMuted } from '@/lib/sounds';
 import { fonts } from '@/theme';
 
 // Köpekbalığı Kafesi bas-konuş: basılı tutunca en çok 5 sn ses kaydedilir ve odaya gönderilir. Gelen ses mesajları
@@ -24,8 +25,6 @@ import { fonts } from '@/theme';
 // durur: en geç 10 dakika sonra silinir (şikâyet edilen en çok 14 gün). Expo Go'da da çalışır.
 
 const MAX_MS = 5000;
-/** Kayıt sırasında çalan sesin seviyesi (mikrofona geri dönmesin diye kısılır) */
-const DUCK_VOLUME = 0.12;
 const INFO_KEY = 'kat41.pttInfo';
 
 /** Küçük ve her iki telefonda da çalınabilen ses biçimi (AAC / m4a, tek kanal, 32 kbit/sn ≈ 5 sn için 20 KB) */
@@ -93,6 +92,8 @@ export function useClipQueue(clips: SkClip[] | undefined, myId: string | null, e
   /** Son çalma hatası (ekranda kısa süre görünür; sorun bildirmek için) */
   const [error, setError] = useState<string | null>(null);
   const pumpRef = useRef<() => void>(() => {});
+  /** Çalan sesi duraklat / sürdür (kayıt sırasında) */
+  const pauseRef = useRef<(on: boolean) => void>(() => {});
 
   // Uzaktan oyunda ses mesajları telefon sessizdeyken de duyulsun
   useEffect(() => {
@@ -116,13 +117,15 @@ export function useClipQueue(clips: SkClip[] | undefined, myId: string | null, e
       // yok say
     }
     busy.current = false;
+    pauseRef.current = () => {};
     setNow(null);
     setWaiting(queue.current.length);
     pumpRef.current();
   }, []);
 
   const pump = useCallback(async () => {
-    if (busy.current || queue.current.length === 0) return;
+    // Sen kaydederken yeni ses başlamaz (mikrofona girmesin); kayıt bitince sıradaki çalar
+    if (busy.current || queue.current.length === 0 || recordingRef.current) return;
     busy.current = true;
     const clip = queue.current.shift() as SkClip;
     setWaiting(queue.current.length);
@@ -141,8 +144,6 @@ export function useClipQueue(clips: SkClip[] | undefined, myId: string | null, e
       step = 'çalınamadı';
       await playbackMode(recordingRef.current);
       const p = createAudioPlayer({ uri: file.uri });
-      // Sen konuşurken gelen ses kısık çalar (hoparlörden mikrofona geri dönmesin)
-      p.volume = recordingRef.current ? DUCK_VOLUME : 1;
       player.current = p;
       const f = file;
       let done = false;
@@ -160,9 +161,32 @@ export function useClipQueue(clips: SkClip[] | undefined, myId: string | null, e
         if (started || done) return;
         started = true;
         startedAt = Date.now();
-        p.play();
-        // Ses bildirilen sürenin sonunda kesilir (uzun ses gönderilse bile); bitti haberi gelmezse de sıradakine geçilir
-        timers.push(setTimeout(end, clip.ms + 800));
+        if (!recordingRef.current) p.play();
+        // Ses bildirilen sürenin sonunda kesilir (uzun ses gönderilse bile); bitti haberi gelmezse de sıradakine geçilir.
+        // Sen kaydederken ses duraklar; süre sayacı da durur, bırakınca kaldığı yerden devam eder.
+        let left = clip.ms + 800;
+        let armedAt = Date.now();
+        const arm = () => {
+          armedAt = Date.now();
+          timers.push(setTimeout(end, left));
+        };
+        if (!recordingRef.current) arm();
+        pauseRef.current = (on: boolean) => {
+          if (done) return;
+          if (on) {
+            timers.forEach(clearTimeout);
+            timers.length = 0;
+            left = Math.max(300, left - (Date.now() - armedAt));
+            try {
+              p.pause();
+            } catch {
+              // yok say
+            }
+          } else {
+            p.play();
+            arm();
+          }
+        };
       };
       const sub = p.addListener('playbackStatusUpdate', (st) => {
         // Ses yüklenince çalınır; yüklenmeden gelen "bitti" haberi (bazı telefonlarda hemen gelir) yok sayılır
@@ -182,16 +206,14 @@ export function useClipQueue(clips: SkClip[] | undefined, myId: string | null, e
     pumpRef.current = () => void pump();
   }, [pump]);
 
-  // Kayıt başlayınca / bitince ses oturumu değişir; çalan ses durmasın diye yeniden çalınır
+  // Kayıt başlayınca çalan ses mesajı duraklar (hoparlörden mikrofona, oradan karşı tarafa gitmesin); kayıt bitince
+  // kaldığı yerden devam eder ve sıradakiler çalar
   useEffect(() => {
     recordingRef.current = recording;
-    const p = player.current;
-    if (p) {
-      p.volume = recording ? DUCK_VOLUME : 1;
-      void playbackMode(recording).then(() => {
-        if (player.current === p && !p.playing) p.play();
-      });
-    }
+    void playbackMode(recording).then(() => {
+      if (player.current) pauseRef.current(recording);
+      else if (!recording) pumpRef.current();
+    });
   }, [recording]);
 
   // Yeni gelen mesajlar sıraya girer
@@ -279,6 +301,7 @@ export function PushToTalk({
     }
     setRec(false);
     onRecording(false);
+    setSoundMuted(false);
     void playbackMode(false);
     const uri = recorder.uri;
     if (!uri) return;
@@ -357,6 +380,7 @@ export function PushToTalk({
     startedAt.current = Date.now();
     setRec(true);
     onRecording(true);
+    setSoundMuted(true);
     progress.setValue(0);
     Animated.timing(progress, { toValue: 1, duration: cap.current, easing: Easing.linear, useNativeDriver: false }).start();
     timer.current = setTimeout(() => void stop(), cap.current + 50);
@@ -373,6 +397,7 @@ export function PushToTalk({
       if (timer.current) clearTimeout(timer.current);
       if (active.current) {
         active.current = false;
+        setSoundMuted(false);
         void recorder.stop().catch(() => {});
       }
     },
