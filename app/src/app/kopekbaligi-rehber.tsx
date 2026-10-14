@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { RoleIcon } from '@/components/RoleIcon';
 import { Text } from '@/components/AppText';
 import { Screen } from '@/components/Screen';
 import { SK_ROLES, SK_TEAMS, type SkRole } from '@/lib/shark';
@@ -280,7 +281,7 @@ function RoleTable() {
         return (
           <View key={k} style={styles.rrow}>
             <View style={[styles.rcol1, styles.rname]}>
-              <Text style={styles.remoji}>{r.emoji}</Text>
+              <RoleIcon role={k} size={28} />
               <Text style={[styles.rnameText, { color: r.color }]} numberOfLines={2}>
                 {r.name}
               </Text>
@@ -353,7 +354,7 @@ function Roles({ list }: { list: SkRole[] }) {
         const r = SK_ROLES[k];
         return (
           <View key={k} style={[styles.role, { borderColor: r.color }]}>
-            <Text style={styles.roleEmoji}>{r.emoji}</Text>
+            <RoleIcon role={k} size={52} />
             <View style={styles.flex}>
               <Text style={[styles.roleName, { color: r.color }]}>{r.name}</Text>
               <Text style={styles.p}>{r.goal}</Text>

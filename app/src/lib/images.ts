@@ -209,3 +209,21 @@ export const quizCardImages: Record<
   solo_double: null,
   solo_fifty: null,
 };
+
+/** Köpekbalığı Kafesi rol ikonları (192×192 WebP, şeffaf zemin; toplam ~210 KB). Anahtar: rol kodu */
+export const sharkRoleImages: Record<string, ImageSourcePropType> = {
+  alpha: require('../../assets/images/roles/sk-alpha.webp'),
+  tiger: require('../../assets/images/roles/sk-tiger.webp'),
+  hammer: require('../../assets/images/roles/sk-hammer.webp'),
+  nurse: require('../../assets/images/roles/sk-nurse.webp'),
+  shark: require('../../assets/images/roles/sk-shark.webp'),
+  lifeguard: require('../../assets/images/roles/sk-lifeguard.webp'),
+  oceanographer: require('../../assets/images/roles/sk-oceanographer.webp'),
+  spearman: require('../../assets/images/roles/sk-spearman.webp'),
+  marshal: require('../../assets/images/roles/sk-marshal.webp'),
+  medium: require('../../assets/images/roles/sk-medium.webp'),
+  tourist: require('../../assets/images/roles/sk-tourist.webp'),
+  squid: require('../../assets/images/roles/sk-squid.webp'),
+  surfer: require('../../assets/images/roles/sk-surfer.webp'),
+  scavenger: require('../../assets/images/roles/sk-scavenger.webp'),
+};

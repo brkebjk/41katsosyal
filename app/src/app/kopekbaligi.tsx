@@ -46,6 +46,7 @@ import {
   type SeatMark,
   type SkScene,
 } from '@/components/SharkStage';
+import { RoleIcon } from '@/components/RoleIcon';
 import { SharkChat, type ChatTab, type ChatTabInfo } from '@/components/SharkChat';
 import { PushToTalk, useClipQueue } from '@/components/SharkVoice';
 import { SoundToggle } from '@/components/SoundToggle';
@@ -492,7 +493,7 @@ function Game({ roomId }: { roomId: string }) {
     let label: Seat['label'] = null;
     if (phase === 'vote' && p.is_alive && !p.left && !v) {
       label = { text: '⏳ düşünüyor', color: light ? '#5B6472' : 'rgba(255,255,255,0.75)' };
-    } else if (known) label = { text: `${known.emoji} ${known.name}`, color: known.color };
+    } else if (known) label = { text: known.name, color: known.color };
     else if (scanned.has(p.id)) {
       const t = scanned.get(p.id) as keyof typeof SK_TEAMS;
       label = { text: `🔭 ${SK_TEAMS[t].name}`, color: SK_TEAMS[t].color };
@@ -535,7 +536,7 @@ function Game({ roomId }: { roomId: string }) {
       frame: frameOf(p),
       marked: role === 'surfer' && marks.has(p.id),
       // Rol simgesi: sunucu yalnızca görmeye hakkın olan rolleri gönderir (kendin, takımın, açıklananlar, anlatıcı, oyun sonu)
-      roleEmoji: p.role ? { emoji: SK_ROLES[p.role].emoji, color: SK_ROLES[p.role].color } : null,
+      roleEmoji: p.role ? { emoji: SK_ROLES[p.role].emoji, color: SK_ROLES[p.role].color, role: p.role } : null,
       event: events.get(p.id) ?? null,
       // Oylamada henüz oy vermeyen: avatarda sallanan soru işareti, altında "düşünüyor"
       thinking: phase === 'vote' && p.is_alive && !p.left && !v,
@@ -681,7 +682,7 @@ function Game({ roomId }: { roomId: string }) {
       k: ev.round * 10 + 3,
       text:
         ev.kind === 'spear'
-          ? `🔱 Zıpkın ${tag(ev.id)} vurdu · ${ev.role ? `${SK_ROLES[ev.role].emoji} ${SK_ROLES[ev.role].name}` : '?'}`
+          ? `🔱 Zıpkın ${tag(ev.id)} vurdu · ${ev.role ? `⟦r:${ev.role}⟧ ${SK_ROLES[ev.role].name}` : '?'}`
           : `🔱 Zıpkın ${tag(ev.id)} kişisine ulaşamadı`,
     });
   }
@@ -690,7 +691,7 @@ function Game({ roomId }: { roomId: string }) {
     flowItems.push({
       k: lvote.round * 10 + 5,
       text: lvote.caged
-        ? `⛓️ ${tag(lvote.caged.id)} kafese girdi · ${SK_ROLES[lvote.caged.role].emoji} ${SK_ROLES[lvote.caged.role].name}`
+        ? `⛓️ ${tag(lvote.caged.id)} kafese girdi · ⟦r:${lvote.caged.role}⟧ ${SK_ROLES[lvote.caged.role].name}`
         : lvote.tie
           ? '⛓️ Oylar eşit, kimse kafese girmedi'
           : '⛓️ Kimse kafese girmedi',
@@ -899,7 +900,7 @@ function Game({ roomId }: { roomId: string }) {
             <RoleWheel role={role} size={wheel} onDone={() => setWheelDone(true)} />
           ) : (
             <View style={[styles.roleCard, { borderColor: roleInfo.color }]}>
-              <Text style={styles.roleEmoji}>{roleInfo.emoji}</Text>
+              <RoleIcon role={role} size={Math.round(Math.min(width * 0.32, 128))} />
               <Text style={[styles.roleName, { color: roleInfo.color }]}>{roleInfo.name}</Text>
               <Text style={[styles.roleTeam, { color: SK_TEAMS[roleInfo.team].color }]}>
                 {`${SK_TEAMS[roleInfo.team].emoji} ${SK_TEAMS[roleInfo.team].name}`}
@@ -971,13 +972,13 @@ function Game({ roomId }: { roomId: string }) {
         title: abilityDone
           ? me.ignite
             ? '📻 Telsiz bu gece patlayacak!'
-            : `${roleInfo.emoji} Seçimin ${me.night_target ? tag(me.night_target) : 'pas'}`
-          : `${roleInfo.emoji} ${abilityVerb(role).toUpperCase()}: KİŞİ SEÇ`,
+            : `⟦r:${role}⟧ Seçimin ${me.night_target ? tag(me.night_target) : 'pas'}`
+          : `⟦r:${role}⟧ ${abilityVerb(role).toUpperCase()}: KİŞİ SEÇ`,
         lines: flow,
         color: roleInfo.color,
         pulse: !abilityDone,
       };
-      if (!abilityDone) command = { text: `${roleInfo.emoji} ${abilityVerb(role).toUpperCase()}: KİŞİ SEÇ`, color: roleInfo.color };
+      if (!abilityDone) command = { text: `⟦r:${role}⟧ ${abilityVerb(role).toUpperCase()}: KİŞİ SEÇ`, color: roleInfo.color };
     } else {
       prompt = { title: '🤿 DALIŞTASIN · BEKLE', lines: flow };
     }
@@ -1189,7 +1190,7 @@ function Game({ roomId }: { roomId: string }) {
     const lv = view.last_vote;
     prompt = lv?.caged
       ? {
-          title: `⛓️ ${tag(lv.caged.id)} KAFESTE · ${SK_ROLES[lv.caged.role].emoji} ${SK_ROLES[lv.caged.role].name}`,
+          title: `⛓️ ${tag(lv.caged.id)} KAFESTE · ⟦r:${lv.caged.role}⟧ ${SK_ROLES[lv.caged.role].name}`,
           lines: [...(lv.skips ? [`${lv.skips} kişi pas geçti`] : []), ...flow.slice(1)],
           color: '#C1121F',
         }
@@ -1253,7 +1254,9 @@ function Game({ roomId }: { roomId: string }) {
         name: x.p.name,
         me: x.p.is_me,
         won: x.won,
-        role: x.p.role ? { emoji: SK_ROLES[x.p.role].emoji, name: SK_ROLES[x.p.role].name, color: SK_ROLES[x.p.role].color } : null,
+        role: x.p.role
+          ? { emoji: SK_ROLES[x.p.role].emoji, name: SK_ROLES[x.p.role].name, color: SK_ROLES[x.p.role].color, key: x.p.role }
+          : null,
         time: `${mmss(x.p.alive_sec)}${x.p.left ? ' 🚪' : x.p.is_alive ? ' ✓' : ''}`,
         points: Number(x.p.points ?? 0) > 0 ? `+${fmtPts(Number(x.p.points))}` : '—',
         out: !x.p.is_alive,
@@ -1411,7 +1414,7 @@ function Game({ roomId }: { roomId: string }) {
     playing && me.is_player && !me.left && (!me.is_alive || (role === 'medium' && (phase === 'day' || phase === 'vote')));
   // Yüzen yazışma: Genel her zaman; Takım yalnızca köpekbalıklarına; Ölüler elenenlere ve Medyum'a (sunucu süzer)
   // Oyun akışı: sunucu günlüğündeki herkese açık olaylar + sana özel gece sonuçların, renkli bilgi satırları olarak
-  const roleText = (r: SkRole | null | undefined) => (r ? `${SK_ROLES[r].emoji} ${SK_ROLES[r].name}` : '?');
+  const roleText = (r: SkRole | null | undefined) => (r ? `⟦r:${r}⟧ ${SK_ROLES[r].name}` : '?');
   const logText = (e: SkLog): { text: string; color: string } | null => {
     switch (e.k) {
       case 'phase':
@@ -1710,7 +1713,7 @@ function Game({ roomId }: { roomId: string }) {
         <InviteSheet roomId={roomId} onClose={() => setInviteOpen(false)} />
       ) : null}
       {sheet === 'role' && role && roleInfo ? (
-        <SkSheet title={roleInfo.name} icon={roleInfo.emoji} onClose={() => setSheet(null)}>
+        <SkSheet title={roleInfo.name} iconNode={<RoleIcon role={role} size={34} />} onClose={() => setSheet(null)}>
           <Text style={[styles.sheetTeam, { color: SK_TEAMS[roleInfo.team].color }]}>
             {`${SK_TEAMS[roleInfo.team].emoji} ${SK_TEAMS[roleInfo.team].name}`}
           </Text>

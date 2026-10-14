@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { RoleIcon } from '@/components/RoleIcon';
 import { Text } from '@/components/AppText';
 import { GamePointsModal } from '@/components/GamePointsModal';
 import { SharkIntroBackdrop } from '@/components/SharkStage';
@@ -170,7 +171,7 @@ export default function SharkIntroScreen() {
                   <View key={k} style={[styles.cardWrap, { width: cardW }]}>
                     <View style={[styles.card, { borderColor: r.color }]}>
                       <View style={styles.cardHead}>
-                        <Text style={styles.cardEmoji}>{r.emoji}</Text>
+                        <RoleIcon role={k} size={64} />
                         <View style={styles.flex}>
                           <Text style={[styles.cardName, { color: r.color }]} numberOfLines={1}>
                             {r.name}

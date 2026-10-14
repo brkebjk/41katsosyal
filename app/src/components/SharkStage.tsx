@@ -19,6 +19,7 @@ import {
 import { Text } from '@/components/AppText';
 import { Avatar } from '@/components/Avatar';
 import { KeyboardLift } from '@/components/KeyboardLift';
+import { RoleIcon } from '@/components/RoleIcon';
 import {
   SK_ROLES,
   SK_TEAMS,
@@ -501,7 +502,7 @@ export function RoleWheel({ role, size, onDone }: { role: SkRole; size: number; 
                 },
               ]}
             >
-              <Text style={styles.wheelEmoji}>{SK_ROLES[k].emoji}</Text>
+              <RoleIcon role={k} size={32} />
             </View>
           );
         })}
@@ -548,7 +549,7 @@ export type Seat = {
   /** Sörfçü'nün işaretlediği kişi */
   marked?: boolean;
   /** Rol simgesi (avatarın alt ortasında). Yalnızca görmeye hakkın olan roller gelir (sunucu süzer). */
-  roleEmoji?: { emoji: string; color: string } | null;
+  roleEmoji?: { emoji: string; color: string; role?: SkRole } | null;
   /** Bu oyuncuyu ilgilendiren olay */
   event?: SeatEvent | null;
   /** Oylamada henüz oy vermedi: avatarda soru işareti sallanır */
@@ -824,7 +825,11 @@ function SeatTile({
         ) : null}
         {seat.roleEmoji ? (
           <View style={[styles.roleBadge, { borderColor: seat.roleEmoji.color }]}>
-            <Text style={styles.badgeText}>{seat.roleEmoji.emoji}</Text>
+            {seat.roleEmoji.role ? (
+              <RoleIcon role={seat.roleEmoji.role} size={Math.max(22, Math.round(size * 0.36))} />
+            ) : (
+              <Text style={styles.badgeText}>{seat.roleEmoji.emoji}</Text>
+            )}
           </View>
         ) : null}
         {p.marshal ? (
@@ -1019,10 +1024,16 @@ export function RichLine({
   align?: 'center' | 'left';
 }) {
   const nodes: ReactNode[] = [];
-  text.split(/(⟦\d+⟧)/).forEach((part, i) => {
+  text.split(/(⟦\d+⟧|⟦r:[a-z]+⟧)/).forEach((part, i) => {
     const m = /^⟦(\d+)⟧$/.exec(part);
     if (m) {
       nodes.push(<SeatChip key={i} n={Number(m[1])} size={chip} />);
+      return;
+    }
+    // ⟦r:alpha⟧ → rol ikonu
+    const r = /^⟦r:([a-z]+)⟧$/.exec(part);
+    if (r && r[1] in SK_ROLES) {
+      nodes.push(<RoleIcon key={i} role={r[1] as SkRole} size={Math.round(chip * 1.25)} />);
       return;
     }
     part.split(/\s+/).forEach((w, j) => {
@@ -1129,7 +1140,7 @@ export function CommandFlash({ cmdKey, phaseKey, text, color }: {
           { borderColor: shown.color, transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }) }] },
         ]}
       >
-        <Text style={styles.cmdText}>{shown.text}</Text>
+        <RichLine text={shown.text} chip={30} style={styles.cmdText} />
       </Animated.View>
     </Animated.View>
   );
@@ -1146,7 +1157,7 @@ export type RankRow = {
   name: string;
   me: boolean;
   won: boolean;
-  role: { emoji: string; name: string; color: string } | null;
+  role: { emoji: string; name: string; color: string; key?: SkRole } | null;
   /** "12:34" ya da "Sona kaldı" */
   time: string;
   /** Kazandığı puan ("+3,5" ya da "—") */
@@ -1188,9 +1199,12 @@ export function RankTable({ rows }: { rows: RankRow[] }) {
                 {r.me ? `${r.name} (sen)` : r.name}
               </Text>
             </View>
-            <Text style={[styles.rankCell, styles.rankRole, { fontSize: font, color: r.role?.color ?? '#FFFFFF' }]} numberOfLines={1}>
-              {r.role ? `${r.role.emoji} ${r.role.name}` : '—'}
-            </Text>
+            <View style={[styles.rankRole, styles.rankWho]}>
+              {r.role?.key ? <RoleIcon role={r.role.key} size={Math.min(26, rowH - 2)} /> : null}
+              <Text style={[styles.rankCell, styles.flex, { fontSize: font, color: r.role?.color ?? '#FFFFFF' }]} numberOfLines={1}>
+                {r.role ? (r.role.key ? r.role.name : `${r.role.emoji} ${r.role.name}`) : '—'}
+              </Text>
+            </View>
             <Text style={[styles.rankCell, styles.rankTime, { fontSize: font }]} numberOfLines={1}>
               {r.time}
             </Text>
@@ -1240,9 +1254,11 @@ export function TimeBar({ kind, left, limit, light }: {
 // Koyu alt pencere (oyunun içinde açılan rol, notlar, sohbet pencereleri)
 // ---------------------------------------------------------------------------
 
-export function SkSheet({ title, icon, onClose, children }: {
+export function SkSheet({ title, icon, iconNode, onClose, children }: {
   title: string;
   icon?: string;
+  /** Emoji yerine görsel (ör. rol ikonu) */
+  iconNode?: ReactNode;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -1253,7 +1269,7 @@ export function SkSheet({ title, icon, onClose, children }: {
         <Pressable style={styles.sheetBackdrop} onPress={onClose} accessibilityRole="button" accessibilityLabel="Kapat" />
         <View style={[styles.sheet, { maxHeight: Math.round(height * 0.82) }]} accessibilityViewIsModal>
           <View style={styles.sheetHead}>
-            {icon ? <Text style={styles.sheetIcon}>{icon}</Text> : null}
+            {iconNode ?? (icon ? <Text style={styles.sheetIcon}>{icon}</Text> : null)}
             <Text style={styles.sheetTitle} accessibilityRole="header" numberOfLines={2}>
               {title}
             </Text>
@@ -1487,9 +1503,12 @@ export function PlayerList({ players, onPick }: { players: SkPlayer[]; onPick: (
               <Text style={styles.plName} numberOfLines={1}>
                 {p.is_me ? `${p.name} (sen)` : p.name}
               </Text>
-              <Text style={[styles.plStatus, !p.is_alive && styles.plDead]} numberOfLines={1}>
-                {role ? `${status} · ${role.emoji} ${role.name}` : status}
-              </Text>
+              <View style={styles.rankWho}>
+                {p.role ? <RoleIcon role={p.role} size={18} /> : null}
+                <Text style={[styles.plStatus, !p.is_alive && styles.plDead]} numberOfLines={1}>
+                  {role ? `${status} · ${role.name}` : status}
+                </Text>
+              </View>
             </View>
             {!p.is_me ? <Ionicons name="ellipsis-horizontal" size={20} color="rgba(255,255,255,0.7)" /> : null}
           </Pressable>
@@ -1526,7 +1545,7 @@ export function RolePicker({ value, busy, onPick }: {
           accessibilityRole="radio"
           accessibilityState={{ selected: value === k }}
         >
-          <Text style={styles.pickEmoji}>{SK_ROLES[k].emoji}</Text>
+          <RoleIcon role={k} size={40} />
           <Text style={[styles.pickName, { color: SK_ROLES[k].color }]} numberOfLines={2}>
             {SK_ROLES[k].name}
           </Text>
@@ -1815,17 +1834,12 @@ const styles = StyleSheet.create({
   badgeLeft: { right: undefined, left: -4 },
   roleBadge: {
     position: 'absolute',
-    // Avatarın içinde, alt ortada (avatarın üstüne biner)
-    bottom: 6,
-    left: '50%',
-    marginLeft: -12,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 1.5,
+    // Avatarın içinde, alt ortada (avatarın üstüne biner); ikon boyutu avatara göre
+    bottom: 2,
+    left: 0,
+    right: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(11, 19, 43, 0.92)',
   },
   badgeText: { fontSize: 12 },
   name: { marginTop: 4, height: 16, lineHeight: 16, maxWidth: '100%', fontFamily: fonts.extra, fontSize: 12 },
