@@ -24,6 +24,8 @@ import { fonts } from '@/theme';
 // durur: en geç 10 dakika sonra silinir (şikâyet edilen en çok 14 gün). Expo Go'da da çalışır.
 
 const MAX_MS = 5000;
+/** Kayıt sırasında çalan sesin seviyesi (mikrofona geri dönmesin diye kısılır) */
+const DUCK_VOLUME = 0.12;
 const INFO_KEY = 'kat41.pttInfo';
 
 /** Küçük ve her iki telefonda da çalınabilen ses biçimi (AAC / m4a, tek kanal, 32 kbit/sn ≈ 5 sn için 20 KB) */
@@ -139,6 +141,8 @@ export function useClipQueue(clips: SkClip[] | undefined, myId: string | null, e
       step = 'çalınamadı';
       await playbackMode(recordingRef.current);
       const p = createAudioPlayer({ uri: file.uri });
+      // Sen konuşurken gelen ses kısık çalar (hoparlörden mikrofona geri dönmesin)
+      p.volume = recordingRef.current ? DUCK_VOLUME : 1;
       player.current = p;
       const f = file;
       let done = false;
@@ -183,6 +187,7 @@ export function useClipQueue(clips: SkClip[] | undefined, myId: string | null, e
     recordingRef.current = recording;
     const p = player.current;
     if (p) {
+      p.volume = recording ? DUCK_VOLUME : 1;
       void playbackMode(recording).then(() => {
         if (player.current === p && !p.playing) p.play();
       });
@@ -387,7 +392,7 @@ export function PushToTalk({
     >
       {rec ? <Animated.View style={[styles.pttFill, { width }]} /> : null}
       <View style={styles.pttIcon}>
-        <Ionicons name={canTalk ? 'mic' : 'mic-off'} size={22} color={rec ? '#FFFFFF' : canTalk ? '#06201D' : '#9AA4B2'} />
+        <Ionicons name={canTalk ? 'mic' : 'mic-off'} size={22} color={rec ? '#FFFFFF' : canTalk ? '#2B1400' : '#9AA4B2'} />
       </View>
       <View style={styles.pttTexts}>
         <Text style={[styles.pttTitle, !canTalk && styles.pttTitleOff, rec && styles.pttTitleRec]} numberOfLines={1}>
@@ -413,7 +418,10 @@ const styles = StyleSheet.create({
     minHeight: 54,
     paddingHorizontal: 12,
     borderRadius: 27,
-    backgroundColor: '#48CAE4',
+    // Turuncu: deniz ve gökyüzünün maviliğinden ayrılsın
+    backgroundColor: '#FF9F1C',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
     overflow: 'hidden',
   },
   pttOff: { backgroundColor: 'rgba(11, 19, 43, 0.75)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
@@ -428,8 +436,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.35)',
   },
   pttTexts: { flex: 1 },
-  pttTitle: { color: '#06201D', fontFamily: fonts.black, fontSize: 14 },
+  pttTitle: { color: '#2B1400', fontFamily: fonts.black, fontSize: 14 },
   pttTitleOff: { color: '#9AA4B2', fontFamily: fonts.semi, fontSize: 12.5 },
   pttTitleRec: { color: '#FFFFFF' },
-  pttSub: { color: '#06201D', fontFamily: fonts.semi, fontSize: 11 },
+  pttSub: { color: '#2B1400', fontFamily: fonts.semi, fontSize: 11 },
 });

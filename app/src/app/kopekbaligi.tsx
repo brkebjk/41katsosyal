@@ -26,6 +26,7 @@ import {
   CommandFlash,
   isLightScene,
   NightResult,
+  PlayerList,
   PhaseFlash,
   Prompt,
   RankTable,
@@ -79,6 +80,7 @@ import {
   startShark,
   winnerText,
   type SkMsg,
+  type SkLog,
   type SkNote,
   type SkPlayer,
   type SkRole,
@@ -154,7 +156,7 @@ function Game({ roomId }: { roomId: string }) {
   /** Seçili kişi: hangi aşamada / hangi iş için */
   const [pick, setPick] = useState<{ key: string; id: string } | null>(null);
   const [slot, setSlot] = useState<{ key: string; slot: Slot } | null>(null);
-  const [sheet, setSheet] = useState<'role' | 'pick' | 'result' | null>(null);
+  const [sheet, setSheet] = useState<'role' | 'pick' | 'result' | 'players' | null>(null);
   /** Gece sonucu penceresi bu turda kapatıldı mı (plaj başlayınca kendiliğinden açılır) */
   const [resultClosed, setResultClosed] = useState(-1);
   /** Yüzen yazışma penceresinde açık sekme (boş = kapalı) */
@@ -164,7 +166,7 @@ function Game({ roomId }: { roomId: string }) {
   /** Bu oyunda rol çarkı döndü mü (bu telefonda) */
   const [wheelDone, setWheelDone] = useState(false);
   const [result, setResult] = useState<{ data: MyGameResult | null; rules: PointRules } | null>(null);
-  const safety = useSafetyMenu({ type: 'room', id: roomId });
+  const safety = useSafetyMenu({ type: 'room', id: roomId }, { emergency: view?.remote !== true });
   const lock = useRef(false);
   const loadSeq = useRef(0);
   const hasView = useRef(false);
@@ -582,6 +584,28 @@ function Game({ roomId }: { roomId: string }) {
           ? ABILITY_MARK[role]
           : undefined;
   const mark: SeatMark | null = markTo && markLook ? { from: myPlayerId, to: markTo, ...markLook } : null;
+
+  /** Oyuncu listesinde bir oyuncuya dokununca: ses mesajını şikâyet et */
+  async function pickPlayer(p: SkPlayer) {
+    if (p.is_me) return;
+    if (!view?.remote) {
+      await notify(plain(p.id), 'Yan yana oyunda ses mesajı yok. Rahatsız edici bir durum varsa oyunu bildir.', { icon: null });
+      return;
+    }
+    const choice = await showDialog<'voice' | null>({
+      title: plain(p.id),
+      icon: null,
+      buttons: [
+        { label: 'Ses mesajını şikâyet et', value: 'voice', style: 'danger' },
+        { label: 'Vazgeç', value: null, style: 'ghost' },
+      ],
+      cancelValue: null,
+    });
+    if (choice !== 'voice') return;
+    setSheet(null);
+    const s0 = seats.find((x) => x.p.id === p.id);
+    if (s0) longPressSeat(s0);
+  }
 
   /** Avatara basılı tutunca: o oyuncunun son ses mesajını şikâyet et (uzaktan oda) */
   function longPressSeat(s: Seat) {
@@ -1336,11 +1360,66 @@ function Game({ roomId }: { roomId: string }) {
   const deadWrite =
     playing && me.is_player && !me.left && (!me.is_alive || (role === 'medium' && (phase === 'day' || phase === 'vote')));
   // Yüzen yazışma: Genel her zaman; Takım yalnızca köpekbalıklarına; Ölüler elenenlere ve Medyum'a (sunucu süzer)
+  // Oyun akışı: sunucu günlüğündeki herkese açık olaylar + sana özel gece sonuçların, renkli bilgi satırları olarak
+  const roleText = (r: SkRole | null | undefined) => (r ? `${SK_ROLES[r].emoji} ${SK_ROLES[r].name}` : '?');
+  const logText = (e: SkLog): { text: string; color: string } | null => {
+    switch (e.k) {
+      case 'phase':
+        return e.phase === 'reveal'
+          ? { text: '🎡 Roller dağıtıldı, oyun başladı', color: '#B98CFF' }
+          : e.phase === 'night'
+            ? { text: `🌙 ${e.round}. gece, dalış başladı`, color: '#48CAE4' }
+            : e.phase === 'day'
+              ? { text: `☀️ ${e.round}. gün, plaj başladı`, color: '#FFB703' }
+              : { text: '⛓️ Kafes oylaması başladı', color: '#FF8A98' };
+      case 'night':
+        return e.ids && e.ids.length
+          ? { text: `🦈 ${e.night}. gece ${e.ids.map((x) => tag(x)).join(' ')} avlandı`, color: '#FF4D4D' }
+          : { text: `🌊 ${e.night}. gece kimse avlanmadı`, color: '#34D399' };
+      case 'spear':
+        return { text: `🔱 Zıpkın ${tag(e.id)} vurdu, rolü ${roleText(e.role)}`, color: '#48CAE4' };
+      case 'spear_miss':
+        return { text: `🔱 Zıpkın ${tag(e.id)} kişisine ulaşamadı, biri onu korudu`, color: '#48CAE4' };
+      case 'marshal':
+        return { text: `🎖️ ${tag(e.id)} Sahil Güvenlik Komutanı olduğunu açıkladı, oyu 2 sayılır`, color: '#FFB703' };
+      case 'vote':
+        return e.id
+          ? { text: `⛓️ ${tag(e.id)} kafese girdi, rolü ${roleText(e.role)}`, color: '#FF4D4D' }
+          : { text: e.tie ? '⛓️ Oylar eşit, kimse kafese girmedi' : '⛓️ Kimse kafese girmedi', color: '#C9CED6' };
+      case 'left':
+        return { text: `🚪 ${tag(e.id)} oyundan ayrıldı, rolü ${roleText(e.role)}`, color: '#C9CED6' };
+      case 'end':
+        return e.winner ? { text: `🏁 ${winnerText(e.winner).title}`, color: winnerText(e.winner).color } : null;
+      default:
+        return null;
+    }
+  };
+  const info: SkMsg[] = [];
+  (view.log ?? []).forEach((e, i) => {
+    const t = logText(e);
+    if (t) info.push({ id: `log-${i}`, name: '', body: t.text, at: e.at, mine: false, round: e.round, phase: e.ph, system: { color: t.color } });
+  });
+  // Sana özel: gece sonuçların, o gecenin sonucunun hemen ardından
+  for (const n of me.notes) {
+    const after = (view.log ?? []).find((e) => e.k === 'night' && e.night === n.round);
+    if (!after) continue;
+    info.push({
+      id: `note-${n.round}-${n.kind}-${n.id ?? ''}`,
+      name: '',
+      body: `🔒 Sana özel · ${noteLine(n)}`,
+      at: new Date((Date.parse(after.at) || 0) + 1).toISOString(),
+      mine: false,
+      round: n.round,
+      phase: 'day',
+      system: { color: '#C8B6FF' },
+    });
+  }
   const chatTabs: ChatTabInfo[] = [
     {
       key: 'all',
       label: 'Genel',
       messages: view.chat ?? [],
+      info,
       canWrite: chatOpen,
       placeholder: 'Herkese yaz…',
       closedText: !alivePlayer ? 'Yalnızca yaşayanlar yazar, sen okuyabilirsin.' : 'Dalışta herkes susar. Plajda ve oylamada yazılır.',
@@ -1413,7 +1492,19 @@ function Game({ roomId }: { roomId: string }) {
               </Text>
             </View>
             <SoundToggle color={fg} />
-            {phase === 'lobby' || playing ? safety.button : null}
+            {/* Kırmızı düğme: oyuncu listesi (ses şikâyeti) ve oyunu bildir */}
+            {phase === 'lobby' || playing ? (
+              <Pressable
+                onPress={() => setSheet('players')}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Oyuncular ve şikâyet"
+                style={({ pressed }) => [styles.topBtn, styles.playersBtn, pressed && styles.pressed]}
+                testID="sk-players"
+              >
+                <Ionicons name="people" size={20} color="#FFFFFF" />
+              </Pressable>
+            ) : null}
           </View>
 
           <View style={styles.body}>
@@ -1600,6 +1691,24 @@ function Game({ roomId }: { roomId: string }) {
           ) : null}
         </SkSheet>
       ) : null}
+      {sheet === 'players' ? (
+        <SkSheet title="Oyuncular" icon="👥" onClose={() => setSheet(null)}>
+          <Text style={styles.sheetMuted}>
+            {view.remote
+              ? 'Bir oyuncuya dokunarak son ses mesajını şikâyet edebilirsin.'
+              : 'Odadaki oyuncular. Rahatsız edici bir durum varsa oyunu bildirebilirsin.'}
+          </Text>
+          <PlayerList players={view.players} onPick={(p) => void pickPlayer(p)} />
+          <GameButton
+            label={view.remote ? 'Oyunu bildir' : 'Güvenlik ve oyunu bildir'}
+            variant="ghost"
+            onPress={() => {
+              setSheet(null);
+              safety.open();
+            }}
+          />
+        </SkSheet>
+      ) : null}
       {sheet === 'pick' && phase === 'lobby' && me.is_admin ? (
         <SkSheet title="Rolünü seç" icon="🎭" onClose={() => setSheet(null)}>
           <Text style={styles.sheetMuted}>
@@ -1668,6 +1777,7 @@ const styles = StyleSheet.create({
   },
   topBtnLight: { backgroundColor: 'rgba(255,255,255,0.7)' },
   exitBtn: { backgroundColor: '#D9304F', borderWidth: 2, borderColor: '#FFFFFF' },
+  playersBtn: { backgroundColor: '#D9304F', borderWidth: 2, borderColor: '#FFFFFF' },
   title: { fontFamily: fonts.black, fontSize: 23, letterSpacing: 0.5 },
   roundBadge: {
     height: 38,

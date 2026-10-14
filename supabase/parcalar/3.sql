@@ -2996,6 +2996,76 @@ begin
 end $$;
 
 -- Odayı kilitleyerek okur; temizlik, "buradayım", botlar ve otomatik ilerleme
+-- Oyun akışı günlüğü (yazışma penceresinde renkli bilgi satırları): oda durumu her değiştiğinde herkese açık olaylar
+-- (aşama başladı, gece kimler öldü, zıpkın, kafes sonucu, Komutan, oyundan ayrılan, oyun sonu) state.log'a eklenir.
+-- Yalnızca zaten herkese açık bilgiler yazılır; gizli roller ve gece seçimleri asla yazılmaz.
+create or replace function public._sk_state_log()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  o jsonb := coalesce(old.state, '{}'::jsonb);
+  n jsonb := coalesce(new.state, '{}'::jsonb);
+  v_log jsonb;
+  v_add jsonb := '[]'::jsonb;
+  v_ph text := n->>'phase';
+  v_rd int := coalesce((n->>'round')::int, 0);
+  v_skip text[];
+  k text;
+begin
+  if n is not distinct from o then return new; end if;
+  v_log := case when n ? 'log' then n->'log' else coalesce(o->'log', '[]'::jsonb) end;
+  -- Yeni oyun (rol çarkı, 0. tur): günlük sıfırdan başlar
+  if v_ph = 'reveal' and v_rd = 0 and coalesce(o->>'phase', '') <> 'reveal' then v_log := '[]'::jsonb; end if;
+
+  if v_ph is distinct from o->>'phase' and v_ph in ('reveal', 'night', 'day', 'vote') then
+    v_add := v_add || jsonb_build_array(jsonb_build_object('k', 'phase', 'phase', v_ph));
+  end if;
+  if n->'last_night' is not null and n->'last_night' is distinct from o->'last_night' then
+    v_add := v_add || jsonb_build_array(jsonb_build_object('k', 'night', 'night', (n->'last_night'->>'round')::int,
+      'ids', coalesce((select jsonb_agg(e->'id') from jsonb_array_elements(n->'last_night'->'dead') e), '[]'::jsonb)));
+  end if;
+  if n->'day_event' is not null and n->'day_event' is distinct from o->'day_event' then
+    v_add := v_add || jsonb_build_array(jsonb_build_object('k', n->'day_event'->>'kind', 'id', n->'day_event'->'id',
+      'role', n->'day_event'->'role'));
+  end if;
+  if n->>'marshal' is not null and n->>'marshal' is distinct from o->>'marshal' then
+    v_add := v_add || jsonb_build_array(jsonb_build_object('k', 'marshal', 'id', n->'marshal'));
+  end if;
+  if n->'last_vote' is not null and n->'last_vote' is distinct from o->'last_vote' then
+    v_add := v_add || jsonb_build_array(jsonb_build_object('k', 'vote', 'id', n->'last_vote'->'caged'->'id',
+      'role', n->'last_vote'->'caged'->'role', 'tie', coalesce((n->'last_vote'->>'tie')::boolean, false)));
+  end if;
+  -- Açıklanan rol: kafes, zıpkın ve Komutan zaten yazıldı; geri kalanı oyundan ayrılanlardır
+  v_skip := array[n->'last_vote'->'caged'->>'id', n->'day_event'->>'id', n->>'marshal'];
+  for k in select jsonb_object_keys(coalesce(n->'reveals', '{}'::jsonb)) loop
+    if not coalesce(o->'reveals', '{}'::jsonb) ? k and not coalesce(k = any (v_skip), false)
+       and exists (select 1 from public.room_players rp
+                    where rp.room_id = new.id and rp.user_id::text = k and rp.left_at is not null) then
+      v_add := v_add || jsonb_build_array(jsonb_build_object('k', 'left', 'id', k, 'role', n->'reveals'->k));
+    end if;
+  end loop;
+  if n->>'winner' is not null and n->>'winner' is distinct from o->>'winner' then
+    v_add := v_add || jsonb_build_array(jsonb_build_object('k', 'end', 'winner', n->>'winner'));
+  end if;
+
+  if jsonb_array_length(v_add) = 0 then return new; end if;
+  v_log := v_log || (select jsonb_agg(e || jsonb_build_object('at', clock_timestamp(), 'round', v_rd,
+                                                              'ph', case when v_ph = 'night' then 'night' else 'day' end)
+                                      order by i)
+                       from jsonb_array_elements(v_add) with ordinality as t(e, i));
+  if jsonb_array_length(v_log) > 250 then
+    v_log := (select jsonb_agg(e order by i) from jsonb_array_elements(v_log) with ordinality as t(e, i)
+               where i > jsonb_array_length(v_log) - 250);
+  end if;
+  new.state := jsonb_set(n, '{log}', v_log);
+  return new;
+end $$;
+drop trigger if exists on_sk_state_log on public.game_rooms;
+create trigger on_sk_state_log
+  before update of state on public.game_rooms
+  for each row
+  when (new.game_type = 'shark_cage')
+  execute function public._sk_state_log();
+
 create or replace function public._sk_room(p_room_id uuid)
 returns public.game_rooms language plpgsql security definer set search_path = public as $$
 declare
@@ -3518,6 +3588,8 @@ begin
     'last_night', r.state->'last_night',
     'day_event', case when (r.state->'day_event'->>'round')::int = v_round then r.state->'day_event' end,
     'last_vote', r.state->'last_vote',
+    -- Oyun akışı günlüğü (herkese açık olaylar; yazışma penceresinde renkli satırlar)
+    'log', coalesce(r.state->'log', '[]'::jsonb),
     'votes', case when v_phase in ('vote', 'vote_result') then (
                select coalesce(jsonb_agg(jsonb_build_object('from', s.user_id, 'to', s.data->'vote'->>'target',
                                                             'weight', case when s.user_id::text = r.state->>'marshal' then 2 else 1 end)

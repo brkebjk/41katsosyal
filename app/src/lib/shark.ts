@@ -80,6 +80,24 @@ export type SkMsg = {
   phase?: string | null;
   /** Yalnızca mesaj geçmişinde: hangi frekans */
   channel?: 'all' | 'shark' | 'dead';
+  /** Oyun akışı bilgi satırı (yazışma değil): renkli, ortalı görünür. Metindeki ⟦7⟧ koltuk numarası rozeti olur. */
+  system?: { color: string };
+};
+
+/** Oyun akışı günlüğü (sunucu yazar; yalnızca herkese açık olaylar) */
+export type SkLog = {
+  k: 'phase' | 'night' | 'spear' | 'spear_miss' | 'marshal' | 'vote' | 'left' | 'end';
+  at: string;
+  round: number;
+  /** Gece mi gündüz mü yaşandı (yazışmada başlık için) */
+  ph: 'night' | 'day';
+  phase?: 'reveal' | 'night' | 'day' | 'vote';
+  night?: number;
+  ids?: string[];
+  id?: string | null;
+  role?: SkRole | null;
+  tie?: boolean;
+  winner?: SkWinner;
 };
 
 export type SkVote = { from: string; to: string | null; weight: number };
@@ -111,6 +129,8 @@ export type SkView = {
     name: string;
     role?: SkRole;
   } | null;
+  /** Oyun akışı günlüğü */
+  log?: SkLog[];
   last_vote: {
     round: number;
     caged: { id: string; name: string; role: SkRole } | null;

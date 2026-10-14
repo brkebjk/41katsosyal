@@ -15,13 +15,18 @@ type Target = { type: 'room' | 'event'; id: string };
  * Kırmızı ünlem düğmesi ve açılır menüsü: “Kolluk kuvvetlerini ara (112)” ve “Oyunu / Etkinliği bildir”.
  * `button` başlığa, `nodes` ekranın üst katmanına (Screen `overlay`) konur.
  */
-export function useSafetyMenu(target: Target | null): {
+export function useSafetyMenu(
+  target: Target | null,
+  /** emergency false: 112 seçeneği gösterilmez (uzaktan oyunlarda herkes kendi evindedir) */
+  opts: { emergency?: boolean } = {},
+): {
   button: ReactNode;
   nodes: ReactNode;
   isOpen: boolean;
   open: () => void;
 } {
   const [step, setStep] = useState<'menu' | 'report' | null>(null);
+  const emergency = opts.emergency !== false;
   const noun = target?.type === 'event' ? 'Etkinliği' : 'Oyunu';
 
   async function report(reason: string) {
@@ -52,17 +57,25 @@ export function useSafetyMenu(target: Target | null): {
     step === 'menu' ? (
       <ActionSheet
         title="Güvenlik"
-        subtitle="Kendini güvende hissetmiyorsan ortamdan ayrıl. Acil durumda 112'yi ara."
+        subtitle={
+          emergency
+            ? "Kendini güvende hissetmiyorsan ortamdan ayrıl. Acil durumda 112'yi ara."
+            : 'Rahatsız edici bir durum varsa oyunu moderatörlere bildirebilirsin.'
+        }
         options={[
-          {
-            label: 'Kolluk kuvvetlerini ara (112)',
-            icon: 'call',
-            destructive: true,
-            onPress: () => {
-              setStep(null);
-              void callEmergency();
-            },
-          },
+          ...(emergency
+            ? [
+                {
+                  label: 'Kolluk kuvvetlerini ara (112)',
+                  icon: 'call' as const,
+                  destructive: true,
+                  onPress: () => {
+                    setStep(null);
+                    void callEmergency();
+                  },
+                },
+              ]
+            : []),
           { label: `${noun} bildir`, icon: 'flag-outline', onPress: () => setStep('report') },
         ]}
         onClose={() => setStep(null)}

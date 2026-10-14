@@ -166,7 +166,7 @@ function Game({ roomId }: { roomId: string }) {
   const [info, setInfo] = useState<'how' | 'points' | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   // Kırmızı ünlem: 112'yi ara ya da oyunu bildir (lobide ve oyun sırasında)
-  const safety = useSafetyMenu({ type: 'room', id: roomId });
+  const safety = useSafetyMenu({ type: 'room', id: roomId }, { emergency: view?.remote !== true });
   /** Oyun bitince: bu oyundaki sıram ve yazılan puan */
   const [result, setResult] = useState<{ data: MyGameResult | null; rules: PointRules } | null>(null);
   const lock = useRef(false);

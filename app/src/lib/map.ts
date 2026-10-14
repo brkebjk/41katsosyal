@@ -239,6 +239,14 @@ export async function requestOneTimeLocation(purpose: LocationPurpose): Promise<
     if (!perm.granted) perm = await Location.requestForegroundPermissionsAsync();
     if (!perm.granted) return { ok: false, reason: 'denied' };
     if (!(await Location.hasServicesEnabledAsync())) return { ok: false, reason: 'unavailable' };
+    // Yan yana oyun: telefonun son 2 dakikada bulduğu yeterince hassas (≤100 m) konum varsa beklemeden o kullanılır
+    // (bina içinde hassas GPS bulmak 10–15 sn sürebiliyor; oda yeri ekranı bu yüzden geç açılıyordu)
+    if (purpose === 'game') {
+      const last = await Location.getLastKnownPositionAsync({ maxAge: 120_000, requiredAccuracy: 100 }).catch(() => null);
+      if (last && last.mocked !== true) {
+        return { ok: true, lat: last.coords.latitude, lon: last.coords.longitude, acc: last.coords.accuracy ?? null };
+      }
+    }
     const fix = await Promise.race([
       // Yan yana oyunda ~100 metrelik yakınlık kontrolü için daha hassas konum istenir
       Location.getCurrentPositionAsync({
@@ -350,6 +358,19 @@ export type GameLocation = { ok: true; cell: GameCell } | { ok: false; message: 
  * konum. Yalnızca bölge numarası (petek) döner ve sunucuya gider; ham konum saklanmaz. İzin verilmezse
  * oyuna girilemez; `message` kullanıcıya gösterilecek açıklamadır.
  */
+/**
+ * Konum izni zaten verildiyse yan yana oyun konumunu hemen almaya başlar (oyun şekli sorulurken arka planda bulunur).
+ * İzin yoksa boş döner; o zaman konum, uyarı penceresiyle birlikte sonra istenir.
+ */
+export async function prefetchGameLocation(): Promise<Promise<GameLocation> | null> {
+  try {
+    if (!(await Location.getForegroundPermissionsAsync()).granted) return null;
+  } catch {
+    return null;
+  }
+  return requireGameLocation();
+}
+
 export async function requireGameLocation(): Promise<GameLocation> {
   const fix = await requestOneTimeLocation('game');
   if (!fix.ok) {

@@ -8,7 +8,7 @@ import { notify, showDialog } from '@/lib/dialog';
 import { GAMES, gameTitle } from '@/lib/gameCatalog';
 import type { Cell } from '@/lib/hex';
 import type { GameKey } from '@/lib/images';
-import { requireGameLocation } from '@/lib/map';
+import { prefetchGameLocation, requireGameLocation } from '@/lib/map';
 import { DEFAULT_LIMITS, getLimits, type Limits } from '@/lib/membership';
 import { leaveLiveGames } from '@/lib/presence';
 import { confirmMeetupSafety } from '@/lib/safety';
@@ -316,12 +316,14 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
         openGameScreen(created.room.id, key);
         return;
       }
+      // İzin varsa konum, oyun şekli sorulurken arka planda bulunur (oda yeri ekranı beklemeden açılsın)
+      const early = await prefetchGameLocation();
       const mode = shark ? await askSharkMode() : await askVampireMode();
       if (!mode) return;
       // Yan yana oynanan oyunu açarken (oyuncu olarak girecekse) konum izni zorunludur; izin yoksa oda hiç açılmaz.
       let phone: Cell | undefined;
       if (mode !== 'narrator') {
-        const loc = await requireGameLocation();
+        const loc = early ? await early : await requireGameLocation();
         if (!loc.ok) {
           await notify('Oda açılamadı', loc.message, { tone: 'danger', icon: 'location' });
           return;

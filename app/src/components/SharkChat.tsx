@@ -31,6 +31,8 @@ export type ChatTabInfo = {
   label: string;
   /** Canlı görünümdeki son mesajlar (geçmiş yüklenene kadar ve okunmamış sayısı için) */
   messages: SkMsg[];
+  /** Oyun akışı bilgi satırları (yalnızca bu sekmede; okunmamış sayısına girmez) */
+  info?: SkMsg[];
   canWrite: boolean;
   placeholder: string;
   /** Yazamıyorsa nedeni */
@@ -218,7 +220,10 @@ export function SharkChat({
   }, [roomId, openTab, histKey]);
 
   const current = tabs.find((t) => t.key === openTab) ?? null;
-  const list = current ? (hist ? hist.filter((m) => (m.channel ?? 'all') === current.key) : current.messages) : [];
+  const base = current ? (hist ? hist.filter((m) => (m.channel ?? 'all') === current.key) : current.messages) : [];
+  const list = current?.info?.length
+    ? [...base, ...current.info].sort((a, b) => (Date.parse(a.at) || 0) - (Date.parse(b.at) || 0))
+    : base;
 
   // ---- Yazma ----------------------------------------------------------------------------------------
   const [text, setText] = useState('');

@@ -1302,6 +1302,7 @@ export function MessageList({
   const out: ReactNode[] = [];
   for (const m of messages) {
     const g = groupOf(m);
+    const sys = m.system;
     if (g !== last) {
       last = g;
       out.push(
@@ -1309,6 +1310,14 @@ export function MessageList({
           <Text style={styles.msgHeadText}>{groupTitle(m)}</Text>
         </View>,
       );
+    }
+    if (sys) {
+      out.push(
+        <View key={m.id} style={[styles.sysRow, { borderColor: sys.color }]}>
+          <RichLine text={m.body} chip={16} style={[styles.sysText, { color: sys.color }]} />
+        </View>,
+      );
+      continue;
     }
     const seat = seatOf?.(m.from);
     const tag = showChannel && m.channel ? CHANNEL_TAG[m.channel] : undefined;
@@ -1448,6 +1457,44 @@ export function NightResult({ notes, players }: { notes: SkNote[]; players: SkPl
             ))}
         </View>
       ))}
+    </View>
+  );
+}
+
+/** Oyuncu listesi (sağ üstteki kırmızı düğme): avatar, numara, ad ve durum; dokununca seçenekler açılır */
+export function PlayerList({ players, onPick }: { players: SkPlayer[]; onPick: (p: SkPlayer) => void }) {
+  return (
+    <View style={styles.chat}>
+      {players.map((p) => {
+        const role = p.role ? SK_ROLES[p.role] : null;
+        const status = p.left ? 'Ayrıldı' : !p.is_alive ? 'Elendi' : 'Hayatta';
+        return (
+          <Pressable
+            key={p.id}
+            onPress={() => onPick(p)}
+            disabled={p.is_me}
+            accessibilityRole="button"
+            accessibilityLabel={`${p.seat} numara ${p.name}, ${status}`}
+            style={({ pressed }) => [styles.plRow, pressed && styles.pressed]}
+          >
+            <View style={styles.plAvatar}>
+              <Avatar index={p.avatar ?? 1} size={42} />
+              <View style={styles.miniChip}>
+                <SeatChip n={p.seat} size={20} />
+              </View>
+            </View>
+            <View style={styles.flex}>
+              <Text style={styles.plName} numberOfLines={1}>
+                {p.is_me ? `${p.name} (sen)` : p.name}
+              </Text>
+              <Text style={[styles.plStatus, !p.is_alive && styles.plDead]} numberOfLines={1}>
+                {role ? `${status} · ${role.emoji} ${role.name}` : status}
+              </Text>
+            </View>
+            {!p.is_me ? <Ionicons name="ellipsis-horizontal" size={20} color="rgba(255,255,255,0.7)" /> : null}
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -1638,6 +1685,19 @@ const styles = StyleSheet.create({
   teamBadge: { alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8 },
   teamEmoji: { fontSize: 34 },
   teamName: { fontFamily: fonts.black, fontSize: 15 },
+  plRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  plAvatar: { width: 42, height: 42 },
+  plName: { color: '#FFFFFF', fontFamily: fonts.extra, fontSize: 15 },
+  plStatus: { color: '#34D399', fontFamily: fonts.semi, fontSize: 12.5 },
+  plDead: { color: '#FF8A98' },
   pickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
   pickItem: {
     width: 92,
@@ -1814,6 +1874,15 @@ const styles = StyleSheet.create({
   msg: { maxWidth: '85%', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
   mine: { alignSelf: 'flex-end', backgroundColor: 'rgba(72, 202, 228, 0.3)' },
   theirs: { alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.1)' },
+  sysRow: {
+    alignSelf: 'stretch',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  sysText: { fontFamily: fonts.extra, fontSize: 12.5, lineHeight: 17 },
   msgNight: { backgroundColor: 'rgba(28, 37, 90, 0.75)' },
   msgWho: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 1 },
   msgName: { color: '#B7A8FF', fontSize: 11, fontFamily: fonts.semi },
