@@ -15,7 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/AppText';
-import { MessageList } from '@/components/SharkStage';
+import { MessageList, type RoundTerms } from '@/components/SharkStage';
 import { getSharkHistory, type SkMsg } from '@/lib/shark';
 import { fonts } from '@/theme';
 
@@ -71,7 +71,10 @@ export function SharkChat({
   onReport,
   preferTab,
   loadHistory,
+  terms,
 }: {
+  /** Tur başlıkları (varsayılan: Köpekbalığı terimleri) */
+  terms?: RoundTerms;
   /** Mesaj geçmişini okur (varsayılan: Köpekbalığı Kafesi) */
   loadHistory?: (roomId: string) => Promise<{ messages: SkMsg[]; error: string | null }>;
   /** Baloncuğa basınca önce açılacak sekme (ör. dalışta köpekbalığına Takım sohbeti) */
@@ -344,7 +347,7 @@ export function SharkChat({
             {list.length === 0 ? (
               <Text style={styles.empty}>Henüz mesaj yok.</Text>
             ) : (
-              <MessageList messages={list} seatOf={seatOf} onReport={onReport} />
+              <MessageList messages={list} seatOf={seatOf} onReport={onReport} terms={terms} />
             )}
           </ScrollView>
           {current?.canWrite ? (

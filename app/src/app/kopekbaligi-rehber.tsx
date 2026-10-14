@@ -39,7 +39,7 @@ export default function SharkGuideScreen() {
         <>
           <P>
             Deniz temalı gizli rol oyunu (6–16 kişi). Her oyuncuya çarktan gizli bir rol gelir. Köpekbalıkları her dalışta
-            birini avlar; insanlar konuşarak, oy vererek ve yetenekleriyle köpekbalıklarını bulup kafese atmaya çalışır.
+            birini avlar; insanlar konuşarak, oy vererek ve yetenekleriyle köpekbalıklarını bulup ekipten çıkarmaya çalışır.
             Tarafsızlar kendi gizli hedeflerinin peşindedir.
           </P>
           <P>Bir tur ortalama 5–8 dakika sürer. Her şey tek ekranda; aşağı kaydırmana gerek yok.</P>
@@ -51,17 +51,17 @@ export default function SharkGuideScreen() {
         'Oyunun akışı',
         <>
           <Step n="1" title="Rol çarkı">Çark döner, rolün gelir. Ekranını kimseye gösterme.</Step>
-          <Step n="2" title="🤿 Dalış (gece)">
+          <Step n="2" title="Dalış (Resif Keşfi)">
             Görüş düşer, ekran kararır. Köpekbalıkları avını seçer, özel roller yeteneğini kullanır. Üstteki “Oksijen”
             çubuğu dalışın kalan süresidir. Seçimini bir avatara dokunup alttaki düğmeyle onaylarsın.
           </Step>
-          <Step n="3" title="☀️ Plaj (gündüz)">
-            Güneş açar; dalışta avlananlar ve rolleri herkese açıklanır. Konuşun, savunun, ipuçlarını paylaşın. Zıpkıncı
+          <Step n="3" title="Su Üstü (Toplantı)">
+            Su üstüne çıkılır; dalışta avlananlar ve rolleri herkese açıklanır. Konuşun, savunun, ipuçlarını paylaşın. Zıpkıncı
             zıpkın atabilir, Komutan kimliğini açabilir.
           </Step>
-          <Step n="4" title="⛓️ Kafes oylaması">
-            Herkes şüpheliye oy verir. En çok oyu alan kafese girer ve rolü açıklanır. Eşitlikte kimse girmez. Sonra yeni
-            dalış başlar.
+          <Step n="4" title="Karar Oylaması">
+            Herkes şüpheliye oy verir. En çok oyu alan ekipten çıkarılır ve rolü açıklanır. Eşitlikte kimse çıkmaz. Sonra
+            sıradaki dalış başlar.
           </Step>
         </>,
       )}
@@ -79,7 +79,7 @@ export default function SharkGuideScreen() {
             Avatarın içinde, alt ortadaki küçük simge rolü gösterir. Bunu yalnızca görmeye hakkı olanlar görür: sen kendi
             rolünü, köpekbalıkları takım arkadaşlarını, herkes açıklanan rolleri; oyun bitince herkes hepsini.
           </P>
-          <P>Avatarın sağ üstündeki kırmızı sayı, o kişinin aldığı kafes oyudur.</P>
+          <P>Avatarın sağ üstündeki kırmızı sayı, o kişinin aldığı ekipten çıkarma oyudur.</P>
           <P>
             Avatar çerçevesi: kendi takımından olduğunu bildiğin oyuncu ince yeşil, bilinmeyenler sarı, rolü açığa çıkan
             rakip kırmızı çerçeveyle görünür.
@@ -132,13 +132,13 @@ export default function SharkGuideScreen() {
         '🌙',
         'Dalışta ne sırayla olur?',
         <>
-          <Step n="1" title="Çekiçbaş kilitler">Kilitlediği kişinin o gecelik yeteneği çalışmaz.</Step>
+          <Step n="1" title="Çekiçbaş kilitler">Kilitlediği kişinin o resif keşfindeki yeteneği çalışmaz.</Step>
           <Step n="2" title="Korumalar">Cankurtaran ve Hemşire korur.</Step>
           <Step n="3" title="Saldırılar">
             Köpekbalıklarının avı (korunan ölmez; Mürekkep Balığı ısırılamaz), Mürekkep Balığı’nın boğması (koruma işe
             yaramaz) ve Sörfçü’nün “Telsiz Patlat”ı (korunan kurtulur).
           </Step>
-          <Step n="4" title="Bilgi">Kaplan ve Oşinograf sonuçlarını alır; plajda notlarında görünür.</Step>
+          <Step n="4" title="Bilgi">Kaplan ve Oşinograf sonuçlarını alır; su üstünde notlarında görünür.</Step>
           <P>
             Köpekbalıklarının avı: en çok seçilen kişi. Eşitse Alfa’nın seçimi geçer (Alfa ölmüşse en eski köpekbalığı).
           </P>
@@ -159,7 +159,7 @@ export default function SharkGuideScreen() {
             Tek başına ya da biriyle baş başa kalınca.
           </Win>
           <Win color={SK_ROLES.scavenger.color} title="Batık Hazine Avcısı">
-            Oylamayla kafese atılınca. Oyun o an biter ve herkes kaybeder.
+            Karar Oylamasıyla ekipten çıkarılınca. Oyun o an biter ve herkes kaybeder.
           </Win>
         </>,
       )}
@@ -193,7 +193,7 @@ export default function SharkGuideScreen() {
         <>
           <P>
             Uzaktan odada herkes kendi telefonundan oynar. Konuşmak için mikrofon düğmesine basılı tut: en çok 5 saniyelik
-            bir ses mesajı kaydedilir. Her tartışmada (plaj + oylama ya da bir dalış) toplam en çok 10 saniye
+            bir ses mesajı kaydedilir. Her tartışmada (su üstü + oylama ya da bir dalış) toplam en çok 10 saniye
             konuşabilirsin. Mesajlar sırayla çalar; konuşanın avatarı öne çıkar. Biri konuşurken sen de basabilirsin,
             senin mesajın onunki bitince duyulur.
           </P>
@@ -207,7 +207,7 @@ export default function SharkGuideScreen() {
           <P>
             Yazışma için ekrandaki yüzen 💬 baloncuğa dokun; baloncuğu istediğin yere sürükleyebilirsin. Açılan pencerenin
             başlığından tutup pencereyi taşıyabilirsin. Genel, Takım (köpekbalıkları) ve Ölüler sekmelerinde oyunun bütün
-            mesaj geçmişi gece ve gündüz başlıklarıyla görünür. Yeni mesaj gelince baloncukta kırmızı sayı çıkar.
+            mesaj geçmişi resif keşfi ve toplantı başlıklarıyla görünür. Yeni mesaj gelince baloncukta kırmızı sayı çıkar.
           </P>
           <P>
             Oyun başladıktan sonra oda sahibi ayrılırsa oda kapanmaz: sahiplik başka bir oyuncuya geçer ve oyun sürer.
@@ -236,19 +236,19 @@ export default function SharkGuideScreen() {
 /** Bütün rollerin kısa özeti (rehberin en üstünde) */
 const SHORT: Record<SkRole, string> = {
   alpha: 'Dalışta avı seçer; oylar eşitse son söz onundur.',
-  tiger: 'Dalışta av + birini izler: o gece kimi ziyaret ettiğini öğrenir.',
+  tiger: 'Dalışta av + birini izler: o dalışta kimi ziyaret ettiğini öğrenir.',
   hammer: 'Dalışta av + bir insanın yeteneğini kilitler.',
-  nurse: 'Dalışta av + bir köpekbalığını korur (Sörfçü ve ertesi gün Zıpkın).',
+  nurse: 'Dalışta av + bir köpekbalığını korur (Sörfçü ve sonraki toplantıda Zıpkın).',
   shark: 'Dalışta takımıyla avı seçer.',
   lifeguard: 'Dalışta birini korur; kendini yalnızca 1 kez.',
-  oceanographer: 'Dalışta birine bakar: takımı + son 2 gecenin akıntısı.',
-  spearman: 'Plajda tek zıpkın (2. günden). Masum vursa da ölmez.',
-  marshal: 'Plajda kimliğini açar; kafes oyu 2 sayılır.',
-  medium: 'Plajda ve oylamada ölülerin sohbetini okur, yazar.',
+  oceanographer: 'Dalışta birine bakar: takımı + son 2 resif keşfinin akıntısı.',
+  spearman: 'Su üstünde tek zıpkın (2. toplantıdan). Masum vursa da ölmez.',
+  marshal: 'Su üstünde kimliğini açar; oyu 2 sayılır.',
+  medium: 'Su üstünde ve oylamada ölülerin sohbetini okur, yazar.',
   tourist: 'Özel yeteneği yok; konuşur, oy verir.',
   squid: 'Dalışta birini boğar (kalkan deler); ısırılamaz. Tek kalırsa kazanır.',
   surfer: 'Dalışta işaretler ya da Telsiz Patlat. Tek kalırsa kazanır.',
-  scavenger: 'Oylamayla kafese atılırsa oyun biter, yalnız o kazanır.',
+  scavenger: 'Oylamayla ekipten çıkarılırsa oyun biter, yalnız o kazanır.',
 };
 
 const TABLE_ORDER: SkRole[] = [

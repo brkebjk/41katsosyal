@@ -12,8 +12,8 @@ import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 const MEDAL: Record<number, string> = { 1: '#FFC93C', 2: '#C9D1E3', 3: '#E39A5B' };
 
 /**
- * Ekip Sıralaması: bu ay ekipçe oynanan puanlı oyunlardan ekiplerin topladığı puan. Kişisel sıralamayı ve hediyeyi
- * etkilemez. Ekibin yoksa "Ekibim" ekranına gider.
+ * Klan Sıralaması: bu ay klan arkadaşlarıyla oynanan puanlı oyunlardan klanlarin topladığı puan. Kişisel sıralamayı ve hediyeyi
+ * etkilemez. Klanın yoksa "Klanım" ekranına gider.
  */
 export function CrewBoard({ refreshKey = 0 }: { refreshKey?: number }) {
   const [rows, setRows] = useState<CrewRankRow[] | null>(null);
@@ -41,14 +41,14 @@ export function CrewBoard({ refreshKey = 0 }: { refreshKey?: number }) {
       <View style={styles.info}>
         <Ionicons name="people" size={18} color={colors.success} />
         <Text style={styles.infoText}>
-          Yalnızca ekipçe oynanan puanlı oyunlar sayılır (aynı oyunda ekipten en az 2 kişi). Yeni üyenin katkısı 3 gün
+          Yalnızca klan arkadaşlarıyla oynanan puanlı oyunlar sayılır (aynı oyunda klandan en az 2 kişi). Yeni üyenin katkısı 3 gün
           sonra başlar.
         </Text>
       </View>
       {rows === null ? (
-        <Text style={styles.muted}>{error ?? 'Ekip sıralaması yükleniyor…'}</Text>
+        <Text style={styles.muted}>{error ?? 'Klan sıralaması yükleniyor…'}</Text>
       ) : rows.length === 0 ? (
-        <Text style={styles.muted}>Bu ay henüz ekip puanı yok. Arkadaşlarınla ekip kur ve birlikte oyna.</Text>
+        <Text style={styles.muted}>Bu ay henüz klan puanı yok. Arkadaşlarınla klan kur ve birlikte oyna.</Text>
       ) : (
         rows.map((r) => (
           <View key={`${r.place}-${r.crew_name}`} style={[styles.row, r.is_mine && styles.rowMine]}>
@@ -58,7 +58,7 @@ export function CrewBoard({ refreshKey = 0 }: { refreshKey?: number }) {
             <View style={styles.flex}>
               <Text style={styles.name} numberOfLines={1}>
                 {r.crew_name}
-                {r.is_mine ? <Text style={styles.mineTag}> · ekibin</Text> : null}
+                {r.is_mine ? <Text style={styles.mineTag}> · klanın</Text> : null}
               </Text>
               <Text style={styles.sub}>{`${r.members} kişi`}</Text>
             </View>
@@ -67,7 +67,7 @@ export function CrewBoard({ refreshKey = 0 }: { refreshKey?: number }) {
         ))
       )}
       {rows !== null && !mine ? (
-        <PrimaryButton label="Ekibim" variant="ghost" onPress={() => router.push('/ekip')} />
+        <PrimaryButton label="Klanım" variant="ghost" onPress={() => router.push('/klan')} />
       ) : null}
     </View>
   );

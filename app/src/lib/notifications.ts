@@ -40,8 +40,8 @@ export const KIND_LABEL: Record<NotificationKind, string> = {
   mention: 'Bahsetme',
   dm: 'Özel mesaj',
   room_msg: 'Oda yazışması',
-  crew_invite: 'Ekip daveti',
-  crew_mention: 'Ekip sohbeti',
+  crew_invite: 'Klan daveti',
+  crew_mention: 'Klan sohbeti',
   announcement: 'Duyuru',
 };
 
@@ -56,7 +56,7 @@ const ROUTES = [
   '/acik-odalar',
   '/hazine',
   '/cekilis',
-  '/ekip',
+  '/klan',
 ] as const;
 type SimpleRoute = Exclude<(typeof ROUTES)[number], '/acik-odalar' | '/akis'>;
 

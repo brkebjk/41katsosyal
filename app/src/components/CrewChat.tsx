@@ -25,7 +25,7 @@ import { colors, fonts, fontSizes, spacing } from '@/theme';
 const CHAT_POLL_MS = 4000;
 
 /**
- * Ekip sohbeti (mesaj kutusunda ekibin adıyla açılır). Üstte ekip arkadaşları: dokununca @rumuz yazıya eklenir ve
+ * Klan sohbeti (mesaj kutusunda klanın adıyla açılır). Üstte klan arkadaşları: dokununca @rumuz yazıya eklenir ve
  * etiketlenen arkadaşa bildirim gider. Başkasının mesajına uzun basınca şikâyet edilir.
  */
 export function CrewChat({ visible, title, onClose }: { visible: boolean; title: string; onClose: () => void }) {
@@ -107,17 +107,17 @@ export function CrewChat({ visible, title, onClose }: { visible: boolean; title:
                 {title}
               </Text>
               <Text style={styles.sub} numberOfLines={1}>
-                Ekip sohbeti · @rumuz ile etiketle
+                Klan sohbeti · @rumuz ile etiketle
               </Text>
             </View>
             <Pressable
               onPress={() => {
                 onClose();
-                router.push('/ekip');
+                router.push('/klan');
               }}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel="Ekibim"
+              accessibilityLabel="Klanım"
               style={styles.headBtn}
             >
               <Ionicons name="settings-outline" size={18} color={colors.primary} />
@@ -159,7 +159,7 @@ export function CrewChat({ visible, title, onClose }: { visible: boolean; title:
                     <ActivityIndicator color={colors.primary} style={styles.loader} />
                   )
                 ) : list.length === 0 ? (
-                  <Text style={styles.muted}>Henüz mesaj yok. Ekibine ilk mesajı yaz.</Text>
+                  <Text style={styles.muted}>Henüz mesaj yok. Klanına ilk mesajı yaz.</Text>
                 ) : null}
                 {list.map((m) => (
                   <Pressable
@@ -179,13 +179,13 @@ export function CrewChat({ visible, title, onClose }: { visible: boolean; title:
                 <TextInput
                   value={text}
                   onChangeText={setText}
-                  placeholder="Ekibine yaz…"
+                  placeholder="Klanına yaz…"
                   placeholderTextColor={colors.textMuted}
                   selectionColor={colors.primary}
                   maxLength={CREW_MAX_BODY}
                   multiline
                   style={styles.input}
-                  accessibilityLabel="Ekibine yaz"
+                  accessibilityLabel="Klanına yaz"
                   testID="crew-input"
                 />
                 <Pressable

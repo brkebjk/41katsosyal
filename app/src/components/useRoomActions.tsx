@@ -119,7 +119,7 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
       title: 'Bekleyen odaya uzaktan katıl',
       message:
         room.game_type === 'shark_cage'
-          ? `${room.host_name} odasında herkes kendi telefonundan oynar. Plajda bas-konuş ses mesajlarıyla konuşulur. Uzaktan oyunda bu oyundan ayda en çok 250 puan kazanılır; yan yana oyun 7 kat puan verir.`
+          ? `${room.host_name} odasında herkes kendi telefonundan oynar. Su üstünde bas-konuş ses mesajlarıyla konuşulur. Uzaktan oyunda bu oyundan ayda en çok 250 puan kazanılır; yan yana oyun 7 kat puan verir.`
           : `${room.host_name} odasında herkes kendi telefonundan oynar. Sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur. Uzaktan oyunda bu oyundan ayda en çok 250 puan kazanılır; yan yana oyun 7 kat puan verir.`,
       icon: 'headset',
       buttons: [
@@ -231,7 +231,7 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
     buttons.push({ label: 'Vazgeç', value: null, style: 'ghost' });
     return showDialog<RoomMode | null>({
       title: 'Köpekbalığı Kafesi nasıl oynansın?',
-      message: `Otomatik Oyun: yönetici gerekmez; dalış, plaj ve oylama süreleri dolunca oyun kendiliğinden ilerler.\n\nBen Yöneticiyim: aşamaları sen ilerletirsin; sen de oynarsın ama rolleri görmezsin.${
+      message: `Otomatik Oyun: yönetici gerekmez; dalış, su üstü ve oylama süreleri dolunca oyun kendiliğinden ilerler.\n\nBen Yöneticiyim: aşamaları sen ilerletirsin; sen de oynarsın ama rolleri görmezsin.${
         event
           ? '\n\nAnlatıcı: oynamazsın, herkesin rolünü görür ve oyunu sen anlatırsın. Anlatıcılı oyunda kimse puan almaz.'
           : ''
@@ -269,7 +269,7 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
       const where = preset ?? await showDialog<'side' | 'remote' | null>({
         title: 'Nasıl oynanacak?',
         message: shark
-          ? 'Yan yana. Aynı masada oturursunuz, konum doğrulanır. 7 kat puan verir (ayda en çok 1.750). Mekân koduyla mekânda oynarsan +%25.\n\nUzaktan eşleş. Haritadan oyuncu aranır, herkes kendi telefonundan oynar ve plajda bas-konuş ses mesajlarıyla konuşulur. Ayda en çok 250 puan.'
+          ? 'Yan yana. Aynı masada oturursunuz, konum doğrulanır. 7 kat puan verir (ayda en çok 1.750). Mekân koduyla mekânda oynarsan +%25.\n\nUzaktan eşleş. Haritadan oyuncu aranır, herkes kendi telefonundan oynar ve su üstünde bas-konuş ses mesajlarıyla konuşulur. Ayda en çok 250 puan.'
           : 'Yan yana. Aynı masada oturursunuz, konum doğrulanır. 7 kat puan verir (ayda en çok 1.750). Mekân koduyla mekânda oynarsan +%25.\n\nUzaktan eşleş. Haritadan oyuncu aranır, herkes kendi telefonundan oynar ve sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur. Ayda en çok 250 puan.',
         icon: 'people',
         buttons: [

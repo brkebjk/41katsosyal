@@ -179,7 +179,7 @@ export default function LeaderboardScreen() {
   return (
     <Screen
       title="Sıralama"
-      subtitle={`${mode === 'points' ? '' : mode === 'crew' ? 'Ekipler · ' : 'Oyunlar · '}${monthTitle(thisMonth ? 0 : 1)}`}
+      subtitle={`${mode === 'points' ? '' : mode === 'crew' ? 'Klanlar · ' : 'Oyunlar · '}${monthTitle(thisMonth ? 0 : 1)}`}
       onRefresh={onRefresh}
       refreshing={refreshing}
       onBack={() => (router.canGoBack() ? router.back() : router.replace('/games'))}
@@ -210,7 +210,7 @@ export default function LeaderboardScreen() {
         options={[
           { value: 'points', label: 'Genel puan' },
           { value: 'games', label: 'Oyunlar' },
-          { value: 'crew', label: 'Ekip' },
+          { value: 'crew', label: 'Klan' },
         ]}
         value={mode}
         onChange={setMode}

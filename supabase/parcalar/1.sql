@@ -109,12 +109,12 @@ create table if not exists public.levels (
 );
 -- Seviye ödülü. Her seviye YALNIZCA kendi ödülünü verir (birikmez). Ödül her ay yeniden geçerlidir: oyun / etkinlik
 -- hakkı o ayın hakkına eklenir; kullanılmayan hak sonraki aya geçmez (aylık haklar ay başında zaten sıfırlanır).
---   game_plus1 → ayda +1 oyun hakkı · event_plus1 → ayda +1 etkinlik hakkı
+--   event_min2 → aylık etkinlik hakkı en az 2 · event_plus1 → ayda +1 etkinlik hakkı (game_plus1 eski, etkisiz)
 --   quiz_mult → Bilgi Yarışması puanı ve puan sınırları × level_quiz_mult_pct/100 · unlimited_lives → Bilgi Yarışması'nda sınırsız can
 alter table public.levels add column if not exists perk text;
 alter table public.levels drop constraint if exists levels_perk_check;
 alter table public.levels add constraint levels_perk_check
-  check (perk is null or perk in ('game_plus1', 'event_plus1', 'quiz_mult', 'unlimited_lives'));
+  check (perk is null or perk in ('game_plus1', 'event_min2', 'event_plus1', 'quiz_mult', 'unlimited_lives'));
 
 -- Admin'in uygulamadan değiştirebileceği kurallar (kod değiştirmeden)
 create table if not exists public.app_settings (
@@ -275,6 +275,31 @@ begin
 end $$;
 drop trigger if exists rp_seat on public.room_players;
 create trigger rp_seat before insert on public.room_players for each row execute function public._rp_seat();
+
+-- KESİN ODA SINIRI: odadaki (ayrılmamış) oyuncu sayısı oyunun en çok oyuncu sayısını (game_types.max_players) hiçbir
+-- yoldan aşamaz: katılma, yeni el, deneme oyuncusu (bot) ekleme, ayrılıp geri dönme. Aynı anda gelen girişler sıraya
+-- girer (numara verme kilidiyle aynı kilit), bu yüzden iki kişi aynı anda son yere giremez.
+create or replace function public._rp_cap()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_max int;
+begin
+  if new.left_at is not null then return new; end if;
+  if tg_op = 'UPDATE' and old.left_at is null then return new; end if;
+  perform pg_advisory_xact_lock(hashtext('rp_seat:' || new.room_id::text));
+  select coalesce(gt.max_players, 30) into v_max
+    from public.game_rooms r join public.game_types gt on gt.key = r.game_type
+   where r.id = new.room_id;
+  if v_max is not null
+     and (select count(*) from public.room_players
+           where room_id = new.room_id and left_at is null and user_id <> new.user_id) >= v_max then
+    raise exception 'room_full';
+  end if;
+  return new;
+end $$;
+drop trigger if exists rp_cap on public.room_players;
+create trigger rp_cap before insert or update of left_at on public.room_players
+  for each row execute function public._rp_cap();
 
 -- Oyun başlarken boşluklar kapanır: oyuncular sıralarını koruyarak 1'den başlayan numaralara geçer
 -- (ör. 10 kişilik odada 16 numaraya oturan, en baştaki boş numaraya geçer)
@@ -2227,14 +2252,16 @@ returns text language sql stable security definer set search_path = public as $$
      and exists (select 1 from public.profiles p where p.id = p_user and p.role = 'user' and p.banned_at is null);
 $$;
 
--- Üyenin aylık etkinlik hakkı: ücretsiz / premium / etkinlik lideri (hangisi büyükse) + seviye ödülü (+1)
+-- Üyenin aylık etkinlik hakkı: ücretsiz / premium / etkinlik lideri / Seviye 2 ödülü (en az 2) hangisi büyükse
+-- + seviye ödülü (+1)
 create or replace function public._event_quota(p public.profiles)
 returns int language sql stable security definer set search_path = public as $$
   select greatest(
     case when p.premium_until is not null and p.premium_until > now()
          then public.setting_int('premium_monthly_event_quota', 4)
          else public.setting_int('free_monthly_event_quota', 1) end,
-    case when p.event_leader then public.setting_int('leader_monthly_event_quota', 8) else 0 end)
+    case when p.event_leader then public.setting_int('leader_monthly_event_quota', 8) else 0 end,
+    case when public._level_perk(p.id) = 'event_min2' then 2 else 0 end)
     + case when public._level_perk(p.id) = 'event_plus1' then 1 else 0 end;
 $$;
 
@@ -3150,7 +3177,12 @@ begin
     if f.status = 'accepted' then raise exception 'already_friends'; end if;
     if f.requester_id = v.id then
       if f.status = 'pending' then raise exception 'already_requested'; end if;
-      return 'sent'; -- reddedilmiş: gönderene bildirilmez
+      -- Reddedilmiş: gönderene bildirilmez. Aynı kişiye en erken 1 saat sonra yeniden istek gönderilebilir.
+      if f.created_at > now() - make_interval(mins => greatest(1, public.setting_int('friend_request_retry_minutes', 60))) then
+        return 'sent';
+      end if;
+      delete from public.friendships where id = f.id;
+      f := null;
     end if;
     -- Karşı taraf bana istek atmıştı
     if f.status = 'pending' then
@@ -3160,7 +3192,7 @@ begin
       return 'accepted';
     end if;
     -- Ben onun isteğini reddetmiştim, şimdi ben istiyorum: eski satır silinip yeni istek açılır
-    delete from public.friendships where id = f.id;
+    if f.id is not null then delete from public.friendships where id = f.id; end if;
   end if;
 
   if (select count(*) from public.friendships
@@ -3396,10 +3428,16 @@ begin
     raise exception 'target_not_found';
   end if;
   -- Elenenlerin sohbeti: aynı odadaki bir oyuncu, başkasının mesajını bildirebilir
+  -- (herkese açık yazışmada önceki 2 elin mesajları da okunur; o mesajları bu elin oyuncusu da bildirebilir)
   if p_type = 'vv_dead' and not exists (
        select 1 from public.vv_dead_chat d
          join public.room_players rp on rp.room_id = d.room_id and rp.user_id = v.id
-        where d.id = p_id and d.user_id <> v.id) then
+        where d.id = p_id and d.user_id <> v.id)
+     and not exists (
+       select 1 from public.vv_dead_chat d
+         join public.room_players rp on rp.user_id = v.id and rp.left_at is null
+         join public._room_chain(rp.room_id) c on c.room_id = d.room_id
+        where d.id = p_id and d.user_id <> v.id and d.channel = 'all') then
     raise exception 'target_not_found';
   end if;
   -- Vampir–Köylü fısıltısı: yalnızca fısıltıyı ALAN kişi bildirebilir (içeriği yalnızca o görür)
@@ -3623,7 +3661,7 @@ begin
   end if;
 
   select max_players into v_max from public.game_types where key = v_room.game_type;
-  if (select count(*) from public.room_players where room_id = v_room.id) >= coalesce(v_max, 30) then
+  if (select count(*) from public.room_players where room_id = v_room.id and left_at is null) >= coalesce(v_max, 30) then
     raise exception 'room_full';
   end if;
 
@@ -6761,48 +6799,3 @@ end $$;
 -- Sıralama ekranının üstündeki bilgi: tablo ne zaman güncellendi / ne zaman yenilenecek, ay ne zaman biter ve benim bu ayki puanım.
 -- (Puanlar hesaba anında yazılır; yalnızca sıralama tablosu haftada bir güncellenir.)
 drop function if exists public.ranking_info();
-create or replace function public.ranking_info()
-returns table (weekly boolean, as_of timestamptz, next_at timestamptz, month_start timestamptz, month_end timestamptz,
-               my_points numeric, my_place int)
-language plpgsql volatile security definer set search_path = public as $$
-#variable_conflict use_column
-declare
-  v_w boolean := public.setting_bool('rank_weekly_refresh');
-begin
-  if not public._is_active_user() then return; end if;
-  if v_w then perform public._ensure_rank_snapshot('points'); end if;
-  return query
-  select v_w,
-         (case when v_w then public._rank_boundary() else now() end),
-         (case when v_w then public._rank_next() else null::timestamptz end),
-         public._month_start(),
-         ((date_trunc('month', now() at time zone 'Europe/Istanbul') + interval '1 month') at time zone 'Europe/Istanbul'),
-         coalesce((select sum(pe.amount) from public.point_events pe
-                    where pe.user_id = auth.uid() and pe.created_at >= public._month_start()), 0),
-         (select s.place from public.rank_snapshots s where v_w and s.kind = 'points' and s.user_id = auth.uid());
-end $$;
-
--- Benim geçerli ünvanlarım (profilde gösterilir)
-drop function if exists public.my_titles();
-create or replace function public.my_titles()
-returns table (game_type text, label text, valid_until timestamptz, score numeric, plays int)
-language sql stable security definer set search_path = public as $$
-  select c.game_type, c.label, c.valid_until, c.score, c.plays
-    from public._champion_titles() c
-   where c.user_id = auth.uid() and public._is_active_user()
-   order by c.sort_order;
-$$;
-
--- Bir oyunun şu anki şampiyonu (oyun sıralaması ekranında gösterilir). Yoksa satır dönmez.
-drop function if exists public.get_game_champion(text);
-create or replace function public.get_game_champion(p_game text)
-returns table (full_name text, label text, valid_until timestamptz, score numeric, plays int, is_me boolean)
-language sql stable security definer set search_path = public as $$
-  select pr.full_name, c.label, c.valid_until, c.score, c.plays, (pr.id = auth.uid())
-    from public._champion_titles() c
-    join public.profiles pr on pr.id = c.user_id
-   where c.game_type = p_game and public._is_active_user();
-$$;
-
--- Bu ay hangi kaynaktan kaç puan kazandım? (ekranda "Puan geçmişim" için)
-drop function if exists public.my_points_this_month();

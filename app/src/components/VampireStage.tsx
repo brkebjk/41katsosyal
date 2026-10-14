@@ -227,6 +227,41 @@ export function SkipToggle({
   );
 }
 
+/** "Tartışmayı geç": küçük yuvarlak yeşil düğme. Basınca işaretlenir ve kaç kişinin geçmek istediği görünür (ör. 3/10). */
+export function SkipRound({
+  skip,
+  busy,
+  onToggle,
+}: {
+  skip: { yes: number; alive: number; needed: number; mine: boolean };
+  busy?: boolean;
+  onToggle: (on: boolean) => void;
+}) {
+  return (
+    <Pressable
+      onPress={() => onToggle(!skip.mine)}
+      disabled={busy}
+      hitSlop={6}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: skip.mine, disabled: !!busy }}
+      accessibilityLabel={`Tartışmayı geç. ${skip.yes} kişi işaretledi, ${skip.needed} gerekli.`}
+      testID="skip-discussion"
+      style={({ pressed }) => [styles.skipRound, skip.mine && styles.skipRoundOn, pressed && styles.pressed]}
+    >
+      {skip.mine ? (
+        <Text style={styles.skipRoundCount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+          {`${skip.yes}/${skip.needed}`}
+        </Text>
+      ) : (
+        <>
+          <Ionicons name="play-forward" size={17} color="#FFFFFF" />
+          <Text style={styles.skipRoundLabel}>Geç</Text>
+        </>
+      )}
+    </Pressable>
+  );
+}
+
 /** Kısa bilgi hapı (ör. "Deneme odası", "Elendin") */
 export function Pill({ icon, text, tone = 'info' }: { icon?: IconName; text: string; tone?: 'info' | 'danger' | 'warn' }) {
   const color = tone === 'danger' ? G.redSoft : tone === 'warn' ? G.gold : G.text;
@@ -591,6 +626,19 @@ const styles = StyleSheet.create({
   skipBar: { height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.15)', overflow: 'hidden' },
   skipFill: { height: '100%', borderRadius: 2, backgroundColor: G.teal },
   skipCount: { color: G.text, fontFamily: fonts.black, fontSize: 14 },
+  skipRound: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#16A34A',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  skipRoundOn: { backgroundColor: '#0E7A37' },
+  skipRoundLabel: { color: '#FFFFFF', fontFamily: fonts.extra, fontSize: 10, marginTop: -1 },
+  skipRoundCount: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 14, paddingHorizontal: 3 },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -741,9 +741,9 @@ function ProfileScreen() {
         />
         <ListRow
           icon="people-circle"
-          title="Ekibim"
-          subtitle="Arkadaşlarınla ekip kur, Ekip Sıralaması'nda yarışın"
-          onPress={() => router.push('/ekip')}
+          title="Klanım"
+          subtitle="Arkadaşlarınla klan kur, Klan Sıralaması'nda yarışın"
+          onPress={() => router.push('/klan')}
         />
         <ListRow
           icon="notifications"

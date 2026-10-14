@@ -100,11 +100,11 @@ function buildSections(
   });
 
   sections.push({
-    title: 'Ekip Sıralaması',
+    title: 'Klan Sıralaması',
     lines: [
-      'Arkadaşlarınla en çok 5 kişilik bir ekip kurabilirsin. Ekibe yalnızca ekipteki birinin arkadaşı davet edilir.',
-      'Ekipçe oynanan puanlı oyunların (aynı oyunda ekipten en az 2 kişi) puanı Ekip Sıralaması’na da yazılır. Kişisel puanın ve aylık hedeflerin değişmez; ekip sıralaması hediyeye dahil değildir.',
-      'Ekibe yeni giren üyenin ekip puanına katkısı 3 gün sonra sayılmaya başlar. Her üye haftada 1 kez ekibe girebilir (kurmak, katılmak ya da değiştirmek).',
+      'Arkadaşlarınla en çok 5 kişilik bir klan kurabilirsin. Klana yalnızca klandaki birinin arkadaşı davet edilir.',
+      'Klan arkadaşlarıyla oynanan puanlı oyunların (aynı oyunda klandan en az 2 kişi) puanı Klan Sıralaması’na da yazılır. Kişisel puanın ve aylık hedeflerin değişmez; klan sıralaması hediyeye dahil değildir.',
+      'Klana yeni giren üyenin klan puanına katkısı 3 gün sonra sayılmaya başlar. Her üye haftada 1 kez klana girebilir (kurmak, katılmak ya da değiştirmek).',
     ],
   });
 

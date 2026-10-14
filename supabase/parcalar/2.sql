@@ -1,6 +1,51 @@
 -- PARÇA 2 / 4 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+create or replace function public.ranking_info()
+returns table (weekly boolean, as_of timestamptz, next_at timestamptz, month_start timestamptz, month_end timestamptz,
+               my_points numeric, my_place int)
+language plpgsql volatile security definer set search_path = public as $$
+#variable_conflict use_column
+declare
+  v_w boolean := public.setting_bool('rank_weekly_refresh');
+begin
+  if not public._is_active_user() then return; end if;
+  if v_w then perform public._ensure_rank_snapshot('points'); end if;
+  return query
+  select v_w,
+         (case when v_w then public._rank_boundary() else now() end),
+         (case when v_w then public._rank_next() else null::timestamptz end),
+         public._month_start(),
+         ((date_trunc('month', now() at time zone 'Europe/Istanbul') + interval '1 month') at time zone 'Europe/Istanbul'),
+         coalesce((select sum(pe.amount) from public.point_events pe
+                    where pe.user_id = auth.uid() and pe.created_at >= public._month_start()), 0),
+         (select s.place from public.rank_snapshots s where v_w and s.kind = 'points' and s.user_id = auth.uid());
+end $$;
+
+-- Benim geçerli ünvanlarım (profilde gösterilir)
+drop function if exists public.my_titles();
+create or replace function public.my_titles()
+returns table (game_type text, label text, valid_until timestamptz, score numeric, plays int)
+language sql stable security definer set search_path = public as $$
+  select c.game_type, c.label, c.valid_until, c.score, c.plays
+    from public._champion_titles() c
+   where c.user_id = auth.uid() and public._is_active_user()
+   order by c.sort_order;
+$$;
+
+-- Bir oyunun şu anki şampiyonu (oyun sıralaması ekranında gösterilir). Yoksa satır dönmez.
+drop function if exists public.get_game_champion(text);
+create or replace function public.get_game_champion(p_game text)
+returns table (full_name text, label text, valid_until timestamptz, score numeric, plays int, is_me boolean)
+language sql stable security definer set search_path = public as $$
+  select pr.full_name, c.label, c.valid_until, c.score, c.plays, (pr.id = auth.uid())
+    from public._champion_titles() c
+    join public.profiles pr on pr.id = c.user_id
+   where c.game_type = p_game and public._is_active_user();
+$$;
+
+-- Bu ay hangi kaynaktan kaç puan kazandım? (ekranda "Puan geçmişim" için)
+drop function if exists public.my_points_this_month();
 create or replace function public.my_points_this_month()
 returns table (source text, points numeric, entries int)
 language sql stable security definer set search_path = public as $$
@@ -6475,7 +6520,7 @@ end $$;
 
 insert into public.levels (level, name, min_points, reward_package, perk) values
   (1, 'Yeni Komşu', 0, null, null),
-  (2, 'Mahalle Dostu', 250, null, 'game_plus1'),
+  (2, 'Mahalle Dostu', 250, null, 'event_min2'),
   (3, 'Sokak Kâşifi', 1200, null, 'event_plus1'),
   (4, 'Meydan Müdavimi', 3500, null, 'quiz_mult'),
   (5, 'Şehrin Yıldızı', 8000, null, 'unlimited_lives')
@@ -6487,7 +6532,7 @@ update public.levels l set min_points = x.new_min
  where l.level = x.lvl and l.min_points = x.old_min;
 -- Seviye ödülleri (boşsa doldurulur; moderatörün değiştirdiğine dokunulmaz)
 update public.levels l set perk = x.perk
-  from (values (2, 'game_plus1'), (3, 'event_plus1'), (4, 'quiz_mult'), (5, 'unlimited_lives')) as x(lvl, perk)
+  from (values (2, 'event_min2'), (3, 'event_plus1'), (4, 'quiz_mult'), (5, 'unlimited_lives')) as x(lvl, perk)
  where l.level = x.lvl and l.perk is null;
 -- Seviye adları şehir ve sosyallik temalı oldu (eski "Kat Görevlisi" adı moderatörün görünen adıyla karışıyordu).
 -- Yalnızca eski varsayılan adlar değişir; moderatörün sonradan verdiği bir ad varsa ona dokunulmaz.

@@ -1,5 +1,5 @@
-// Ekip (oyun ekibi): arkadaş olanlar kalıcı bir ekip kurar (en çok 5 kişi). Ekipçe oynanan puanlı oyunların puanı
-// Ekip Sıralaması'na da yazılır. Her üye haftada 1 kez ekibe girer; yeni üyenin katkısı 3 gün sonra sayılır.
+// Klan (oyun klanı): arkadaş olanlar kalıcı bir klan kurar (en çok 5 kişi). Klan arkadaşlarıyla oynanan puanlı oyunların puanı
+// Klan Sıralaması'na da yazılır. Her üye haftada 1 kez klana girer; yeni üyenin katkısı 3 gün sonra sayılır.
 // Bütün kurallar sunucudadır; buradaki sayılar yalnızca ekranda anlatmak için.
 
 import { callRpc, callRpcVoid, type Result } from '@/lib/rpc';
@@ -14,7 +14,7 @@ export type CrewMember = {
   is_founder: boolean;
   is_friend: boolean;
   joined_at: string;
-  /** Ekip puanına katkısının sayılmaya başladığı an */
+  /** Klan puanına katkısının sayılmaya başladığı an */
   counts_from: string;
   month_points: number;
 };
@@ -24,7 +24,7 @@ export type CrewInvite = { id: string; crew_name: string; from_name: string; cre
 export type CrewView = {
   max_members: number;
   contrib_days: number;
-  /** Ekibe yeniden girebileceğin an (haftada 1 kuralı); boşsa şimdi girebilirsin */
+  /** Klana yeniden girebileceğin an (haftada 1 kuralı); boşsa şimdi girebilirsin */
   next_change_at: string | null;
   crew: {
     id: string;
@@ -60,17 +60,17 @@ export type CrewTarget = { friend: boolean; same_crew: boolean; can_invite: bool
 export const CREW_MAX_BODY = 500;
 
 const CREW_TEXT: Record<string, string> = {
-  crew_not_allowed: 'Bu hesap ekip kuramaz.',
-  crew_already_member: 'Zaten bir ekiptesin. Yeni ekip kurmak için önce ekibinden ayrıl.',
-  crew_change_wait: 'Ekibe haftada 1 kez girilebilir (kurmak, katılmak, değiştirmek). Biraz sonra tekrar dene.',
-  crew_invalid_name: 'Ekip adı 2 ile 30 karakter arasında olmalı; bağlantı ya da iletişim bilgisi içeremez.',
-  crew_not_member: 'Bir ekipte değilsin.',
-  crew_founder_only: 'Bunu yalnızca ekibin kurucusu yapabilir.',
-  crew_target_invalid: 'Bu kişi ekibe davet edilemez.',
-  crew_not_friend: 'Ekibe yalnızca arkadaşını davet edebilirsin. Önce arkadaş ekle.',
-  crew_already_in: 'Bu kişi zaten ekibinde.',
+  crew_not_allowed: 'Bu hesap klan kuramaz.',
+  crew_already_member: 'Zaten bir klandasin. Yeni klan kurmak için önce klanından ayrıl.',
+  crew_change_wait: 'Klana haftada 1 kez girilebilir (kurmak, katılmak, değiştirmek). Biraz sonra tekrar dene.',
+  crew_invalid_name: 'Klan adı 2 ile 30 karakter arasında olmalı; bağlantı ya da iletişim bilgisi içeremez.',
+  crew_not_member: 'Bir klanda değilsin.',
+  crew_founder_only: 'Bunu yalnızca klanın kurucusu yapabilir.',
+  crew_target_invalid: 'Bu kişi klana davet edilemez.',
+  crew_not_friend: 'Klana yalnızca arkadaşını davet edebilirsin. Önce arkadaş ekle.',
+  crew_already_in: 'Bu kişi zaten klanınde.',
   crew_invite_exists: 'Bu kişiye zaten davet gönderdin.',
-  crew_full: 'Ekip dolu (en çok 5 kişi, bekleyen davetler dahil).',
+  crew_full: 'Klan dolu (en çok 5 kişi, bekleyen davetler dahil).',
   crew_invite_not_found: 'Davet bulunamadı.',
   crew_invite_closed: 'Bu davet artık geçerli değil.',
   invalid_body: 'Mesaj 1 ile 500 karakter arasında olmalı.',
@@ -83,7 +83,7 @@ const num = (x: unknown) => (Number.isFinite(Number(x)) ? Number(x) : 0);
 
 export async function getCrewView(): Promise<{ data: CrewView | null; error: string | null }> {
   const { data, error } = await callRpc<CrewView>('crew_view', {}, CREW_TEXT);
-  if (error || !data) return { data: null, error: error ?? 'Ekip bilgisi okunamadı.' };
+  if (error || !data) return { data: null, error: error ?? 'Klan bilgisi okunamadı.' };
   const c = data.crew;
   return {
     data: {
@@ -129,7 +129,7 @@ export function kickFromCrew(userId: string): Promise<Result> {
   return callRpcVoid('crew_kick', { p_user: userId }, CREW_TEXT);
 }
 
-/** Oyun ekranındaki oyuncu penceresi: bu kişiyi ekibime davet edebilir miyim? */
+/** Oyun ekranındaki oyuncu penceresi: bu kişiyi klanıme davet edebilir miyim? */
 export async function crewTargetStatus(roomId: string, userId: string): Promise<CrewTarget | null> {
   const { data } = await callRpc<CrewTarget>('crew_target_status', { p_room: roomId, p_target: userId });
   return data ?? null;

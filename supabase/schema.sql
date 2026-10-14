@@ -106,12 +106,12 @@ create table if not exists public.levels (
 );
 -- Seviye ödülü. Her seviye YALNIZCA kendi ödülünü verir (birikmez). Ödül her ay yeniden geçerlidir: oyun / etkinlik
 -- hakkı o ayın hakkına eklenir; kullanılmayan hak sonraki aya geçmez (aylık haklar ay başında zaten sıfırlanır).
---   game_plus1 → ayda +1 oyun hakkı · event_plus1 → ayda +1 etkinlik hakkı
+--   event_min2 → aylık etkinlik hakkı en az 2 · event_plus1 → ayda +1 etkinlik hakkı (game_plus1 eski, etkisiz)
 --   quiz_mult → Bilgi Yarışması puanı ve puan sınırları × level_quiz_mult_pct/100 · unlimited_lives → Bilgi Yarışması'nda sınırsız can
 alter table public.levels add column if not exists perk text;
 alter table public.levels drop constraint if exists levels_perk_check;
 alter table public.levels add constraint levels_perk_check
-  check (perk is null or perk in ('game_plus1', 'event_plus1', 'quiz_mult', 'unlimited_lives'));
+  check (perk is null or perk in ('game_plus1', 'event_min2', 'event_plus1', 'quiz_mult', 'unlimited_lives'));
 
 -- Admin'in uygulamadan değiştirebileceği kurallar (kod değiştirmeden)
 create table if not exists public.app_settings (
@@ -272,6 +272,31 @@ begin
 end $$;
 drop trigger if exists rp_seat on public.room_players;
 create trigger rp_seat before insert on public.room_players for each row execute function public._rp_seat();
+
+-- KESİN ODA SINIRI: odadaki (ayrılmamış) oyuncu sayısı oyunun en çok oyuncu sayısını (game_types.max_players) hiçbir
+-- yoldan aşamaz: katılma, yeni el, deneme oyuncusu (bot) ekleme, ayrılıp geri dönme. Aynı anda gelen girişler sıraya
+-- girer (numara verme kilidiyle aynı kilit), bu yüzden iki kişi aynı anda son yere giremez.
+create or replace function public._rp_cap()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_max int;
+begin
+  if new.left_at is not null then return new; end if;
+  if tg_op = 'UPDATE' and old.left_at is null then return new; end if;
+  perform pg_advisory_xact_lock(hashtext('rp_seat:' || new.room_id::text));
+  select coalesce(gt.max_players, 30) into v_max
+    from public.game_rooms r join public.game_types gt on gt.key = r.game_type
+   where r.id = new.room_id;
+  if v_max is not null
+     and (select count(*) from public.room_players
+           where room_id = new.room_id and left_at is null and user_id <> new.user_id) >= v_max then
+    raise exception 'room_full';
+  end if;
+  return new;
+end $$;
+drop trigger if exists rp_cap on public.room_players;
+create trigger rp_cap before insert or update of left_at on public.room_players
+  for each row execute function public._rp_cap();
 
 -- Oyun başlarken boşluklar kapanır: oyuncular sıralarını koruyarak 1'den başlayan numaralara geçer
 -- (ör. 10 kişilik odada 16 numaraya oturan, en baştaki boş numaraya geçer)
@@ -2224,14 +2249,16 @@ returns text language sql stable security definer set search_path = public as $$
      and exists (select 1 from public.profiles p where p.id = p_user and p.role = 'user' and p.banned_at is null);
 $$;
 
--- Üyenin aylık etkinlik hakkı: ücretsiz / premium / etkinlik lideri (hangisi büyükse) + seviye ödülü (+1)
+-- Üyenin aylık etkinlik hakkı: ücretsiz / premium / etkinlik lideri / Seviye 2 ödülü (en az 2) hangisi büyükse
+-- + seviye ödülü (+1)
 create or replace function public._event_quota(p public.profiles)
 returns int language sql stable security definer set search_path = public as $$
   select greatest(
     case when p.premium_until is not null and p.premium_until > now()
          then public.setting_int('premium_monthly_event_quota', 4)
          else public.setting_int('free_monthly_event_quota', 1) end,
-    case when p.event_leader then public.setting_int('leader_monthly_event_quota', 8) else 0 end)
+    case when p.event_leader then public.setting_int('leader_monthly_event_quota', 8) else 0 end,
+    case when public._level_perk(p.id) = 'event_min2' then 2 else 0 end)
     + case when public._level_perk(p.id) = 'event_plus1' then 1 else 0 end;
 $$;
 
@@ -3147,7 +3174,12 @@ begin
     if f.status = 'accepted' then raise exception 'already_friends'; end if;
     if f.requester_id = v.id then
       if f.status = 'pending' then raise exception 'already_requested'; end if;
-      return 'sent'; -- reddedilmiş: gönderene bildirilmez
+      -- Reddedilmiş: gönderene bildirilmez. Aynı kişiye en erken 1 saat sonra yeniden istek gönderilebilir.
+      if f.created_at > now() - make_interval(mins => greatest(1, public.setting_int('friend_request_retry_minutes', 60))) then
+        return 'sent';
+      end if;
+      delete from public.friendships where id = f.id;
+      f := null;
     end if;
     -- Karşı taraf bana istek atmıştı
     if f.status = 'pending' then
@@ -3157,7 +3189,7 @@ begin
       return 'accepted';
     end if;
     -- Ben onun isteğini reddetmiştim, şimdi ben istiyorum: eski satır silinip yeni istek açılır
-    delete from public.friendships where id = f.id;
+    if f.id is not null then delete from public.friendships where id = f.id; end if;
   end if;
 
   if (select count(*) from public.friendships
@@ -3393,10 +3425,16 @@ begin
     raise exception 'target_not_found';
   end if;
   -- Elenenlerin sohbeti: aynı odadaki bir oyuncu, başkasının mesajını bildirebilir
+  -- (herkese açık yazışmada önceki 2 elin mesajları da okunur; o mesajları bu elin oyuncusu da bildirebilir)
   if p_type = 'vv_dead' and not exists (
        select 1 from public.vv_dead_chat d
          join public.room_players rp on rp.room_id = d.room_id and rp.user_id = v.id
-        where d.id = p_id and d.user_id <> v.id) then
+        where d.id = p_id and d.user_id <> v.id)
+     and not exists (
+       select 1 from public.vv_dead_chat d
+         join public.room_players rp on rp.user_id = v.id and rp.left_at is null
+         join public._room_chain(rp.room_id) c on c.room_id = d.room_id
+        where d.id = p_id and d.user_id <> v.id and d.channel = 'all') then
     raise exception 'target_not_found';
   end if;
   -- Vampir–Köylü fısıltısı: yalnızca fısıltıyı ALAN kişi bildirebilir (içeriği yalnızca o görür)
@@ -3620,7 +3658,7 @@ begin
   end if;
 
   select max_players into v_max from public.game_types where key = v_room.game_type;
-  if (select count(*) from public.room_players where room_id = v_room.id) >= coalesce(v_max, 30) then
+  if (select count(*) from public.room_players where room_id = v_room.id and left_at is null) >= coalesce(v_max, 30) then
     raise exception 'room_full';
   end if;
 
@@ -13277,7 +13315,7 @@ end $$;
 
 insert into public.levels (level, name, min_points, reward_package, perk) values
   (1, 'Yeni Komşu', 0, null, null),
-  (2, 'Mahalle Dostu', 250, null, 'game_plus1'),
+  (2, 'Mahalle Dostu', 250, null, 'event_min2'),
   (3, 'Sokak Kâşifi', 1200, null, 'event_plus1'),
   (4, 'Meydan Müdavimi', 3500, null, 'quiz_mult'),
   (5, 'Şehrin Yıldızı', 8000, null, 'unlimited_lives')
@@ -13289,7 +13327,7 @@ update public.levels l set min_points = x.new_min
  where l.level = x.lvl and l.min_points = x.old_min;
 -- Seviye ödülleri (boşsa doldurulur; moderatörün değiştirdiğine dokunulmaz)
 update public.levels l set perk = x.perk
-  from (values (2, 'game_plus1'), (3, 'event_plus1'), (4, 'quiz_mult'), (5, 'unlimited_lives')) as x(lvl, perk)
+  from (values (2, 'event_min2'), (3, 'event_plus1'), (4, 'quiz_mult'), (5, 'unlimited_lives')) as x(lvl, perk)
  where l.level = x.lvl and l.perk is null;
 -- Seviye adları şehir ve sosyallik temalı oldu (eski "Kat Görevlisi" adı moderatörün görünen adıyla karışıyordu).
 -- Yalnızca eski varsayılan adlar değişir; moderatörün sonradan verdiği bir ad varsa ona dokunulmaz.
@@ -15935,13 +15973,18 @@ begin
     raise exception 'room_not_found';
   end if;
   update public.game_rooms set config = config || jsonb_build_object('test', true) where id = p_room_id;
+  -- Oda sınırı aşılmaz: yalnızca boş yer kadar deneme oyuncusu eklenir
+  perform pg_advisory_xact_lock(hashtext('rp_seat:' || p_room_id::text));
+  n := coalesce((select gt.max_players from public.game_types gt where gt.key = r.game_type), 16)
+       - (select count(*)::int from public.room_players rp where rp.room_id = p_room_id and rp.left_at is null);
+  if n <= 0 then raise exception 'room_full'; end if;
   insert into public.room_players (room_id, user_id, display_name)
   select p_room_id, p.id, p.full_name
     from public.profiles p
    where p.is_bot
      and not exists (select 1 from public.room_players rp where rp.room_id = p_room_id and rp.user_id = p.id)
    order by p.id
-   limit least(15, greatest(1, coalesce(p_count, 3)));
+   limit least(15, n, greatest(1, coalesce(p_count, 3)));
   get diagnostics n = row_count;
   perform public._audit('test_bots', null, jsonb_build_object('room', p_room_id, 'count', n));
   return n;
@@ -16048,8 +16091,10 @@ end $$;
 --   (oylamayla kafese atılınca: oyun biter, herkes kaybeder).
 -- ---------------------------------------------------------------------
 insert into public.game_types (key, title, description, min_players, max_players, enabled, sort_order)
-values ('shark_cage', 'Köpekbalığı Kafesi', 'Dalış, plaj ve kafes oylaması: gizli roller denizde', 6, 16, true, 0)
+values ('shark_cage', 'Köpekbalığı Kafesi', 'Dalış, su üstü ve karar oylaması: gizli roller denizde', 6, 16, true, 0)
 on conflict (key) do nothing;
+update public.game_types set description = 'Dalış, su üstü ve karar oylaması: gizli roller denizde'
+ where key = 'shark_cage' and description = 'Dalış, plaj ve kafes oylaması: gizli roller denizde';
 
 -- Köpekbalıklarının gece sohbeti de elenenlerin sohbet tablosunda durur (kanal: dead | shark)
 alter table public.vv_dead_chat add column if not exists channel text not null default 'dead';
@@ -16285,6 +16330,8 @@ declare
   v_nurse uuid;
   v_squid_t uuid;
   v_dead uuid[] := '{}';
+  -- Ölenin neden öldüğü (yalnızca kendisine not olarak gider; kimin yaptığı yazılmaz, yalnızca rol)
+  v_cause jsonb := '{}';
   v_marks jsonb;
   x record;
   v_list jsonb;
@@ -16349,6 +16396,7 @@ begin
   if v_hunt is not null and v_hunt is distinct from v_lg
      and coalesce((select s.role from public.room_player_secrets s where s.room_id = p_room_id and s.user_id = v_hunt), '') <> 'squid' then
     v_dead := v_dead || v_hunt;
+    v_cause := v_cause || jsonb_build_object(v_hunt::text, 'hunt');
   end if;
   if v_hunt is not null and v_hunt = v_lg and v_lg_user is not null then
     perform public._sk_note(p_room_id, v_lg_user, jsonb_build_object('round', v_round, 'kind', 'saved',
@@ -16365,6 +16413,7 @@ begin
   if v_squid_t is not null and exists (select 1 from public.room_players
                                          where room_id = p_room_id and user_id = v_squid_t and is_alive) then
     v_dead := v_dead || v_squid_t;
+    if not v_cause ? v_squid_t::text then v_cause := v_cause || jsonb_build_object(v_squid_t::text, 'squid'); end if;
   end if;
 
   -- 3c) Yalnız Sörfçü: işaretler ya da "Telsiz Patlat" (işaretli herkes; Cankurtaran / Hemşire koruması kurtarır)
@@ -16381,6 +16430,9 @@ begin
         from jsonb_array_elements_text(v_marks) m
        where m::uuid is distinct from v_lg and m::uuid is distinct from v_nurse
          and exists (select 1 from public.room_players where room_id = p_room_id and user_id = m::uuid and is_alive);
+      select coalesce(jsonb_object_agg(m, 'surfer'), '{}'::jsonb) || v_cause into v_cause
+        from jsonb_array_elements_text(v_marks) m
+       where m::uuid = any (v_dead);
       update public.room_player_secrets set data = data || '{"marks": []}'::jsonb
        where room_id = p_room_id and user_id = x.user_id;
     elsif (x.data->'night'->>'target') is not null then
@@ -16450,6 +16502,9 @@ begin
   -- Ölümler. Wolvesville kuralı: ölenin rolü herkese açıklanır (gece avlanan da)
   update public.room_players set is_alive = false, out_at = now()
    where room_id = p_room_id and is_alive and user_id = any (v_dead);
+  perform public._sk_note(p_room_id, k::uuid, jsonb_build_object('round', v_round, 'kind', 'death', 'cause', v_cause->>k))
+     from jsonb_object_keys(v_cause) k
+    where k::uuid = any (v_dead);
   perform public._sk_reveal(p_room_id, d) from unnest(coalesce(v_dead, '{}'::uuid[])) d;
 
   update public.game_rooms
@@ -17144,6 +17199,33 @@ begin
   else raise exception 'wrong_phase'; end if;
 end $$;
 
+-- Yeni el zinciri: oyun bitince açılan bekleme odası config.rematch_of ile önceki odaya bağlıdır. Herkese açık yazışma
+-- bekleme odasında da sürer; bu odanın ve önceki 2 elin mesajları okunur (hand: 0 bu el, 1 önceki el, 2 iki el önce).
+create or replace function public._room_chain(p_room_id uuid)
+returns table (room_id uuid, hand int) language sql stable security definer set search_path = public as $$
+  with recursive c(room_id, hand) as (
+    select p_room_id, 0
+    union all
+    select (r.config->>'rematch_of')::uuid, c.hand + 1
+      from c join public.game_rooms r on r.id = c.room_id
+     where c.hand < 2 and r.config ? 'rematch_of'
+  )
+  select c.room_id, c.hand from c;
+$$;
+
+create or replace function public._room_all_chat(p_room_id uuid, p_user uuid, p_limit int)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'name', d.name, 'body', d.body, 'at', d.created_at,
+                                               'mine', d.user_id = p_user, 'from', d.user_id, 'channel', d.channel,
+                                               'round', d.round, 'phase', d.phase, 'hand', d.hand)
+                            order by d.created_at), '[]'::jsonb)
+    from (select x.*, c.hand
+            from public.vv_dead_chat x
+            join public._room_chain(p_room_id) c on c.room_id = x.room_id
+           where x.channel = 'all'
+           order by x.created_at desc limit p_limit) d;
+$$;
+
 -- Sohbet: 'all' (herkese açık; plajda ve oylamada yaşayanlar yazar, odadaki herkes okur), 'shark' (yaşayan
 -- köpekbalıkları, yalnızca gece) ya da 'dead' (elenenler; Medyum plajda ve oylamada da yazar). Fısıltı yoktur.
 create or replace function public.sk_say(p_room_id uuid, p_channel text, p_body text)
@@ -17161,13 +17243,16 @@ begin
   if char_length(v_body) not between 1 and 120 then raise exception 'invalid_body'; end if;
   if public._has_link(v_body) then raise exception 'links_not_allowed'; end if;
   r := public._sk_room(p_room_id);
-  if r.status <> 'playing' then raise exception 'wrong_phase'; end if;
+  if r.status not in ('playing', 'lobby') then raise exception 'wrong_phase'; end if;
   select rp.display_name, rp.is_alive, s.role into v_name, v_alive, v_role
     from public.room_players rp
-    join public.room_player_secrets s on s.room_id = rp.room_id and s.user_id = rp.user_id
+    left join public.room_player_secrets s on s.room_id = rp.room_id and s.user_id = rp.user_id
    where rp.room_id = p_room_id and rp.user_id = v.id and rp.left_at is null;
   if v_name is null then raise exception 'not_in_room'; end if;
-  if p_channel = 'all' then
+  -- Bekleme odasında odadaki herkes herkese açık yazışmaya yazar
+  if r.status = 'lobby' then
+    if p_channel <> 'all' then raise exception 'invalid_channel'; end if;
+  elsif p_channel = 'all' then
     if not v_alive then raise exception 'not_alive'; end if;
     if r.state->>'phase' not in ('day', 'vote', 'vote_result') then raise exception 'day_only'; end if;
   elsif p_channel = 'shark' then
@@ -17188,7 +17273,8 @@ begin
   insert into public.vv_dead_chat (room_id, user_id, name, body, channel, round, phase)
   -- "(Medyum)" etiketi yalnızca ölülerin sohbetinde (herkese açık yazışmada Medyum'un kimliği belli olmamalı)
   values (p_room_id, v.id, case when v_role = 'medium' and v_alive and p_channel = 'dead' then v_name || ' (Medyum)' else v_name end,
-          v_body, p_channel, coalesce((r.state->>'round')::int, 0), r.state->>'phase');
+          v_body, p_channel, case when r.status = 'lobby' then 0 else coalesce((r.state->>'round')::int, 0) end,
+          case when r.status = 'lobby' then 'lobby' else r.state->>'phase' end);
 end $$;
 
 -- Kişiye özel görünüm. Rol yalnızca: kendin, köpekbalığıysan takım arkadaşların, açıklananlar (kafes, zıpkın, ayrılan,
@@ -17394,12 +17480,7 @@ begin
     'server_now', now(),
     -- Sohbetler: köpekbalıkları (yaşayan köpekbalıkları), elenenler (elenenler; Medyum plajda/oylamada); bitince herkes
     -- Herkese açık yazışma: odadaki herkes okur
-    'chat', case when r.status in ('playing', 'finished') then (
-              select coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'name', d.name, 'body', d.body, 'at', d.created_at,
-                                                           'mine', d.user_id = v.id, 'from', d.user_id,
-                                                           'round', d.round, 'phase', d.phase) order by d.created_at), '[]'::jsonb)
-                from (select * from public.vv_dead_chat where room_id = p_room_id and channel = 'all'
-                       order by created_at desc limit 60) d) end,
+    'chat', case when r.status in ('lobby', 'playing', 'finished') then public._room_all_chat(p_room_id, v.id, 80) end,
     'shark_chat', case when (v_shark and v_alive) or v_omni or r.status = 'finished' then (
                     select coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'name', d.name, 'body', d.body, 'at', d.created_at,
                                                                  'mine', d.user_id = v.id, 'from', d.user_id,
@@ -17471,15 +17552,19 @@ begin
   v_shark := (public._sk_team(v_role) = 'shark' and v_alive) or v_omni or r.status = 'finished';
   v_dead := (v_is_player and not v_alive and v_left is null) or v_omni or r.status = 'finished'
             or (v_role = 'medium' and v_alive and v_phase in ('day', 'vote'));
-  if r.status not in ('playing', 'finished') then return '[]'::jsonb; end if;
+  if r.status not in ('lobby', 'playing', 'finished') then return '[]'::jsonb; end if;
+  -- Herkese açık yazışma: bu el + önceki 2 el; takım ve ölüler kanalı yalnızca bu elden
   return (
-    select coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'name', d.name, 'body', d.body, 'at', d.created_at,
-                                                 'mine', d.user_id = v.id, 'from', d.user_id, 'channel', d.channel,
-                                                 'round', d.round, 'phase', d.phase) order by d.created_at), '[]'::jsonb)
-      from (select * from public.vv_dead_chat
-             where room_id = p_room_id
-               and (channel = 'all' or (channel = 'shark' and v_shark) or (channel = 'dead' and v_dead))
-             order by created_at desc limit 400) d);
+    select coalesce(jsonb_agg(e order by e->>'at'), '[]'::jsonb)
+      from (select e from jsonb_array_elements(public._room_all_chat(p_room_id, v.id, 400)) e
+            union all
+            select jsonb_build_object('id', d.id, 'name', d.name, 'body', d.body, 'at', d.created_at,
+                                      'mine', d.user_id = v.id, 'from', d.user_id, 'channel', d.channel,
+                                      'round', d.round, 'phase', d.phase, 'hand', 0)
+              from (select * from public.vv_dead_chat
+                     where room_id = p_room_id
+                       and ((channel = 'shark' and v_shark) or (channel = 'dead' and v_dead))
+                     order by created_at desc limit 400) d) x(e));
 end $$;
 
 
@@ -17503,13 +17588,16 @@ begin
   if char_length(v_body) not between 1 and 120 then raise exception 'invalid_body'; end if;
   if public._has_link(v_body) then raise exception 'links_not_allowed'; end if;
   r := public._vv_room(p_room_id);
-  if r.status <> 'playing' then raise exception 'wrong_phase'; end if;
+  if r.status not in ('playing', 'lobby') then raise exception 'wrong_phase'; end if;
   select rp.display_name, rp.is_alive, s.role into v_name, v_alive, v_role
     from public.room_players rp
-    join public.room_player_secrets s on s.room_id = rp.room_id and s.user_id = rp.user_id
+    left join public.room_player_secrets s on s.room_id = rp.room_id and s.user_id = rp.user_id
    where rp.room_id = p_room_id and rp.user_id = v.id and rp.left_at is null;
   if v_name is null then raise exception 'not_in_room'; end if;
-  if p_channel = 'all' then
+  -- Bekleme odasında odadaki herkes herkese açık yazışmaya yazar
+  if r.status = 'lobby' then
+    if p_channel <> 'all' then raise exception 'invalid_channel'; end if;
+  elsif p_channel = 'all' then
     if not v_alive then raise exception 'not_alive'; end if;
     if r.state->>'phase' not in ('dawn', 'vote', 'vote_result') then raise exception 'day_only'; end if;
   elsif p_channel = 'shark' then
@@ -17528,8 +17616,9 @@ begin
     raise exception 'chat_limit';
   end if;
   insert into public.vv_dead_chat (room_id, user_id, name, body, channel, round, phase)
-  values (p_room_id, v.id, v_name, v_body, p_channel, coalesce((r.state->>'round')::int, 0),
-          case when r.state->>'phase' = 'dawn' then 'day' else r.state->>'phase' end);
+  values (p_room_id, v.id, v_name, v_body, p_channel,
+          case when r.status = 'lobby' then 0 else coalesce((r.state->>'round')::int, 0) end,
+          case when r.status = 'lobby' then 'lobby' when r.state->>'phase' = 'dawn' then 'day' else r.state->>'phase' end);
 end $$;
 
 -- Kişinin görebildiği kanallar (vv_view ve vv_history ortak): vampir frekansı yaşayan vampirlere, ölülerin frekansı
@@ -17551,7 +17640,7 @@ begin
   v_omni := not v_player and exists (select 1 from public.profiles where id = p_user and role = 'admin');
   select s.role into v_role from public.room_player_secrets s where s.room_id = p_room_id and s.user_id = p_user;
   return jsonb_build_object(
-    'all', r.status in ('playing', 'finished'),
+    'all', r.status in ('lobby', 'playing', 'finished'),
     'shark', r.status = 'finished' or v_omni or (r.status = 'playing' and v_role = 'vampire' and coalesce(v_alive, false)),
     'dead', r.status = 'finished' or v_omni
             or (r.status = 'playing' and v_player and not coalesce(v_alive, false) and v_left is null));
@@ -17582,14 +17671,17 @@ begin
           or r.host_id = v.id or v.role = 'admin') then
     raise exception 'forbidden';
   end if;
-  if r.status not in ('playing', 'finished') then return '[]'::jsonb; end if;
+  if r.status not in ('lobby', 'playing', 'finished') then return '[]'::jsonb; end if;
   k := public._vv_chat_rights(p_room_id, v.id);
+  -- Herkese açık yazışma: bu el + önceki 2 el; vampir ve ölüler kanalı yalnızca bu elden
   return (
     select coalesce(jsonb_agg(e order by e->>'at'), '[]'::jsonb)
-      from jsonb_array_elements(public._vv_chat_list(p_room_id, v.id, null, 400)) e
-     where (e->>'channel' = 'all' and (k->>'all')::boolean)
-        or (e->>'channel' = 'shark' and (k->>'shark')::boolean)
-        or (e->>'channel' = 'dead' and (k->>'dead')::boolean));
+      from (select e from jsonb_array_elements(public._room_all_chat(p_room_id, v.id, 400)) e
+             where (k->>'all')::boolean
+            union all
+            select e from jsonb_array_elements(public._vv_chat_list(p_room_id, v.id, null, 400)) e
+             where (e->>'channel' = 'shark' and (k->>'shark')::boolean)
+                or (e->>'channel' = 'dead' and (k->>'dead')::boolean)) x(e));
 end $$;
 
 -- vv_view'e eklenenler: Köpekbalığı ekranındaki oyuncu bilgileri, yazışmalar, oyun akışı, roller ve sunucu saati
@@ -17663,7 +17755,7 @@ begin
                select coalesce(jsonb_object_agg(x.role, x.n), '{}'::jsonb)
                  from (select s.role, count(*)::int as n from public.room_player_secrets s
                         where s.room_id = p_room_id and s.role is not null group by s.role) x) end,
-    'chat', case when (k->>'all')::boolean then public._vv_chat_list(p_room_id, p_user, 'all', 60) end,
+    'chat', case when (k->>'all')::boolean then public._room_all_chat(p_room_id, p_user, 80) end,
     'shark_chat', case when (k->>'shark')::boolean then public._vv_chat_list(p_room_id, p_user, 'shark', 60) end,
     'dead_chat', case when (k->>'dead')::boolean then public._vv_chat_list(p_room_id, p_user, 'dead', 60) end);
 end $$;
@@ -18942,14 +19034,14 @@ returns jsonb language sql stable security definer set search_path = public as $
 $$;
 
 -- ---------------------------------------------------------------------------------------------------------------------
--- EKİP (oyun ekibi): arkadaş olanlar kalıcı bir ekip kurar (en çok crew_max_members, 5 kişi). Ekipçe oynanan puanlı
--- oyunların puanı (aynı oyunda ekipten en az 2 kişi) Ekip Sıralaması'na da yazılır; kişisel puan ve aylık hedefler
+-- EKİP (oyun klanı): arkadaş olanlar kalıcı bir klan kurar (en çok crew_max_members, 5 kişi). Klan arkadaşlarıyla oynanan puanlı
+-- oyunların puanı (aynı oyunda klandan en az 2 kişi) Klan Sıralaması'na da yazılır; kişisel puan ve aylık hedefler
 -- değişmez. Suistimale karşı:
---   * ekibe yalnızca ekipteki birinin ARKADAŞI davet edilir,
---   * her üye haftada (crew_change_days, 7 gün) en çok 1 kez ekibe girer (kurmak, katılmak, ekip değiştirmek),
---   * ekibe yeni giren üyenin katkısı crew_contrib_days (3) gün sonra sayılır,
+--   * klana yalnızca klandaki birinin ARKADAŞI davet edilir,
+--   * her üye haftada (crew_change_days, 7 gün) en çok 1 kez klana girer (kurmak, katılmak, klan değiştirmek),
+--   * klana yeni giren üyenin katkısı crew_contrib_days (3) gün sonra sayılır,
 --   * puanlı oyun kuralları aynen geçerlidir (en az 4–5 gerçek üye, yan yana konum kontrolü, aylık hedef).
--- Kurucu ekibin adını değiştirir ve üye atar. Ekibe özel sohbet mesaj kutusunda ekibin adıyla görünür; üyeler
+-- Kurucu klanın adını değiştirir ve üye atar. Klana özel sohbet mesaj kutusunda klanın adıyla görünür; üyeler
 -- birbirini @rumuz ile etiketler, etiketlenene bildirim gider. Tablolar doğrudan okunamaz/yazılamaz.
 -- ---------------------------------------------------------------------------------------------------------------------
 create table if not exists public.crews (
@@ -18965,7 +19057,7 @@ create table if not exists public.crew_members (
   read_at timestamptz
 );
 create index if not exists crew_members_crew_idx on public.crew_members (crew_id);
--- Ekibe giriş geçmişi (haftada 1 kuralı): üye silinse de kayıt kalır
+-- Klana giriş geçmişi (haftada 1 kuralı): üye silinse de kayıt kalır
 create table if not exists public.crew_joins (
   id bigint generated always as identity primary key,
   user_id uuid not null references public.profiles (id) on delete cascade,
@@ -18997,7 +19089,7 @@ create table if not exists public.crew_messages (
 );
 create index if not exists crew_messages_crew_idx on public.crew_messages (crew_id, created_at desc);
 create index if not exists crew_messages_sender_idx on public.crew_messages (sender_id, created_at);
--- Ekip puanı: ekipçe oynanan puanlı oyunda üyenin hesabına yazılan puan (katkısı sayılan üyeler)
+-- Klan puanı: klan arkadaşlarıyla oynanan puanlı oyunda üyenin hesabına yazılan puan (katkısı sayılan üyeler)
 create table if not exists public.crew_points (
   id bigint generated always as identity primary key,
   crew_id uuid not null references public.crews (id) on delete cascade,
@@ -19016,9 +19108,9 @@ alter table public.crew_messages enable row level security;
 alter table public.crew_points enable row level security;
 
 insert into public.app_settings (key, value, description) values
-  ('crew_max_members', '5', 'Ekip: en çok kaç kişi?'),
-  ('crew_change_days', '7', 'Ekip: üye kaç günde bir ekibe girebilir (kurmak, katılmak, değiştirmek)?'),
-  ('crew_contrib_days', '3', 'Ekip: yeni üyenin ekip puanına katkısı kaç gün sonra sayılır?')
+  ('crew_max_members', '5', 'Klan: en çok kaç kişi?'),
+  ('crew_change_days', '7', 'Klan: üye kaç günde bir klana girebilir (kurmak, katılmak, değiştirmek)?'),
+  ('crew_contrib_days', '3', 'Klan: yeni üyenin klan puanına katkısı kaç gün sonra sayılır?')
 on conflict (key) do update set description = excluded.description;
 
 create or replace function public._crew_of(p_user uuid)
@@ -19026,7 +19118,7 @@ returns uuid language sql stable security definer set search_path = public as $$
   select crew_id from public.crew_members where user_id = p_user;
 $$;
 
--- Üye ekibe girebilir mi (haftada 1)? Bir sonraki giriş zamanı (girebiliyorsa boş)
+-- Üye klana girebilir mi (haftada 1)? Bir sonraki giriş zamanı (girebiliyorsa boş)
 create or replace function public._crew_next_change(p_user uuid)
 returns timestamptz language sql stable security definer set search_path = public as $$
   select max(j.created_at) + make_interval(days => greatest(0, public.setting_int('crew_change_days', 7)))
@@ -19035,7 +19127,7 @@ returns timestamptz language sql stable security definer set search_path = publi
      and j.created_at > now() - make_interval(days => greatest(0, public.setting_int('crew_change_days', 7)));
 $$;
 
--- Ekip adı: 2–30 karakter, iletişim bilgisi / bağlantı yok, ağır küfür maskelenir
+-- Klan adı: 2–30 karakter, iletişim bilgisi / bağlantı yok, ağır küfür maskelenir
 create or replace function public._crew_name(p_name text)
 returns text language plpgsql stable security definer set search_path = public as $$
 declare
@@ -19046,18 +19138,18 @@ begin
   return left(public._mask_profanity(v), 30);
 end $$;
 
--- Ekibe ekle (giriş kaydıyla). Kurucu/katılan için ortak; sınırları çağıran denetler.
+-- Klana ekle (giriş kaydıyla). Kurucu/katılan için ortak; sınırları çağıran denetler.
 create or replace function public._crew_add(p_crew uuid, p_user uuid)
 returns void language plpgsql security definer set search_path = public as $$
 begin
   insert into public.crew_members (user_id, crew_id, joined_at, read_at) values (p_user, p_crew, now(), now());
   insert into public.crew_joins (user_id, crew_id) values (p_user, p_crew);
-  -- Bu kişiye bu ekipten gelen diğer bekleyen davetler kapanır
+  -- Bu kişiye bu klandan gelen diğer bekleyen davetler kapanır
   update public.crew_invites set status = 'cancelled', responded_at = now()
    where to_user = p_user and status = 'pending' and crew_id = p_crew;
 end $$;
 
--- Ekipten çıkar: kurucu çıkarsa kurucu en eski üyeye geçer; kimse kalmazsa ekip silinir
+-- Klandan çıkar: kurucu çıkarsa kurucu en eski üyeye geçer; kimse kalmazsa klan silinir
 create or replace function public._crew_remove(p_user uuid)
 returns void language plpgsql security definer set search_path = public as $$
 declare
@@ -19079,7 +19171,7 @@ begin
    where from_user = p_user and status = 'pending';
 end $$;
 
--- Ekip kur (kurucu olursun). Ekipteyken kurulamaz; haftada 1 kuralı geçerli.
+-- Klan kur (kurucu olursun). Klandayken kurulamaz; haftada 1 kuralı geçerli.
 create or replace function public.crew_create(p_name text)
 returns uuid language plpgsql security definer set search_path = public as $$
 declare
@@ -19098,7 +19190,7 @@ begin
   return v_id;
 end $$;
 
--- Kurucu ekibin adını değiştirir
+-- Kurucu klanın adını değiştirir
 create or replace function public.crew_rename(p_name text)
 returns void language plpgsql security definer set search_path = public as $$
 declare
@@ -19112,8 +19204,8 @@ begin
   update public.crews set name = public._crew_name(p_name) where id = v_crew;
 end $$;
 
--- Ekibe davet: yalnızca ekipteki biri, kendi ARKADAŞINI davet eder. Ekibin yoksa davetle birlikte ekip kurulur
--- (adı sonra kurucu değiştirir). Ekip doluysa (bekleyen davetler dahil) davet edilemez; günde en çok 10 davet.
+-- Klana davet: yalnızca klandaki biri, kendi ARKADAŞINI davet eder. Klanın yoksa davetle birlikte klan kurulur
+-- (adı sonra kurucu değiştirir). Klan doluysa (bekleyen davetler dahil) davet edilemez; günde en çok 10 davet.
 create or replace function public.crew_invite(p_target uuid)
 returns uuid language plpgsql security definer set search_path = public as $$
 declare
@@ -19135,7 +19227,7 @@ begin
   if v_crew is null then
     if public._crew_next_change(v.id) is not null then raise exception 'crew_change_wait'; end if;
     insert into public.crews (name, founder_id)
-    values ('Yeni Ekip', v.id)
+    values ('Yeni Klan', v.id)
     returning id into v_crew;
     perform public._crew_add(v_crew, v.id);
   end if;
@@ -19153,13 +19245,13 @@ begin
   end if;
   select name into v_name from public.crews where id = v_crew;
   insert into public.crew_invites (crew_id, from_user, to_user) values (v_crew, v.id, t.id) returning id into v_id;
-  perform public._notify(t.id, 'crew_invite', 'Ekip daveti',
-    v.full_name || ' seni “' || v_name || '” ekibine davet etti.',
-    jsonb_build_object('invite_id', v_id, 'route', '/ekip'));
+  perform public._notify(t.id, 'crew_invite', 'Klan daveti',
+    v.full_name || ' seni “' || v_name || '” klanına davet etti.',
+    jsonb_build_object('invite_id', v_id, 'route', '/klan'));
   return v_id;
 end $$;
 
--- Daveti cevapla. Kabul: başka ekipteysen oradan çıkarsın (ekip değiştirme); haftada 1 kuralı ve ekip sınırı geçerli.
+-- Daveti cevapla. Kabul: başka klandaysen oradan çıkarsın (klan değiştirme); haftada 1 kuralı ve klan sınırı geçerli.
 create or replace function public.crew_invite_respond(p_invite uuid, p_accept boolean)
 returns void language plpgsql security definer set search_path = public as $$
 declare
@@ -19178,7 +19270,7 @@ begin
   perform 1 from public.profiles where id = v.id for update;
   perform 1 from public.crews where id = i.crew_id for update;
   if not found then raise exception 'crew_invite_closed'; end if;
-  -- Davet eden hâlâ o ekipte ve hâlâ arkadaşın olmalı
+  -- Davet eden hâlâ o klanda ve hâlâ arkadaşın olmalı
   if public._crew_of(i.from_user) is distinct from i.crew_id or not public._friends(v.id, i.from_user) then
     update public.crew_invites set status = 'cancelled', responded_at = now() where id = i.id;
     raise exception 'crew_invite_closed';
@@ -19189,8 +19281,8 @@ begin
   perform public._crew_remove(v.id);
   update public.crew_invites set status = 'accepted', responded_at = now() where id = i.id;
   perform public._crew_add(i.crew_id, v.id);
-  perform public._notify(i.from_user, 'system', 'Ekip daveti kabul edildi',
-    v.full_name || ' ekibine katıldı.', jsonb_build_object('route', '/ekip'));
+  perform public._notify(i.from_user, 'system', 'Klan daveti kabul edildi',
+    v.full_name || ' klanına katıldı.', jsonb_build_object('route', '/klan'));
 end $$;
 
 create or replace function public.crew_leave()
@@ -19203,7 +19295,7 @@ begin
   perform public._crew_remove(v.id);
 end $$;
 
--- Kurucu bir üyeyi ekipten çıkarır
+-- Kurucu bir üyeyi klandan çıkarır
 create or replace function public.crew_kick(p_user uuid)
 returns void language plpgsql security definer set search_path = public as $$
 declare
@@ -19218,12 +19310,12 @@ begin
   if not found then raise exception 'crew_founder_only'; end if;
   if p_user = v.id or public._crew_of(p_user) is distinct from v_crew then raise exception 'crew_target_invalid'; end if;
   perform public._crew_remove(p_user);
-  perform public._notify(p_user, 'system', 'Ekipten çıkarıldın', '“' || v_name || '” ekibinden çıkarıldın.',
-    jsonb_build_object('route', '/ekip'));
+  perform public._notify(p_user, 'system', 'Klandan çıkarıldın', '“' || v_name || '” klanından çıkarıldın.',
+    jsonb_build_object('route', '/klan'));
 end $$;
 
--- Ekip puanı: ekipçe oynanan puanlı oyun (aynı oyunda ekipten en az 2 oyuncu). Katkısı sayılan (ekipte en az
--- crew_contrib_days günü dolan) üyenin bu oyundan hesabına yazılan puanı ekibe de yazılır. record_game_plays çağırır.
+-- Klan puanı: klan arkadaşlarıyla oynanan puanlı oyun (aynı oyunda klandan en az 2 oyuncu). Katkısı sayılan (klanda en az
+-- crew_contrib_days günü dolan) üyenin bu oyundan hesabına yazılan puanı klana de yazılır. record_game_plays çağırır.
 create or replace function public._crew_award(p_room uuid, p_user uuid, p_pts numeric)
 returns void language plpgsql security definer set search_path = public as $$
 declare
@@ -19241,7 +19333,7 @@ begin
   on conflict do nothing;
 end $$;
 
--- Ekip ekranı: ekibim, üyeler, gelen davetler, haftada 1 kuralı, bu ayki ekip puanı ve sıram.
+-- Klan ekranı: klanım, üyeler, gelen davetler, haftada 1 kuralı, bu ayki klan puanı ve sıram.
 -- Üyenin gerçek adı yalnızca arkadaşı olana görünür; diğerlerine bu haftaki rumuzu.
 create or replace function public.crew_view()
 returns jsonb language plpgsql security definer set search_path = public as $$
@@ -19290,7 +19382,7 @@ begin
                  where i.to_user = v.id and i.status = 'pending'));
 end $$;
 
--- Oyun ekranındaki oyuncu penceresi: bu kişiyi ekibime davet edebilir miyim? (ikimiz de bu odadaysak)
+-- Oyun ekranındaki oyuncu penceresi: bu kişiyi klanıme davet edebilir miyim? (ikimiz de bu odadaysak)
 create or replace function public.crew_target_status(p_room uuid, p_target uuid)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
@@ -19314,7 +19406,7 @@ begin
                                    where i.to_user = p_target and i.crew_id = v_crew and i.status = 'pending'));
 end $$;
 
--- Ekip sohbeti: son 150 mesaj (eskiden yeniye); açılınca okundu sayılır
+-- Klan sohbeti: son 150 mesaj (eskiden yeniye); açılınca okundu sayılır
 create or replace function public.crew_messages_list()
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
@@ -19331,7 +19423,7 @@ begin
             from (select * from public.crew_messages where crew_id = v_crew order by created_at desc limit 150) x);
 end $$;
 
--- Ekip sohbetine yaz. @rumuz ile etiketlenen EKİP ÜYESİNE bildirim gider (saatte en çok 10).
+-- Klan sohbetine yaz. @rumuz ile etiketlenen EKİP ÜYESİNE bildirim gider (saatte en çok 10).
 create or replace function public.crew_say(p_body text)
 returns uuid language plpgsql security definer set search_path = public as $$
 declare
@@ -19376,7 +19468,7 @@ begin
   return v_id;
 end $$;
 
--- Ekip sohbetindeki okunmamış mesaj sayısı (mesaj kutusu rozeti)
+-- Klan sohbetindeki okunmamış mesaj sayısı (mesaj kutusu rozeti)
 create or replace function public._crew_unread(p_user uuid)
 returns int language sql stable security definer set search_path = public as $$
   select coalesce((select count(*)::int from public.crew_messages m
@@ -19384,7 +19476,7 @@ returns int language sql stable security definer set search_path = public as $$
                    where m.sender_id <> p_user and m.created_at > coalesce(cm.read_at, cm.joined_at)), 0);
 $$;
 
--- Mesaj kutusu başlığı: ekibim (adı, son mesaj, okunmamış)
+-- Mesaj kutusu başlığı: klanım (adı, son mesaj, okunmamış)
 create or replace function public.crew_inbox()
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
@@ -19401,13 +19493,14 @@ begin
     'last_body', l.body, 'last_alias', l.alias, 'last_mine', l.sender_id = v.id, 'last_at', coalesce(l.created_at, c.created_at));
 end $$;
 
--- Mesaj kutusu rozeti: özel mesajlar + ekip sohbeti
+-- Mesaj kutusu rozeti: özel mesajlar + klan sohbeti
 create or replace function public.dm_unread_count()
 returns int language sql stable security definer set search_path = public as $$
-  select (coalesce((select sum(x.unread) from public.dm_list() x), 0) + public._crew_unread(auth.uid()))::int;
+  select (coalesce((select sum(x.unread) from public.dm_list() x), 0) + public._crew_unread(auth.uid())
+          + (select count(*) from public.crew_invites i where i.to_user = auth.uid() and i.status = 'pending'))::int;
 $$;
 
--- Ekip Sıralaması: ayın (ya da geçen ayların) ekip puanı. Yalnızca ekipçe oynanan puanlı oyunlar.
+-- Klan Sıralaması: ayın (ya da geçen ayların) klan puanı. Yalnızca klan arkadaşlarıyla oynanan puanlı oyunlar.
 create or replace function public.get_crew_leaderboard(p_limit int default 100, p_months_ago int default 0)
 returns table (place bigint, crew_name text, members int, points numeric, is_mine boolean)
 language plpgsql security definer set search_path = public as $$
@@ -20528,7 +20621,8 @@ end $$;
 
 -- Etkinlik kod girişi: başlangıçtan 30 dakika sonra kapanır (Konser & Festival'de 15 dakika). Bir kez çevrilir.
 insert into public.app_settings (key, value, description) values
-  ('event_checkin_minutes_after', '30', 'Etkinlik: kod girişi başlangıçtan en geç kaç dakika sonrasına kadar açık? (Konser & Festival hariç)')
+  ('event_checkin_minutes_after', '30', 'Etkinlik: kod girişi başlangıçtan en geç kaç dakika sonrasına kadar açık? (Konser & Festival hariç)'),
+  ('friend_request_retry_minutes', '60', 'Arkadaşlık isteği: aynı kişiye en erken kaç dakika sonra yeniden istek gönderilebilir?')
 on conflict (key) do update set description = excluded.description;
 do $$
 begin
@@ -20539,5 +20633,9 @@ begin
     on conflict (key) do nothing;
   end if;
 end $$;
+
+
+-- Oyun hakkı kalktığı için Seviye 2 ödülü değişir: aylık etkinlik hakkı en az 2 (eski "+1 oyun hakkı" yerine)
+update public.levels set perk = 'event_min2' where level = 2 and perk = 'game_plus1';
 
 notify pgrst, 'reload schema';

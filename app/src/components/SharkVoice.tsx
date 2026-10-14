@@ -11,7 +11,7 @@ import {
   type RecordingOptions,
 } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/AppText';
@@ -298,7 +298,10 @@ export function PushToTalk({
   onRecording,
   onSent,
   listening,
+  side,
 }: {
+  /** Mikrofon kutusunun sağında duran küçük düğme (ör. tartışmayı geç) */
+  side?: ReactNode;
   /** Ses mesajım şu an diğerlerinde çalıyor: düğmenin üstünde "Seni dinliyorlar" */
   listening?: boolean;
   roomId: string;
@@ -450,38 +453,42 @@ export function PushToTalk({
           {listening ? '👂 Seni dinliyorlar' : 'Oyun zevkini arttırmak için sırayla konuş.'}
         </Text>
       </View>
-      <Pressable
-        onPressIn={() => void start()}
-        onPressOut={release}
-        disabled={!canTalk && !rec}
-        accessibilityRole="button"
-        accessibilityLabel={canTalk ? 'Basılı tut ve konuş' : closedText}
-        testID="sk-ptt"
-        style={[styles.ptt, !canTalk && styles.pttOff, rec && styles.pttRec]}
-      >
-        {rec ? <Animated.View style={[styles.pttFill, { width }]} /> : null}
-        <View style={styles.pttIcon}>
-          <Ionicons name={canTalk ? 'mic' : 'mic-off'} size={22} color={rec ? '#FFFFFF' : canTalk ? '#2B1400' : '#9AA4B2'} />
-        </View>
-        <View style={styles.pttTexts}>
-          <Text style={[styles.pttTitle, !canTalk && styles.pttTitleOff, rec && styles.pttTitleRec]} numberOfLines={1}>
-            {sending
-              ? 'Gönderiliyor…'
-              : rec
-                ? 'KAYDEDİYOR · bırakınca gider'
-                : canTalk
-                  ? `BASILI TUT, KONUŞ (${Math.max(1, Math.round(Math.min(MAX_MS, leftMs) / 1000))} sn)`
-                  : closedText}
-          </Text>
-          {canTalk && !rec ? <Text style={styles.pttSub}>{channelText}</Text> : null}
-        </View>
-      </Pressable>
+      <View style={styles.pttRow}>
+        <Pressable
+          onPressIn={() => void start()}
+          onPressOut={release}
+          disabled={!canTalk && !rec}
+          accessibilityRole="button"
+          accessibilityLabel={canTalk ? 'Basılı tut ve konuş' : closedText}
+          testID="sk-ptt"
+          style={[styles.ptt, !canTalk && styles.pttOff, rec && styles.pttRec]}
+        >
+          {rec ? <Animated.View style={[styles.pttFill, { width }]} /> : null}
+          <View style={styles.pttIcon}>
+            <Ionicons name={canTalk ? 'mic' : 'mic-off'} size={22} color={rec ? '#FFFFFF' : canTalk ? '#2B1400' : '#9AA4B2'} />
+          </View>
+          <View style={styles.pttTexts}>
+            <Text style={[styles.pttTitle, !canTalk && styles.pttTitleOff, rec && styles.pttTitleRec]} numberOfLines={1}>
+              {sending
+                ? 'Gönderiliyor…'
+                : rec
+                  ? 'KAYDEDİYOR · bırakınca gider'
+                  : canTalk
+                    ? `BASILI TUT, KONUŞ (${Math.max(1, Math.round(Math.min(MAX_MS, leftMs) / 1000))} sn)`
+                    : closedText}
+            </Text>
+            {canTalk && !rec ? <Text style={styles.pttSub}>{channelText}</Text> : null}
+          </View>
+        </Pressable>
+        {side}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   pttWrap: { gap: 3 },
+  pttRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   pttHintBox: {
     alignSelf: 'center',
     paddingHorizontal: 12,
@@ -492,6 +499,7 @@ const styles = StyleSheet.create({
   pttHint: { color: '#0E9F6E', fontFamily: fonts.extra, fontSize: 11.5, textAlign: 'center' },
   pttListening: { color: '#057A55', fontFamily: fonts.black, fontSize: 13 },
   ptt: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,

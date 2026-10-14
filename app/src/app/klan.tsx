@@ -26,8 +26,8 @@ const when = (iso: string) =>
   new Date(iso).toLocaleString('tr-TR', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
 
 /**
- * Ekibim: ekip kur, gelen davetleri cevapla, üyeler (kurucu ad değiştirir, üye atar), bu ayki ekip puanı ve sıra,
- * ekip sohbeti (mesaj kutusunda ekibin adıyla). Davet, oyun ekranında arkadaşının avatarına dokununca gönderilir.
+ * Klanım: klan kur, gelen davetleri cevapla, üyeler (kurucu ad değiştirir, üye atar), bu ayki klan puanı ve sıra,
+ * klan sohbeti (mesaj kutusunda klanın adıyla). Davet, oyun ekranında arkadaşının avatarına dokununca gönderilir.
  */
 export default function CrewScreen() {
   const [view, setView] = useState<CrewView | null>(null);
@@ -67,12 +67,12 @@ export default function CrewScreen() {
   }
 
   const crew = view?.crew ?? null;
-  const waitText = view?.next_change_at ? `Ekibe yeniden ${when(view.next_change_at)} sonra girebilirsin.` : null;
+  const waitText = view?.next_change_at ? `Klana yeniden ${when(view.next_change_at)} sonra girebilirsin.` : null;
 
   return (
     <Screen
-      title="Ekibim"
-      subtitle="Arkadaşlarınla ekip kur, Ekip Sıralaması'nda yarışın"
+      title="Klanım"
+      subtitle="Arkadaşlarınla klan kur, Klan Sıralaması'nda yarışın"
       onBack={() => (router.canGoBack() ? router.back() : router.replace('/profile'))}
       onRefresh={() => void load()}
     >
@@ -81,21 +81,21 @@ export default function CrewScreen() {
       {/* Gelen davetler */}
       {view && view.invites.length > 0 ? (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Ekip davetleri</Text>
+          <Text style={styles.cardTitle}>Klan davetleri</Text>
           {view.invites.map((i) => (
             <View key={i.id} style={styles.invite}>
               <Text style={styles.inviteText}>
-                {`${i.from_name} seni “${i.crew_name}” ekibine davet etti (${i.members}/${view.max_members} kişi).`}
+                {`${i.from_name} seni “${i.crew_name}” klanına davet etti (${i.members}/${view.max_members} kişi).`}
               </Text>
               {crew ? (
-                <Text style={styles.small}>Kabul edersen şu anki ekibinden ayrılırsın.</Text>
+                <Text style={styles.small}>Kabul edersen şu anki klanından ayrılırsın.</Text>
               ) : null}
               <View style={styles.row}>
                 <View style={styles.flex}>
                   <PrimaryButton
                     label="Katıl"
                     loading={busy === `acc:${i.id}`}
-                    onPress={() => void run(`acc:${i.id}`, () => respondCrewInvite(i.id, true), 'Ekibe katıldın.')}
+                    onPress={() => void run(`acc:${i.id}`, () => respondCrewInvite(i.id, true), 'Klana katıldın.')}
                   />
                 </View>
                 <View style={styles.flex}>
@@ -114,14 +114,14 @@ export default function CrewScreen() {
 
       {view && !crew ? (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Henüz bir ekibin yok</Text>
+          <Text style={styles.cardTitle}>Henüz bir klanın yok</Text>
           <Text style={styles.text}>
-            Ekip kur ya da oyunda arkadaşının avatarına dokunup “Ekibe davet et” de. Ekibin yoksa davetle birlikte ekip
+            Klan kur ya da oyunda arkadaşının avatarına dokunup “Klana davet et” de. Klanın yoksa davetle birlikte klan
             kurulur.
           </Text>
           {waitText ? <Text style={styles.small}>{waitText}</Text> : null}
           <TextField
-            label="Ekip adı"
+            label="Klan adı"
             icon="people-outline"
             value={name}
             onChangeText={setName}
@@ -130,10 +130,10 @@ export default function CrewScreen() {
             testID="crew-name"
           />
           <PrimaryButton
-            label="Ekip kur"
+            label="Klan kur"
             disabled={name.trim().length < 2}
             loading={busy === 'create'}
-            onPress={() => void run('create', () => createCrew(name.trim()), 'Ekibin kuruldu.')}
+            onPress={() => void run('create', () => createCrew(name.trim()), 'Klanın kuruldu.')}
             testID="crew-create"
           />
         </View>
@@ -155,7 +155,7 @@ export default function CrewScreen() {
                   }}
                   hitSlop={8}
                   accessibilityRole="button"
-                  accessibilityLabel="Ekibin adını değiştir"
+                  accessibilityLabel="Klanın adını değiştir"
                 >
                   <Ionicons name={editing ? 'close' : 'create-outline'} size={20} color={colors.primary} />
                 </Pressable>
@@ -175,11 +175,11 @@ export default function CrewScreen() {
             <View style={styles.stats}>
               <View style={styles.stat}>
                 <Text style={styles.statValue}>{fmtPts(crew.month_points)}</Text>
-                <Text style={styles.statLabel}>bu ay ekip puanı</Text>
+                <Text style={styles.statLabel}>bu ay klan puanı</Text>
               </View>
               <View style={styles.stat}>
                 <Text style={styles.statValue}>{crew.rank ? `${crew.rank}.` : '—'}</Text>
-                <Text style={styles.statLabel}>Ekip Sıralaması</Text>
+                <Text style={styles.statLabel}>Klan Sıralaması</Text>
               </View>
               <View style={styles.stat}>
                 <Text style={styles.statValue}>{fmtPts(crew.my_points)}</Text>
@@ -189,7 +189,7 @@ export default function CrewScreen() {
             <View style={styles.row}>
               <View style={styles.flex}>
                 <PrimaryButton
-                  label="Ekip sohbeti"
+                  label="Klan sohbeti"
                   onPress={() => router.navigate({ pathname: '/akis', params: { crew: '1', t: String(Date.now()) } })}
                   testID="crew-chat"
                 />
@@ -224,13 +224,13 @@ export default function CrewScreen() {
                   {crew.is_founder && !m.is_me ? (
                     <Pressable
                       onPress={async () => {
-                        if (await confirmAction('Ekipten çıkarılsın mı?', `${m.name} ekipten çıkarılacak.`, 'Çıkar', true)) {
+                        if (await confirmAction('Klandan çıkarılsın mı?', `${m.name} klandan çıkarılacak.`, 'Çıkar', true)) {
                           void run(`kick:${m.id}`, () => kickFromCrew(m.id));
                         }
                       }}
                       hitSlop={8}
                       accessibilityRole="button"
-                      accessibilityLabel={`${m.name} ekipten çıkar`}
+                      accessibilityLabel={`${m.name} klandan çıkar`}
                       style={styles.kick}
                     >
                       <Ionicons name="person-remove" size={18} color={colors.danger} />
@@ -243,14 +243,14 @@ export default function CrewScreen() {
               <Text key={p.id} style={styles.small}>{`⏳ ${p.name} davet edildi, cevap bekleniyor`}</Text>
             ))}
             <PrimaryButton
-              label="Ekipten ayrıl"
+              label="Klandan ayrıl"
               variant="danger"
               loading={busy === 'leave'}
               onPress={async () => {
                 const text = crew.is_founder
-                  ? 'Kurucu sensin; ayrılırsan kuruculuk en eski üyeye geçer. Ekibe haftada 1 kez girilebildiği için hemen başka ekibe giremeyebilirsin.'
-                  : 'Ekibe haftada 1 kez girilebildiği için hemen başka ekibe giremeyebilirsin.';
-                if (await confirmAction('Ekipten ayrılınsın mı?', text, 'Ayrıl', true)) {
+                  ? 'Kurucu sensin; ayrılırsan kuruculuk en eski üyeye geçer. Klana haftada 1 kez girilebildiği için hemen başka klana giremeyebilirsin.'
+                  : 'Klana haftada 1 kez girilebildiği için hemen başka klana giremeyebilirsin.';
+                if (await confirmAction('Klandan ayrılınsın mı?', text, 'Ayrıl', true)) {
                   void run('leave', leaveCrew);
                 }
               }}
@@ -261,14 +261,14 @@ export default function CrewScreen() {
 
       {/* Kurallar */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Ekip kuralları</Text>
+        <Text style={styles.cardTitle}>Klan kuralları</Text>
         {[
-          `Ekip en çok ${view?.max_members ?? 5} kişidir. Ekibe yalnızca arkadaşını davet edebilirsin: oyunda arkadaşının avatarına dokun, “Ekibe davet et” de.`,
-          'Ekipçe oynanan puanlı oyunların puanı Ekip Sıralaması’na yazılır (aynı oyunda ekipten en az 2 kişi). Kişisel puanın ve aylık hedeflerin değişmez.',
-          `Ekibe yeni giren üyenin ekip puanına katkısı ${view?.contrib_days ?? 3} gün sonra sayılmaya başlar.`,
-          'Her üye haftada 1 kez ekibe girebilir (ekip kurmak, katılmak ya da değiştirmek).',
-          'Kurucu ekibin adını değiştirir ve üye çıkarabilir. Kurucu ayrılırsa kuruculuk en eski üyeye geçer.',
-          'Ekip sohbeti mesaj kutusunda ekibin adıyla görünür; @rumuz ile ekip arkadaşını etiketleyebilirsin.',
+          `Klan en çok ${view?.max_members ?? 5} kişidir. Klana yalnızca arkadaşını davet edebilirsin: oyunda arkadaşının avatarına dokun, “Klana davet et” de.`,
+          'Klan arkadaşlarıyla oynanan puanlı oyunların puanı Klan Sıralaması’na yazılır (aynı oyunda klandan en az 2 kişi). Kişisel puanın ve aylık hedeflerin değişmez.',
+          `Klana yeni giren üyenin klan puanına katkısı ${view?.contrib_days ?? 3} gün sonra sayılmaya başlar.`,
+          'Her üye haftada 1 kez klana girebilir (klan kurmak, katılmak ya da değiştirmek).',
+          'Kurucu klanın adını değiştirir ve üye çıkarabilir. Kurucu ayrılırsa kuruculuk en eski üyeye geçer.',
+          'Klan sohbeti mesaj kutusunda klanın adıyla görünür; @rumuz ile klan arkadaşını etiketleyebilirsin.',
         ].map((t) => (
           <Text key={t} style={styles.rule}>{`• ${t}`}</Text>
         ))}

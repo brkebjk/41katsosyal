@@ -178,7 +178,7 @@ function FeedScreen() {
       setDmOpen(true);
     }
   }
-  // Ekip sohbeti: etiket bildirimi ya da Ekibim ekranı gönderir; mesaj kutusu ekip sohbetiyle açılır
+  // Klan sohbeti: etiket bildirimi ya da Klanım ekranı gönderir; mesaj kutusu klan sohbetiyle açılır
   const crewKey = params.crew ? `crew,${params.t ?? ''}` : null;
   const [appliedCrew, setAppliedCrew] = useState<string | null>(null);
   const [crewTarget, setCrewTarget] = useState<string | null>(null);

@@ -474,7 +474,7 @@ function ReportCard({
                     : group.type === 'dm'
                       ? 'Özel mesaj'
                       : group.type === 'crew_msg'
-                        ? 'Ekip sohbeti'
+                        ? 'Klan sohbeti'
                       : group.type === 'sk_voice'
                         ? 'Ses mesajı (web panelde dinlenir)'
                         : 'Etkinlik yorumu';

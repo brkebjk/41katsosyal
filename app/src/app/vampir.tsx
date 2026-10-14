@@ -45,7 +45,7 @@ import { SharkChat, type ChatTab, type ChatTabInfo } from '@/components/SharkCha
 import { PushToTalk, useClipQueue, useListeningToMe } from '@/components/SharkVoice';
 import { SoundToggle } from '@/components/SoundToggle';
 import { InfoCard, useElapsedSeconds } from '@/components/VampireParts';
-import { G, GameButton, Glass, NextRoomButton, Pill, SkipToggle, ToolButton } from '@/components/VampireStage';
+import { G, GameButton, Glass, NextRoomButton, Pill, SkipRound, ToolButton } from '@/components/VampireStage';
 import { confirmAction, notify, showDialog } from '@/lib/dialog';
 import { crewTargetStatus, inviteToCrew, type CrewTarget } from '@/lib/crew';
 import { FRIEND_CONSEQUENCE, FRIEND_WARNING, sendRequestInRoom } from '@/lib/friends';
@@ -187,7 +187,7 @@ function Game({ roomId }: { roomId: string }) {
   const [bounce, setBounce] = useState<{ to: string; nonce: number } | null>(null);
   const [sheet, setSheet] = useState<'role' | 'result' | 'players' | null>(null);
   const [card, setCard] = useState<string | null>(null);
-  /** Oyuncu penceresi açılınca: bu kişiyi ekibime davet edebilir miyim? (arkadaşsak) */
+  /** Oyuncu penceresi açılınca: bu kişiyi klanıma davet edebilir miyim? (arkadaşsak) */
   const [crewInfo, setCrewInfo] = useState<{ id: string; t: CrewTarget } | null>(null);
   useEffect(() => {
     if (!card) return;
@@ -450,6 +450,13 @@ function Game({ roomId }: { roomId: string }) {
   }
   const outHow = new Map<string, 'vote'>();
   for (const e of view.log ?? []) if (e.k === 'vote' && e.id) outHow.set(e.id, 'vote');
+  // Elendiysen neden: yalnızca rol yazılır, kimin yaptığı (numarası) asla
+  const myDeath =
+    me.is_player && !me.is_alive && !me.left
+      ? myPlayerId && outHow.get(myPlayerId) === 'vote'
+        ? 'Oylamayla köyden çıkarıldın'
+        : 'Vampirler seni ısırdı'
+      : null;
 
   /** Avatar çerçevesi: takımından olduğu bilinen yeşil, rakip kırmızı, bilinmeyen çerçevesiz */
   function frameOf(p: VvPlayer): string | undefined {
@@ -499,7 +506,7 @@ function Game({ roomId }: { roomId: string }) {
         : { text: '… bekliyor', color: 'rgba(255,255,255,0.6)' };
     } else if (phase === 'lobby' && p.is_host) label = { text: '⭐ Oda sahibi', color: '#FFB703' };
     const how = p.left ? 'left' : outHow.get(p.id) ?? 'night';
-    const deadLabel = p.left ? 'Ayrıldı' : !p.is_alive ? (how === 'vote' ? '⚖️ Çıkarıldı' : '🧛 Isırıldı') : null;
+    const deadLabel = p.left ? 'Ayrıldı' : !p.is_alive ? (how === 'vote' ? 'Çıkarıldı' : 'Isırıldı') : null;
     const selectable = validFor(activeSlot, p) && (activeSlot !== 'vote' || phase === 'vote');
     const acted = me.is_omniscient && (phase === 'night' || phase === 'reveal') ? (phase === 'reveal' ? p.ready : p.night_done) : null;
     return {
@@ -569,7 +576,7 @@ function Game({ roomId }: { roomId: string }) {
       void act('crew', async () => {
         const r = await inviteToCrew(id);
         if (!r.error) {
-          void notify('Ekip daveti gönderildi', `${plain(id)} kabul edince ekibine katılır. Ekibini Profil > Ekibim’den yönetebilirsin.`, {
+          void notify('Klan daveti gönderildi', `${plain(id)} kabul edince klanına katılır. Klanını Profil > Klanım’dan yönetebilirsin.`, {
             icon: null,
           });
         }
@@ -656,6 +663,12 @@ function Game({ roomId }: { roomId: string }) {
   let command: { text: string; color: string } | null = null;
   let actions: ReactNode = null;
   let stage: ReactNode = null;
+  // Tartışmayı geç: uzaktan odada mikrofon kutusunun sağında, yan yana odada alt şeritte küçük yuvarlak yeşil düğme
+  const pttShown = view.remote && playing && me.is_player && !me.left;
+  const skipBtn =
+    view.skip && alivePlayer && phase === 'dawn' ? (
+      <SkipRound skip={view.skip} busy={busy === 'skipdisc'} onToggle={(on) => void act('skipdisc', () => skipDiscussion(roomId, on))} />
+    ) : null;
 
   // Tabelada başlığın altında en son olay
   const flowItems: { k: number; text: string }[] = [];
@@ -664,13 +677,13 @@ function Game({ roomId }: { roomId: string }) {
     flowItems.push({
       k: ln.round * 10 + 1,
       text: ln.killed.length
-        ? `🧛 ${ln.round}. gece ısırıldı › ${ln.killed
+        ? `${ln.round}. gece ısırıldı - ${ln.killed
             .map((d) => {
               const r = byId.get(d.id)?.role;
               return `${tag(d.id)}${r ? ` ⟦r:${r}⟧` : ''}`;
             })
             .join(' ')}`
-        : `🌙 ${ln.round}. gece kimse ısırılmadı`,
+        : `${ln.round}. gece kimse ısırılmadı`,
     });
   }
   for (const x of investigations) {
@@ -681,10 +694,10 @@ function Game({ roomId }: { roomId: string }) {
     flowItems.push({
       k: lvote.round * 10 + 5,
       text: lvote.executed
-        ? `⚖️ ${lvote.round}. gün köyden çıkarıldı › ${tag(lvote.executed.id)} ⟦r:${lvote.executed.role}⟧`
+        ? `${lvote.round}. gün köyden çıkarıldı - ${tag(lvote.executed.id)} ⟦r:${lvote.executed.role}⟧`
         : lvote.tie
-          ? `⚖️ ${lvote.round}. gün oylar eşit, kimse çıkarılmadı`
-          : `⚖️ ${lvote.round}. gün kimse çıkarılmadı`,
+          ? `${lvote.round}. gün oylar eşit, kimse çıkarılmadı`
+          : `${lvote.round}. gün kimse çıkarılmadı`,
     });
   }
   const flow = flowItems
@@ -733,7 +746,7 @@ function Game({ roomId }: { roomId: string }) {
             color: canReady ? '#34D399' : '#C9B6FF',
             pulse: canReady && !myReady,
           };
-    if (countdown !== null && !myReady) command = { text: '🔁 YENİ EL · HAZIRIM DE', color: '#34D399' };
+    if (countdown !== null && !myReady) command = { text: 'YENİ EL\nHazırım de', color: '#34D399' };
     actions = (
       <>
         <GameButton
@@ -918,7 +931,7 @@ function Game({ roomId }: { roomId: string }) {
       title: !me.is_player ? 'Roller dağıtılıyor' : wheelDone ? 'ROLÜN BU' : 'ÇARK DÖNÜYOR…',
       lines: wheelDone || !me.is_player ? [`Rolünü gören ${view.ready_count} / ${present.length}`] : [],
     };
-    if (me.is_player && wheelDone && !me.ready) command = { text: '👀 ROLÜNÜ OKU, HAZIRIM DE', color: '#C9B6FF' };
+    if (me.is_player && wheelDone && !me.ready) command = { text: 'ROLÜNÜ OKU\nOkuyunca hazırım de', color: '#C9B6FF' };
     actions = (
       <>
         {me.is_player && role ? (
@@ -952,7 +965,7 @@ function Game({ roomId }: { roomId: string }) {
         color: '#C9B6FF',
         pulse: !done,
       };
-      if (!done) command = { text: '🧛 ISIRACAĞIN KİŞİYİ SEÇ', color: '#9B7BFF' };
+      if (!done) command = { text: 'ISIRACAĞIN KİŞİYİ SEÇ\nKimi ısıracaksın ?', color: '#9B7BFF' };
     } else if (activeSlot === 'ability' && roleData) {
       const verb = role === 'doctor' ? 'Koru' : 'Bak';
       const finished = role === 'detective' ? investigatedNow : done;
@@ -966,7 +979,7 @@ function Game({ roomId }: { roomId: string }) {
         color: roleData.color,
         pulse: !finished,
       };
-      if (!finished) command = { text: `⟦r:${role}⟧ ${verb.toUpperCase()}: KİŞİ SEÇ`, color: roleData.color };
+      if (!finished) command = { text: `${verb.toUpperCase()}\nBir kişi seç`, color: roleData.color };
     } else {
       prompt = { title: '🌙 Uyuyorsun, sabahı bekle', lines: flow };
     }
@@ -1003,12 +1016,9 @@ function Game({ roomId }: { roomId: string }) {
       lines: flow,
       color: killedNow.length ? '#FF8A98' : '#FFFFFF',
     };
-    if (alivePlayer) command = { text: '☀️ KONUŞUN: VAMPİR KİM?', color: '#FFB703' };
+    if (alivePlayer) command = { text: 'KONUŞUN\nVampir kim ?', color: '#FFB703' };
     actions = (
       <>
-        {view.skip && alivePlayer ? (
-          <SkipToggle skip={view.skip} busy={busy === 'skipdisc'} onToggle={(on) => void act('skipdisc', () => skipDiscussion(roomId, on))} />
-        ) : null}
         {!me.can_control ? (
           <Text style={styles.pText}>{view.mode === 'auto' ? 'Süre dolunca oylama başlar.' : `Oylamayı ${view.host.name} başlatacak.`}</Text>
         ) : null}
@@ -1026,7 +1036,7 @@ function Game({ roomId }: { roomId: string }) {
           pulse: !me.voted,
         }
       : { title: `⚖️ Köy oylaması${pendingTxt}`, lines: flow };
-    if (alivePlayer && !me.voted) command = { text: '⚖️ OY VER: ŞÜPHELİYİ SEÇ', color: '#FF4D4D' };
+    if (alivePlayer && !me.voted) command = { text: 'OY VER\nŞüpheliyi seç', color: '#FF4D4D' };
     actions = alivePlayer ? (
       <>
         <View style={styles.row}>
@@ -1282,7 +1292,7 @@ function Game({ roomId }: { roomId: string }) {
     // Arkadaşsanız arkadaş ekle yerine ekibe davet
     ...(crewNow?.friend
       ? crewNow.can_invite
-        ? [{ key: 'crew' as const, label: '👥 Ekibe davet et', tone: 'primary' as const, disabled: busy === 'crew' }]
+        ? [{ key: 'crew' as const, label: '👥 Klana davet et', tone: 'primary' as const, disabled: busy === 'crew' }]
         : []
       : [{ key: 'friend' as const, label: '➕ Arkadaş ekle', tone: 'primary' as const, disabled: busy === 'friend' }]),
     ...(view.remote ? [{ key: 'voice' as const, label: '🔊 Ses mesajını şikâyet et', tone: 'ghost' as const }] : []),
@@ -1292,7 +1302,8 @@ function Game({ roomId }: { roomId: string }) {
   const autoResult =
     phase === 'dawn' && me.is_player && !me.left && sheet === null && resultClosed !== round && investigations.some((x) => x.round === round);
   const voiceLeft = view.voice_left_ms ?? 10000;
-  const chatOpen = alivePlayer && (phase === 'dawn' || phase === 'vote' || phase === 'vote_result');
+  // Bekleme odasında odadaki herkes yazar (önceki 2 elin mesajları da okunur)
+  const chatOpen = (phase === 'lobby' && me.is_player && !me.left) || (alivePlayer && (phase === 'dawn' || phase === 'vote' || phase === 'vote_result'));
   const vampChatOpen = phase === 'night' && isVamp && alivePlayer;
   const deadWrite = playing && me.is_player && !me.left && !me.is_alive;
   const logText = (e: VvLog): { text: string; color: string } | null => {
@@ -1301,18 +1312,18 @@ function Game({ roomId }: { roomId: string }) {
         return e.phase === 'reveal'
           ? { text: '🎡 Roller dağıtıldı, oyun başladı', color: '#B98CFF' }
           : e.phase === 'night'
-            ? { text: `🌙 ${e.round}. gece, köy uyudu`, color: '#C9B6FF' }
+            ? { text: `${e.round}. gece, köy uyudu`, color: '#C9B6FF' }
             : e.phase === 'day'
-              ? { text: `☀️ ${e.round}. gün, sabah oldu`, color: '#FFB703' }
-              : { text: '⚖️ Köy oylaması başladı', color: '#FF8A98' };
+              ? { text: `${e.round}. gün, sabah oldu`, color: '#FFB703' }
+              : { text: 'Köy oylaması başladı', color: '#FF8A98' };
       case 'night':
         return e.ids && e.ids.length
-          ? { text: `🧛 ${e.night}. gece ısırıldı · ${e.ids.map((x) => `${tag(x)} ${roleText(byId.get(x)?.role)}`).join(' · ')}`, color: '#FF4D4D' }
-          : { text: `🌙 ${e.night}. gece kimse ısırılmadı`, color: '#34D399' };
+          ? { text: `${e.night}. gece ısırıldı - ${e.ids.map((x) => `${tag(x)} ${roleText(byId.get(x)?.role)}`).join(' · ')}`, color: '#FF4D4D' }
+          : { text: `${e.night}. gece kimse ısırılmadı`, color: '#34D399' };
       case 'vote':
         return e.id
-          ? { text: `⚖️ ${tag(e.id)} köyden çıkarıldı, rolü ${roleText(e.role)}`, color: '#FF4D4D' }
-          : { text: e.tie ? '⚖️ Oylar eşit, kimse çıkarılmadı' : '⚖️ Kimse çıkarılmadı', color: '#C9CED6' };
+          ? { text: `${tag(e.id)} köyden çıkarıldı, rolü ${roleText(e.role)}`, color: '#FF4D4D' }
+          : { text: e.tie ? 'Oylar eşit, kimse çıkarılmadı' : 'Kimse çıkarılmadı', color: '#C9CED6' };
       case 'left':
         return { text: `🚪 ${tag(e.id)} oyundan ayrıldı, rolü ${roleText(e.role)}`, color: '#C9CED6' };
       case 'end':
@@ -1325,6 +1336,21 @@ function Game({ roomId }: { roomId: string }) {
   (view.log ?? []).forEach((e, i) => {
     const t = logText(e);
     if (t) info.push({ id: `log-${i}`, name: '', body: t.text, at: e.at, mine: false, round: e.round, phase: e.ph, system: { color: t.color } });
+    // Sana özel: elendiysen hemen ardından neden elendiğin
+    const meOut =
+      myPlayerId && ((e.k === 'vote' && e.id === myPlayerId) || (e.k === 'night' && (e.ids ?? []).includes(myPlayerId)));
+    if (meOut) {
+      info.push({
+        id: `me-out-${i}`,
+        name: '',
+        body: `🔒 Sana özel · ${e.k === 'vote' ? 'Oylamayla köyden çıkarıldın' : 'Vampirler seni ısırdı'}`,
+        at: new Date((Date.parse(e.at) || 0) + 1).toISOString(),
+        mine: false,
+        round: e.round,
+        phase: e.ph,
+        system: { color: '#C8B6FF' },
+      });
+    }
   });
   const chatTabs: ChatTabInfo[] = [
     {
@@ -1378,23 +1404,18 @@ function Game({ roomId }: { roomId: string }) {
               if (Math.abs(b - topBottom) > 1) setTopBottom(b);
             }}
           >
-            <Pressable
-              onPress={blocking ? requestLeave : goToGames}
-              hitSlop={10}
-              accessibilityRole="button"
-              accessibilityLabel={blocking ? 'Oyundan ayrıl' : 'Oyunlara dön'}
-              style={({ pressed }) => [styles.topBtn, styles.exitBtn, pressed && styles.pressed]}
-              testID="vv-back"
-            >
-              <Ionicons name="exit-outline" size={21} color="#FFFFFF" />
-            </Pressable>
-            {playing && round > 0 ? (
-              <View style={[styles.roundBadge, phase === 'night' ? styles.roundNight : styles.roundDay]}>
-                <Text style={styles.roundText} numberOfLines={1}>
-                  {phase === 'night' ? `🌙 ${round}. GECE` : `☀️ ${round}. GÜN`}
-                </Text>
-              </View>
-            ) : null}
+            <View style={styles.topSide}>
+              <Pressable
+                onPress={blocking ? requestLeave : goToGames}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel={blocking ? 'Oyundan ayrıl' : 'Oyunlara dön'}
+                style={({ pressed }) => [styles.topBtn, styles.exitBtn, pressed && styles.pressed]}
+                testID="vv-back"
+              >
+                <Ionicons name="exit-outline" size={21} color="#FFFFFF" />
+              </Pressable>
+            </View>
             <View style={styles.flex} accessibilityRole="header">
               <Text style={[styles.title, styles.shadow]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                 {PHASE_TITLE[phase]}
@@ -1403,32 +1424,30 @@ function Game({ roomId }: { roomId: string }) {
                 {subtitle}
               </Text>
             </View>
-            <SoundToggle color="#FFFFFF" />
-            {phase === 'lobby' || playing ? (
-              <Pressable
-                onPress={() => {
-                  if (kickPoll && kickSeen === kickKey) setKickSeen(null);
-                  else {
-                    if (kickPoll) setKickSeen(kickKey);
-                    setSheet('players');
-                  }
-                }}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="Oyuncular ve şikâyet"
-                style={({ pressed }) => [styles.topBtn, styles.playersBtn, pressed && styles.pressed]}
-                testID="vv-players"
-              >
-                <Ionicons name="people" size={20} color="#FFFFFF" />
-              </Pressable>
-            ) : null}
+            <View style={[styles.topSide, styles.topSideRight]}>
+              <SoundToggle color="#FFFFFF" />
+              {phase === 'lobby' || playing ? (
+                <Pressable
+                  onPress={() => {
+                    if (kickPoll && kickSeen === kickKey) setKickSeen(null);
+                    else {
+                      if (kickPoll) setKickSeen(kickKey);
+                      setSheet('players');
+                    }
+                  }}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Oyuncular ve şikâyet"
+                  style={({ pressed }) => [styles.topBtn, styles.playersBtn, pressed && styles.pressed]}
+                  testID="vv-players"
+                >
+                  <Ionicons name="people" size={20} color="#FFFFFF" />
+                </Pressable>
+              ) : null}
+            </View>
           </View>
 
           <View style={styles.body}>
-            {playing && view.phase_limit !== null && !me.left ? (
-              <TimeBar kind={timeKind} left={remain} limit={view.phase_limit} light={light} />
-            ) : null}
-
             {prompt.title ? (
               <Prompt
                 title={prompt.title}
@@ -1443,6 +1462,7 @@ function Game({ roomId }: { roomId: string }) {
             <View style={styles.stageWrap}>
               {stage ?? (
                 <SeatGrid
+                  stickyKey={roomId}
                   seats={seats}
                   selected={selected}
                   accent={accent}
@@ -1469,10 +1489,11 @@ function Game({ roomId }: { roomId: string }) {
                 <View style={styles.pills} pointerEvents="none">
                   {view.test ? <Pill text="Deneme odası, puan yazılmaz" tone="danger" /> : null}
                   {connError ? <Pill text="Bağlantı koptu, yeniden deniyor…" tone="warn" /> : null}
-                  {playing && me.is_player && !me.is_alive && !me.left ? <Pill text="Elendin, izliyorsun" tone="danger" /> : null}
+                  {playing && me.is_player && !me.is_alive && !me.left ? <Pill text={`${myDeath ?? 'Elendin'}, izliyorsun`} tone="danger" /> : null}
                 </View>
               ) : null}
-              {kickPoll && !kickPopOpen ? (
+              {/* Oylama bandı yalnızca başlatana; diğerleri üstteki küçük pencereden bir kez cevaplar (ekran kalabalıklaşıp takılmasın) */}
+              {kickPoll && kickPoll.starter === myPlayerId ? (
                 <KickBar
                   targetSeat={seatOf(kickPoll.target)}
                   targetName={byId.get(kickPoll.target)?.name ?? ''}
@@ -1513,9 +1534,10 @@ function Game({ roomId }: { roomId: string }) {
               ) : null}
             </View>
 
-            {view.remote && playing && me.is_player && !me.left ? (
+            {pttShown ? (
               <PushToTalk
                 roomId={roomId}
+                side={skipBtn}
                 listening={listeningToMe}
                 canTalk={
                   alivePlayer &&
@@ -1554,12 +1576,26 @@ function Game({ roomId }: { roomId: string }) {
               </Glass>
             ) : null}
 
-            <View style={styles.tools}>
-              {me.is_player && role && phase !== 'lobby' && !me.left ? (
-                <ToolButton icon="id-card-outline" label="Rolüm" onPress={() => setSheet('role')} testID="vv-role" />
+            {/* Alt şerit: sayaç hemen üstünde; kaçıncı gece / gün Rolüm ile Nasıl? arasında */}
+            <View style={styles.dock}>
+              {playing && view.phase_limit !== null && !me.left ? (
+                <TimeBar kind={timeKind} left={remain} limit={view.phase_limit} light={light} />
               ) : null}
-              <ToolButton icon="help-circle-outline" label="Nasıl?" onPress={() => setHowOpen(true)} testID="vv-how" />
-              {phase === 'lobby' ? <ToolButton icon="trophy" label="Puanlar" onPress={() => setPointsOpen(true)} /> : null}
+              <View style={styles.tools}>
+                {me.is_player && role && phase !== 'lobby' && !me.left ? (
+                  <ToolButton icon="id-card-outline" label="Rolüm" onPress={() => setSheet('role')} testID="vv-role" />
+                ) : null}
+                {playing && round > 0 ? (
+                  <View style={[styles.roundBadge, phase === 'night' ? styles.roundNight : styles.roundDay]}>
+                    <Text style={styles.roundText} numberOfLines={1}>
+                      {phase === 'night' ? `${round}. GECE` : `${round}. GÜN`}
+                    </Text>
+                  </View>
+                ) : null}
+                <ToolButton icon="help-circle-outline" label="Nasıl?" onPress={() => setHowOpen(true)} testID="vv-how" />
+                {phase === 'lobby' ? <ToolButton icon="trophy" label="Puanlar" onPress={() => setPointsOpen(true)} /> : null}
+                {!pttShown ? skipBtn : null}
+              </View>
             </View>
           </View>
 
@@ -1610,8 +1646,9 @@ function Game({ roomId }: { roomId: string }) {
         </Shake>
       </SafeAreaView>
 
-      {view.chat && (playing || phase === 'ended') && !me.left ? (
+      {view.chat && (playing || phase === 'ended' || phase === 'lobby') && !me.left ? (
         <SharkChat
+          terms={{ night: 'gece', day: 'gün' }}
           roomId={roomId}
           tabs={chatTabs}
           openTab={chatTab && chatTabs.some((t) => t.key === chatTab) ? chatTab : null}
@@ -1631,6 +1668,13 @@ function Game({ roomId }: { roomId: string }) {
         phaseKey={phaseKey}
         text={command?.text ?? null}
         color={command?.color ?? '#FFFFFF'}
+      />
+      {/* Elendiğin an bir kez: neden elendiğin (yalnızca rol) */}
+      <CommandFlash
+        cmdKey={myDeath ? `death:${roomId}:${myDeath}` : null}
+        phaseKey={phaseKey}
+        text={myDeath ? `ELENDİN\n${myDeath}` : null}
+        color="#FF4D4D"
       />
 
       {safety.isOpen ? safety.nodes : null}
@@ -1745,20 +1789,23 @@ const styles = StyleSheet.create({
   },
   exitBtn: { backgroundColor: '#D9304F', borderWidth: 2, borderColor: '#FFFFFF' },
   playersBtn: { backgroundColor: '#D9304F', borderWidth: 2, borderColor: '#FFFFFF' },
-  title: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 23, letterSpacing: 0.5 },
+  topSide: { width: 82, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  topSideRight: { justifyContent: 'flex-end' },
+  title: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 26, letterSpacing: 0.5, textAlign: 'center' },
   roundBadge: {
-    height: 38,
+    alignSelf: 'center',
+    height: 34,
     paddingHorizontal: 12,
-    borderRadius: 19,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
   },
   roundNight: { backgroundColor: '#2A0F45', borderColor: '#9B7BFF' },
   roundDay: { backgroundColor: '#C2560C', borderColor: '#FFFFFF' },
-  roundText: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 16, letterSpacing: 0.5 },
+  roundText: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 14, letterSpacing: 0.5 },
   shadow: { textShadowColor: 'rgba(0,0,0,0.8)', textShadowRadius: 8 },
-  subtitle: { color: 'rgba(255,255,255,0.75)', fontFamily: fonts.semi, fontSize: 11.5 },
+  subtitle: { color: 'rgba(255,255,255,0.75)', fontFamily: fonts.semi, fontSize: 13.5, textAlign: 'center' },
   body: { flex: 1, gap: 6, paddingHorizontal: 8, paddingBottom: 6 },
   // Izgara kenardan kenara ve üstteki tabeladan alttaki düğmelere kadar uzanır (gövdenin boşlukları sıfırlanır)
   allyWarn: { position: 'absolute', top: '45%', left: 0, right: 0, alignItems: 'center', zIndex: 40, elevation: 40 },
@@ -1794,7 +1841,8 @@ const styles = StyleSheet.create({
   pText: { color: G.muted, fontSize: 12.5, lineHeight: 17 },
   pOk: { color: G.green, fontSize: 12.5, lineHeight: 17 },
   error: { color: G.redSoft, fontSize: 12.5, lineHeight: 17 },
-  tools: { flexDirection: 'row', justifyContent: 'space-around', gap: 4, paddingTop: 0 },
+  dock: { gap: 2 },
+  tools: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', gap: 4, paddingTop: 0 },
   speaking: {
     alignSelf: 'center',
     paddingHorizontal: 12,

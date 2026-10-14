@@ -59,7 +59,9 @@ export type SkPlayer = {
 
 export type SkNote = {
   round: number;
-  kind: 'saved' | 'blocked' | 'track' | 'scan';
+  kind: 'saved' | 'blocked' | 'track' | 'scan' | 'death';
+  /** Ölüm notu: seni ne öldürdü (kimin yaptığı yazılmaz, yalnızca rol) */
+  cause?: 'hunt' | 'squid' | 'surfer';
   id?: string;
   name?: string;
   team?: SkTeam | null;
@@ -80,6 +82,8 @@ export type SkMsg = {
   phase?: string | null;
   /** Yalnızca mesaj geçmişinde: hangi frekans */
   channel?: 'all' | 'shark' | 'dead';
+  /** Hangi elde yazıldı: 0 (ya da boş) bu el, 1 önceki el, 2 iki el önce (yeni el zinciri) */
+  hand?: number | null;
   /** Oyun akışı bilgi satırı (yazışma değil): renkli, ortalı görünür. Metindeki ⟦7⟧ koltuk numarası rozeti olur. */
   system?: { color: string };
 };
@@ -222,7 +226,7 @@ const TEXT: Record<string, string> = {
   you_left: 'Bu oyundan çıkarıldın, geri dönemezsin.',
   not_in_room: 'Bu oyunda oyuncu değilsin.',
   you_are_dead: 'Elendin, artık seçim yapamazsın. Oyunu izleyebilirsin.',
-  no_night_action: 'Rolünün bu gece yapacağı bir şey yok.',
+  no_night_action: 'Rolünün bu dalışta yapacağı bir şey yok.',
   invalid_target: 'Bu kişiyi seçemezsin.',
   cannot_target_ally: 'Kendi takımından birini seçemezsin.',
   sharks_only: 'Hemşire yalnızca köpekbalıklarını koruyabilir.',
@@ -243,10 +247,10 @@ const TEXT: Record<string, string> = {
   muted: 'Şu an susturulmuşsun, yazamazsın.',
   invalid_body: 'Mesaj 1–120 karakter olmalı.',
   links_not_allowed: 'Bağlantı (link), web adresi ve e-posta paylaşılamaz.',
-  night_only: 'Köpekbalıkları yalnızca dalışta (gece) yazışabilir.',
-  day_only: 'Herkese açık yazışma plajda ve oylamada açıktır; dalışta herkes susar.',
+  night_only: 'Köpekbalıkları yalnızca dalışta yazışabilir.',
+  day_only: 'Herkese açık yazışma su üstünde ve oylamada açıktır; dalışta herkes susar.',
   not_alive: 'Elenenler buraya yazamaz; ölülerin sohbetini kullan.',
-  not_dead: 'Bu sohbete yalnızca elenenler (ve plajda Medyum) yazabilir.',
+  not_dead: 'Bu sohbete yalnızca elenenler (ve su üstünde Medyum) yazabilir.',
   rate_limited: 'Biraz yavaş, art arda çok hızlı yazıyorsun.',
   chat_limit: 'Bu oyunda yazabileceğin mesaj sınırına ulaştın.',
   room_not_found: 'Bu oyun odası artık yok.',
@@ -401,7 +405,7 @@ export const SK_ROLES: Record<SkRole, SkRoleInfo> = {
     name: 'Kaplan Köpekbalığı',
     emoji: '🐯',
     team: 'shark',
-    goal: 'İz sürücü. Her dalışta birini izlersin: o gece kimi ziyaret ettiğini (kimi koruduğunu, kime baktığını) öğrenirsin.',
+    goal: 'İz sürücü. Her dalışta birini izlersin: o dalışta kimi ziyaret ettiğini (kimi koruduğunu, kime baktığını) öğrenirsin.',
     night: 'Avı seç ve izleyeceğin kişiyi seç.',
     color: '#FF7A45',
   },
@@ -409,7 +413,7 @@ export const SK_ROLES: Record<SkRole, SkRoleInfo> = {
     name: 'Çekiçbaş',
     emoji: '🔨',
     team: 'shark',
-    goal: 'Sabotajcı. Her dalışta bir insanın yeteneğini kilitlersin: o gece koruyamaz, bakamaz, saldıramaz.',
+    goal: 'Sabotajcı. Her dalışta bir insanın yeteneğini kilitlersin: o dalışta koruyamaz, bakamaz, saldıramaz.',
     night: 'Avı seç ve kilitleyeceğin kişiyi seç.',
     color: '#FF5E7A',
   },
@@ -417,7 +421,7 @@ export const SK_ROLES: Record<SkRole, SkRoleInfo> = {
     name: 'Hemşire Köpekbalığı',
     emoji: '🩹',
     team: 'shark',
-    goal: 'Takımın doktoru. Her dalışta bir köpekbalığını (kendini de) korursun: Sörfçü patlamasından ve ertesi gün Zıpkıncı’dan kurtulur.',
+    goal: 'Takımın doktoru. Her dalışta bir köpekbalığını (kendini de) korursun: Sörfçü patlamasından ve sonraki toplantıda Zıpkıncı’dan kurtulur.',
     night: 'Avı seç ve koruyacağın köpekbalığını seç.',
     color: '#FF8FA3',
   },
@@ -441,7 +445,7 @@ export const SK_ROLES: Record<SkRole, SkRoleInfo> = {
     name: 'Oşinograf',
     emoji: '🔭',
     team: 'human',
-    goal: 'Her dalışta birine bakarsın: hangi takımda olduğunu ve son 2 gecede kimi ziyaret ettiğini (akıntı haritası) öğrenirsin.',
+    goal: 'Her dalışta birine bakarsın: hangi takımda olduğunu ve son 2 resif keşfinde kimi ziyaret ettiğini (akıntı haritası) öğrenirsin.',
     night: 'Bakacağın kişiyi seç.',
     color: '#5BD6F0',
   },
@@ -449,7 +453,7 @@ export const SK_ROLES: Record<SkRole, SkRoleInfo> = {
     name: 'Zıpkıncı',
     emoji: '🔱',
     team: 'human',
-    goal: 'Tek zehirli zıpkının var. 2. günden itibaren plajda birini anında vurabilirsin; vurulanın rolü açıklanır. Yanlışlıkla masum vursan da sen ölmezsin.',
+    goal: 'Tek zehirli zıpkının var. 2. toplantıdan itibaren su üstünde birini anında vurabilirsin; vurulanın rolü açıklanır. Yanlışlıkla masum vursan da sen ölmezsin.',
     night: null,
     color: '#7FDBFF',
   },
@@ -457,7 +461,7 @@ export const SK_ROLES: Record<SkRole, SkRoleInfo> = {
     name: 'Sahil Güvenlik Komutanı',
     emoji: '🎖️',
     team: 'human',
-    goal: 'Plajda istediğin an kimliğini açabilirsin. Açınca kafes oyun 2 sayılır ama herkes kim olduğunu bilir.',
+    goal: 'Su üstünde istediğin an kimliğini açabilirsin. Açınca Karar Oylamasında oyun 2 sayılır ama herkes kim olduğunu bilir.',
     night: null,
     color: '#FFB703',
   },
@@ -465,7 +469,7 @@ export const SK_ROLES: Record<SkRole, SkRoleInfo> = {
     name: 'Mercan Medyumu',
     emoji: '🪸',
     team: 'human',
-    goal: 'Plajda ve oylamada elenenlerin gizli sohbetini okur, yazarsın. Ölülerin ipuçlarını yaşayanlara taşı.',
+    goal: 'Su üstünde ve oylamada elenenlerin gizli sohbetini okur, yazarsın. Ölülerin ipuçlarını yaşayanlara taşı.',
     night: null,
     color: '#FF9F80',
   },
@@ -473,7 +477,7 @@ export const SK_ROLES: Record<SkRole, SkRoleInfo> = {
     name: 'Tatilci',
     emoji: '🏖️',
     team: 'human',
-    goal: 'Özel yeteneğin yok. Konuş, dinle, köpekbalıklarını bul ve kafese at.',
+    goal: 'Özel yeteneğin yok. Konuş, dinle, köpekbalıklarını bul ve ekipten çıkar.',
     night: null,
     color: '#E0A96D',
   },
@@ -489,7 +493,7 @@ export const SK_ROLES: Record<SkRole, SkRoleInfo> = {
     name: 'Yalnız Sörfçü',
     emoji: '🏄',
     team: 'neutral',
-    goal: 'Tek başınasın. Her dalışta birini işaretlersin ya da “Telsiz Patlat” dersin: işaretli herkes o gece derinlere çekilir (korunan kurtulur). Tek başına ya da biriyle baş başa kalırsan kazanırsın.',
+    goal: 'Tek başınasın. Her dalışta birini işaretlersin ya da “Telsiz Patlat” dersin: işaretli herkes o dalışta derinlere çekilir (korunan kurtulur). Tek başına ya da biriyle baş başa kalırsan kazanırsın.',
     night: 'İşaretleyeceğin kişiyi seç ya da Telsiz Patlat.',
     color: '#C9A2FF',
   },
@@ -497,7 +501,7 @@ export const SK_ROLES: Record<SkRole, SkRoleInfo> = {
     name: 'Batık Hazine Avcısı',
     emoji: '💰',
     team: 'neutral',
-    goal: 'Tek başınasın. Herkesi tehlikeli bir köpekbalığı olduğuna inandır: oylamayla kafese atılırsan oyun biter ve YALNIZ SEN kazanırsın.',
+    goal: 'Tek başınasın. Herkesi tehlikeli bir köpekbalığı olduğuna inandır: Karar Oylamasında ekipten çıkarılırsan oyun biter ve YALNIZ SEN kazanırsın.',
     night: null,
     color: '#FFD166',
   },

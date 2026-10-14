@@ -16,7 +16,7 @@ export type GameInfo = {
 export const GAMES: Record<GameKey, GameInfo> = {
   shark_cage: {
     title: 'Köpekbalığı Kafesi',
-    description: 'Dalış, plaj ve kafes: gizli roller denizde',
+    description: 'Dalış, su üstü ve karar oylaması: gizli roller denizde',
     icon: 'water',
     fallback: ['#0B132B', '#1C6E8C'],
   },

@@ -294,7 +294,7 @@ export async function listReports(status: 'open' | 'closed'): Promise<{ data: Re
           .select('id, body, created_at, sender:profiles!dm_messages_sender_id_fkey(full_name)')
           .in('id', dmIds)
       : Promise.resolve({ data: [] as never[] }),
-    // Ekip sohbeti: yalnızca şikayet edilen mesaj okunabilir (rumuz + gönderenin gerçek adı)
+    // Klan sohbeti: yalnızca şikayet edilen mesaj okunabilir (rumuz + gönderenin gerçek adı)
     crewIds.length
       ? supabase
           .from('crew_messages')
@@ -481,7 +481,7 @@ export async function listReports(status: 'open' | 'closed'): Promise<{ data: Re
     const sender = Array.isArray(d.sender) ? d.sender[0] : d.sender;
     if (g)
       g.content = {
-        alias: `${d.alias} (${sender?.full_name ?? 'Bilinmeyen'}) · Ekip sohbeti`,
+        alias: `${d.alias} (${sender?.full_name ?? 'Bilinmeyen'}) · Klan sohbeti`,
         body: d.body,
         is_hidden: false,
         created_at: d.created_at,

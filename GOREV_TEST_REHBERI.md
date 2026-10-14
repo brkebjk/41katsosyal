@@ -1,4 +1,4 @@
-# Görev Test Rehberi – Wolvesville kutucukları, Ekip sistemi, mekân butonu
+# Görev Test Rehberi – Klan, oyun ekranı düzeni, yeni terimler, ölüm nedeni, bekleme odası sohbeti
 
 ## A. Supabase'i güncelle
 Şema `supabase/parcalar/` klasöründe **4 parça**.
@@ -9,50 +9,55 @@
 - Sıra önemli: 1, 2, 3, 4. "Run and enable RLS" çıkarsa onu seç.
 
 ## B. Oyun ekranı (iki oyun)
-1. Kutucuklar bitişik; ekranın iki kenarına, üstteki bilgi kutusuna ve alttaki düğmelere kadar uzanır.
-2. Numara üstte, rol simgesi altta; ikisi de kutu boyuna göre büyür.
-3. Oy tabelası ve durum yazısı kutunun ortasında durur.
-4. Köpekbalığıyken dalışta takım arkadaşların soluklaşmaz.
-5. Takım arkadaşına av dene:
-   - köpekbalığı ona gider, titrer ve sana geri döner,
-   - "Takım arkadaşını oylayamazsın" uyarısı çıkıp kaybolur.
-   - Vampir–Köylü'de aynısı (🧛).
-6. **Rolüm** listesinde rolün yanında oyuncunun rumuzu yazar:
-   - takım arkadaşın yeşil,
-   - ölen düşman kırmızı.
+1. Üstteki oyun adı ve olay yazısı ortada ve biraz daha büyük.
+2. Kaçıncı tur rozeti en altta, **Rolüm** ile **Rehber** (Vampir'de **Nasıl?**) arasında.
+3. Süre çubuğu bu alt şeridin hemen üstünde.
+4. Kutucuklar:
+   - aşama değişince yerinden oynamaz,
+   - numara sol üst köşede,
+   - durum yazısı (Avlandı vb.) küçük, simgesiz, rumuzun üstünde,
+   - oy tabelası ve rumuz daha küçük.
+5. Ortada çıkan büyük yazı simgesiz ve iki noktasız (ör. **KONUŞUN**, altında "Köpekbalığı kim ?").
+6. **Rolüm** listesinde açığa çıkan rollerin yanında yalnızca oyuncu numarası var, rumuz yok:
+   - takım arkadaşı yeşil halkalı,
+   - ölen düşman kırmızı halkalı.
 
-## C. Yan yana oda açma
-- "Yan yana"ya basınca seçenek penceresi hemen açılır.
-- Konum arka planda alınır; petek seçme ekranı beklemeden gelir.
+## C. Köpekbalığı terimleri
+- Gece → **Resif Keşfi**, gün → **Toplantı**, plaj → **Su Üstü**.
+- Oylama → **Karar Oylaması**. En çok oyu alan **ekipten çıkarılır**, sonra sıradaki dalış başlar.
+- Sohbetteki olay satırları küçük ve simgesiz (ör. "1. Resif Keşfinde avlandı - …").
+- Rehber ve giriş ekranı da yeni terimlerle.
 
-## D. Göstergeler ve puan
-1. Profil'de ve Oyunlar'da oyun hakkı göstergesi yok (Profil'de etkinlik göstergesi duruyor).
-2. Oyunlar'ın sağ üstünde **Mekân** düğmesi var. Basınca mekân kodu penceresi açılır.
-3. Oyun kutularının sağ üstünde yuvarlak halka:
-   - içinde bu ay kazanılabilecek kalan puan yazar,
-   - kazandıkça halka dolar.
-4. Puan tablosunda yan yana simgesi 4 insan kafası, uzaktan simgesi dönen yörüngeli dünya.
-5. Bilgi Yarışması'nda can kutusunun yanında aylık hedef çubuğu ve **Puan sistemi** düğmesi var.
-6. "Oyun sınırsız / oyun hakkı" yazıları kalktı.
+## D. Ölünce neden öldüğün (iki oyun)
+1. Ölen kişinin ekranında bir kez büyük **ELENDİN** yazısı çıkar, altında neden yazar:
+   - "Köpekbalıkları seni avladı", "Zıpkıncı seni vurdu",
+   - "Dev Mürekkep Balığı seni boğdu", "Yalnız Sörfçü seni yaktı",
+   - "Karar Oylamasıyla ekipten çıkarıldın",
+   - Vampir'de "Vampirler seni ısırdı" / "Oylamayla köyden çıkarıldın".
+2. Aynı yazı sohbette **🔒 Sana özel** satırı olarak durur. Kimin yaptığı (numara) asla yazmaz.
 
-## E. Etkinlik kodu
-- Kod girişi etkinlik başladıktan **30 dk** sonra kapanır.
-- Konser & Festival'de **15 dk** sonra kapanır.
+## E. Tartışmayı geç
+- Uzaktan odada mikrofon kutusunun sağında küçük yuvarlak yeşil **Geç** düğmesi var.
+- Basınca kaç kişinin geçmek istediği görünür (ör. 3/10). Tekrar basınca geri alınır.
+- Yan yana odada bu düğme alt şeritte durur.
 
-## F. Ekip sistemi (iki telefonla dene)
-1. İki hesap önce arkadaş olsun.
-2. Oyunda arkadaşının avatarına dokun > **👥 Ekibe davet et**. Ekibin yoksa ekip kendiliğinden kurulur.
-3. Karşı taraf haritadaki bildirim kutusunda **Katıl**'a basar.
-4. Profil > **Ekibim**:
-   - kurucu ekibin adını değiştirir ve üye çıkarır,
-   - bu ayki ekip puanı ve sıra görünür,
-   - ekipten ayrılma buradan yapılır.
-5. Akış > Mesajlar: en üstte ekibin adıyla **ekip sohbeti** durur.
-   - Üstteki arkadaş rumuzuna dokun > @rumuz yazıya eklenir.
-   - Etiketlenen arkadaşa bildirim gider.
-6. Sıralama > **Ekip** sekmesi: ekipler sıralanır.
-7. Kurallar:
-   - ekip en çok 5 kişidir,
-   - her üye haftada 1 kez ekibe girer,
-   - yeni üyenin katkısı 3 gün sonra sayılır,
-   - yalnızca ekipten en az 2 kişinin oynadığı puanlı oyunlar ekip puanına yazılır.
+## F. Bekleme odası sohbeti
+1. Bekleme odasında sohbet baloncuğu görünür; odadaki herkes yazabilir.
+2. Yeni elde önceki 2 elin herkese açık mesajları okunur. Başlıkta "Önceki el · …" yazar.
+
+## G. Atma oylaması
+- Başlatan kişi ortada oylama bandını görür.
+- Diğerleri yalnızca sağ üstte küçük pencereyi bir kez görür. Seçince kapanır; kırmızı oyuncular düğmesiyle tekrar açılır.
+
+## H. Oda sınırı
+- Bir oda en çok oyuncu sayısını (16) asla geçemez; botlar da yalnızca boş yer kadar eklenir.
+
+## I. Klan
+1. Eski "Ekip" sistemi artık **Klan**: Profil > **Klanım**, Sıralama > **Klan** sekmesi.
+2. Oyunda gelen klan daveti üstten kayarak 5 sn görünür (**Kabul et / Reddet**).
+3. Seçmezsen davet Akış > Mesajlar'ın en üstünde durur.
+
+## J. Diğer
+1. Seviye 2 ödülü: aylık etkinlik hakkı **2**.
+2. Reddedilen arkadaşlık isteği aynı kişiye en erken **1 saat** sonra yeniden gönderilebilir.
+3. Web panel > Şikâyetler'de klan sohbeti şikâyetleri de görünür.

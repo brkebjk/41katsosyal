@@ -233,8 +233,8 @@ export const HOW_TO_PLAY: Record<string, InfoItem[]> = {
   shark_cage: [
     {
       icon: 'water',
-      lead: 'Dalış ve plaj.',
-      text: 'Çarktan gizli bir rol gelir. Dalışta (gece) köpekbalıkları avlanır, özel roller yeteneğini kullanır; plajda (gündüz) konuşulur, sonra şüpheli oylamayla kafese atılır. 6–16 kişi.',
+      lead: 'Dalış ve su üstü.',
+      text: 'Çarktan gizli bir rol gelir. Dalışta (Resif Keşfi) köpekbalıkları avlanır, özel roller yeteneğini kullanır; su üstünde (Toplantı) konuşulur, sonra Karar Oylaması’yla en çok oyu alan ekipten çıkarılır. 6–16 kişi.',
     },
     {
       icon: 'eye',

@@ -47,7 +47,7 @@ const ROLE_ORDER: SkRole[] = [
 const PAD = 12;
 
 /**
- * Köpekbalığı Kafesi giriş ekranı (Oyunlar'da oyuna dokununca). Tek ekran: tema arka planı (plaj → dalış), aylık
+ * Köpekbalığı Kafesi giriş ekranı (Oyunlar'da oyuna dokununca). Tek ekran: tema arka planı (su üstü → dalış), aylık
  * puan hedefi çubukları, kaydırmalı rol kartları, puan mantığı, Yan yana / Uzaktan oda açma ve açık odalar.
  */
 export default function SharkIntroScreen() {
@@ -109,7 +109,7 @@ export default function SharkIntroScreen() {
               🦈 Köpekbalığı Kafesi
             </Text>
             <Text style={styles.subtitle} numberOfLines={1}>
-              6–16 kişi · gizli roller · dalış, plaj, kafes
+              6–16 kişi · gizli roller · dalış, su üstü, karar oylaması
             </Text>
           </View>
           <Pressable

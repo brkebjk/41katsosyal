@@ -416,7 +416,7 @@ export function PhaseFlash({ flashKey, text, sub, color }: {
     last.current = flashKey;
     if (!text) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- aşama değişti: geçiş yazısı gösterilir
-    setShown({ text, sub, color });
+    setShown({ text: plainFlash(text), sub: sub ? plainFlash(sub) : undefined, color });
     v.setValue(0);
     Animated.sequence([
       Animated.timing(v, { toValue: 1, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: NATIVE }),
@@ -540,6 +540,12 @@ export function RoleWheel({
 // ---------------------------------------------------------------------------
 
 /** Avatarın altında rumuz kodu yazmaz: "Lakap#1234" → "Lakap" */
+/** "AVLANDI" → "Avlandı" (olay yazıları küçük ve sade görünsün) */
+function sentence(t: string): string {
+  const low = t.toLocaleLowerCase('tr-TR');
+  return low.charAt(0).toLocaleUpperCase('tr-TR') + low.slice(1);
+}
+
 export function shortName(name: string): string {
   return name.replace(/#\d+\s*$/, '').trim() || name;
 }
@@ -604,6 +610,11 @@ export type SeatMark = { from: string | null; to: string; icon: string; kind: Ma
  * kısa kenarına göre ölçeklenir.
  */
 const COLS = 4;
+/**
+ * Kutucuk boyu oda boyunca sabit kalsın: aynı oda ve aynı kutucuk sayısı için şimdiye kadarki en küçük yükseklik
+ * kullanılır. Alttaki düğmeler aşamaya göre değişse de kutucuklar büyüyüp küçülmez, kaymaz; ekran hep tek sayfaya sığar.
+ */
+const stickyH = new Map<string, number>();
 /** Kutucuk en çok genişliğinin bu katı kadar uzun olur (çok az satırlı ızgarada aşırı uzamasın) */
 const MAX_RATIO = 1.6;
 function fit(n: number, w: number, h: number): { cols: number; cw: number; ch: number } {
@@ -635,8 +646,9 @@ export function SeatGrid({
   mark,
   slots,
   onEmptyPress,
+  stickyKey,
 }: {
-  /** Eski çağrılar için (artık kullanılmıyor) */
+  /** Kutucuk boyunu sabitlemek için (oda kimliği) */
   stickyKey?: string;
   /**
    * Bu kadar numaralı kutucuk çizilir, oyuncular koltuk numaralarındaki kutucukta durur (bekleme odası ve oyun);
@@ -666,7 +678,15 @@ export function SeatGrid({
   const items: (Seat | null)[] = slots
     ? Array.from({ length: Math.max(slots, ...seats.map((x) => x.p.seat)) }, (_, i) => seats.find((x) => x.p.seat === i + 1) ?? null)
     : seats;
-  const { cols, cw, ch } = box ? fit(items.length, box.w, box.h) : { cols: COLS, cw: 0, ch: 0 };
+  const fitted = box ? fit(items.length, box.w, box.h) : { cols: COLS, cw: 0, ch: 0 };
+  const { cols, cw } = fitted;
+  let ch = fitted.ch;
+  if (stickyKey && ch > 0) {
+    const k = `${stickyKey}:${items.length}:${cw}`;
+    const prev = stickyH.get(k);
+    if (prev !== undefined && prev < ch) ch = prev;
+    else stickyH.set(k, ch);
+  }
   // Tabeladaki okun yönü: oy verenin kutucuğundan oy verilenin kutucuğuna (eksik son satır sağa yaslanır)
   const center = new Map<string, { x: number; y: number }>();
   items.forEach((s, i) => {
@@ -844,13 +864,17 @@ function SeatTile({
     .join(', ');
   // Ölçüler kutunun kısa kenarına göre
   const k = Math.min(width, height);
-  const stripH = Math.max(14, Math.round(height * 0.15));
-  const noSize = Math.max(18, Math.round(k * 0.24));
+  const stripH = Math.max(13, Math.round(height * 0.13));
+  const noSize = Math.max(16, Math.round(k * 0.2));
   const roleSize = Math.max(18, Math.round(k * 0.3));
-  const badgeSize = Math.max(18, Math.round(k * 0.24));
-  const signH = Math.max(20, Math.round(k * 0.27));
-  const signFont = Math.max(12, Math.min(18, Math.round(k * 0.18)));
+  const badgeSize = Math.max(16, Math.round(k * 0.21));
+  const signH = Math.max(16, Math.round(k * 0.19));
+  const signFont = Math.max(10, Math.min(14, Math.round(k * 0.13)));
+  const smallFont = Math.max(8.5, Math.min(11, Math.round(k * 0.1)));
   const lineText = dead ? (seat.deadLabel ?? 'Elendi') : (seat.label?.text ?? null);
+  // Olay yazısı (avlandı, kurtarıldı…): simgesiz, küçük; rumuzun üstünde (rol simgesi varsa onun da üstünde)
+  const eventText = seat.event ? sentence(seat.event.text) : null;
+  const eventBottom = stripH + 2 + (seat.roleEmoji ? roleSize + 2 : 0);
   const lineColor = dead ? '#FF8A98' : (seat.label?.color ?? '#FFFFFF');
   return (
     <Pressable
@@ -875,12 +899,12 @@ function SeatTile({
           </View>
           {dead ? (
             <View style={styles.deadMark}>
-              <Text style={{ fontSize: Math.round(k * 0.36) }}>{seat.deadIcon ?? (p.left ? '🚪' : '🦈')}</Text>
+              <Text style={{ fontSize: Math.round(k * 0.26) }}>{seat.deadIcon ?? (p.left ? '🚪' : '🦈')}</Text>
             </View>
           ) : null}
           <View style={[styles.nameStrip, { height: stripH }]}>
             <Text
-              style={[styles.stripText, { fontSize: Math.max(9, Math.min(14, Math.round(k * 0.12))) }, dead && styles.nameDead]}
+              style={[styles.stripText, { fontSize: smallFont }, dead && styles.nameDead]}
               numberOfLines={1}
             >
               {p.is_me ? `${shortName(p.name)} (sen)` : shortName(p.name)}
@@ -899,20 +923,23 @@ function SeatTile({
             ]}
           />
         ) : null}
-        {/* Koltuk numarası: kutucuğun üst ortasında */}
-        <View
-          style={[
-            styles.seatNo,
-            { minWidth: noSize, height: noSize, borderRadius: noSize / 2, marginLeft: -noSize / 2 },
-          ]}
-        >
+        {/* Koltuk numarası: kutucuğun sol üst köşesinde */}
+        <View style={[styles.seatNo, { minWidth: noSize, height: noSize, borderRadius: noSize / 2 }]}>
           <Text style={[styles.seatNoText, { fontSize: Math.round(noSize * 0.56), lineHeight: Math.round(noSize * 0.7) }]}>
             {p.seat}
           </Text>
         </View>
         {/* Köpekbalıklarının (vampirlerin) toplam av oyu: sol üst */}
         {seat.huntIn ? (
-          <View style={[styles.votesIn, styles.huntIn, { height: badgeSize, minWidth: badgeSize, borderRadius: badgeSize / 2 }]}>
+          <View
+            style={[
+              styles.votesIn,
+              styles.huntIn,
+              styles.huntPos,
+              { height: badgeSize, minWidth: badgeSize, borderRadius: badgeSize / 2 },
+              seat.votesIn ? { top: 3 + badgeSize + 2 } : null,
+            ]}
+          >
             <Text style={[styles.huntInIcon, { fontSize: Math.round(badgeSize * 0.42) }]}>🦈</Text>
             <Text style={[styles.votesInText, { fontSize: Math.round(badgeSize * 0.5) }]}>{seat.huntIn}</Text>
           </View>
@@ -976,7 +1003,7 @@ function SeatTile({
             </View>
           ) : lineText ? (
             <View style={styles.linePill}>
-              <Text style={[styles.label, { color: lineColor, fontSize: Math.max(9, Math.min(12, Math.round(k * 0.11))) }]} numberOfLines={1}>
+              <Text style={[styles.label, { color: lineColor, fontSize: smallFont }]} numberOfLines={1}>
                 {lineText}
               </Text>
             </View>
@@ -993,10 +1020,12 @@ function SeatTile({
             <Text style={styles.alertText}>!</Text>
           </Pressable>
         ) : null}
-        {seat.event ? (
-          <View style={styles.eventWrap} pointerEvents="none">
+        {seat.event && eventText ? (
+          <View style={[styles.eventWrap, { bottom: eventBottom }]} pointerEvents="none">
             <View style={[styles.event, { backgroundColor: seat.event.color }]}>
-              <Text style={styles.eventText} numberOfLines={1}>{`${seat.event.icon} ${seat.event.text}`}</Text>
+              <Text style={[styles.eventText, { fontSize: smallFont }]} numberOfLines={1}>
+                {eventText}
+              </Text>
             </View>
           </View>
         ) : null}
@@ -1224,7 +1253,7 @@ export function SeatChip({ n, size = 20 }: { n: number; size?: number }) {
 
 /**
  * Bu oyundaki roller (Wolvesville'deki gibi): her rol, sayısı ve rolü açığa çıkmış (ya da senin bildiğin) oyuncuların
- * numarası ve rumuzu. Takım arkadaşının rumuzu yeşil, ölen düşmanınki kırmızı; ölenin numarasının üstü çizilir.
+ * yalnızca numarası (rumuz yazılmaz). Takım arkadaşının numarası yeşil, ölen düşmanınki kırmızı halkalı; ölenin üstü çizilir.
  * Sıra: köpekbalıkları, insanlar, tarafsızlar.
  */
 export function RoleRoster({
@@ -1256,7 +1285,7 @@ export function RoleRoster({
     if (mate) return '#34D399';
     const out = !p.is_alive || p.left;
     if (out && mySide !== null) return '#FF4D4D';
-    return 'rgba(255,255,255,0.85)';
+    return 'transparent';
   };
   const order = (given ?? (Object.keys(SK_ROLES) as string[])).filter((k) => (roles[k] ?? 0) > 0 && roleInfo(k));
   order.sort((a, b) => sideRank[roleInfo(a)!.side] - sideRank[roleInfo(b)!.side]);
@@ -1273,16 +1302,15 @@ export function RoleRoster({
             <Text style={styles.rosterCount}>{`×${roles[k]}`}</Text>
             <View style={styles.rosterSeats}>
               {who.map((p) => (
-                <View key={p.id} style={styles.rosterWho}>
+                <View
+                  key={p.id}
+                  style={[styles.rosterWho, styles.rosterRing, { borderColor: toneOf(p, roleInfo(k)!.side) }]}
+                  accessibilityLabel={`${p.seat} numara${p.is_me ? ', sen' : ''}`}
+                >
                   <View style={!p.is_alive || p.left ? styles.rosterDead : undefined}>
                     <SeatChip n={p.seat} size={22} />
                     {!p.is_alive || p.left ? <View style={styles.rosterStrike} pointerEvents="none" /> : null}
                   </View>
-                  {p.name ? (
-                    <Text style={[styles.rosterWhoName, { color: toneOf(p, roleInfo(k)!.side) }]} numberOfLines={1}>
-                      {p.is_me ? 'sen' : shortName(p.name)}
-                    </Text>
-                  ) : null}
                 </View>
               ))}
             </View>
@@ -1378,6 +1406,18 @@ export function Prompt({ title, lines, color, light, pulse, compact }: {
  * Komut yazısı ("⛓️ OY VER: ŞÜPHELİYİ SEÇ" gibi): ekranın ortasında büyük çıkar, 2,5 sn durur, kaybolur. Aşama yeni
  * değiştiyse aşama yazısı ("DALIŞ", "PLAJ") bitince gelir. Dokunmaları engellemez.
  */
+/** Ortada çıkan tabela yazıları sade olsun: simgeler (emoji), rol işaretleri ve iki nokta atılır */
+export function plainFlash(t: string): string {
+  return t
+    .replace(/⟦r:[a-z]+⟧/g, '')
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{FE0F}\u{200D}]/gu, '')
+    .replace(/:/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .split('\n')
+    .map((x) => x.trim())
+    .join('\n');
+}
+
 export function CommandFlash({ cmdKey, phaseKey, text, color }: {
   cmdKey: string | null;
   phaseKey: string;
@@ -1423,7 +1463,16 @@ export function CommandFlash({ cmdKey, phaseKey, text, color }: {
           { borderColor: shown.color, transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }) }] },
         ]}
       >
-        <RichLine text={shown.text} chip={30} style={styles.cmdText} />
+        {(() => {
+          // İlk satır büyük başlık, sonrakiler altında küçük yazı; simge ve iki nokta kullanılmaz
+          const [head, ...rest] = plainFlash(shown.text).split('\n');
+          return (
+            <>
+              <Text style={styles.cmdText}>{head}</Text>
+              {rest.length ? <Text style={styles.cmdSub}>{rest.join(' ')}</Text> : null}
+            </>
+          );
+        })()}
       </Animated.View>
     </Animated.View>
   );
@@ -1518,7 +1567,7 @@ export function TimeBar({ kind, left, limit, light }: {
       : kind === 'sun'
         ? `☀️ Tartışma ${clock}`
         : kind === 'vote'
-          ? `⛓️ Oylamaya kalan ${clock}`
+          ? `⚖️ Oylamaya kalan ${clock}`
           : `⏳ ${clock}`;
   const fill = kind === 'oxygen' ? (ratio > 0.35 ? '#48CAE4' : '#FF4D4D') : kind === 'sun' ? '#FFB703' : '#FF4D4D';
   return (
@@ -1574,13 +1623,22 @@ export function SkSheet({ title, icon, iconNode, onClose, children }: {
 // ---------------------------------------------------------------------------
 
 function groupOf(m: SkMsg): string {
-  if (m.round == null || !m.phase) return 'old';
-  return m.phase === 'night' ? `n${m.round}` : `d${m.round}`;
+  const h = m.hand ?? 0;
+  if (m.phase === 'lobby') return `${h}:l`;
+  if (m.round == null || !m.phase) return `${h}:old`;
+  return m.phase === 'night' ? `${h}:n${m.round}` : `${h}:d${m.round}`;
 }
 
-function groupTitle(m: SkMsg): string {
-  if (m.round == null || !m.phase) return 'Önceki mesajlar';
-  return m.phase === 'night' ? `🌙 ${m.round}. gece` : `☀️ ${m.round}. gün`;
+/** Tur başlıkları: Köpekbalığı'nda Resif Keşfi / Toplantı, Vampir–Köylü'de gece / gün */
+export type RoundTerms = { night: string; day: string };
+const SHARK_TERMS: RoundTerms = { night: 'Resif Keşfi', day: 'Toplantı' };
+
+function groupTitle(m: SkMsg, terms: RoundTerms): string {
+  const h = m.hand ?? 0;
+  const pre = h === 1 ? 'Önceki el · ' : h >= 2 ? `${h} el önce · ` : '';
+  if (m.phase === 'lobby') return `${pre}Bekleme odası`;
+  if (m.round == null || !m.phase) return `${pre}Önceki mesajlar`;
+  return `${pre}${m.round}. ${m.phase === 'night' ? terms.night : terms.day}`;
 }
 
 const CHANNEL_TAG: Record<string, string> = { shark: '🦈 Takım', dead: '🪸 Ölüler' };
@@ -1591,7 +1649,9 @@ export function MessageList({
   seatOf,
   showChannel,
   onReport,
+  terms = SHARK_TERMS,
 }: {
+  terms?: RoundTerms;
   messages: SkMsg[];
   seatOf?: (id: string | undefined) => number | undefined;
   showChannel?: boolean;
@@ -1606,19 +1666,20 @@ export function MessageList({
       last = g;
       out.push(
         <View key={`h-${m.id}`} style={[styles.msgHead, m.phase === 'night' ? styles.msgHeadNight : styles.msgHeadDay]}>
-          <Text style={styles.msgHeadText}>{groupTitle(m)}</Text>
+          <Text style={styles.msgHeadText}>{groupTitle(m, terms)}</Text>
         </View>,
       );
     }
     if (sys) {
       out.push(
         <View key={m.id} style={[styles.sysRow, { borderColor: sys.color }]}>
-          <RichLine text={m.body} chip={16} style={[styles.sysText, { color: sys.color }]} />
+          <RichLine text={m.body} chip={13} style={[styles.sysText, { color: sys.color }]} />
         </View>,
       );
       continue;
     }
-    const seat = seatOf?.(m.from);
+    // Önceki ellerde koltuk numaraları başkaydı: numara yalnızca bu elin mesajlarında
+    const seat = m.hand ? undefined : seatOf?.(m.from);
     const tag = showChannel && m.channel ? CHANNEL_TAG[m.channel] : undefined;
     out.push(
       <Pressable
@@ -1668,7 +1729,7 @@ function NoteCard({ note, byId }: { note: SkNote; byId: Map<string, SkPlayer> })
   const target = note.id ? byId.get(note.id) : undefined;
   const visitRow = (v: { round: number; names: string[]; ids?: string[] }, i: number) => (
     <View key={i} style={styles.visitRow}>
-      <Text style={styles.visitNight}>{`${v.round}. gece`}</Text>
+      <Text style={styles.visitNight}>{`${v.round}. Resif Keşfi`}</Text>
       <MiniSeat p={target} size={30} name={note.name} />
       <Text style={styles.visitArrow}>➜</Text>
       {v.names.length === 0 ? (
@@ -1678,12 +1739,26 @@ function NoteCard({ note, byId }: { note: SkNote; byId: Map<string, SkPlayer> })
       )}
     </View>
   );
+  if (note.kind === 'death') {
+    return (
+      <View style={[styles.result, { borderColor: '#FF4D4D' }]}>
+        <Text style={styles.resultTitle}>
+          {note.cause === 'squid'
+            ? 'Dev Mürekkep Balığı seni boğdu'
+            : note.cause === 'surfer'
+              ? 'Yalnız Sörfçü seni yaktı'
+              : 'Köpekbalıkları seni avladı'}
+        </Text>
+        <Text style={styles.resultMuted}>Elendin. Oyunu izleyebilir, elenenlerin sohbetine yazabilirsin.</Text>
+      </View>
+    );
+  }
   if (note.kind === 'blocked') {
     return (
       <View style={[styles.result, { borderColor: '#B7791F' }]}>
         <Text style={styles.resultBig}>🔨</Text>
         <Text style={styles.resultTitle}>Yeteneğin kilitlendi</Text>
-        <Text style={styles.resultMuted}>Çekiç Köpekbalığı seni bu gece engelledi, seçimin işlemedi.</Text>
+        <Text style={styles.resultMuted}>Çekiç Köpekbalığı seni bu resif keşfinde engelledi, seçimin işlemedi.</Text>
       </View>
     );
   }
@@ -1711,9 +1786,9 @@ function NoteCard({ note, byId }: { note: SkNote; byId: Map<string, SkPlayer> })
             <Text style={[styles.teamName, { color: team?.color ?? '#FFFFFF' }]}>{team?.name ?? '?'}</Text>
           </View>
         </View>
-        <Text style={styles.resultHead}>🌊 Akıntı haritası, son 2 gece kime gitti</Text>
+        <Text style={styles.resultHead}>🌊 Akıntı haritası, son 2 resif keşfinde kime gitti</Text>
         {(note.visits ?? []).length === 0 ? (
-          <Text style={styles.resultMuted}>Son 2 gecede kimseye gitmedi.</Text>
+          <Text style={styles.resultMuted}>Son 2 resif keşfinde kimseye gitmedi.</Text>
         ) : (
           (note.visits ?? []).map(visitRow)
         )}
@@ -1723,7 +1798,7 @@ function NoteCard({ note, byId }: { note: SkNote; byId: Map<string, SkPlayer> })
   // Kaplan: hedefin bu gece kime gittiği
   return (
     <View style={[styles.result, { borderColor: '#E07A00' }]}>
-      <Text style={styles.resultHead}>🐯 İzlediğin kişi bu gece kime gitti</Text>
+      <Text style={styles.resultHead}>🐯 İzlediğin kişi bu resif keşfinde kime gitti</Text>
       {(note.visits ?? []).length === 0 ? (
         <View style={styles.resultRow}>
           <MiniSeat p={target} size={48} name={note.name} />
@@ -1746,7 +1821,7 @@ export function NightResult({ notes, players }: { notes: SkNote[]; players: SkPl
       {rounds.map((r) => (
         <View key={r} style={styles.chat}>
           <View style={[styles.msgHead, styles.msgHeadNight]}>
-            <Text style={styles.msgHeadText}>{`🌙 ${r}. gece sonucun`}</Text>
+            <Text style={styles.msgHeadText}>{`${r}. Resif Keşfi sonucun`}</Text>
           </View>
           {notes
             .filter((n) => n.round === r)
@@ -1843,7 +1918,8 @@ export function PlayerCard({
 
 /**
  * Atma oylaması başlayınca sağ üstteki kırmızı oyuncular düğmesinden açılan küçük pencere: "③ Ali, ⑤ Veli için atma
- * oylaması başlattı" ve altında Atılsın / Atılmasın. Seçince kapanır (oylama üstteki kırmızı bantta sürer).
+ * oylaması başlattı" ve altında Atılsın / Atılmasın. Her oylamada bir kez açılır, seçince kapanır; sağ üstteki kırmızı
+ * düğmeyle yeniden açılır. Oylama bandı yalnızca başlatanda görünür (iki pencere üst üste binip takılmasın).
  */
 export function KickPopup({
   starterSeat,
@@ -2164,17 +2240,16 @@ const styles = StyleSheet.create({
     textShadowRadius: 6,
   },
   // Olay yazısı (AVLANDI, KAFESTE…) avatarın içinde, ortada
-  eventWrap: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, alignItems: 'center', justifyContent: 'center' },
+  eventWrap: { position: 'absolute', left: 2, right: 2, alignItems: 'center' },
   event: {
-    paddingHorizontal: 7,
-    height: 20,
-    borderRadius: 10,
+    maxWidth: '100%',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
   },
-  eventText: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 10.5, letterSpacing: 0.3 },
+  eventText: { color: '#FFFFFF', fontFamily: fonts.extra },
   seatChip: {
     paddingHorizontal: 3,
     alignItems: 'center',
@@ -2202,6 +2277,7 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     backgroundColor: 'rgba(11, 19, 43, 0.9)',
   },
+  cmdSub: { color: 'rgba(255,255,255,0.9)', fontFamily: fonts.extra, fontSize: 17, textAlign: 'center', marginTop: 2 },
   cmdText: {
     color: '#FFFFFF',
     fontFamily: fonts.black,
@@ -2309,10 +2385,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(10, 15, 30, 0.35)',
   },
   seatNo: {
-    // Kutucuğun üst ortasında (boyutu kutuya göre verilir)
+    // Kutucuğun sol üst köşesinde (boyutu kutuya göre verilir)
     position: 'absolute',
     top: 3,
-    left: '50%',
+    left: 3,
     paddingHorizontal: 3,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2335,6 +2411,8 @@ const styles = StyleSheet.create({
   },
   votesInText: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 13, lineHeight: 14 },
   votesRight: { left: undefined, right: 3 },
+  // Av oyu sağ üstte; aldığı oy varsa onun altında
+  huntPos: { left: undefined, right: 3 },
   huntIn: { flexDirection: 'row', gap: 1, paddingHorizontal: 5, backgroundColor: '#7A0A1A', borderColor: '#FF4D4D' },
   huntInIcon: { fontSize: 11, lineHeight: 14 },
   votesInSub: { color: '#FFFFFF', fontFamily: fonts.semi, fontSize: 7.5, lineHeight: 8 },
@@ -2408,7 +2486,7 @@ const styles = StyleSheet.create({
   rosterSeats: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 4 },
   rosterDead: { opacity: 0.55 },
   rosterWho: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: 130 },
-  rosterWhoName: { flexShrink: 1, fontFamily: fonts.extra, fontSize: 12.5 },
+  rosterRing: { borderWidth: 2, borderRadius: 14, padding: 1 },
   rosterStrike: {
     position: 'absolute',
     left: -2,
@@ -2468,14 +2546,15 @@ const styles = StyleSheet.create({
   mine: { alignSelf: 'flex-end', backgroundColor: 'rgba(72, 202, 228, 0.3)' },
   theirs: { alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.1)' },
   sysRow: {
-    alignSelf: 'stretch',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 10,
+    alignSelf: 'center',
+    maxWidth: '100%',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
     borderWidth: 1,
     backgroundColor: 'rgba(0,0,0,0.25)',
   },
-  sysText: { fontFamily: fonts.extra, fontSize: 12.5, lineHeight: 17 },
+  sysText: { fontFamily: fonts.semi, fontSize: 11, lineHeight: 14 },
   msgNight: { backgroundColor: 'rgba(28, 37, 90, 0.75)' },
   msgWho: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 1 },
   msgName: { color: '#B7A8FF', fontSize: 11, fontFamily: fonts.semi },

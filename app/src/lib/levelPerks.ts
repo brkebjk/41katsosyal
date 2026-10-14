@@ -1,13 +1,14 @@
 // Seviye ödülleri: her seviyenin ödülü sunucudaki `levels.perk` alanından gelir; burada yalnızca yazıları durur.
 // Ödüller birikmez (yalnızca bulunduğun seviyenin ödülü geçerlidir) ve her ay yeniden verilir.
 
-export type LevelPerk = 'game_plus1' | 'event_plus1' | 'quiz_mult' | 'unlimited_lives';
+export type LevelPerk = 'game_plus1' | 'event_min2' | 'event_plus1' | 'quiz_mult' | 'unlimited_lives';
 
 /** Seviye 4 ödülünün çarpanı (sunucuda level_quiz_mult_pct = 120) */
 export const LEVEL_QUIZ_MULT = 1.2;
 
 const PERK_TEXT: Record<LevelPerk, string> = {
   game_plus1: 'Yeni ödül yakında',
+  event_min2: 'Aylık etkinlik hakkın 2 olur',
   event_plus1: '+1 etkinlik hakkı',
   quiz_mult: `Bilgi Yarışması puanı ×${String(LEVEL_QUIZ_MULT).replace('.', ',')}`,
   unlimited_lives: 'Bilgi Yarışması’nda sınırsız can',

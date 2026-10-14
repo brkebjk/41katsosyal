@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '@/components/AppText';
 import { Avatar } from '@/components/Avatar';
 import { CrewChat } from '@/components/CrewChat';
+import { CrewInviteButtons } from '@/components/CrewInviteButtons';
 import { profilePhotoUrl } from '@/lib/profilePhoto';
 import { CloseX } from '@/components/CloseX';
 import { KeyboardLift } from '@/components/KeyboardLift';
@@ -25,7 +26,7 @@ import {
   type DmThread,
   type DmView,
 } from '@/lib/dm';
-import { getCrewInbox, type CrewInbox } from '@/lib/crew';
+import { getCrewInbox, getCrewView, type CrewInbox, type CrewInvite } from '@/lib/crew';
 import { timeAgo } from '@/lib/labels';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
@@ -46,7 +47,7 @@ export function DmInbox({
 }: {
   visible: boolean;
   openId: string | null;
-  /** Verilirse (bildirimden: etiket) ekip sohbeti doğrudan açılır; değer her açılışta farklı olmalı */
+  /** Verilirse (bildirimden: etiket) klan sohbeti doğrudan açılır; değer her açılışta farklı olmalı */
   openCrew?: string | null;
   subscribed: boolean;
   onClose: () => void;
@@ -61,8 +62,10 @@ export function DmInbox({
     setAppliedOpen(openId);
     if (openId) setChatId(openId);
   }
-  // Ekip sohbeti: listenin en üstünde ekibin adıyla durur
+  // Klan sohbeti: listenin en üstünde klanın adıyla durur
   const [crew, setCrew] = useState<CrewInbox>(null);
+  /** Cevaplanmamış klan davetleri (oyunda üstten çıkan bildirimde seçilmezse burada bekler) */
+  const [crewInvites, setCrewInvites] = useState<CrewInvite[]>([]);
   const [crewOpen, setCrewOpen] = useState(openCrew !== null);
   const [appliedCrew, setAppliedCrew] = useState<string | null>(openCrew);
   if (openCrew !== appliedCrew) {
@@ -95,12 +98,13 @@ export function DmInbox({
   }, [onUnread]);
 
   const load = useCallback(async () => {
-    const [res, c] = await Promise.all([listDms(), getCrewInbox()]);
+    const [res, c, cv] = await Promise.all([listDms(), getCrewInbox(), getCrewView()]);
     setError(res.error);
     setCrew(c);
+    setCrewInvites(cv.data?.invites ?? []);
     if (!res.error) {
       setThreads(res.data);
-      unreadRef.current(res.data.reduce((n, t) => n + t.unread, 0) + (c?.unread ?? 0));
+      unreadRef.current(res.data.reduce((n, t) => n + t.unread, 0) + (c?.unread ?? 0) + (cv.data?.invites.length ?? 0));
     }
   }, []);
 
@@ -183,11 +187,24 @@ export function DmInbox({
                   {newError ? <Text style={styles.newError}>{newError}</Text> : null}
                 </View>
               ) : null}
+              {crewInvites.map((i) => (
+                <View key={i.id} style={styles.crewInvite} testID="crew-invite-card">
+                  <View style={styles.threadTop}>
+                    <Ionicons name="people-circle" size={20} color={colors.success} />
+                    <Text style={styles.threadName} numberOfLines={1}>
+                      Klan daveti
+                    </Text>
+                    <Text style={styles.threadTime}>{timeAgo(i.created_at)}</Text>
+                  </View>
+                  <Text style={styles.infoText}>{`${i.from_name} seni “${i.crew_name}” klanına davet etti.`}</Text>
+                  <CrewInviteButtons inviteId={i.id} onDone={() => setTimeout(() => void load(), 900)} />
+                </View>
+              ))}
               {crew ? (
                 <Pressable
                   onPress={() => setCrewOpen(true)}
                   accessibilityRole="button"
-                  accessibilityLabel={`${crew.name} ekip sohbeti${crew.unread ? `, ${crew.unread} okunmamış` : ''}`}
+                  accessibilityLabel={`${crew.name} klan sohbeti${crew.unread ? `, ${crew.unread} okunmamış` : ''}`}
                   testID="crew-thread"
                   style={({ pressed }) => [
                     styles.thread,
@@ -204,13 +221,13 @@ export function DmInbox({
                       <Text style={styles.threadName} numberOfLines={1}>
                         {crew.name}
                       </Text>
-                      <Text style={styles.crewTag}>{`Ekip · ${crew.members}`}</Text>
+                      <Text style={styles.crewTag}>{`Klan · ${crew.members}`}</Text>
                       <Text style={styles.threadTime}>{timeAgo(crew.last_at)}</Text>
                     </View>
                     <Text style={[styles.threadLast, crew.unread > 0 && styles.threadLastUnread]} numberOfLines={1}>
                       {crew.last_body
                         ? `${crew.last_mine ? 'Sen' : (crew.last_alias ?? '')}: ${crew.last_body}`
-                        : 'Ekip sohbeti · ilk mesajı yaz'}
+                        : 'Klan sohbeti · ilk mesajı yaz'}
                     </Text>
                   </View>
                   {crew.unread > 0 ? (
@@ -284,7 +301,7 @@ export function DmInbox({
       </OverlayPanel>
       <CrewChat
         visible={visible && crewOpen}
-        title={crew?.name ?? 'Ekibim'}
+        title={crew?.name ?? 'Klanım'}
         onClose={() => {
           setCrewOpen(false);
           void load();
@@ -607,6 +624,14 @@ const styles = StyleSheet.create({
   },
   threadUnread: { borderWidth: 1.5, borderColor: colors.primary },
   crewThread: { borderWidth: 1, borderColor: colors.success },
+  crewInvite: {
+    gap: 6,
+    padding: spacing.md,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.success,
+  },
   crewIcon: {
     width: 50,
     height: 50,
