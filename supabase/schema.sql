@@ -2087,10 +2087,13 @@ returns trigger language plpgsql security definer set search_path = public as $$
 begin
   if tg_table_name in ('point_events', 'game_play_log') then
     if new.city is null then new.city := public._city_of(new.user_id); end if;
-    -- Bekleyen üye (şehri yok) puan almaz; moderatörün elle verdiği puan, moderatör ve test botları hariç
-    if tg_table_name = 'point_events' and new.city is null and new.created_by is null
-       and not exists (select 1 from public.profiles p where p.id = new.user_id and (p.role = 'admin' or p.is_bot)) then
-      return null;
+    -- Yalnızca puan kayıtları (iç içe: game_play_log'da bu alanlar yoktur, ifade hiç çalışmamalı)
+    if tg_table_name = 'point_events' then
+      -- Bekleyen üye (şehri yok) puan almaz; moderatörün elle verdiği puan, moderatör ve test botları hariç
+      if new.city is null and new.created_by is null
+         and not exists (select 1 from public.profiles p where p.id = new.user_id and (p.role = 'admin' or p.is_bot)) then
+        return null;
+      end if;
     end if;
   elsif tg_table_name = 'events' then
     new.city := coalesce(public._cell_city(new.cell_r), new.city, public._city_of(new.created_by));
