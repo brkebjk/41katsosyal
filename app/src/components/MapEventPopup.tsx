@@ -34,11 +34,14 @@ export function MapEventPopup({
   events,
   onClose,
   onChanged,
+  onEnterCode,
 }: {
   events: EventItem[];
   onClose: () => void;
   /** Katılım sonrası liste tazelensin */
   onChanged: () => void;
+  /** Kod girişi açıkken katılım kodunu girme (pencere kapanır, kod penceresi açılır) */
+  onEnterCode?: (ev: EventItem) => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -67,7 +70,7 @@ export function MapEventPopup({
     void syncEventReminders();
     await notify(
       'Katılımın kaydedildi',
-      'Etkinlik başlamadan 30 dakika önce telefonuna hatırlatma gelir (bildirim izni ve hatırlatma tercihi açıksa).\n\nKatılım kodu girişi etkinlik başlamadan 5 dakika önce açılır. Etkinlik yerinde düzenleyenin söylediği kodu Etkinlikler sekmesinde girdiğinde katılımın doğrulanır ve puan kazanırsın.',
+      'Etkinlik başlamadan 30 dakika önce telefonuna hatırlatma gelir (bildirim izni ve hatırlatma tercihi açıksa).\n\nKatılım kodu girişi etkinlik başlamadan 5 dakika önce açılır. Etkinlik yerinde düzenleyenin söylediği kodu haritadaki bu pencereden girdiğinde katılımın doğrulanır ve puan kazanırsın.',
       { icon: 'checkmark-circle', tone: 'success' },
     );
   }
@@ -121,12 +124,26 @@ export function MapEventPopup({
               {ev.is_mine ? (
                 <Text style={styles.state}>Bu etkinliği sen düzenliyorsun.</Text>
               ) : ev.is_registered ? (
-                <View style={styles.joined}>
-                  <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-                  <Text style={styles.joinedText}>
-                    Katılıyorsun. Kodu etkinlik yerinde Etkinlikler sekmesinden gir.
-                  </Text>
-                </View>
+                <>
+                  <View style={styles.joined}>
+                    <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+                    <Text style={styles.joinedText}>
+                      {ev.checked_in
+                        ? 'Katılımın doğrulandı.'
+                        : 'Katılıyorsun. Kod girişi açılınca düzenleyenin söylediği kodu buradan gir.'}
+                    </Text>
+                  </View>
+                  {onEnterCode && !ev.checked_in && ev.checkin_open ? (
+                    <PrimaryButton
+                      label="Katılım kodunu gir"
+                      onPress={() => {
+                        onClose();
+                        onEnterCode(ev);
+                      }}
+                      testID="map-event-code"
+                    />
+                  ) : null}
+                </>
               ) : full ? (
                 <Text style={styles.state}>Kontenjan dolu.</Text>
               ) : (

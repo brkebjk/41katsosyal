@@ -105,6 +105,9 @@ const ROOM_TEXT: Record<string, string> = {
   room_too_far:
     'Oda sahibinden uzaktasın. Yan yana oyunlara yalnızca oda sahibine yaklaşık 100 metre yakınken girilebilir (konum hatası dahil en çok 150 m). Kapalı mekândaysan pencereye yaklaşıp tekrar dene.',
   event_not_found: 'Bu etkinlik bulunamadı ya da iptal edildi.',
+  event_games_only:
+    'Başka bir şehirde yalnızca etkinlik oyunlarına girebilirsin; bu oyunlardan puan yazılmaz. Diğer yan yana oyunları kendi şehrinde oynarsın.',
+  city_required: 'Bu oyun için bir şehrimizde üye olman gerekiyor.',
   event_over: 'Etkinlik bitti; etkinlik odası açılamaz.',
   event_needs_verified: 'Etkinlik odası için en az 4 kişinin katılımını kodla doğrulaması gerekiyor.',
   event_raffle_exists: 'Bu etkinlikte en çok 5 çekiliş yapılabilir; hakkın doldu.',

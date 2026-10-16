@@ -147,7 +147,6 @@ declare
   v_pts int;
   v_note text;
 begin
-  perform public._require_city();
   v := public._require_user();
   select * into v_ev from public.events where id = p_event_id and not is_cancelled;
   if not found then raise exception 'event_not_found'; end if;

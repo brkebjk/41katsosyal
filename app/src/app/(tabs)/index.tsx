@@ -43,6 +43,7 @@ import { Screen } from '@/components/Screen';
 import { useSponsorMenu } from '@/components/useSponsorMenu';
 import { VenueAdminModal } from '@/components/VenueAdminModal';
 import { CloseX } from '@/components/CloseX';
+import { EventCodeModal, type CodeRequest } from '@/components/EventCodeModal';
 import { MapEventPopup } from '@/components/MapEventPopup';
 import { TourTarget } from '@/components/TourTarget';
 import {
@@ -77,6 +78,7 @@ import {
 import { venueImageUrl } from '@/lib/venueImage';
 import { useTabResetKey } from '@/lib/tabReset';
 import { useBackClose } from '@/lib/backPress';
+import { confirmMeetupSafety } from '@/lib/safety';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 const LEVEL_NAME = { 1: 'Hareketli', 2: 'Çok hareketli', 3: 'En hareketli' } as const;
@@ -185,7 +187,11 @@ function MapScreen({ resetKey }: { resetKey: number }) {
   const [pointers, setPointers] = useState<{ cells: Cell[]; key: number } | null>(null);
   /** Haritadaki etkinlik görseline dokununca açılan pencere (etkinlik kimlikleri) */
   const [eventPopup, setEventPopup] = useState<string[] | null>(null);
+  /** Etkinlik penceresinden açılan katılım kodu penceresi (ziyaretçi de kendi katıldığı etkinliğe kod girer) */
+  const [codeReq, setCodeReq] = useState<CodeRequest | null>(null);
   const seq = useRef(0);
+  /** “Haritada gör” başka şehre geçerken gösterilecek peteğin şehri (o geçişte odak korunur) */
+  const [focusForCity, setFocusForCity] = useState<string | null>(null);
   const { profile } = useAuth();
   const isModerator = profile?.role === 'admin';
   const isSponsor = profile?.role === 'sponsor';
@@ -210,7 +216,10 @@ function MapScreen({ resetKey }: { resetKey: number }) {
     if (paramKey && Number.isInteger(q) && Number.isInteger(r) && isLand(q, r)) {
       // Başka şehrin peteğiyse o şehir ziyaret edilir (harita o şehre geçer)
       const pc = cityOfR(r);
-      if (pc && pc !== viewCity) setVisiting(pc);
+      if (pc && pc !== viewCity) {
+        setFocusForCity(pc);
+        setVisiting(pc);
+      }
       // “Haritada gör”: menü açılmaz; petek 3 boyutlu “İNCELE” haliyle, biraz uzaktan gösterilir
       setSelected(null);
       setPreview({ q, r });
@@ -231,8 +240,11 @@ function MapScreen({ resetKey }: { resetKey: number }) {
     setSeenCity(viewCity);
     setSelected(null);
     setPreview((p) => (p && cityOfR(p.r) === viewCity ? p : null));
-    // Başka şehrin peteğine odak kalmasın (yoksa harita o şehrin açılış görünümü yerine rastgele bir yere açılıyordu)
-    setFocus((f) => (f && cityOfR(f.cell.r) === viewCity ? f : null));
+    // Ziyarette harita her zaman o şehrin açılış görünümüyle açılır; yalnızca “Haritada gör” peteği gösterir.
+    // Kendi şehrine dönünce bulunduğun petek (kendi şehrindeyse) korunur.
+    const keep = focusForCity === viewCity || viewCity === city.my;
+    setFocusForCity(null);
+    setFocus((f) => (keep && f && cityOfR(f.cell.r) === viewCity ? f : null));
     setPointers(null);
     setEventPopup(null);
     setSheet(null);
@@ -628,8 +640,8 @@ function MapScreen({ resetKey }: { resetKey: number }) {
             pointers={pointers}
             imageMarks={imageMarks}
             plainCloseUp
-            // Ziyarette etkinliklerin içine girilmez (yalnızca harita)
-            onImagePress={city.readOnly ? undefined : (ids) => setEventPopup([...ids])}
+            // Ziyaretçi de baktığı şehrin etkinliğine katılabilir (etkinlik puanı kazanır)
+            onImagePress={(ids) => setEventPopup([...ids])}
             controlsTourId="map-controls"
             leadingControls={
               <>
@@ -862,7 +874,12 @@ function MapScreen({ resetKey }: { resetKey: number }) {
                 <ScrollView contentContainerStyle={styles.cellMenuBody} nestedScrollEnabled>
                   <SelectedInfo cell={selected} level={levelOf(selected)} densityOpen={status.open} />
                   {city.readOnly ? (
-                    <VisitCellSummary events={hereEvents.length} rooms={hereRooms.length} venues={hereVenues.length} />
+                    <>
+                      <VisitCellSummary events={hereEvents.length} rooms={hereRooms.length} venues={hereVenues.length} />
+                      {/* Ziyaretçi: etkinliklere katılır; oyunlardan yalnızca etkinlik oyunlarına girer (oyun puanı yok) */}
+                      <GamesHere rooms={hereRooms.filter((r) => !!r.event_id)} />
+                      <EventsHere events={hereEvents} onOpen={(id) => setEventPopup([id])} />
+                    </>
                   ) : (
                   <>
                   {!isSponsor ? (
@@ -947,8 +964,14 @@ function MapScreen({ resetKey }: { resetKey: number }) {
             .filter((e): e is EventItem => e !== undefined)}
           onClose={() => setEventPopup(null)}
           onChanged={() => void load()}
+          onEnterCode={(ev) => {
+            void confirmMeetupSafety('event').then((ok) => {
+              if (ok) setCodeReq({ mode: 'attendee', event: { id: ev.id, title: ev.title, category: ev.category } });
+            });
+          }}
         />
       ) : null}
+      <EventCodeModal request={codeReq} onClose={() => setCodeReq(null)} onVerified={() => void load()} />
       {finderOpen ? (
         <FinderMenu
           games={finder.games}
@@ -1004,7 +1027,8 @@ function VisitCellSummary({ events, rooms, venues }: { events: number; rooms: nu
         {parts.length > 0 ? `Bu petekte ${parts.join(', ')} var.` : 'Bu petekte şu an etkinlik, açık oyun ya da mekân yok.'}
       </Text>
       <Text style={styles.visitNote}>
-        Ziyaretçisin: bu şehrin haritasına bakabilirsin, içeriklere yalnızca kendi şehrinde girebilirsin.
+        Ziyaretçisin: bu şehrin etkinliklerine katılıp etkinlik puanı kazanabilirsin. Oyunlardan puan kazanılmaz;
+        yalnızca etkinlik oyunlarına girebilirsin.
       </Text>
     </View>
   );
@@ -1307,7 +1331,16 @@ function GamesHere({ rooms }: { rooms: OpenRoom[] }) {
 }
 
 /** Seçilen petekteki yaklaşan etkinlikler. Etkinlik yoksa bunu açıkça söyler. */
-function EventsHere({ events, compact = false }: { events: EventItem[]; compact?: boolean }) {
+function EventsHere({
+  events,
+  compact = false,
+  onOpen,
+}: {
+  events: EventItem[];
+  compact?: boolean;
+  /** Verilirse satıra dokununca etkinlik penceresi açılır (ziyaret), yoksa Etkinlikler sekmesi */
+  onOpen?: (id: string) => void;
+}) {
   if (events.length === 0) {
     // Oyun odası varsa "etkinlik yok" satırı gereksiz yer kaplar
     if (compact) return null;
@@ -1328,9 +1361,9 @@ function EventsHere({ events, compact = false }: { events: EventItem[]; compact?
       {shown.map((e) => (
         <Pressable
           key={e.id}
-          onPress={() => router.push('/events')}
+          onPress={() => (onOpen ? onOpen(e.id) : router.push('/events'))}
           accessibilityRole="button"
-          accessibilityLabel={`${e.title} etkinliğini etkinlikler sekmesinde gör`}
+          accessibilityLabel={onOpen ? `${e.title} etkinliğini aç` : `${e.title} etkinliğini etkinlikler sekmesinde gör`}
           testID="map-event-row"
           style={({ pressed }) => [styles.eventRow, pressed && styles.eventRowPressed]}
         >

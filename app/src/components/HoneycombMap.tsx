@@ -93,6 +93,8 @@ type View2 = { scale: number; tx: number; ty: number };
 /** Dokunma işleyicilerinin okuduğu güncel değerler. Ekran çizimi bunları okumaz; yalnızca olay işleyicileri. */
 class LiveState {
   view: View2 | null = null;
+  /** Görünüm hâlâ açılış görünümü mü? (kullanıcı dokunana kadar; boyut sonradan değişirse yeniden ortalanır) */
+  homed = false;
   /** Haritanın şehri (bileşen şehir değişince yeniden kurulur: key={city}) */
   g: CityGeo;
   constructor(g: CityGeo) {
@@ -104,7 +106,9 @@ class LiveState {
   bottomInset = 0;
   frame = 0;
   onSelect: ((cell: Cell | null) => void) | null = null;
-  update(patch: Partial<Pick<LiveState, 'view' | 'w' | 'h' | 'topInset' | 'bottomInset' | 'frame' | 'onSelect'>>) {
+  update(
+    patch: Partial<Pick<LiveState, 'view' | 'homed' | 'w' | 'h' | 'topInset' | 'bottomInset' | 'frame' | 'onSelect'>>,
+  ) {
     Object.assign(this, patch);
   }
 }
@@ -491,7 +495,7 @@ export function HoneycombMap({
       const { w, h } = live;
       if (w <= 0 || h <= 0) return;
       const next = focusView(live.g, { q: focusQ, r: focusR }, w, h, live.topInset, live.bottomInset, live.view, focusFar);
-      live.update({ view: next });
+      live.update({ view: next, homed: false });
       setViewState(next);
     });
     return () => cancelAnimationFrame(id);
@@ -506,7 +510,7 @@ export function HoneycombMap({
       const { w, h } = live;
       if (w <= 0 || h <= 0) return;
       const next = cellsView(live.g, pointerCells, w, h, live.topInset, live.bottomInset, live.view);
-      live.update({ view: next });
+      live.update({ view: next, homed: false });
       setViewState(next);
     });
     return () => cancelAnimationFrame(id);
@@ -514,7 +518,7 @@ export function HoneycombMap({
 
   /** Görünümü hemen günceller; ekrana yansıması her karede en çok bir kez olur. */
   function setView(v: View2 | null) {
-    live.update({ view: v });
+    live.update({ view: v, homed: false });
     if (!v) {
       setViewState(null);
       return;
@@ -530,13 +534,20 @@ export function HoneycombMap({
   function onLayout(e: LayoutChangeEvent) {
     const { width, height: h } = e.nativeEvent.layout;
     if (width <= 0 || h <= 0) return;
-    live.update({ w: width, h });
+    const resized = width !== live.w || h !== live.h;
+    live.update({ w: width, h, topInset, bottomInset });
     setSize({ w: width, h });
+    // Boşluklar doğrudan bileşenin değerlerinden okunur (ilk ölçüm, değerlerin aktarıldığı etkiden önce gelebilir)
     if (!live.view) {
-      const v =
-        focus && cityOfR(focus.cell.r) === g.key
-        ? focusView(g, focus.cell, width, h, live.topInset, live.bottomInset, null, focus.farPx)
-        : homeView(g, width, h, live.topInset, live.bottomInset);
+      const onFocus = focus && cityOfR(focus.cell.r) === g.key;
+      const v = onFocus
+        ? focusView(g, focus.cell, width, h, topInset, bottomInset, null, focus.farPx)
+        : homeView(g, width, h, topInset, bottomInset);
+      live.update({ view: v, homed: !onFocus });
+      setViewState(v);
+    } else if (live.homed && resized) {
+      // Açılıştan sonra boyut değiştiyse (ekran yerleşirken) dokunulmamış görünüm yeniden ortalanır
+      const v = homeView(g, width, h, topInset, bottomInset);
       live.update({ view: v });
       setViewState(v);
     }

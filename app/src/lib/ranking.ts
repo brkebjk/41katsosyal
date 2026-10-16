@@ -465,8 +465,11 @@ export type MyGameResult = {
   result_points: number;
   /** Hesaba gerçekten yazılan puan (günlük/aylık sınır dolduysa 0) */
   awarded: number;
-  /** 'ok' puan yazıldı · 'cap' günlük/aylık sınır doldu · 'too_few' puan için oyuncu az · 'none' sonuç yok */
-  note: 'ok' | 'cap' | 'too_few' | 'none';
+  /**
+   * 'ok' puan yazıldı · 'cap' günlük/aylık sınır doldu · 'too_few' puan için oyuncu az · 'visitor' başka şehrin oyunu
+   * (ziyaretçi ya da bekleyen üye oyundan puan almaz) · 'none' sonuç yok
+   */
+  note: 'ok' | 'cap' | 'too_few' | 'visitor' | 'none';
 };
 
 export async function getMyGameResult(roomId: string): Promise<MyGameResult | null> {

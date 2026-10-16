@@ -1329,7 +1329,9 @@ function Game({ roomId }: { roomId: string }) {
                 ? `+${fmtPts(r.awarded)} puan · ${r.players} oyuncu arasında ${r.best_rank}. sıra`
                 : r.note === 'too_few'
                   ? `${r.best_rank}. sıra · puan için en az ${result.rules.partyMinPlayers} kişi gerekir.`
-                  : `${r.best_rank}. sıra · bu ayın puan hedefini tamamladın, puan yazılmadı.`;
+                  : r.note === 'visitor'
+                    ? `${r.best_rank}. sıra · başka şehrin oyunundan puan yazılmaz.`
+                    : `${r.best_rank}. sıra · bu ayın puan hedefini tamamladın, puan yazılmadı.`;
     prompt = {
       title: w.title,
       lines: [

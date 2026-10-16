@@ -58,6 +58,9 @@ ROAD_MIN = 150.0  # bundan kısa (birleştirildikten sonra) yol parçası çizil
 # bu hatta değen petekler su sayılır. Kutu (boylam/enlem) ve orta hattın aranmaya başlandığı nokta.
 STRAITS = {'istanbul': [{'box': (28.975, 40.995, 29.16, 41.24), 'seed': (29.058, 41.085), 'open': 3500.0}]}
 # Kocaeli: körfezi çevreleyen ilçelerin adları körfeze yakın yazılır (ziyaret görünümü Derince merkezlidir)
+# İlçe adı bu peteğin üstünde yazar (yerel q, r): Başiskele kardelen-limanı, İzmit arı-mahallesi
+LABEL_CELL = {'kocaeli': {'Başiskele': (99, -17), 'İzmit': (92, -1)}}
+
 GULF = {'kocaeli': {'line': [(29.60, 40.735), (29.72, 40.722), (29.82, 40.728), (29.90, 40.745), (29.94, 40.758)],
                     'districts': ['Başiskele', 'İzmit', 'Derince', 'Gölcük', 'Körfez'], 'inland': 1300.0}}
 
@@ -410,6 +413,11 @@ def build_city(c, da, places_tb, out_places, roads):
                 inner = u.buffer(-gulf['inland'] / 2)
             if not inner.is_empty:
                 rp = shapely.ops.nearest_points(inner, gulf_line)[0]
+        # İstenen petekte duran ilçe adları (peteğin ortası; petek adı uygulamadaki üretilen ad)
+        at = LABEL_CELL.get(c['key'], {}).get(n)
+        if at:
+            q, r = at
+            rp = Point(SIZE * math.sqrt(3) * (q + r / 2), SIZE * 1.5 * r)
         dlabels.append([n, jround(rp.x), jround(rp.y), round(u.area / 1e6, 1)])
     hlist = []
     for h in hoods:

@@ -2092,6 +2092,10 @@ begin
     if new.city is null then new.city := public._city_of(new.user_id); end if;
     -- Yalnızca puan kayıtları (iç içe: game_play_log'da bu alanlar yoktur, ifade hiç çalışmamalı)
     if tg_table_name = 'point_events' then
+      -- Bekleyen üyenin etkinlik puanı etkinliğin şehrine yazılır
+      if new.city is null and new.event_id is not null then
+        new.city := (select e.city from public.events e where e.id = new.event_id);
+      end if;
       -- Bekleyen üye (şehri yok) puan almaz; moderatörün elle verdiği puan, moderatör ve test botları hariç
       if new.city is null and new.created_by is null
          and not exists (select 1 from public.profiles p where p.id = new.user_id and (p.role = 'admin' or p.is_bot)) then
@@ -2871,7 +2875,9 @@ begin
       from public.point_events pe join public.game_rooms gr on gr.id = pe.room_id
      where pe.user_id = g.user_id and pe.source = v_src and gr.game_type = new.game_type
        and pe.created_at >= public._month_start();
-    if v_rated and v_earned < v_month then
+    -- Ziyaretçi (başka şehrin yan yana oyunu, etkinlik oyunu dahil) ve bekleyen üye oyundan puan almaz
+    if v_rated and v_earned < v_month
+       and (new.remote or (new.city is not null and public._city_of(g.user_id) is not distinct from new.city)) then
       v_pts := g.points;
       -- Paket 26: Vampir başarım ödülü, Vampir–Köylü puanlarını kalıcı ×1,25 yapar (0,5'e yuvarlanır)
       v_mult := new.game_type = 'vampire_villager' and public._has_reward(g.user_id, 'vv_master');
@@ -2932,7 +2938,9 @@ begin
   return query select g.best_rank, g.players,
     g.points::numeric,
     v_awarded,
-    (case when v_awarded > 0 then 'ok' when g.players < v_min then 'too_few' else 'cap' end)::text;
+    (case when v_awarded > 0 then 'ok' when g.players < v_min then 'too_few'
+          when not r.remote and public._city_of(auth.uid()) is distinct from r.city then 'visitor'
+          else 'cap' end)::text;
 end $$;
 
 -- Oda bekleme salonundan çıkınca (oyun başladı, bitti, iptal) oda sahibinin kesin konumu silinir
@@ -3751,7 +3759,7 @@ declare
   v_ev public.events;
   v_waived boolean;
 begin
-  perform public._require_city();
+  -- Ziyaretçi ve bekleyen üye de baktığı şehrin etkinliğine katılır (etkinlik puanı kazanır)
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
   -- Etkinlik satırı kilitlenir: kontenjanın son yerine iki kişi aynı anda yazılamasın
@@ -3857,7 +3865,6 @@ declare
   v_allowed double precision;
   v_code text := upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
 begin
-  perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
   delete from public.room_join_failures where failed_at < now() - interval '1 hour';
@@ -3876,6 +3883,15 @@ begin
   end if;
   -- Bilgi Yarışması oda ile oynanmaz (eski açık kalmış oda olsa bile girilmez)
   if v_room.game_type = 'quiz' then raise exception 'game_not_available'; end if;
+  -- Ziyaretçi (başka şehrin odası) ve bekleyen üye (şehri yok) yalnızca etkinlik oyununa girer; oyundan puan almaz
+  -- (puan kuralı oyun bitişinde). Uzaktan odaya şehri olmayan giremez.
+  if v.role <> 'admin' then
+    if v_room.remote then
+      if public._city_of(v.id) is null then raise exception 'city_required'; end if;
+    elsif v_room.event_id is null and public._city_of(v.id) is distinct from v_room.city then
+      raise exception 'event_games_only';
+    end if;
+  end if;
 
   -- Moderatör çekilişe oyuncu olarak girmez (kazanamaz). Vampir–Köylü'de başkasının odasına bakar; kendi odasını
   -- "Otomatik Oyun" ya da "Ben Yöneticiyim ve oynayacağım" diye açtıysa oyuncu olarak girer.
@@ -4534,6 +4550,11 @@ begin
   -- Uzaktan oda açılmaz: uzaktan oyun yalnızca eşleştirmeyle başlar (oyun bitince bekleyenlerin odası açık kalır)
   if p_remote then raise exception 'remote_match_only'; end if;
   perform public._sweep_live_rooms();
+  -- Başka şehirde yalnızca etkinlik oyunu oynanır: etkinliksiz yan yana oda kendi şehrinin dışında açılmaz
+  if p_event_id is null and v.role <> 'admin' and p_place_r is not null
+     and public._cell_city(p_place_r) is distinct from public._city_of(v.id) then
+    raise exception 'event_games_only';
+  end if;
   -- Paket 27: etkinlik oyunu / etkinlik çekilişi. Yalnızca etkinliği açan kişi (ya da moderatör) açar; en az
   -- pts_event_min_attendees (4) doğrulanmış katılımcı gerekir. Oyun: etkinlik "oyunlu" olmalı, başlamış olmalı, en az 4
   -- kişilik bir yan yana oyun olmalı (Bilgi Yarışması olmaz) ve etkinlikte aynı anda tek açık oyun odası olur.
