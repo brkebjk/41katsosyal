@@ -1,0 +1,49 @@
+name: Supabase şemasını uygula
+
+on:
+  push:
+    branches: [claude/kind-goodall-dy5z7y]
+    paths:
+      - supabase/schema.sql
+      - .github/workflows/supabase-sema.yml
+  workflow_dispatch:
+
+concurrency:
+  group: supabase-sema
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  uygula:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bağlantı adresi var mı
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::SUPABASE_DB_URL gizli anahtarı eklenmemiş. Repo > Settings > Secrets and variables > Actions bölümünden ekleyip bu çalıştırmayı yeniden başlat (Re-run)."
+            exit 1
+          fi
+
+      - name: psql hazır
+        run: |
+          if ! command -v psql >/dev/null; then
+            sudo apt-get update -q && sudo apt-get install -y -q postgresql-client
+          fi
+          psql --version
+
+      - name: schema.sql çalıştır
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGCONNECT_TIMEOUT: "20"
+        run: |
+          psql "$SUPABASE_DB_URL" -X -q -v ON_ERROR_STOP=1 \
+            -c "set statement_timeout = 0" \
+            -f supabase/schema.sql
+          echo "Şema başarıyla uygulandı."
