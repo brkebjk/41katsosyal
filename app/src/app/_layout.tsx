@@ -9,7 +9,6 @@ import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AwakeDimmer } from '@/components/AwakeDimmer';
-import { AppTour } from '@/components/AppTour';
 import { CityGate } from '@/components/CityGate';
 import { DialogHost } from '@/components/DialogHost';
 import { FullScreenState } from '@/components/FullScreenState';
@@ -119,10 +118,7 @@ function RootNavigator() {
       {/* Kurtarma kelimelerinden sonra: şehir seçilmemişse şehir seçimi (bir kez; sonra yalnızca göçle değişir) */}
       {ready && city.loaded && !city.my ? <CityGate /> : null}
 
-      {/* Şehir seçildikten sonra bir kez: sekme sekme uygulama eğitimi ve hoş geldin ekranı */}
-      {ready && city.loaded && city.my && profile?.id && profile.role !== 'sponsor' ? (
-        <AppTour key={profile.id} userId={profile.id} />
-      ) : null}
+      {/* Şehir seçildikten sonra bir kez: uygulama eğitimi (sekmelerin içinde çizilir, bkz. (tabs)/_layout) */}
 
       {/* Üstten kayan bildirim (uygulama açıkken yeni bildirim/duyuru gelince) */}
       {isLoggedIn && !loading ? <TopToastHost /> : null}

@@ -1,9 +1,7 @@
-# Görev Test Rehberi – İlk giriş, eğitim, ziyaret, harita
+# Görev Test Rehberi – İlk giriş, eğitim (hata düzeltmesi), ziyaret, harita
 
-## A. Supabase'i güncelle
-1. **SQL Editor** > **+ New query** > `supabase/parcalar/1.sql` dosyasının tamamını yapıştır > **Run**.
-2. Aynısını `2.sql`, `3.sql`, `4.sql` için yap.
-3. Yer listesi (places) değişmedi, CSV'leri yeniden yüklemen gerekmez.
+## A. Supabase
+- Bu düzeltmede sunucu değişmedi. Önceki paketin SQL'lerini çalıştırdıysan bir şey yapma.
 
 ## B. İlk giriş (yeni hesapla dene)
 1. Önce izin ekranları gelir (bildirim, konum, tema).
@@ -17,6 +15,7 @@
 1. Sırayla **Akış, Etkinlik, Harita, Oyun, Profil** sekmesine dokunman istenir (ok sekmeyi gösterir).
 2. Dokununca o sekmede neler olduğu yazar. **Devam** ile sıradakine geçilir.
 3. En sonda **Hoş geldin!** ekranı: **Yarışma kuralları**, **Ödül programı**, **Başla**.
+4. Sekme geçişlerinde terminalde hata çıkmamalı. Eğitim sırasında başka bir ekran açılırsa eğitim onun altında kalır, geri dönünce devam eder.
 
 ## D. Ziyaret ve göç
 1. Haritada büyütecin hemen üstünde mor **⟳** düğmesi var: Şehrim (göç ve ziyaret) açılır.

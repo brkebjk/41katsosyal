@@ -4,12 +4,15 @@ import { useEffect } from 'react';
 import { AppState, StyleSheet, View, type ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AppTour } from '@/components/AppTour';
 import { HexClusterIcon } from '@/components/HexClusterIcon';
 import { NoticeDot } from '@/components/NoticeDot';
 import { useAuth } from '@/lib/auth';
+import { useCity } from '@/lib/city';
 import { isLiveNotifyOn, startLiveNotify } from '@/lib/liveNotify';
 import { clearEventReminders, syncEventReminders } from '@/lib/localNotify';
 import { refreshNotices, resetNotices, useNotices } from '@/lib/notices';
+import { usePermissionsDone } from '@/lib/onboarding';
 import { tabFocused } from '@/lib/tabReset';
 import { pollToasts, resetToastClock } from '@/lib/topToast';
 import { callRpc } from '@/lib/rpc';
@@ -78,9 +81,12 @@ function TabDot({ dotKey }: { dotKey: DotKey }) {
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
-  const { profile } = useAuth();
+  const { profile, account } = useAuth();
   const isModerator = profile?.role === 'admin';
   const userId = profile?.id ?? null;
+  const city = useCity();
+  const permissionsDone = usePermissionsDone();
+  const tourReady = permissionsDone && !!account && !account.needs_recovery && city.loaded && !!city.my;
 
   // Çevrimiçi sinyali: uygulama açıkken 5 dakikada bir ve uygulamaya dönünce (yalnızca moderatör görür)
   useEffect(() => {
@@ -167,7 +173,11 @@ export default function TabsLayout() {
 
   // Yazı tipi satır yüksekliği büyük olduğu için çubuğa sabit ve yeterli bir yükseklik veriyoruz.
   const bottom = Math.max(insets.bottom, 8);
+  // Uygulama eğitimi: izin ekranları ve şehir seçimi bittikten sonra bir kez (sekmelerin üstünde; başka bir ekran
+  // açılınca o ekranın altında kalır)
+  const showTour = tourReady && !!profile?.id && profile.role !== 'sponsor';
   return (
+    <View style={styles.flex}>
     <Tabs
       initialRouteName="index"
       // Başka sekmeye geçilince bırakılan sekme ilk haline döner (açık pencereler kapanır)
@@ -211,9 +221,12 @@ export default function TabsLayout() {
         }}
       />
     </Tabs>
+      {showTour && profile ? <AppTour key={profile.id} userId={profile.id} tabBarHeight={58 + bottom} /> : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   tabDot: { position: 'absolute', top: -3, right: -6 },
 });

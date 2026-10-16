@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router, useSegments } from 'expo-router';
+import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -106,15 +106,12 @@ const STEPS: Step[] = [
  * o sekmede neler olduğu ve hangi menüden nereye gidileceği anlatılır. En sonda hoş geldin ekranı; altında yarışma
  * kuralları ve ödül programı düğmeleri. Sekme çubuğu açık kalır (dokunulsun diye), ekranın geri kalanı kapanır.
  */
-export function AppTour({ userId }: { userId: string }) {
+export function AppTour({ userId, tabBarHeight }: { userId: string; tabBarHeight: number }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [phase, setPhase] = useState<'checking' | 'tap' | 'info' | 'welcome' | 'done'>('checking');
   const [index, setIndex] = useState(0);
   const step = STEPS[index];
-  // Eğitim yalnızca sekmelerdeyken görünür (oyuna ya da başka bir ekrana geçilince bekler)
-  const segments = useSegments();
-  const onTabs = segments[0] === '(tabs)';
 
   useEffect(() => {
     let alive = true;
@@ -131,12 +128,18 @@ export function AppTour({ userId }: { userId: string }) {
   // İstenen sekmeye dokununca o sekmenin anlatımı açılır
   useEffect(() => {
     if (phase !== 'tap') return;
-    return onTabFocused((name) => {
-      if (name === STEPS[index].tab) setPhase('info');
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const off = onTabFocused((name) => {
+      // Sekme geçişi bittikten sonra (gezinme sırasında başka bileşen çizilirken durum değiştirilmez)
+      if (name === STEPS[index].tab) t = setTimeout(() => setPhase('info'), 0);
     });
+    return () => {
+      off();
+      if (t) clearTimeout(t);
+    };
   }, [phase, index]);
 
-  if (phase === 'checking' || phase === 'done' || (!onTabs && phase !== 'welcome')) return null;
+  if (phase === 'checking' || phase === 'done') return null;
 
   function next() {
     const n = index + 1;
@@ -155,7 +158,7 @@ export function AppTour({ userId }: { userId: string }) {
   }
 
   // Sekme çubuğunun yüksekliği (sekme düzenindekiyle aynı: 58 + alt boşluk)
-  const tabBarH = 58 + Math.max(insets.bottom, 8);
+  const tabBarH = tabBarHeight;
   const slotW = width / TAB_COUNT;
   const arrowX = slotW * step.slot + slotW / 2 - 14;
 
