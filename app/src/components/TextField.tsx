@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { forwardRef, useState, type ComponentProps } from 'react';
-import { Pressable, StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View, type TextInputProps, type TextInputInstance } from 'react-native';
 
 import { Text } from '@/components/AppText';
 import { HelpLabel } from '@/components/HelpLabel';
@@ -21,7 +21,7 @@ type Props = TextInputProps & {
 };
 
 /** Etiketli, simgeli metin kutusu. */
-export const TextField = forwardRef<TextInput, Props>(function TextField(
+export const TextField = forwardRef<TextInputInstance, Props>(function TextField(
   { label, icon, password = false, help, compact = false, invalid = false, style, ...rest },
   ref,
 ) {

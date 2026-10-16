@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View, type ScrollViewInstance } from 'react-native';
 
 import { Text } from '@/components/AppText';
 import type { ChatMsg } from '@/lib/quiz';
@@ -31,7 +31,7 @@ export function QuizChat({ chat, disabledText = null, onSend, onReport, alwaysOp
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [seen, setSeen] = useState(0);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const last = chat[chat.length - 1] ?? null;
   const unread = open ? 0 : Math.max(0, chat.filter((m) => !m.mine).length - seen);
 

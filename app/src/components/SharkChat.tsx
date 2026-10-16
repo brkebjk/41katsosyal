@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
   useWindowDimensions,
+  type ScrollViewInstance,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -252,7 +253,7 @@ export function SharkChat({
     if (err) setError(err);
     else setText('');
   }
-  const scroll = useRef<ScrollView>(null);
+  const scroll = useRef<ScrollViewInstance>(null);
 
   return (
     <>

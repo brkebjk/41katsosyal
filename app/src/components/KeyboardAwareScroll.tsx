@@ -3,11 +3,12 @@ import {
   Platform,
   ScrollView,
   TextInput,
-  View,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ScrollViewProps,
+  type ScrollViewInstance,
+  type ViewInstance,
 } from 'react-native';
 
 import { onRevealRequest, scrollTargetFor, useKeyboardTop } from '@/lib/keyboard';
@@ -17,13 +18,13 @@ import { onRevealRequest, scrollTargetFor, useKeyboardTop } from '@/lib/keyboard
  * klavyenin altında kalıyorsa içeriği kaydırıp kutuyu görünür yapar. Dışına `KeyboardLift` konursa
  * kaydırma alanı klavyenin üstünde biter, burası da kutuyu o alanın içinde görünür tutar.
  */
-export const KeyboardAwareScroll = forwardRef<ScrollView, ScrollViewProps>(function KeyboardAwareScroll(
+export const KeyboardAwareScroll = forwardRef<ScrollViewInstance, ScrollViewProps>(function KeyboardAwareScroll(
   { onScroll, onLayout, onContentSizeChange, children, ...rest },
   ref,
 ) {
-  const scroll = useRef<ScrollView>(null);
-  const content = useRef<View>(null);
-  useImperativeHandle(ref, () => scroll.current as ScrollView);
+  const scroll = useRef<ScrollViewInstance>(null);
+  const content = useRef<ViewInstance>(null);
+  useImperativeHandle(ref, () => scroll.current as ScrollViewInstance);
 
   const scrollY = useRef(0);
   const viewHeight = useRef(0);
@@ -82,7 +83,7 @@ export const KeyboardAwareScroll = forwardRef<ScrollView, ScrollViewProps>(funct
       scrollEventThrottle={16}
       {...rest}
       ref={scroll}
-      innerViewRef={content as RefObject<View>}
+      innerViewRef={content as RefObject<ViewInstance>}
       onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
         scrollY.current = e.nativeEvent.contentOffset.y;
         onScroll?.(e);

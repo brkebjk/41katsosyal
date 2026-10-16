@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
 
 import { Text } from '@/components/AppText';
 import { HelpLabel } from '@/components/HelpLabel';
@@ -36,7 +36,7 @@ function startOfDay(d: Date): Date {
  */
 export function DateTimeField({ label, value, onChange, days = 45, help, compact = false, invalid = false }: Props) {
   const [open, setOpen] = useState(false);
-  const hourScroll = useRef<ScrollView>(null);
+  const hourScroll = useRef<ScrollViewInstance>(null);
   const hourScrolled = useRef(false);
   const today = useMemo(() => startOfDay(new Date()), []);
   const dayList = useMemo(

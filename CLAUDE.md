@@ -19,7 +19,7 @@ peoplehere.app.
 - Her teslimde yalnızca `GOREV_TEST_REHBERI.md` kısa test rehberi olarak yeniden yazılır; başka log/md dosyası açılmaz.
 
 ## Yapı
-- `app/` – Expo SDK 57, React Native 0.86, expo-router. Ekranlar `app/src/app`, sekmeler `(tabs)`: akis, events, index
+- `app/` – Expo SDK 58, React Native 0.88, expo-router. Ekranlar `app/src/app`, sekmeler `(tabs)`: akis, events, index
   (Harita), games, profile. Ortak kod `src/components`, `src/lib`, tema `src/theme/index.ts`. Ayrıca `app/AGENTS.md` oku.
 - `admin-web/` – moderatör web paneli (Vite + React, Supabase'e doğrudan bağlanır, RLS ile yalnızca admin).
 - `supabase/schema.sql` – TÜM sunucu (tablolar, RLS, RPC'ler). Baştan sona tekrar çalıştırılabilir (idempotent) olmalı.

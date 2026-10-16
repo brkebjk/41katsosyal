@@ -2,12 +2,12 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, View, type ImageSourcePropType } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/AppText';
 import { Popup } from '@/components/Popup';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { quizCardImages, quizImages } from '@/lib/images';
+import { quizCardImages, quizImages, type ImageSourcePropType } from '@/lib/images';
 import { fmtPts } from '@/lib/labels';
 import { JOKER_INFO, mmss, type JokerKind, type JokerSet } from '@/lib/quiz';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';

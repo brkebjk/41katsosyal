@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View, type ScrollViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/AppText';
@@ -252,7 +252,7 @@ function DmChat({ threadId, onClose }: { threadId: string | null; onClose: () =>
   useDraftText(threadId ? `dm:${threadId}` : null, text, setText);
   const [sending, setSending] = useState(false);
   const [inputKey, setInputKey] = useState(0);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const lastCount = useRef(0);
 
   const load = useCallback(async (id: string) => {

@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useRef, useState } from 'react';
 import { Image } from 'expo-image';
-import { Modal, Pressable, StyleSheet, View, useWindowDimensions, type ScrollView, type TextInput } from 'react-native';
+import { Modal, Pressable, StyleSheet, View, useWindowDimensions, type ScrollViewInstance, type TextInputInstance } from 'react-native';
 
 import { Text } from '@/components/AppText';
 import { KeyboardLift } from '@/components/KeyboardLift';
@@ -151,9 +151,9 @@ export function EventForm({ visible, onClose, onCreated, userId, hostName, isMod
   /** Boş bırakılan / hatalı zorunlu alan (kırmızı çerçeve ve altında hata yazısı) */
   const [invalid, setInvalid] = useState<FieldKey | null>(null);
   const [layouts] = useState(() => new FieldLayouts());
-  const scrollRef = useRef<ScrollView>(null);
-  const descRef = useRef<TextInput>(null);
-  const locRef = useRef<TextInput>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const descRef = useRef<TextInputInstance>(null);
+  const locRef = useRef<TextInputInstance>(null);
   const [draftReady, setDraftReady] = useState(false);
 
   // Pencere açılınca kayıtlı taslak varsa yazılanlar geri gelir

@@ -65,7 +65,7 @@ function tabIcon(active: IconName, inactive: IconName, dot?: DotKey) {
   function TabIcon({ color, size, focused }: { color: ColorValue; size: number; focused: boolean }) {
     return (
       <View>
-        <Ionicons name={focused ? active : inactive} size={size} color={color} />
+        <Ionicons name={focused ? active : inactive} size={size} color={color as string} />
         {dot ? <TabDot dotKey={dot} /> : null}
       </View>
     );
@@ -88,6 +88,11 @@ function TabDot({ dotKey }: { dotKey: DotKey }) {
   if (!on) return null;
   return <NoticeDot size={12} ringColor="#0F1424" style={styles.tabDot} testID={`tab-dot-${dotKey}`} />;
 }
+
+// Uygulama Harita sekmesiyle açılır (açılış sekmesi tercihi ayrıca uygulanır)
+export const unstable_settings = {
+  anchor: 'index',
+};
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
@@ -231,7 +236,6 @@ export default function TabsLayout() {
   return (
     <View style={styles.flex}>
     <Tabs
-      initialRouteName="index"
       // Başka sekmeye geçilince bırakılan sekme ilk haline döner (açık pencereler kapanır)
       screenListeners={({ route }) => ({ focus: () => tabFocused(route.name) })}
       screenOptions={{
