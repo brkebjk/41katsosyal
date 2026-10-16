@@ -3578,7 +3578,7 @@ end $$;
 drop function if exists public.my_friendships();
 create or replace function public.my_friendships()
 returns table (id uuid, kind text, full_name text, alias text, avatar_index int, created_at timestamptz, title text,
-               photo_path text)
+               photo_path text, city text)
 language sql stable security definer set search_path = public as $$
   with ct as materialized (select * from public._champion_titles())
   select f.id,
@@ -3598,7 +3598,9 @@ language sql stable security definer set search_path = public as $$
               then public._title_join((select array_agg(t.label order by t.sort_order) from ct t where t.user_id = o.id))
               else null end,
          -- Profil resmi yalnızca arkadaşta (gerçek adı görünen)
-         case when f.status = 'accepted' then public._photo_of(o.id) else null end
+         case when f.status = 'accepted' then public._photo_of(o.id) else null end,
+         -- Arkadaşın şehri (başka şehirdeyse listede yanında yazar; istekte görünmez)
+         case when f.status = 'accepted' then public._city_of(o.id) else null end
     from public.friendships f
     join public.profiles o on o.id = case when f.requester_id = auth.uid() then f.addressee_id else f.requester_id end
    where public._is_active_user()

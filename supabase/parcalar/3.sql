@@ -7860,7 +7860,8 @@ delete from public.app_settings where key in ('crew_max_members', 'crew_change_d
 -- ---------------------------------------------------------------------------------------------------------------------
 -- PeopleHere şehir seçimi ve göç (bkz. bölüm 2f)
 --   my_city: şehrim, göç listesi ve şehirler (göç zamanı geldiyse kaydı tamamlar)
---   set_my_city: girişten sonra ilk seçim (bir kez; moderatör her zaman)
+--   set_my_city: girişten sonra ilk seçim (bir kez; moderatör her zaman). Üye yalnızca bulunduğu şehri seçer: uygulama
+--     telefonun bir kez aldığı konumun petek numarasını gönderir (tam konum gelmez, saklanmaz), petek o şehrin olmalı
 --   request_city_move: göç listesine yazılma. Kişi kutuya "Göçü onaylıyorum" yazar; aylık sıralama sıfırlandığında
 --     (gelecek ay başı) yeni şehri geçerli olur. Bu ayın puanları eski şehrin sıralamasında kalır.
 --   cancel_city_move: göç listesinden çıkma · admin_set_city: moderatör kendini ya da birini hemen taşır
@@ -7886,7 +7887,8 @@ begin
                  from public.cities c));
 end $$;
 
-create or replace function public.set_my_city(p_city text)
+drop function if exists public.set_my_city(text);
+create or replace function public.set_my_city(p_city text, p_q int default null, p_r int default null)
 returns void language plpgsql security definer set search_path = public as $$
 declare
   v public.profiles;
@@ -7894,6 +7896,10 @@ begin
   v := public._require_user();
   if not exists (select 1 from public.cities where key = p_city) then raise exception 'invalid_city'; end if;
   if v.city is not null and v.role <> 'admin' then raise exception 'city_already_set'; end if;
+  -- Bulunduğun şehir: peteği seçilen şehrin olmalı (haritaların dışındaysa uygulama en yakın şehrin peteğini gönderir)
+  if v.role <> 'admin' and (p_q is null or p_r is null or public._cell_city(p_r) is distinct from p_city) then
+    raise exception 'city_not_here';
+  end if;
   update public.profiles set city = p_city, city_next = null, city_next_at = null, city_set_at = now() where id = v.id;
 end $$;
 
@@ -8018,7 +8024,7 @@ grant execute on function public.sk_voice_get(uuid) to authenticated;
 grant execute on function public.my_remote_caps() to authenticated;
 grant execute on function public.my_game_goals() to authenticated;
 grant execute on function public.my_city() to authenticated;
-grant execute on function public.set_my_city(text) to authenticated;
+grant execute on function public.set_my_city(text, int, int) to authenticated;
 grant execute on function public.request_city_move(text, text) to authenticated;
 grant execute on function public.cancel_city_move() to authenticated;
 grant execute on function public.admin_set_city(uuid, text) to authenticated;
@@ -8153,10 +8159,3 @@ grant execute on function public.room_invite_message(uuid, text) to authenticate
 grant execute on function public.room_invite_thread(uuid) to authenticated;
 grant execute on function public.my_room_invite(uuid) to authenticated;
 grant execute on function public.room_accepted_invites(uuid) to authenticated;
-revoke all on public.room_invite_msgs from anon, authenticated;
-grant execute on function public.set_team_seeking(uuid, boolean) to authenticated;
-grant execute on function public.list_team_seekers(uuid) to authenticated;
-grant execute on function public.send_team_invite(uuid, uuid) to authenticated;
-grant execute on function public.respond_team_invite(uuid, boolean, text) to authenticated;
-grant execute on function public.leave_event_team(uuid) to authenticated;
-grant execute on function public.get_last_week_leaderboard(text, int, text) to authenticated;

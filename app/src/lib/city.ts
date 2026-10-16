@@ -1,7 +1,7 @@
 // Şehir: üye girişten sonra şehrini seçer (İstanbul, Kocaeli, İzmir). Akış, etkinlikler ve yan yana odalar şehre
 // özeldir; uzaktan oyunlar bütün illere açıktır. Şehir değiştirmek göçtür: göç listesine yazılır, aylık sıralama
 // sıfırlandığında (ay başı) yeni şehir geçerli olur. Moderatör hemen taşınır.
-// Ziyaret modu: başka bir şehrin haritası, akışı ve etkinlikleri yalnızca okunur (paylaşım, oyun, etkinlik açma yok).
+// Ziyaret modu: başka bir şehrin yalnızca haritasına bakılır (petek özeti görünür, içeriklere girilmez).
 // Bütün kurallar sunucudadır; bu dosya yalnızca ekranda göstermek ve sunucuya sormak içindir.
 
 import { useSyncExternalStore } from 'react';
@@ -45,6 +45,7 @@ const TEXT: Record<string, string> = {
   same_city: 'Zaten bu şehirdesin.',
   city_required: 'Önce şehrini seç.',
   wrong_city: 'Yalnızca kendi şehrinin haritasında etkinlik açabilirsin.',
+  city_not_here: 'Yalnızca bulunduğun şehri seçebilirsin. Konumunu yeniden alıp tekrar dene.',
 };
 
 type Raw = { city: string | null; next: string | null; next_at: string | null; move_at: string | null; instant: boolean };
@@ -71,8 +72,9 @@ export function resetCity(): void {
   emit({ loaded: false, my: null, next: null, nextAt: null, moveAt: null, instant: false, visiting: null });
 }
 
-export async function setMyCity(city: CityKey): Promise<Result> {
-  const res = await callRpcVoid('set_my_city', { p_city: city }, TEXT);
+/** İlk şehir seçimi: `cell` telefonun bir kez aldığı konumun peteği (sunucu şehrin bu petekle uyuştuğuna bakar) */
+export async function setMyCity(city: CityKey, cell: { q: number; r: number } | null): Promise<Result> {
+  const res = await callRpcVoid('set_my_city', { p_city: city, p_q: cell?.q ?? null, p_r: cell?.r ?? null }, TEXT);
   if (!res.error) await loadCity();
   return res;
 }

@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Easing,
@@ -77,12 +77,11 @@ function zoomMax(g: CityGeo): number {
 const TAP_SLOP = 8;
 /** Bir petek ekranda bundan küçükse (px) 5 binlik petek ızgarası hiç çizilmez; kara, ilçe sınırlarından boyanır. */
 const GRID_MIN_HEX_PX = 6;
-/** Bir petek ekranda bundan büyükse (px) mahalle sınırları, bundan büyükse mahalle adları çizilir */
-const HOOD_LINE_HEX_PX = 12;
-const HOOD_NAME_HEX_PX = 24;
-/** Mahalle sınırı ve adı: ilçe sınırından ince ve soluk */
-const HOOD_STROKE = isLight ? 'rgba(11, 31, 46, 0.32)' : 'rgba(244, 246, 251, 0.34)';
-const HOOD_TEXT = isLight ? 'rgba(11, 31, 46, 0.62)' : 'rgba(244, 246, 251, 0.66)';
+/** Ana yolların (otoyol, D-yolu) silüeti: kalın, soluk tek çizgi */
+const ROAD_STROKE = isLight ? 'rgba(70, 82, 104, 0.30)' : 'rgba(232, 238, 246, 0.30)';
+/** Ölçek çubuğu: yakınlaşıp uzaklaşırken bu kadar ms görünür kalır */
+const SCALE_BAR_MS = 1600;
+const NICE_M = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000];
 const SQ3 = Math.sqrt(3);
 
 type View2 = { scale: number; tx: number; ty: number };
@@ -118,32 +117,16 @@ function fitView(g: CityGeo, w: number, h: number): View2 {
 }
 
 /**
- * Açılış görünümü: Körfez, Derince, Başiskele ve Gölcük adları ekranda görünsün diye o bölgeye yakınlaşır.
+ * Açılış (ve ziyaret) görünümü: şehrin orta ilçesi (Derince, Kadıköy, Balçova) ortada, çevre ilçeler de görünür.
  * `top` ve `bottom`, haritanın üstüne/altına binen katmanların (başlık, renk açıklaması) yüksekliğidir.
  */
 function homeView(g: CityGeo, w: number, h: number, top: number, bottom: number): View2 {
-  const pts = g.districtLabels.filter((l) => g.home.includes(l.name));
-  if (pts.length === 0) return fitView(g, w, h);
-  const xs = pts.map((p) => p.x);
-  const ys = pts.map((p) => p.y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const padX = 64; // ilçe adı yazısı kenara taşmasın
-  const padTop = top + 36;
-  const padBottom = bottom + 36;
-  const availW = Math.max(w - 2 * padX, 80);
-  const availH = Math.max(h - padTop - padBottom, 80);
+  const c = g.districtLabels.find((l) => l.name === g.home.district);
+  if (!c) return fitView(g, w, h);
+  const availH = Math.max(h - top - bottom, 80);
   const base = fitView(g, w, h).scale;
-  const scale = Math.min(availW / Math.max(maxX - minX, 1000), availH / Math.max(maxY - minY, 1000), base * zoomMax(g));
-  const cx = (minX + maxX) / 2;
-  const cy = -(minY + maxY) / 2;
-  return {
-    scale,
-    tx: padX + availW / 2 - cx * scale,
-    ty: padTop + availH / 2 - cy * scale,
-  };
+  const scale = Math.min(Math.max(w / g.home.spanM, base), base * zoomMax(g));
+  return { scale, tx: w / 2 - c.x * scale, ty: top + availH / 2 + c.y * scale };
 }
 
 /** Bir peteği (yaklaşık 70 px genişliğinde görünecek kadar yakınlaşarak) boş alanın ortasına getirir */
@@ -237,10 +220,26 @@ const OutlineFill = memo(function OutlineFill({ d }: { d: string }) {
   return <Path d={d} fill={LAND_FILL} fillRule="evenodd" />;
 });
 
-/** Mahalle sınırlarının bir parçası (yakınlaşınca ekrandakiler çizilir) */
-const HoodLayer = memo(function HoodLayer({ d, w }: { d: string; w: number }) {
-  return <Path d={d} fill="none" stroke={HOOD_STROKE} strokeWidth={w} strokeLinejoin="round" strokeLinecap="round" />;
+/** Ana yollar: tek yol, yalnızca kalınlık değişir */
+const RoadLayer = memo(function RoadLayer({ d, w }: { d: string; w: number }) {
+  if (!d) return null;
+  return <Path d={d} fill="none" stroke={ROAD_STROKE} strokeWidth={w} strokeLinejoin="round" strokeLinecap="round" />;
 });
+
+/** Ölçek çubuğu: ~60–130 px'lik yuvarlak bir mesafe (yakınlaşıp uzaklaşırken görünür) */
+function ScaleBar({ scale, bottom }: { scale: number; bottom: number }) {
+  const m = NICE_M.reduce((best, v) => (v * scale <= 130 ? v : best), NICE_M[0]);
+  const w = Math.max(24, Math.round(m * scale));
+  const label = m >= 1000 ? `${m / 1000} km` : `${m} m`;
+  return (
+    <View style={[styles.scaleWrap, { bottom }]} pointerEvents="none" testID="map-scale">
+      <View style={styles.scaleBox}>
+        <Text style={styles.scaleText}>{label}</Text>
+        <View style={[styles.scaleBar, { width: w }]} />
+      </View>
+    </View>
+  );
+}
 
 /** Renkli petekler. Yalnızca veri yenilenince değişir. */
 const LevelLayers = memo(function LevelLayers({ levelPaths }: { levelPaths: [string, string, string] }) {
@@ -348,6 +347,22 @@ export function HoneycombMap({
 }: Props) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setViewState] = useState<View2 | null>(null);
+  // Ölçek çubuğu: yakınlaşma değişince kısa bir süre görünür (ilk açılışta görünmez)
+  const [scaleShown, setScaleShown] = useState(false);
+  const zoomKey = view ? Math.round(Math.log(view.scale) * 40) : null;
+  const firstZoom = useRef<number | null>(null);
+  useEffect(() => {
+    if (zoomKey === null) return;
+    if (firstZoom.current === null) {
+      firstZoom.current = zoomKey;
+      return;
+    }
+    if (zoomKey === firstZoom.current) return;
+    firstZoom.current = zoomKey;
+    setScaleShown(true);
+    const t = setTimeout(() => setScaleShown(false), SCALE_BAR_MS);
+    return () => clearTimeout(t);
+  }, [zoomKey]);
   // Dokunma işleyicilerinin okuduğu güncel değerler (ekran çizimi bunlardan okumaz)
   const [live] = useState(() => new LiveState(cityGeo(city)));
   // Haritanın şehri bileşen ömrü boyunca değişmez (şehir değişince üst bileşen haritayı key={city} ile yeniden kurar)
@@ -631,20 +646,7 @@ export function HoneycombMap({
   // Yakınlaşınca petek ızgarası (yalnızca ekrandaki parçalar); uzaklaşınca kara ilçe sınırlarından boyanır
   const showGrid = view ? HEX_SIZE * SQ3 * view.scale >= GRID_MIN_HEX_PX : false;
   const tiles = view && showGrid ? tilesInView(g.tiles, view, size.w, size.h) : [];
-  const hexPx = view ? HEX_SIZE * SQ3 * view.scale : 0;
-  const hoodTiles = view && hexPx >= HOOD_LINE_HEX_PX ? tilesInView(g.hoodTiles, view, size.w, size.h) : [];
-  // Mahalle adları: yakınlaşınca, ekranda ve yeterince büyük görünen mahallelerde (petek adlarının göründüğü en yakın
-  // görünümde yazılmaz, üst üste binmesin)
-  const hoodNames: { name: string; x: number; sx: number; sy: number }[] = [];
-  if (view && !plain && hexPx >= HOOD_NAME_HEX_PX) {
-    for (const l of g.hoodLabels) {
-      if (Math.sqrt(l.areaKm2) * 1000 * view.scale < 70) continue;
-      const sx = l.x * view.scale + view.tx;
-      const sy = -l.y * view.scale + view.ty;
-      if (sx < -40 || sy < -20 || sx > size.w + 40 || sy > size.h + 20) continue;
-      hoodNames.push({ name: l.name, x: l.x, sx, sy });
-    }
-  }
+  // Mahalle sınırları ve adları haritada çizilmez (mahalle adı petek menüsünde yazar)
 
   return (
     <View style={styles.wrap} onLayout={onLayout} testID="honeycomb-map">
@@ -656,6 +658,8 @@ export function HoneycombMap({
               <TileLayer key={t.key} d={t.path} />
             ))}
             {plain ? null : <LevelLayers levelPaths={levelPaths} />}
+            {/* Ana yollar (otoyol, D-yolu): petek renklerinin üstünde, işaretlerin altında silüet */}
+            <RoadLayer d={g.roadPath} w={px(2.6)} />
             {!plain && treasurePaths.halo ? (
               <Path
                 d={treasurePaths.halo}
@@ -770,10 +774,7 @@ export function HoneycombMap({
                 </G>
               </G>
             ) : null}
-            {/* Mahalle sınırları (yakınlaşınca, yalnızca ekrandaki parçalar); ilçe sınırı ve kıyı her zaman */}
-            {hoodTiles.map((t) => (
-              <HoodLayer key={t.key} d={t.path} w={px(0.8)} />
-            ))}
+            {/* İlçe sınırı ve kıyı her zaman */}
             <Path
               d={g.districtPath}
               fill="none"
@@ -792,19 +793,6 @@ export function HoneycombMap({
               />
             ) : null}
           </G>
-          {hoodNames.map((l) => (
-            <SvgText
-              key={`hn-${l.name}-${l.x}`}
-              x={l.sx}
-              y={l.sy}
-              fontSize={10}
-              fontFamily={fonts.semi}
-              fill={HOOD_TEXT}
-              textAnchor="middle"
-            >
-              {l.name}
-            </SvgText>
-          ))}
           {(plain ? [] : g.districtLabels).map((l) => {
             // Küçük ilçelerin adı yalnızca yeterince yakınlaşınca yazılır (üst üste binmesin)
             const widthPx = Math.sqrt(l.areaKm2) * 1000 * view.scale;
@@ -812,31 +800,18 @@ export function HoneycombMap({
             const x = l.x * view.scale + view.tx;
             const y = -l.y * view.scale + view.ty;
             return (
-              <G key={l.name}>
-                <SvgText
-                  x={x}
-                  y={y}
-                  fontSize={12}
-                  fontFamily={fonts.extra}
-                  fill="none"
-                  stroke={SEA}
-                  strokeWidth={3.5}
-                  strokeLinejoin="round"
-                  textAnchor="middle"
-                >
-                  {l.name}
-                </SvgText>
-                <SvgText
-                  x={x}
-                  y={y}
-                  fontSize={12}
-                  fontFamily={fonts.extra}
-                  fill={DISTRICT_TEXT}
-                  textAnchor="middle"
-                >
-                  {l.name}
-                </SvgText>
-              </G>
+              // Tek renk, gölgesiz (çevresindeki kontur çizimi haritayı yavaşlatıyordu)
+              <SvgText
+                key={l.name}
+                x={x}
+                y={y}
+                fontSize={12}
+                fontFamily={fonts.extra}
+                fill={DISTRICT_TEXT}
+                textAnchor="middle"
+              >
+                {l.name}
+              </SvgText>
             );
           })}
           {(plain ? [] : officialList).map((c) => {
@@ -1029,6 +1004,7 @@ export function HoneycombMap({
             );
           })()
         : null}
+      {view && scaleShown ? <ScaleBar scale={view.scale} bottom={(controlsBottom ?? 4) + 6} /> : null}
       {hideControls ? null : (
         <View
           style={[styles.buttons, controlsBottom !== undefined ? { bottom: controlsBottom } : { top: controlsTop }]}
@@ -1201,6 +1177,22 @@ export function MapButton({
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: SEA, overflow: 'hidden' },
+  scaleWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  scaleBox: {
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    backgroundColor: isLight ? 'rgba(255, 255, 255, 0.88)' : 'rgba(7, 22, 34, 0.82)',
+  },
+  scaleText: { color: isLight ? '#0B1F2E' : '#F4F6FB', fontSize: 11, fontFamily: fonts.semi },
+  scaleBar: {
+    height: 5,
+    borderWidth: 1.5,
+    borderTopWidth: 0,
+    borderColor: isLight ? '#0B1F2E' : '#F4F6FB',
+  },
   svg: { position: 'absolute', top: 0, left: 0 },
   buttons: { position: 'absolute', right: 8, gap: 6 },
   mapButton: {

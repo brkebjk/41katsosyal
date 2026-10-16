@@ -188,6 +188,21 @@ export function FinderButton({ onPress, active }: { onPress: () => void; active:
   );
 }
 
+/** Göç et: büyüteç düğmesinin hemen üstünde; dokununca Şehrim (göç ve ziyaret) açılır */
+export function MigrateButton({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Göç et ya da başka şehri ziyaret et"
+      testID="map-migrate"
+      style={({ pressed }) => [styles.migrateBtn, pressed && styles.pressed]}
+    >
+      <Ionicons name="sync" size={19} color="#FFFFFF" />
+    </Pressable>
+  );
+}
+
 /**
  * Büyüteç menüsü: oyunlar ve etkinlik kategorileri. Birine dokununca o oyunun ya da kategorinin olduğu peteklerin
  * üstünde 10 saniye zıplayan ok çıkar.
@@ -321,6 +336,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   finderBtnOn: { backgroundColor: '#FFE38A' },
+  migrateBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#7C8CFF',
+    borderWidth: 2,
+    borderColor: '#D9DEFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   section: { color: colors.text, fontFamily: fonts.black, fontSize: fontSizes.md },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   tile: {

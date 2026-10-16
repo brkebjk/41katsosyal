@@ -3,6 +3,7 @@
 Kullanım (tools klasöründen):
   python3 overture_indir.py theme=divisions/type=division_area da_3il.parquet id,geometry,country,subtype,names,is_land,region
   python3 overture_indir.py theme=places/type=place places_3il.parquet id,geometry,confidence,names,operating_status,basic_category,taxonomy,brand,addresses
+  python3 overture_indir.py theme=transportation/type=segment yollar_3il.parquet id,geometry,class,subtype class=motorway,trunk
 Gerekenler: pip install pyarrow s3fs
 """
 import sys
@@ -17,6 +18,11 @@ REL = '2026-09-23.1'  # Overture sürümü: her yenilemede en yenisi yazılır
 BOX = (25.6, 37.6, 30.8, 41.75)  # İzmir .. İstanbul / Kocaeli
 
 typ, out, cols = sys.argv[1], sys.argv[2], sys.argv[3].split(',')
+# İsteğe bağlı süzgeç: class=motorway,trunk (yalnızca bu sınıftaki kayıtlar tutulur)
+only = {}
+for a in sys.argv[4:]:
+    k, v = a.split('=', 1)
+    only[k] = v.split(',')
 fs = s3fs.S3FileSystem(anon=True, client_kwargs={'region_name': 'us-west-2'})
 files = fs.ls(f'overturemaps-us-west-2/release/{REL}/{typ}/')
 tables = []
@@ -45,6 +51,8 @@ for f in files:
         pc.and_(pc.greater_equal(pc.struct_field(bb, 'xmax'), BOX[0]), pc.less_equal(pc.struct_field(bb, 'xmin'), BOX[2])),
         pc.and_(pc.greater_equal(pc.struct_field(bb, 'ymax'), BOX[1]), pc.less_equal(pc.struct_field(bb, 'ymin'), BOX[3])),
     )
+    for k, vals in only.items():
+        m = pc.and_(m, pc.is_in(tb.column(k), value_set=pa.array(vals)))
     tb = tb.filter(m)
     tables.append(tb)
     print(f.split('/')[-1][:12], 'grup', len(keep), '/', md.num_row_groups, 'kayıt', tb.num_rows, round(time.time() - t), 'sn',

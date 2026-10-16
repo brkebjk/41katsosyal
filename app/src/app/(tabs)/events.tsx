@@ -158,20 +158,20 @@ function EventsScreen() {
   const safety = useSafetyMenu(safetyFor ? { type: 'event', id: safetyFor } : null);
   // Puanların açılması için gereken en az kişi (sunucu ayarından; kartlardaki “bekliyor” notunda kullanılır)
   const [minAttendees, setMinAttendees] = useState(DEFAULT_RULES.eventMinAttendees);
-  // Ziyaret modu: başka şehrin etkinlikleri listelenir, etkinlik açılamaz
-  const { view: viewCity, readOnly: visiting } = useCity();
+  // Etkinlikler her zaman kendi şehrimin (ziyaret yalnızca haritada olur)
+  const { my: viewCity } = useCity();
 
   // Uygulama kapanmadan önce “Etkinlik oluştur” penceresinde yazılanlar varsa pencere yazılanlarla yeniden açılır
   // (uygulama açıkken bir kez)
   useEffect(() => {
-    if (draftChecked || visiting) return;
+    if (draftChecked) return;
     draftChecked = true;
     void loadDraft<object>(EVENT_DRAFT_KEY).then((d) => {
       if (!d) return;
       setFormKey((k) => k + 1);
       setFormOpen(true);
     });
-  }, [visiting]);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -436,7 +436,7 @@ function EventsScreen() {
     <Screen
       title="Etkinlikler"
       subtitle={
-        visiting ? `Ziyaretçisin · ${cityIn(viewCity)} etkinlikler` : `${cityIn(viewCity)} yüz yüze buluşmalar`
+        `${cityIn(viewCity)} yüz yüze buluşmalar`
       }
       onRefresh={onRefresh}
       refreshing={refreshing}
@@ -468,12 +468,12 @@ function EventsScreen() {
         <View style={styles.topButtons}>
           <GameActionButton
             label="Oluştur"
-            sub={visiting ? 'Ziyarette açılamaz' : limitReached ? 'Bu ayki hakkın bitti' : 'Etkinliğini aç'}
+            sub={limitReached ? 'Bu ayki hakkın bitti' : 'Etkinliğini aç'}
             icon="add-circle"
             colors={['#FF7A59', '#E5533D']}
             edge="#A8361F"
             art={gameButtonImages.create}
-            disabled={visiting || limitReached || quota === null}
+            disabled={limitReached || quota === null}
             onPress={() => {
               setFormKey((k) => k + 1);
               setFormOpen(true);

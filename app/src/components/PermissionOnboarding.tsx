@@ -11,6 +11,7 @@ import { NotificationPrefsForm } from '@/components/NotificationPrefsForm';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { askNotificationPermission, syncEventReminders } from '@/lib/localNotify';
 import { ALL_ON, getNotifyPrefs, saveNotifyPrefs, type NotifyPrefs } from '@/lib/notifyPrefs';
+import { setPermissionsDone } from '@/lib/onboarding';
 import {
   colors,
   fonts,
@@ -55,8 +56,13 @@ export function PermissionOnboarding({ userId }: { userId: string }) {
 
   useEffect(() => {
     let alive = true;
+    setPermissionsDone(false);
     void isDone(userId).then((done) => {
-      if (alive) setStep(done || Platform.OS === 'web' ? 'done' : 'notify');
+      if (!alive) return;
+      const skip = done || Platform.OS === 'web';
+      setStep(skip ? 'done' : 'notify');
+      // Sıradaki adımlar (şehir seçimi, uygulama eğitimi) izin ekranları bitince açılır
+      if (skip) setPermissionsDone(true);
     });
     return () => {
       alive = false;
@@ -68,6 +74,7 @@ export function PermissionOnboarding({ userId }: { userId: string }) {
   async function finish() {
     await markDone(userId);
     setStep('done');
+    setPermissionsDone(true);
   }
 
   function afterLocation() {

@@ -1,6 +1,13 @@
 -- PARÇA 4 / 4 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+revoke all on public.room_invite_msgs from anon, authenticated;
+grant execute on function public.set_team_seeking(uuid, boolean) to authenticated;
+grant execute on function public.list_team_seekers(uuid) to authenticated;
+grant execute on function public.send_team_invite(uuid, uuid) to authenticated;
+grant execute on function public.respond_team_invite(uuid, boolean, text) to authenticated;
+grant execute on function public.leave_event_team(uuid) to authenticated;
+grant execute on function public.get_last_week_leaderboard(text, int, text) to authenticated;
 grant execute on function public.apply_event_leader(text, text, text[], text) to authenticated;
 grant execute on function public.admin_list_leader_applications(text) to authenticated;
 grant execute on function public.admin_resolve_leader_application(uuid, boolean, text) to authenticated;

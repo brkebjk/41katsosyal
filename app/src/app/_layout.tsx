@@ -9,6 +9,7 @@ import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AwakeDimmer } from '@/components/AwakeDimmer';
+import { AppTour } from '@/components/AppTour';
 import { CityGate } from '@/components/CityGate';
 import { DialogHost } from '@/components/DialogHost';
 import { FullScreenState } from '@/components/FullScreenState';
@@ -18,6 +19,7 @@ import { TextEditHost } from '@/components/TextEditHost';
 import { TopToastHost } from '@/components/TopToastHost';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { loadCity, resetCity, useCity } from '@/lib/city';
+import { usePermissionsDone } from '@/lib/onboarding';
 import { resumeOnStart } from '@/lib/presence';
 import { colors, isLight } from '@/theme';
 
@@ -56,6 +58,9 @@ function RootNavigator() {
 
   // Şehir: girişten sonra okunur; seçilmemişse şehir seçme ekranı açılır
   const city = useCity();
+  // İlk giriş sırası: izin ekranları → şehir seçimi → uygulama eğitimi
+  const permissionsDone = usePermissionsDone();
+  const ready = isLoggedIn && !loading && account && !account.needs_recovery && permissionsDone;
   useEffect(() => {
     if (isLoggedIn && profile?.id) void loadCity();
     else resetCity();
@@ -112,7 +117,12 @@ function RootNavigator() {
       ) : null}
 
       {/* Kurtarma kelimelerinden sonra: şehir seçilmemişse şehir seçimi (bir kez; sonra yalnızca göçle değişir) */}
-      {isLoggedIn && !loading && account && !account.needs_recovery && city.loaded && !city.my ? <CityGate /> : null}
+      {ready && city.loaded && !city.my ? <CityGate /> : null}
+
+      {/* Şehir seçildikten sonra bir kez: sekme sekme uygulama eğitimi ve hoş geldin ekranı */}
+      {ready && city.loaded && city.my && profile?.id && profile.role !== 'sponsor' ? (
+        <AppTour key={profile.id} userId={profile.id} />
+      ) : null}
 
       {/* Üstten kayan bildirim (uygulama açıkken yeni bildirim/duyuru gelince) */}
       {isLoggedIn && !loading ? <TopToastHost /> : null}

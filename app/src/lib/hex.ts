@@ -39,7 +39,10 @@ type MapFile = {
   /** İlçe sınırı ve kıyı çizgileri (kısa metin) */
   districtLines: string[];
   /** Mahalle sınırı çizgileri (kısa metin) */
+  /** Mahalle sınırları (artık çizilmez; dosyada boş) */
   hoodLines: string[];
+  /** Ana yollar (otoyol, D-yolu): silüet çizgisi */
+  roadLines?: string[];
   /** Uzaktan bakınca kara boyaması: halkalar (göller delik) */
   fill: string[];
 };
@@ -152,19 +155,21 @@ export type CityGeo = {
   fillPath: string;
   /** İlçe sınırları ve kıyı (her zaman çizilir) */
   districtPath: string;
-  /** Mahalle sınırları, parçalara bölünmüş (yakınlaşınca ekrandakiler çizilir) */
-  hoodTiles: readonly Tile[];
+  /** Ana yolların (otoyol, D-yolu) silüeti */
+  roadPath: string;
   districtLabels: readonly DistrictLabel[];
-  hoodLabels: readonly DistrictLabel[];
-  /** Açılış görünümünde ekrana sığdırılan ilçeler */
-  home: readonly string[];
+  /** Açılış (ve ziyaret) görünümü: ortadaki ilçe ve ekrana sığan genişlik (metre) */
+  home: { district: string; spanM: number };
 };
 
-/** Açılış görünümü: şehrin en kalabalık ilçeleri */
-const HOME: Record<CityKey, string[]> = {
-  kocaeli: ['Körfez', 'Derince', 'Başiskele', 'Gölcük'],
-  istanbul: ['Beşiktaş', 'Kadıköy', 'Üsküdar', 'Fatih'],
-  izmir: ['Konak', 'Karşıyaka', 'Bornova', 'Bayraklı'],
+/**
+ * Açılış görünümü: Kocaeli'de Derince, İstanbul'da Kadıköy, İzmir'de Balçova ortada; çevre ilçeler de görünür
+ * (genişlik ekranın eni boyunca görünen mesafe).
+ */
+const HOME: Record<CityKey, { district: string; spanM: number }> = {
+  kocaeli: { district: 'Derince', spanM: 30_000 },
+  istanbul: { district: 'Kadıköy', spanM: 30_000 },
+  izmir: { district: 'Balçova', spanM: 24_000 },
 };
 
 const TILE_M = 10_000;
@@ -387,34 +392,7 @@ export function cityGeo(city: CityKey): CityGeo {
 
   const fillPath = file.fill.map((s) => svgLine(linePoints(s, file.unit), true)).join('');
   const districtPath = file.districtLines.map((s) => svgLine(linePoints(s, file.unit), false)).join('');
-
-  // Mahalle çizgileri ilk noktasının parçasına konur; parçanın sınırı çizgilerin kapladığı alandır
-  const hg = new Map<string, { minX: number; maxX: number; minY: number; maxY: number; d: string[] }>();
-  for (const s of file.hoodLines) {
-    const pts = linePoints(s, file.unit);
-    if (pts.length < 4) continue;
-    const k = `${Math.floor(pts[0] / TILE_M)}:${Math.floor(pts[1] / TILE_M)}`;
-    let g = hg.get(k);
-    if (!g) {
-      g = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, d: [] };
-      hg.set(k, g);
-    }
-    for (let i = 0; i + 1 < pts.length; i += 2) {
-      g.minX = Math.min(g.minX, pts[i]);
-      g.maxX = Math.max(g.maxX, pts[i]);
-      g.minY = Math.min(g.minY, -pts[i + 1]);
-      g.maxY = Math.max(g.maxY, -pts[i + 1]);
-    }
-    g.d.push(svgLine(pts, false));
-  }
-  const hoodTiles: Tile[] = [...hg.entries()].map(([k, g]) => ({
-    key: `h${k}`,
-    minX: g.minX,
-    maxX: g.maxX,
-    minY: g.minY,
-    maxY: g.maxY,
-    path: g.d.join(''),
-  }));
+  const roadPath = (file.roadLines ?? []).map((s) => svgLine(linePoints(s, file.unit), false)).join('');
 
   const geo: CityGeo = {
     key: city,
@@ -424,9 +402,8 @@ export function cityGeo(city: CityKey): CityGeo {
     tiles,
     fillPath,
     districtPath,
-    hoodTiles,
+    roadPath,
     districtLabels: file.districtLabels.map(([name, x, y, areaKm2]) => ({ name, x, y, areaKm2 })),
-    hoodLabels: file.hoods.map(([name, , x, y, areaKm2]) => ({ name, x, y, areaKm2 })),
     home: HOME[city],
   };
   GEO[city] = geo;

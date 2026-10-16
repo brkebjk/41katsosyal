@@ -1,57 +1,39 @@
-# Görev Test Rehberi – PeopleHere (3 şehir, göç, yeni logo, puan ve eşleşme)
+# Görev Test Rehberi – İlk giriş, eğitim, ziyaret, harita
 
-## A. Supabase'i güncelle (sıra önemli)
+## A. Supabase'i güncelle
 1. **SQL Editor** > **+ New query** > `supabase/parcalar/1.sql` dosyasının tamamını yapıştır > **Run**.
-2. Aynısını `2.sql`, `3.sql`, `4.sql` için yap. "Run and enable RLS" çıkarsa onu seç.
-   - Bu adım üyelerin giriş adresini yeni alan adına (peoplehere.app) taşır. **Uygulamayı açmadan önce** yap, yoksa giriş yapılamaz.
-3. Yeni sorguda şunu çalıştır: `truncate public.places;`
-4. **Table Editor** > `places` tablosu > **Insert** > **Import data from CSV**. Şu üç dosyayı sırayla yükle:
-   - `supabase/places_kocaeli.csv`
-   - `supabase/places_istanbul.csv` (büyük dosya, biraz sürer)
-   - `supabase/places_izmir.csv`
-   Yükleme hata verirse bana ekran görüntüsünü at.
+2. Aynısını `2.sql`, `3.sql`, `4.sql` için yap.
+3. Yer listesi (places) değişmedi, CSV'leri yeniden yüklemen gerekmez.
 
-## B. Ad ve logo
-- Uygulamanın adı **PeopleHere**. Simge, açılış ekranı ve giriş ekranında yeni logo var.
-- Uygulamada "41. Kat" hiçbir yerde geçmez. "Özel" etiketleri artık **PeopleHere Özel**.
-- Bir kez: tema seçimi ve izin tanıtımı yeniden sorulabilir (telefondaki ayar anahtarları yenilendi).
+## B. İlk giriş (yeni hesapla dene)
+1. Önce izin ekranları gelir (bildirim, konum, tema).
+2. Sonra **Bulunduğun şehir** ekranı:
+   - konumuna bir kez bakılır, yalnızca bulunduğun şehir seçilir,
+   - diğer şehirler kilitli görünür ("Sonra göçle geçebilirsin"),
+   - altta göçün nasıl olduğu yazar.
+3. Haritaların dışındaysan sana en yakın şehir gelir. Konum izni vermezsen **Konumumu tekrar dene** / **Telefon ayarlarını aç** çıkar.
 
-## C. Şehir seçimi ve ziyaret
-1. Girişten sonra **Şehrini seç** ekranı çıkar (konum izni varsa şehrin önerilir).
-2. Harita, akış ve etkinlikler seçtiğin şehre göre gelir.
-3. Haritada üstteki şehir düğmesinden başka şehre **ziyaret** et:
-   - "Ziyaretçisin" yazar,
-   - akışta gönderi ve yorum yazılmaz, Etkinlikler'de etkinlik açılmaz.
-   - Kendi şehrine dönmek için şehir düğmesinden şehrini seç (akışta **Şehrime dön** de var).
-4. Haritada mahalle sınırları ve (yakınlaşınca) mahalle adları görünür. Üç şehirde petekler aynı boyda.
-5. Yer aramasında yalnızca baktığın şehrin yerleri çıkar.
+## C. Uygulama eğitimi (bir kez; eski hesaplarda da bir kez çıkar)
+1. Sırayla **Akış, Etkinlik, Harita, Oyun, Profil** sekmesine dokunman istenir (ok sekmeyi gösterir).
+2. Dokununca o sekmede neler olduğu yazar. **Devam** ile sıradakine geçilir.
+3. En sonda **Hoş geldin!** ekranı: **Yarışma kuralları**, **Ödül programı**, **Başla**.
 
-## D. Göç (Profil > Şehrim)
-1. Gitmek istediğin şehri seç, kutuya **Göçü onaylıyorum** yaz > **Göç listesine yazıl**.
-2. Ekranda "Göç listesindesin" ve geçiş tarihi (gelecek ay başı) yazar. **Göçten vazgeç** ile çıkabilirsin.
-3. Moderatör hemen taşınır. Web panelde Üyeler > üye > **Şehri değiştir** ile bir üyeyi hemen taşıyabilirsin.
+## D. Ziyaret ve göç
+1. Haritada büyütecin hemen üstünde mor **⟳** düğmesi var: Şehrim (göç ve ziyaret) açılır.
+2. Başka şehri ziyaret edince yalnızca haritası açılır:
+   - İzmir: Balçova ortada, çevre ilçeler görünür,
+   - Kocaeli: Derince ortada,
+   - İstanbul: Kadıköy ortada, orta yakınlıkta.
+3. Ziyarette bir peteğe dokununca yalnızca özeti görünür (kaç etkinlik, oyun, mekân var). İçine girilmez.
+4. Akış ve Etkinlikler her zaman kendi şehrin.
+5. Profil > Şehrim'den ziyaret et: artık hata vermez. Kutulardaki yazılar sığıyor.
 
-## E. Sıralama
-- Sıralama ekranında **<Şehrin>** ve **Tüm İller** sekmeleri var. Kesinleşmiş sonuçlar da seçili sekmeye göre.
+## E. Harita
+- Mahalle çizgileri ve mahalle adları kalktı. Mahalle adı yalnızca petek menüsünde, petek adının altında.
+- İlçe sınırları ve ana yolların (otoyol, D-100 gibi) soluk silüeti görünür. Köprüler de dahil.
+- İlçe adlarının çevresindeki gölge kalktı (tek renk).
+- Kocaeli'de Başiskele, İzmit, Derince, Gölcük, Körfez adları körfez kıyısına yakın.
+- Yakınlaştırıp uzaklaştırırken alt ortada (Şehrin Temposu'nun üstünde) ölçek çubuğu çıkar (ör. "2 km").
 
-## F. Puan
-- Yan yana oyun artık ×7 vermez. Her sıranın puanı yan yana ve uzaktan **aynı**.
-- Yan yananın yalnızca aylık hedefi yüksek (1.750, uzaktan 250). Mekân bonusu (+%25) duruyor.
-
-## G. Uzaktan eşleşme
-1. **Uzaktan Eşleş**: açık ama başlamamış bir oda varsa hemen ona yerleşirsin.
-2. Bulunamazsa ekranda geri sayım görünür; **45 sn** sonra senin için oda açılır, orada tek başına bekleyebilirsin.
-3. Uzaktan odalarda "Oda sahibi" yazısı ve yıldızı yok. Herkes çıkınca oda kapanır.
-4. Odada aynı lakaptan iki kişi varsa kutucukta rumuz kodla yazar (ör. Mavi Kuş#1234).
-
-## H. Uygulamayı kapatıp açınca
-- Yan yana bir oyundaysan odaya geri dönersin ve **Oyunda kal / Oyunu terk et** sorulur.
-- Uzaktan oyundaysan eskisi gibi oyundan çıkarılırsın.
-
-## I. Yazılanlar kaybolmasın
-1. Etkinlik oluştur penceresine bir şeyler yaz, uygulamayı arka plana at, hatta tamamen kapat.
-2. Etkinlikler sekmesine dönünce pencere yazdıklarınla açılır (görsel hariç).
-3. Gönderi, yorum ve mesaj kutularında da yazılan metin kalır. Gönderince ya da etkinlik penceresini çarpıyla kapatınca silinir.
-
-## J. Klan
-- Klan sistemi tamamen kalktı (ekranlar, bonuslar, sıralama sekmesi).
+## F. Arkadaşlar
+- Başka şehirdeki arkadaşının adının yanında şehri yazar (ör. 📍 İzmir).

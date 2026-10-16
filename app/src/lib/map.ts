@@ -102,7 +102,8 @@ export type LocationPurpose =
   | 'locate'
   | 'cellfeed'
   | 'treasure'
-  | 'gameseek';
+  | 'gameseek'
+  | 'city';
 
 /** Akışta paylaşılabilecek en uzak mekânın, bulunduğun yere kuş uçuşu uzaklığı (metre). */
 export const NEARBY_MAX_METERS = 500;
@@ -163,6 +164,14 @@ const NOTICE: Record<LocationPurpose, { message: string; cancel: string }> = {
       'Haritada bulunduğun peteği göstermek için konumuna şimdi bir kez bakacağım.\n\n' +
       'Konumun sunucuya hiç gönderilmez ve kaydedilmez; yalnızca telefonunda haritayı peteğine götürmek için kullanılır. ' +
       'Haritadaki yoğunluğa da sayılmaz.',
+    cancel: 'Vazgeç',
+  },
+  city: {
+    message:
+      'Hangi şehirde olduğunu belirlemek için konumuna şimdi bir kez bakacağım. İlk girişte yalnızca bulunduğun şehri ' +
+      'seçebilirsin.\n\n' +
+      'Uygulama konumunu sürekli takip etmez. Sunucuya yalnızca bulunduğun peteğin numarası gider, tam konumun ' +
+      'kaydedilmez.',
     cancel: 'Vazgeç',
   },
   checkin: {

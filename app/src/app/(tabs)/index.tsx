@@ -44,7 +44,14 @@ import { useSponsorMenu } from '@/components/useSponsorMenu';
 import { VenueAdminModal } from '@/components/VenueAdminModal';
 import { CloseX } from '@/components/CloseX';
 import { MapEventPopup } from '@/components/MapEventPopup';
-import { FINDER_CATEGORIES, FinderButton, FinderMenu, MapSearchBar, type FinderOption } from '@/components/MapSearch';
+import {
+  FINDER_CATEGORIES,
+  FinderButton,
+  FinderMenu,
+  MapSearchBar,
+  MigrateButton,
+  type FinderOption,
+} from '@/components/MapSearch';
 import { GAMES } from '@/lib/gameCatalog';
 import { useAuth } from '@/lib/auth';
 import { cellName, loadCellNames, onCellNamesChanged } from '@/lib/cellNames';
@@ -612,8 +619,14 @@ function MapScreen({ resetKey }: { resetKey: number }) {
             pointers={pointers}
             imageMarks={imageMarks}
             plainCloseUp
-            onImagePress={(ids) => setEventPopup([...ids])}
-            leadingControls={<FinderButton onPress={() => setFinderOpen(true)} active={pointers !== null} />}
+            // Ziyarette etkinliklerin içine girilmez (yalnızca harita)
+            onImagePress={city.readOnly ? undefined : (ids) => setEventPopup([...ids])}
+            leadingControls={
+              <>
+                {!isSponsor ? <MigrateButton onPress={() => router.push('/sehir')} /> : null}
+                <FinderButton onPress={() => setFinderOpen(true)} active={pointers !== null} />
+              </>
+            }
             topInset={TOP_OVERLAY}
             bottomInset={BOTTOM_OVERLAY}
             controlsBottom={bottomH + 4}
@@ -838,6 +851,10 @@ function MapScreen({ resetKey }: { resetKey: number }) {
                 </View>
                 <ScrollView contentContainerStyle={styles.cellMenuBody} nestedScrollEnabled>
                   <SelectedInfo cell={selected} level={levelOf(selected)} densityOpen={status.open} />
+                  {city.readOnly ? (
+                    <VisitCellSummary events={hereEvents.length} rooms={hereRooms.length} venues={hereVenues.length} />
+                  ) : (
+                  <>
                   {!isSponsor ? (
                     <CellFeedButton
                       key={`feed-${selected.q},${selected.r}`}
@@ -904,6 +921,8 @@ function MapScreen({ resetKey }: { resetKey: number }) {
                     <Ionicons name="create-outline" size={15} color={colors.textMuted} />
                     <Text style={styles.nameLinkText}>Bu peteği adlandır</Text>
                   </Pressable>
+                  </>
+                  )}
                 </ScrollView>
               </View>
             </View>
@@ -958,6 +977,25 @@ function MapScreen({ resetKey }: { resetKey: number }) {
         <RenameCellSheet cell={selected} onClose={() => setSheet(null)} />
       ) : null}
       {notifOpen ? <NotificationPanel onClose={() => setNotifOpen(false)} /> : null}
+    </View>
+  );
+}
+
+/** Ziyarette petek menüsü: yalnızca özet (etkinlik, oyun, mekân sayısı); içeriklere girilmez */
+function VisitCellSummary({ events, rooms, venues }: { events: number; rooms: number; venues: number }) {
+  const parts = [
+    events > 0 ? `${events} yaklaşan etkinlik` : null,
+    rooms > 0 ? `${rooms} açık oyun` : null,
+    venues > 0 ? `${venues} mekân` : null,
+  ].filter(Boolean);
+  return (
+    <View style={styles.visitBox} testID="map-visit-summary">
+      <Text style={styles.visitText}>
+        {parts.length > 0 ? `Bu petekte ${parts.join(', ')} var.` : 'Bu petekte şu an etkinlik, açık oyun ya da mekân yok.'}
+      </Text>
+      <Text style={styles.visitNote}>
+        Ziyaretçisin: bu şehrin haritasına bakabilirsin, içeriklere yalnızca kendi şehrinde girebilirsin.
+      </Text>
     </View>
   );
 }
@@ -1459,6 +1497,9 @@ function InfoModal({ visible, onClose, status }: { visible: boolean; onClose: ()
 }
 
 const styles = StyleSheet.create({
+  visitBox: { gap: 6, padding: spacing.md, borderRadius: radii.md, backgroundColor: colors.surfaceAlt },
+  visitText: { color: colors.text, fontSize: fontSizes.sm, lineHeight: 20 },
+  visitNote: { color: colors.textMuted, fontSize: fontSizes.xs, lineHeight: 17 },
   root: { flex: 1, backgroundColor: SEA },
   safe: { flex: 1 },
   mapArea: { flex: 1 },

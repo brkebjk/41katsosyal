@@ -8,6 +8,8 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 
 let live = false;
+/** Her dinlemeye ayrı kanal adı: ekran yeniden kurulunca eski (kapanmakta olan) kanal yeniden kullanılmasın */
+let seq = 0;
 
 /** Anlık bildirim bağlantısı şu an açık mı? */
 export function isLiveNotifyOn(): boolean {
@@ -22,7 +24,7 @@ export function startLiveNotify(userId: string, onNew: () => void): () => void {
   const client = supabase;
   if (!client) return () => {};
   let channel: RealtimeChannel | null = client
-    .channel(`notify-${userId}`)
+    .channel(`notify-${userId}-${++seq}-${Date.now().toString(36)}`)
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },

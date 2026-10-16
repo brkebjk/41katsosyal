@@ -8,6 +8,8 @@ const counters = new Map<string, number>();
 const listeners = new Set<() => void>();
 let current: string | null = null;
 
+const focusListeners = new Set<(name: string) => void>();
+
 /** Sekme çubuğu: bir sekme odaklandığında çağrılır */
 export function tabFocused(name: string) {
   if (current !== null && current !== name) {
@@ -15,6 +17,20 @@ export function tabFocused(name: string) {
     listeners.forEach((l) => l());
   }
   current = name;
+  focusListeners.forEach((l) => l(name));
+}
+
+/** Şu an açık sekme (henüz bilinmiyorsa boş) */
+export function currentTab(): string | null {
+  return current;
+}
+
+/** Bir sekme her açıldığında haber verir (uygulama eğitimi); dönen işlev dinlemeyi bırakır */
+export function onTabFocused(fn: (name: string) => void): () => void {
+  focusListeners.add(fn);
+  return () => {
+    focusListeners.delete(fn);
+  };
 }
 
 function subscribe(fn: () => void) {

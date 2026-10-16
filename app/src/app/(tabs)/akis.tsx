@@ -21,7 +21,6 @@ import { Screen } from '@/components/Screen';
 import { SoftGlow } from '@/components/SoftGlow';
 import { isPetekIconName, PetekIcon } from '@/components/HexClusterIcon';
 import { useAuth } from '@/lib/auth';
-import { CITY_NAMES, setVisiting, useCity } from '@/lib/city';
 import { showDialog } from '@/lib/dialog';
 import { muteVerifyReminder, openIdentityVerify, takeVerifyReminder } from '@/lib/identity';
 import { useIdentityEnabled } from '@/lib/identityFlag';
@@ -114,19 +113,9 @@ function FeedScreen() {
   const moreLock = useRef(false);
   const loadId = useRef(0);
 
-  // Ziyaret modu: başka şehrin akışı yalnızca okunur (gönderi ve yorum yok)
-  const city = useCity();
-  const visiting = city.readOnly ? city.view : null;
-  const [seenCity, setSeenCity] = useState(visiting);
-  if (seenCity !== visiting) {
-    // Şehir değişince ilçe süzgeci (öbür şehrin ilçesi) temizlenir
-    setSeenCity(visiting);
-    setDistrict(null);
-  }
-
   // Yeni gönderi, yorum ve beğeni herkese açıktır (susturulmamışsa); moderatör ayarıyla gönderi aboneliğe bağlanabilir
-  const canPost = !muted && !visiting && (isModerator || isSponsor || !requiresSubscription || subscribed);
-  const canComment = !muted && !visiting;
+  const canPost = !muted && (isModerator || isSponsor || !requiresSubscription || subscribed);
+  const canComment = !muted;
 
   const load = useCallback(async () => {
     if (!isBackendReady) {
@@ -147,7 +136,7 @@ function FeedScreen() {
     const [feed, needsSubscription, ds] = await Promise.all([
       listFeed(undefined, feedFilter(here)),
       postsRequireSubscription(),
-      listFeedDistricts(visiting),
+      listFeedDistricts(),
     ]);
     if (my !== loadId.current) return; // daha yeni bir yenileme başladı, eski cevap yok sayılır
     setRequiresSubscription(needsSubscription);
@@ -159,11 +148,11 @@ function FeedScreen() {
     }
     setLoaded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- feedFilter bu durumlardan türetilir
-  }, [mine, district, mentions, near, cellFilter, visiting]);
+  }, [mine, district, mentions, near, cellFilter]);
 
   function feedFilter(here: Cell | null) {
     if (near || cellFilter) return { cell: cellFilter, near: !cellFilter, my: here };
-    return { mine, district, mentions, city: visiting };
+    return { mine, district, mentions };
   }
 
   // Haritadaki petek menüsündeki “Petek akışı” bir petek gönderir: akış o peteğe süzülür
@@ -652,19 +641,7 @@ function FeedScreen() {
       ) : null}
 
       {/* Yeni gönderi kutusu ekranın en altındadır; yazamayan için açıklama */}
-      {profile && visiting ? (
-        <View style={styles.lockCard} testID="feed-visiting">
-          <Ionicons name="eye-outline" size={20} color={colors.textMuted} />
-          <View style={styles.lockBody}>
-            <Text style={styles.lockText}>
-              {`${CITY_NAMES[visiting]} akışına ziyaretçi olarak bakıyorsun. Gönderi ve yorum yazamazsın.`}
-            </Text>
-            <Text style={styles.lockLink} accessibilityRole="button" onPress={() => setVisiting(null)}>
-              Şehrime dön
-            </Text>
-          </View>
-        </View>
-      ) : profile ? (
+      {profile ? (
         canPost ? null : (
           <View style={styles.lockCard}>
             <Ionicons name="lock-closed" size={20} color={colors.textMuted} />

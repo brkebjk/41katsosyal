@@ -20,6 +20,8 @@ export type FriendRow = {
   title: string | null;
   /** Yalnızca arkadaşlarda: onaylı profil resmi (varsa) */
   photo_path?: string | null;
+  /** Yalnızca arkadaşlarda: arkadaşın şehri (eski sunucuda gelmez) */
+  city?: string | null;
 };
 
 export type Friendships = {

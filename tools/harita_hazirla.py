@@ -3,6 +3,7 @@
 Girdi (overture_indir.py ile indirilir):
   da_3il.parquet      Overture bölge sınırları (ilçe = county, mahalle = macrohood + neighborhood)
   places_3il.parquet  Overture yerleri
+  yollar_3il.parquet  Overture yolları (yalnızca otoyol ve D-yolu: class = motorway, trunk)
 Çıktı:
   app/src/lib/maps/<şehir>.json    uygulamanın harita dosyaları (petekler, ilçe / mahalle sınırları, adlar)
   supabase/places_<şehir>.csv      yer listesi (Supabase'de places tablosuna CSV olarak yüklenir)
@@ -18,7 +19,11 @@ Kara: mahallelerin birleşimi (göller kara sayılmaz). Petek, alanının en az 
 bir yerin peteği de eklenir. Sınırlar: bütün mahalle sınırları tek bir çizgi ağında birleştirilir, ortak kenarlar bir
 kez sadeleştirilir (komşu mahalleler arasında boşluk ya da üst üste binme olmaz). İlçe sınırı ve kıyı da bu ağdandır.
 
-Kullanım (tools klasöründen): python3 harita_hazirla.py <da_3il.parquet> <places_3il.parquet>
+Haritada mahalle sınırı çizilmez (mahalle adı yalnızca petek menüsünde görünür); ilçe sınırları ve ana yolların
+silüeti çizilir. Kocaeli'de körfezi çevreleyen ilçelerin adları kıyıya yakın yazılır.
+
+Kullanım (tools klasöründen): python3 harita_hazirla.py <da_3il.parquet> <places_3il.parquet> <yollar_3il.parquet> [--yalniz-harita]
+  --yalniz-harita: yalnızca uygulamanın harita dosyaları yazılır (yer listeleri ve sunucu petekleri değişmez)
 Gerekenler: pip install pyarrow shapely numpy
 """
 import collections
@@ -32,6 +37,7 @@ import sys
 import numpy as np
 import pyarrow.parquet as pq
 import shapely
+import shapely.ops
 from shapely import STRtree, wkb
 from shapely.geometry import LineString, MultiLineString, Point, Polygon
 from shapely.ops import linemerge, unary_union
@@ -46,6 +52,11 @@ LAND_MIN = 0.25  # peteğin en az bu kadarı karaysa haritada
 UNIT = 10  # sınır koordinatları 10 m'lik tam sayı olarak saklanır (en yakın görünümde ~1 piksel)
 TOL_HOOD = 6.0  # mahalle sınırı sadeleştirme (m)
 TOL_FILL = 40.0  # uzaktan kara boyaması (m)
+TOL_ROAD = 25.0  # ana yol silüeti sadeleştirme (m)
+ROAD_MIN = 80.0  # bundan kısa (birleştirildikten sonra) yol parçası çizilmez (m)
+# Kocaeli: körfezi çevreleyen ilçelerin adları körfeze yakın yazılır (ziyaret görünümü Derince merkezlidir)
+GULF = {'kocaeli': {'line': [(29.60, 40.735), (29.72, 40.722), (29.82, 40.728), (29.90, 40.745), (29.94, 40.758)],
+                    'districts': ['Başiskele', 'İzmit', 'Derince', 'Gölcük', 'Körfez'], 'inland': 1300.0}}
 
 # Kocaeli'nin eski haritasıyla aynı başlangıç noktası: kayıtlı peteklerin numarası değişmez
 CITIES = [
@@ -151,7 +162,7 @@ def enc_list(coords):
     return out if len(out) >= 4 else None
 
 
-def build_city(c, da, places_tb, out_places):
+def build_city(c, da, places_tb, out_places, roads):
     g = Grid(c)
     reg = c['region']
     rows = [r for r in da if r['region'] == reg and r['is_land']]
@@ -292,6 +303,28 @@ def build_city(c, da, places_tb, out_places):
         else:
             h_lines.append(e)
 
+    # Mahalle sınırları artık çizilmez (çizgiler çok karışıyordu); yalnızca ilçe sınırı ve kıyı
+    h_lines = []
+
+    # --- Ana yollar (otoyol + D-yolu): yalnızca silüet çizgisi --------------------------------------------
+    road_lines = []
+    if roads is not None:
+        area = land.buffer(2500)  # köprüler (Boğaz, Osmangazi) suyun üstünden geçer
+        shapely.prepare(area)
+        parts = []
+        for geo in roads:
+            ln = g.proj_geom(geo)
+            if not area.intersects(ln):
+                continue
+            parts.append(ln.intersection(area))
+        merged_r = linemerge(unary_union(parts)) if parts else None
+        for ln in (getattr(merged_r, 'geoms', [merged_r]) if merged_r is not None else []):
+            if ln.geom_type != 'LineString' or ln.length < ROAD_MIN:
+                continue
+            e = enc(ln.simplify(TOL_ROAD, preserve_topology=False).coords)
+            if e:
+                road_lines.append(e)
+
     # Uzaktan bakınca kara boyaması (göller delik)
     fill = []
     fs = land.simplify(TOL_FILL)
@@ -305,9 +338,18 @@ def build_city(c, da, places_tb, out_places):
 
     # --- Adlar ----------------------------------------------------------------------------------------
     dlabels = []
+    gulf = GULF.get(c['key'])
+    gulf_line = LineString([g.proj(lo, la) for lo, la in gulf['line']]) if gulf else None
     for di, n in enumerate(names):
         u = unary_union([h['poly'] for h in hoods if h['d'] == di])
         rp = u.representative_point() if not u.is_empty else cpoly[n].representative_point()
+        if gulf and n in gulf['districts'] and not u.is_empty:
+            # Körfeze en yakın kıyının biraz içi (ad denize taşmasın)
+            inner = u.buffer(-gulf['inland'])
+            if inner.is_empty:
+                inner = u.buffer(-gulf['inland'] / 2)
+            if not inner.is_empty:
+                rp = shapely.ops.nearest_points(inner, gulf_line)[0]
         dlabels.append([n, jround(rp.x), jround(rp.y), round(u.area / 1e6, 1)])
     hlist = []
     for h in hoods:
@@ -337,7 +379,7 @@ def build_city(c, da, places_tb, out_places):
     out = {
         'v': 2, 'key': c['key'], 'name': c['name'], 'size': SIZE, 'lon0': c['lon0'], 'lat0': c['lat0'], 'rOff': c['rOff'],
         'unit': UNIT, 'districts': names, 'districtLabels': dlabels, 'hoods': hlist, 'ranges': pack(flat),
-        'districtLines': d_lines, 'hoodLines': h_lines, 'fill': fill,
+        'districtLines': d_lines, 'hoodLines': h_lines, 'roadLines': road_lines, 'fill': fill,
     }
     # Sunucu için: aynı satırdaki aynı ilçe petekleri tek aralık
     srv = []
@@ -378,7 +420,14 @@ def load_places(path, box):
 
 
 def main():
-    da_path, pl_path = sys.argv[1], sys.argv[2]
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    only_map = '--yalniz-harita' in sys.argv
+    da_path, pl_path = args[0], args[1]
+    roads = None
+    if len(args) > 2:
+        rt = pq.read_table(args[2], columns=['geometry', 'class'])
+        roads = [wkb.loads(b) for b in rt.column('geometry').to_pylist()]
+        print('ana yol parçası', len(roads))
     da = [r for r in pq.read_table(da_path).to_pylist() if r['region'] in ('TR-34', 'TR-35', 'TR-41')]
     places = load_places(pl_path, None)
     print('yer adayı', len(places['rows']))
@@ -386,7 +435,7 @@ def main():
     all_places, srv_all = [], []
     d0 = 0
     for c in CITIES:
-        out, srv, names = build_city(c, da, places, all_places)
+        out, srv, names = build_city(c, da, places, all_places, roads)
         out['d0'] = d0
         for s in srv:
             s[3] += d0
@@ -395,7 +444,9 @@ def main():
         p = os.path.join(ROOT, f"app/src/lib/maps/{c['key']}.json")
         json.dump(out, open(p, 'w', encoding='utf-8'), separators=(',', ':'), ensure_ascii=False)
         print(c['key'], 'dosya', round(os.path.getsize(p) / 1024), 'KB', 'ilçe çizgisi', len(out['districtLines']),
-              'mahalle çizgisi', len(out['hoodLines']))
+              'yol çizgisi', len(out['roadLines']))
+    if only_map:
+        return
     # Yer listesi (aynı yer iki şehrin kenarında iki kez çıkmasın: ilk şehir kalır)
     ids = set()
     rows = []

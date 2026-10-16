@@ -4,7 +4,6 @@ import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/AppText';
-import { Panel } from '@/components/Panel';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { Screen } from '@/components/Screen';
 import { TextField } from '@/components/TextField';
@@ -97,7 +96,8 @@ export default function CityScreen() {
 
   function visit(c: CityKey) {
     setVisiting(c);
-    router.navigate('/');
+    // Sekmelere geri dönülür (yeni bir harita ekranı açılmaz)
+    router.dismissTo('/');
   }
 
   return (
@@ -108,7 +108,7 @@ export default function CityScreen() {
       onRefresh={onRefresh}
       refreshing={refreshing}
     >
-      <Panel>
+      <View style={styles.card}>
         <View style={styles.current}>
           <Ionicons name="location" size={26} color={colors.primary} />
           <View style={styles.flex}>
@@ -121,10 +121,10 @@ export default function CityScreen() {
         <Text style={styles.note}>
           Haritan, akışın, etkinliklerin ve yan yana odaların bu şehre göre gelir. Uzaktan oyunlar bütün illere açıktır.
         </Text>
-      </Panel>
+      </View>
 
       {city.next ? (
-        <Panel>
+        <View style={styles.card}>
           <View style={styles.current}>
             <Ionicons name="airplane" size={24} color={colors.primary} />
             <View style={styles.flex}>
@@ -141,9 +141,9 @@ export default function CityScreen() {
           </Text>
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <PrimaryButton label="Göçten vazgeç" variant="ghost" onPress={() => void cancel()} loading={busy} testID="city-cancel" />
-        </Panel>
+        </View>
       ) : city.my ? (
-        <Panel>
+        <View style={styles.card}>
           <Text style={styles.section}>Göç et</Text>
           <Text style={styles.note}>
             {city.instant
@@ -191,14 +191,14 @@ export default function CityScreen() {
             loading={busy}
             testID="city-move-submit"
           />
-        </Panel>
+        </View>
       ) : null}
 
-      <Panel>
+      <View style={styles.card}>
         <Text style={styles.section}>Ziyaret et</Text>
         <Text style={styles.note}>
-          Diğer şehirlerin haritasına, akışına ve etkinliklerine bakabilirsin. Ziyaretteyken paylaşım, etkinlik açma ve yan
-          yana oyun yoktur.
+          Diğer şehirlerin yalnızca haritasına bakabilirsin. Bir peteğe dokununca özetini görürsün; etkinliklere, oyunlara,
+          akışa ve diğer içeriklere yalnızca kendi şehrinde girebilirsin.
         </Text>
         <View style={styles.list}>
           {others.map((c) => (
@@ -215,31 +215,42 @@ export default function CityScreen() {
             </Pressable>
           ))}
         </View>
-      </Panel>
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  // Kart: içerik kenarlara değmesin, yazılar kutuya sığsın
+  card: {
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
   flex: { flex: 1 },
   current: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   label: { color: colors.textMuted, fontSize: fontSizes.xs },
   cityName: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.lg },
   section: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },
-  note: { color: colors.textMuted, fontSize: fontSizes.xs, lineHeight: 18 },
+  note: { color: colors.textMuted, fontSize: fontSizes.sm, lineHeight: 20 },
   error: { color: colors.danger, fontSize: fontSizes.sm },
   list: { gap: spacing.sm },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    padding: spacing.md,
+    minHeight: 52,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
     borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     backgroundColor: colors.surface,
   },
   rowOn: { borderColor: colors.primary },
-  rowLabel: { flex: 1, color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md },
+  rowLabel: { flex: 1, flexShrink: 1, color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md, lineHeight: 22 },
   pressed: { opacity: 0.75 },
 });

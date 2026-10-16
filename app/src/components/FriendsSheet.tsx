@@ -31,6 +31,7 @@ import {
 import { timeAgo } from '@/lib/labels';
 import { REAL_NAME } from '@/lib/realName';
 import type { Result } from '@/lib/rpc';
+import { CITY_KEYS, CITY_NAMES, useCity, type CityKey } from '@/lib/city';
 import { brand, colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 /** “5 dk” → “5 dk önce”; “dün” ve tarihler olduğu gibi kalır. */
@@ -431,13 +432,26 @@ function PersonRow({
   subtitle: string;
   children: React.ReactNode;
 }) {
+  // Arkadaş başka şehirdeyse adının yanında şehri yazar
+  const { my } = useCity();
+  const other = row.city && row.city !== my && (CITY_KEYS as readonly string[]).includes(row.city)
+    ? CITY_NAMES[row.city as CityKey]
+    : null;
   return (
     <View style={styles.person}>
       <Avatar index={row.avatar_index} size={44} uri={profilePhotoUrl(row.photo_path)} />
       <View style={styles.personText}>
-        <Text style={styles.personTitle} numberOfLines={1}>
-          {title}
-        </Text>
+        <View style={styles.personNameRow}>
+          <Text style={[styles.personTitle, styles.personTitleFlex]} numberOfLines={1}>
+            {title}
+          </Text>
+          {other ? (
+            <View style={styles.cityTag} testID="friend-city">
+              <Ionicons name="location" size={11} color={colors.primary} />
+              <Text style={styles.cityTagText}>{other}</Text>
+            </View>
+          ) : null}
+        </View>
         <TitleBadge label={row.title} />
         <Text style={styles.personSub} numberOfLines={2}>
           {subtitle}
@@ -481,6 +495,19 @@ function SmallButton({
 }
 
 const styles = StyleSheet.create({
+  personNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  personTitleFlex: { flexShrink: 1 },
+  cityTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  cityTagText: { color: colors.primary, fontSize: 11, fontFamily: fonts.semi },
   incomingBox: {
     gap: spacing.md,
     padding: spacing.md,

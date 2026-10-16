@@ -3575,7 +3575,7 @@ end $$;
 drop function if exists public.my_friendships();
 create or replace function public.my_friendships()
 returns table (id uuid, kind text, full_name text, alias text, avatar_index int, created_at timestamptz, title text,
-               photo_path text)
+               photo_path text, city text)
 language sql stable security definer set search_path = public as $$
   with ct as materialized (select * from public._champion_titles())
   select f.id,
@@ -3595,7 +3595,9 @@ language sql stable security definer set search_path = public as $$
               then public._title_join((select array_agg(t.label order by t.sort_order) from ct t where t.user_id = o.id))
               else null end,
          -- Profil resmi yalnızca arkadaşta (gerçek adı görünen)
-         case when f.status = 'accepted' then public._photo_of(o.id) else null end
+         case when f.status = 'accepted' then public._photo_of(o.id) else null end,
+         -- Arkadaşın şehri (başka şehirdeyse listede yanında yazar; istekte görünmez)
+         case when f.status = 'accepted' then public._city_of(o.id) else null end
     from public.friendships f
     join public.profiles o on o.id = case when f.requester_id = auth.uid() then f.addressee_id else f.requester_id end
    where public._is_active_user()
@@ -21414,7 +21416,8 @@ delete from public.app_settings where key in ('crew_max_members', 'crew_change_d
 -- ---------------------------------------------------------------------------------------------------------------------
 -- PeopleHere şehir seçimi ve göç (bkz. bölüm 2f)
 --   my_city: şehrim, göç listesi ve şehirler (göç zamanı geldiyse kaydı tamamlar)
---   set_my_city: girişten sonra ilk seçim (bir kez; moderatör her zaman)
+--   set_my_city: girişten sonra ilk seçim (bir kez; moderatör her zaman). Üye yalnızca bulunduğu şehri seçer: uygulama
+--     telefonun bir kez aldığı konumun petek numarasını gönderir (tam konum gelmez, saklanmaz), petek o şehrin olmalı
 --   request_city_move: göç listesine yazılma. Kişi kutuya "Göçü onaylıyorum" yazar; aylık sıralama sıfırlandığında
 --     (gelecek ay başı) yeni şehri geçerli olur. Bu ayın puanları eski şehrin sıralamasında kalır.
 --   cancel_city_move: göç listesinden çıkma · admin_set_city: moderatör kendini ya da birini hemen taşır
@@ -21440,7 +21443,8 @@ begin
                  from public.cities c));
 end $$;
 
-create or replace function public.set_my_city(p_city text)
+drop function if exists public.set_my_city(text);
+create or replace function public.set_my_city(p_city text, p_q int default null, p_r int default null)
 returns void language plpgsql security definer set search_path = public as $$
 declare
   v public.profiles;
@@ -21448,6 +21452,10 @@ begin
   v := public._require_user();
   if not exists (select 1 from public.cities where key = p_city) then raise exception 'invalid_city'; end if;
   if v.city is not null and v.role <> 'admin' then raise exception 'city_already_set'; end if;
+  -- Bulunduğun şehir: peteği seçilen şehrin olmalı (haritaların dışındaysa uygulama en yakın şehrin peteğini gönderir)
+  if v.role <> 'admin' and (p_q is null or p_r is null or public._cell_city(p_r) is distinct from p_city) then
+    raise exception 'city_not_here';
+  end if;
   update public.profiles set city = p_city, city_next = null, city_next_at = null, city_set_at = now() where id = v.id;
 end $$;
 
@@ -21572,7 +21580,7 @@ grant execute on function public.sk_voice_get(uuid) to authenticated;
 grant execute on function public.my_remote_caps() to authenticated;
 grant execute on function public.my_game_goals() to authenticated;
 grant execute on function public.my_city() to authenticated;
-grant execute on function public.set_my_city(text) to authenticated;
+grant execute on function public.set_my_city(text, int, int) to authenticated;
 grant execute on function public.request_city_move(text, text) to authenticated;
 grant execute on function public.cancel_city_move() to authenticated;
 grant execute on function public.admin_set_city(uuid, text) to authenticated;
