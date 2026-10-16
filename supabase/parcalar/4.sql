@@ -1,6 +1,566 @@
 -- PARÇA 4 / 4 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+-- ---- Ses şikâyeti yaptırımları ------------------------------------------------------------------------------------
+-- Moderatör ses mesajı şikâyetini "sonuçlandı" (haklı) ya da "reddedildi" (haksız) diye kapatır:
+--   Haklı: konuşanın mikrofonu 7 gün kapanır; ikinci ve sonraki ihlallerde 30 gün.
+--   Haksız: şikâyet edenin haksız şikâyet sayısı artar; her 3 haksız şikâyette 30 gün ses şikâyeti yapamaz ve 7 gün
+--   mikrofon kullanamaz. (Sayılar ayarlardan değiştirilebilir.)
+create or replace function public._voice_report_verdict(p_report_id uuid, p_just boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  rp public.reports;
+  v_speaker uuid;
+  v_n int;
+begin
+  select * into rp from public.reports where id = p_report_id;
+  if not found or rp.target_type <> 'sk_voice' then return; end if;
+  if p_just then
+    select c.user_id into v_speaker from public.sk_voice_clips c where c.id = rp.target_id;
+    if v_speaker is null then return; end if;
+    update public.profiles
+       set voice_strikes = voice_strikes + 1,
+           mic_banned_until = greatest(coalesce(mic_banned_until, now()), now())
+             + make_interval(days => case when voice_strikes >= 1 then public.setting_int('voice_ban_days_repeat', 30)
+                                          else public.setting_int('voice_ban_days_first', 7) end)
+     where id = v_speaker
+     returning voice_strikes into v_n;
+    perform public._notify(v_speaker, 'system', 'Mikrofonun kapatıldı',
+      'Oyunda gönderdiğin bir ses mesajı kurallara aykırı bulundu. Bir süre bas-konuş kullanamazsın.', '{}'::jsonb);
+  else
+    update public.profiles set unjust_reports = unjust_reports + 1 where id = rp.reporter_id
+     returning unjust_reports into v_n;
+    if v_n % greatest(1, public.setting_int('unjust_report_limit', 3)) = 0 then
+      update public.profiles
+         set report_banned_until = now() + make_interval(days => public.setting_int('report_ban_days', 30)),
+             mic_banned_until = greatest(coalesce(mic_banned_until, now()), now())
+               + make_interval(days => public.setting_int('unjust_mic_ban_days', 7))
+       where id = rp.reporter_id;
+      perform public._notify(rp.reporter_id, 'system', 'Şikâyet hakkın kapatıldı',
+        'Yaptığın ses şikâyetleri birkaç kez haksız bulundu. Bir süre ses şikâyeti yapamaz ve bas-konuş kullanamazsın.',
+        '{}'::jsonb);
+    end if;
+  end if;
+end $$;
+
+insert into public.app_settings (key, value, description) values
+  ('voice_ban_days_first', '7', 'Haklı bulunan ilk ses şikâyetinde konuşanın mikrofon yasağı (gün)'),
+  ('voice_ban_days_repeat', '30', 'Haklı bulunan sonraki ses şikâyetlerinde mikrofon yasağı (gün)'),
+  ('unjust_report_limit', '3', 'Kaç haksız ses şikâyetinde şikâyet edene yaptırım uygulanır'),
+  ('report_ban_days', '30', 'Haksız şikâyet yaptırımı: ses şikâyeti yasağı (gün)'),
+  ('unjust_mic_ban_days', '7', 'Haksız şikâyet yaptırımı: mikrofon yasağı (gün)'),
+  ('kick_poll_seconds', '30', 'Oyuncu atma oylamasının süresi (sn)'),
+  ('kick_poll_per_player', '2', 'Bir oyuncu bir odada en çok kaç atma oylaması başlatabilir')
+on conflict (key) do nothing;
+
+-- ---- Oyuncu atma oylaması (iki oyunda, yan yana ve uzaktan) ----------------------------------------------------------
+-- Yalnızca bekleme odasında ve tartışmada (Köpekbalığı plajı, Vampir–Köylü sabahı) başlatılır. Aynı anda tek oylama
+-- açık olur; kişi başı odada en çok 2 oylama. 30 sn içinde oy verebilecek oyuncuların (yaşayan, odada olan, atılmak
+-- istenen hariç) yarısından fazlası "At" derse oyuncu atılır: oyundaysa elenmiş sayılır (rolü açıklanır, puan almaz),
+-- bekleme odasındaysa çıkarılır; o odaya geri giremez. Moderatör ve (sahipliği devredilemeyen odada) oda sahibi atılamaz.
+create table if not exists public.room_kick_polls (
+  room_id uuid primary key references public.game_rooms (id) on delete cascade,
+  target_id uuid not null references public.profiles (id) on delete cascade,
+  starter_id uuid not null references public.profiles (id) on delete cascade,
+  phase_key text not null,
+  ends_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+alter table public.room_kick_polls enable row level security;
+create table if not exists public.room_kick_poll_log (
+  room_id uuid not null references public.game_rooms (id) on delete cascade,
+  starter_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create index if not exists room_kick_poll_log_idx on public.room_kick_poll_log (room_id, starter_id);
+alter table public.room_kick_poll_log enable row level security;
+
+-- Oylama açılabilecek an: bekleme odası ya da tartışma. Döner: anahtar (o tura özel) ya da boş
+create or replace function public._kick_window(r public.game_rooms)
+returns text language sql stable set search_path = public as $$
+  select case when r.status = 'lobby' then 'lobby'
+              when r.status = 'playing' and r.game_type = 'shark_cage' and r.state->>'phase' = 'day'
+                then 'day:' || coalesce(r.state->>'round', '0')
+              when r.status = 'playing' and r.game_type = 'vampire_villager' and r.state->>'phase' = 'dawn'
+                then 'dawn:' || coalesce(r.state->>'round', '0') end;
+$$;
+
+-- Oy verebilecekler: odada olan (oyundaysa yaşayan) oyuncular, atılmak istenen hariç
+create or replace function public._kick_voters(p_room_id uuid, p_target uuid)
+returns int language sql stable security definer set search_path = public as $$
+  select count(*)::int from public.room_players rp
+    join public.game_rooms r on r.id = rp.room_id
+   where rp.room_id = p_room_id and rp.left_at is null and rp.user_id <> p_target
+     and (r.status = 'lobby' or rp.is_alive);
+$$;
+
+create or replace function public._kick_yes(p_room_id uuid, p_target uuid, p_key text)
+returns int language sql stable security definer set search_path = public as $$
+  select count(*)::int from public.room_kick_votes k
+    join public.room_players rp on rp.room_id = k.room_id and rp.user_id = k.voter_id and rp.left_at is null
+    join public.game_rooms r on r.id = k.room_id
+   where k.room_id = p_room_id and k.target_id = p_target and k.phase_key = p_key
+     and (r.status = 'lobby' or rp.is_alive);
+$$;
+
+-- Açık oylamayı sonuçlandırır: çoğunluk olunca hemen, süre dolunca ya da tartışma bitince
+create or replace function public._kick_tick(p_room_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  k public.room_kick_polls;
+  v_yes int;
+  v_need int;
+begin
+  select * into k from public.room_kick_polls where room_id = p_room_id;
+  if not found then return; end if;
+  select * into r from public.game_rooms where id = p_room_id for update;
+  select * into k from public.room_kick_polls where room_id = p_room_id for update;
+  if not found then return; end if;
+  -- Test odasında moderatörün başlattığı oylamaya botlar "At" der (tek telefonla deneme)
+  if coalesce((r.config->>'test')::boolean, false)
+     and exists (select 1 from public.profiles p where p.id = k.starter_id and p.role = 'admin') then
+    insert into public.room_kick_votes (room_id, target_id, voter_id, phase_key)
+    select p_room_id, k.target_id, rp.user_id, k.phase_key
+      from public.room_players rp join public.profiles p on p.id = rp.user_id and p.is_bot
+     where rp.room_id = p_room_id and rp.left_at is null and rp.user_id <> k.target_id
+    on conflict (room_id, target_id, voter_id) do update set phase_key = excluded.phase_key;
+  end if;
+  v_yes := public._kick_yes(p_room_id, k.target_id, k.phase_key);
+  v_need := public._kick_voters(p_room_id, k.target_id) / 2 + 1;
+  if public._kick_window(r) is distinct from k.phase_key
+     or not exists (select 1 from public.room_players rp
+                     where rp.room_id = p_room_id and rp.user_id = k.target_id and rp.left_at is null) then
+    delete from public.room_kick_polls where room_id = p_room_id;
+    delete from public.room_kick_votes where room_id = p_room_id and phase_key = k.phase_key;
+    return;
+  end if;
+  if v_yes >= v_need then
+    delete from public.room_kick_polls where room_id = p_room_id;
+    delete from public.room_kick_votes where room_id = p_room_id and (target_id = k.target_id or voter_id = k.target_id);
+    insert into public.room_bans (room_id, user_id) values (p_room_id, k.target_id) on conflict do nothing;
+    perform public._room_remove_player(p_room_id, k.target_id, 'kicked');
+    perform public._notify(k.target_id, 'system', 'Odadan çıkarıldın',
+      'Odadaki oyuncuların çoğunluğu seni oyundan çıkarmak için oy verdi. Bu odaya yeniden giremezsin.', '{}'::jsonb);
+    return;
+  end if;
+  if now() >= k.ends_at then
+    delete from public.room_kick_polls where room_id = p_room_id;
+    delete from public.room_kick_votes where room_id = p_room_id and target_id = k.target_id and phase_key = k.phase_key;
+  end if;
+end $$;
+
+-- Atma oylaması başlat (başlatan "At" demiş sayılır)
+create or replace function public.room_kick_start(p_room_id uuid, p_target uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+  v_key text;
+begin
+  v := public._require_writer(null);
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found or r.game_type not in ('shark_cage', 'vampire_villager') then raise exception 'room_not_found'; end if;
+  perform public._kick_tick(p_room_id);
+  v_key := public._kick_window(r);
+  if v_key is null then raise exception 'kick_closed'; end if;
+  if not exists (select 1 from public.room_players rp where rp.room_id = p_room_id and rp.user_id = v.id and rp.left_at is null
+                   and (r.status = 'lobby' or rp.is_alive)) then
+    raise exception 'forbidden';
+  end if;
+  if p_target = v.id
+     or exists (select 1 from public.profiles p where p.id = p_target and p.role = 'admin')
+     or not exists (select 1 from public.room_players rp where rp.room_id = p_room_id and rp.user_id = p_target and rp.left_at is null)
+     or (p_target = r.host_id and not (r.remote or r.config ? 'rematch_of' or coalesce((r.config->>'match')::boolean, false))) then
+    raise exception 'not_kickable';
+  end if;
+  if exists (select 1 from public.room_kick_polls where room_id = p_room_id) then raise exception 'kick_poll_open'; end if;
+  if (select count(*) from public.room_kick_poll_log where room_id = p_room_id and starter_id = v.id)
+     >= greatest(1, public.setting_int('kick_poll_per_player', 2)) then
+    raise exception 'kick_poll_limit';
+  end if;
+  insert into public.room_kick_poll_log (room_id, starter_id) values (p_room_id, v.id);
+  insert into public.room_kick_polls (room_id, target_id, starter_id, phase_key, ends_at)
+  values (p_room_id, p_target, v.id, v_key,
+          now() + make_interval(secs => greatest(10, public.setting_int('kick_poll_seconds', 30))));
+  insert into public.room_kick_votes (room_id, target_id, voter_id, phase_key) values (p_room_id, p_target, v.id, v_key)
+  on conflict (room_id, target_id, voter_id) do update set phase_key = excluded.phase_key, created_at = now();
+  perform public._kick_tick(p_room_id);
+end $$;
+
+-- Açık oylamada "At" (true) / "Kalsın" (false)
+create or replace function public.room_kick_vote(p_room_id uuid, p_yes boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+  k public.room_kick_polls;
+begin
+  v := public._require_writer(null);
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found then raise exception 'room_not_found'; end if;
+  select * into k from public.room_kick_polls where room_id = p_room_id;
+  if not found then raise exception 'kick_closed'; end if;
+  if v.id = k.target_id
+     or not exists (select 1 from public.room_players rp where rp.room_id = p_room_id and rp.user_id = v.id and rp.left_at is null
+                      and (r.status = 'lobby' or rp.is_alive)) then
+    raise exception 'forbidden';
+  end if;
+  if coalesce(p_yes, false) then
+    insert into public.room_kick_votes (room_id, target_id, voter_id, phase_key) values (p_room_id, k.target_id, v.id, k.phase_key)
+    on conflict (room_id, target_id, voter_id) do update set phase_key = excluded.phase_key, created_at = now();
+  else
+    delete from public.room_kick_votes where room_id = p_room_id and target_id = k.target_id and voter_id = v.id;
+  end if;
+  perform public._kick_tick(p_room_id);
+end $$;
+
+-- Görünüm için: açık oylama { target, starter, yes, need, left (sn), mine } ve bu odada kalan başlatma hakkı
+create or replace function public._kick_state(p_room_id uuid, p_user uuid)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'poll', (select jsonb_build_object(
+                'target', k.target_id, 'starter', k.starter_id,
+                'yes', public._kick_yes(p_room_id, k.target_id, k.phase_key),
+                'need', public._kick_voters(p_room_id, k.target_id) / 2 + 1,
+                'left', greatest(0, ceil(extract(epoch from k.ends_at - now()))::int),
+                'mine', exists (select 1 from public.room_kick_votes kv
+                                 where kv.room_id = p_room_id and kv.target_id = k.target_id and kv.voter_id = p_user
+                                   and kv.phase_key = k.phase_key))
+               from public.room_kick_polls k where k.room_id = p_room_id),
+    'starts_left', greatest(0, public.setting_int('kick_poll_per_player', 2)
+                      - (select count(*)::int from public.room_kick_poll_log l where l.room_id = p_room_id and l.starter_id = p_user)),
+    'open', (select public._kick_window(r) is not null from public.game_rooms r where r.id = p_room_id));
+$$;
+
+-- ---------------------------------------------------------------------------------------------------------------------
+-- Klan sistemi kaldırıldı (PeopleHere): tabloları, fonksiyonları ve ayarları silinir. Kişisel puanlar etkilenmez.
+-- ---------------------------------------------------------------------------------------------------------------------
+drop function if exists public.crew_create(text);
+drop function if exists public.crew_rename(text);
+drop function if exists public.crew_invite(uuid);
+drop function if exists public.crew_invite_respond(uuid, boolean);
+drop function if exists public.crew_leave();
+drop function if exists public.crew_kick(uuid);
+drop function if exists public.crew_view();
+drop function if exists public.crew_target_status(uuid, uuid);
+drop function if exists public.crew_messages_list();
+drop function if exists public.crew_say(text);
+drop function if exists public.crew_inbox();
+drop function if exists public.get_crew_leaderboard(int, int);
+drop function if exists public._crew_award(uuid, uuid, numeric);
+drop function if exists public._crew_unread(uuid);
+drop function if exists public._crew_of(uuid);
+drop function if exists public._crew_next_change(uuid);
+drop function if exists public._crew_name(text);
+drop function if exists public._crew_add(uuid, uuid);
+drop function if exists public._crew_remove(uuid);
+drop table if exists public.crew_points, public.crew_messages, public.crew_invites, public.crew_joins, public.crew_members,
+  public.crews cascade;
+delete from public.app_settings where key in ('crew_max_members', 'crew_change_days', 'crew_contrib_days');
+
+-- ---------------------------------------------------------------------------------------------------------------------
+-- PeopleHere şehir seçimi ve göç (bkz. bölüm 2f)
+--   my_city: şehrim, göç listesi ve şehirler (göç zamanı geldiyse kaydı tamamlar)
+--   set_my_city: girişten sonra ilk seçim (bir kez; moderatör her zaman). Üye yalnızca bulunduğu şehri seçer: uygulama
+--     telefonun bir kez aldığı konumun petek numarasını gönderir (tam konum gelmez, saklanmaz), petek o şehrin olmalı
+--   request_city_move: göç listesine yazılma. Kişi kutuya "Göçü onaylıyorum" yazar; aylık sıralama sıfırlandığında
+--     (gelecek ay başı) yeni şehri geçerli olur. Bu ayın puanları eski şehrin sıralamasında kalır.
+--   cancel_city_move: göç listesinden çıkma · admin_set_city: moderatör kendini ya da birini hemen taşır
+-- ---------------------------------------------------------------------------------------------------------------------
+create or replace function public.my_city()
+returns jsonb language plpgsql volatile security definer set search_path = public as $$
+declare
+  v public.profiles;
+begin
+  v := public._require_user();
+  if v.city_next is not null and v.city_next_at is not null and now() >= v.city_next_at then
+    update public.profiles set city = city_next, city_next = null, city_next_at = null, city_set_at = now()
+     where id = v.id
+    returning * into v;
+  end if;
+  return jsonb_build_object(
+    'city', v.city,
+    'next', v.city_next,
+    'next_at', v.city_next_at,
+    'move_at', public._next_month_start(),
+    'instant', v.role = 'admin',
+    'cities', (select jsonb_agg(jsonb_build_object('key', c.key, 'name', c.name) order by c.sort_order)
+                 from public.cities c));
+end $$;
+
+drop function if exists public.set_my_city(text);
+create or replace function public.set_my_city(p_city text, p_q int default null, p_r int default null)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+begin
+  v := public._require_user();
+  if not exists (select 1 from public.cities where key = p_city) then raise exception 'invalid_city'; end if;
+  if v.city is not null and v.role <> 'admin' then raise exception 'city_already_set'; end if;
+  -- Bulunduğun şehir: peteği seçilen şehrin olmalı (haritaların dışındaysa uygulama en yakın şehrin peteğini gönderir)
+  if v.role <> 'admin' and (p_q is null or p_r is null or public._cell_city(p_r) is distinct from p_city) then
+    raise exception 'city_not_here';
+  end if;
+  update public.profiles set city = p_city, city_next = null, city_next_at = null, city_set_at = now() where id = v.id;
+end $$;
+
+create or replace function public.request_city_move(p_city text, p_confirm text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_at timestamptz := public._next_month_start();
+begin
+  v := public._require_user();
+  if not exists (select 1 from public.cities where key = p_city) then raise exception 'invalid_city'; end if;
+  if v.city is null then raise exception 'city_not_set'; end if;
+  if regexp_replace(public._tr_fold(coalesce(p_confirm, '')), '\s+', ' ', 'g') <> 'gocu onayliyorum' then
+    raise exception 'move_not_confirmed';
+  end if;
+  if p_city = public._city_of(v.id) then raise exception 'same_city'; end if;
+  -- Moderatör hemen taşınır
+  if v.role = 'admin' then
+    update public.profiles set city = p_city, city_next = null, city_next_at = null, city_set_at = now() where id = v.id;
+    return jsonb_build_object('city', p_city, 'next', null, 'next_at', null);
+  end if;
+  update public.profiles set city_next = p_city, city_next_at = v_at where id = v.id;
+  return jsonb_build_object('city', v.city, 'next', p_city, 'next_at', v_at);
+end $$;
+
+create or replace function public.cancel_city_move()
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+begin
+  v := public._require_user();
+  update public.profiles set city_next = null, city_next_at = null
+   where id = v.id and city_next is not null and (city_next_at is null or now() < city_next_at);
+end $$;
+
+create or replace function public.admin_set_city(p_user uuid, p_city text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_old text;
+begin
+  perform public._require_admin();
+  if not exists (select 1 from public.cities where key = p_city) then raise exception 'invalid_city'; end if;
+  select public._city_of(id) into v_old from public.profiles where id = p_user;
+  if not found then raise exception 'user_not_found'; end if;
+  update public.profiles set city = p_city, city_next = null, city_next_at = null, city_set_at = now() where id = p_user;
+  perform public._audit('set_city', p_user, jsonb_build_object('from', v_old, 'to', p_city));
+end $$;
+
+revoke execute on all functions in schema public from public, anon, authenticated;
+
+-- RLS kurallarının içinde kullanılan yardımcılar
+grant execute on function public.is_admin() to authenticated;
+grant execute on function public._is_active_user() to authenticated;
+grant execute on function public.is_room_member(uuid) to authenticated;
+grant execute on function public.is_room_host(uuid) to authenticated;
+grant execute on function public.post_blocked_by_me(uuid) to authenticated;
+grant execute on function public.comment_blocked_by_me(uuid) to authenticated;
+
+-- Kullanıcı fonksiyonları
+grant execute on function public.update_my_profile(text) to authenticated;
+grant execute on function public.delete_my_account(text) to authenticated;
+-- Hesap ve bildirim kutusu (5h). İlk üçü giriş yapmadan da çağrılır (kayıt kontrolü, şifre sıfırlama, metinler).
+grant execute on function public.check_signup(text, text) to anon, authenticated;
+grant execute on function public.recover_account(text, text, text) to anon, authenticated;
+grant execute on function public.app_text(text) to anon, authenticated;
+grant execute on function public.claim_session() to authenticated;
+grant execute on function public.my_account_status() to authenticated;
+grant execute on function public.create_recovery_phrase(text) to authenticated;
+grant execute on function public.confirm_recovery_phrase() to authenticated;
+grant execute on function public.list_my_notifications() to authenticated;
+grant execute on function public.mark_notifications_read() to authenticated;
+grant execute on function public.delete_my_notification(uuid) to authenticated;
+grant execute on function public.admin_send_message(uuid, text, text) to authenticated;
+grant execute on function public.admin_create_announcement(text, text) to authenticated;
+grant execute on function public.admin_list_announcements() to authenticated;
+grant execute on function public.admin_set_announcement_active(uuid, boolean) to authenticated;
+grant execute on function public.create_post(text, text, uuid, int, int, int, int, uuid) to authenticated;
+grant execute on function public.alias_profile(uuid, uuid, text) to authenticated;
+grant execute on function public.react_to_post(uuid, text) to authenticated;
+grant execute on function public.share_event_to_feed(uuid, text) to authenticated;
+grant execute on function public.map_status() to authenticated;
+grant execute on function public.map_density() to authenticated;
+grant execute on function public.map_report_game(uuid, int, int) to authenticated;
+grant execute on function public.search_places(text, int, text) to authenticated;
+grant execute on function public.places_near_cell(int, int, int) to authenticated;
+grant execute on function public.create_comment(uuid, text) to authenticated;
+grant execute on function public.toggle_like(uuid) to authenticated;
+grant execute on function public.block_author_of_post(uuid) to authenticated;
+grant execute on function public.my_blocks() to authenticated;
+grant execute on function public.unblock(uuid) to authenticated;
+grant execute on function public.report_content(text, uuid, text) to authenticated;
+grant execute on function public.register_for_event(uuid) to authenticated;
+grant execute on function public.cancel_event_registration(uuid) to authenticated;
+grant execute on function public.join_room(text, uuid, int, int, double precision, double precision, real) to authenticated;
+grant execute on function public.join_remote_room(uuid) to authenticated;
+grant execute on function public.admin_add_test_bots(uuid, int) to authenticated;
+grant execute on function public.voice_state(uuid) to authenticated;
+grant execute on function public.voice_set(uuid, boolean, boolean, boolean) to authenticated;
+grant execute on function public.voice_yield(uuid) to authenticated;
+grant execute on function public.voice_ping(uuid) to authenticated;
+grant execute on function public.room_vote_kick(uuid, uuid) to authenticated;
+grant execute on function public.sk_view(uuid) to authenticated;
+grant execute on function public.sk_history(uuid) to authenticated;
+grant execute on function public.room_friend_request(uuid, uuid) to authenticated;
+grant execute on function public.room_take_seat(uuid, int) to authenticated;
+grant execute on function public.vv_say(uuid, text, text) to authenticated;
+grant execute on function public.vv_history(uuid) to authenticated;
+grant execute on function public.sk_pick_role(uuid, text) to authenticated;
+grant execute on function public.room_lobby_ready(uuid, boolean) to authenticated;
+grant execute on function public.room_kick_start(uuid, uuid) to authenticated;
+grant execute on function public.room_kick_vote(uuid, boolean) to authenticated;
+grant execute on function public.sk_start(uuid) to authenticated;
+grant execute on function public.sk_ready(uuid) to authenticated;
+grant execute on function public.sk_night_action(uuid, text, uuid) to authenticated;
+grant execute on function public.sk_spear(uuid, uuid) to authenticated;
+grant execute on function public.sk_reveal_marshal(uuid) to authenticated;
+grant execute on function public.sk_vote(uuid, uuid) to authenticated;
+grant execute on function public.sk_next(uuid) to authenticated;
+grant execute on function public.sk_say(uuid, text, text) to authenticated;
+grant execute on function public.sk_voice_post(uuid, text, int) to authenticated;
+grant execute on function public.sk_voice_get(uuid) to authenticated;
+grant execute on function public.my_remote_caps() to authenticated;
+grant execute on function public.my_game_goals() to authenticated;
+grant execute on function public.my_city() to authenticated;
+grant execute on function public.set_my_city(text, int, int) to authenticated;
+grant execute on function public.request_city_move(text, text) to authenticated;
+grant execute on function public.cancel_city_move() to authenticated;
+grant execute on function public.admin_set_city(uuid, text) to authenticated;
+grant execute on function public.vv_skip_discussion(uuid, boolean) to authenticated;
+grant execute on function public.sk_skip_discussion(uuid, boolean) to authenticated;
+grant execute on function public.sk_match_join() to authenticated;
+grant execute on function public.sk_match_poll() to authenticated;
+grant execute on function public.sk_match_cancel() to authenticated;
+grant execute on function public.sk_lobby_ready(uuid, boolean) to authenticated;
+grant execute on function public.admin_queue_test_bots(int, text) to authenticated;
+grant execute on function public.match_join(text) to authenticated;
+grant execute on function public.admin_get_voice_clip(uuid) to authenticated;
+grant execute on function public.get_room_code(uuid) to authenticated;
+grant execute on function public.leave_all_rooms(boolean) to authenticated;
+grant execute on function public.my_side_room() to authenticated;
+grant execute on function public.room_heartbeat(uuid) to authenticated;
+grant execute on function public.room_host(uuid) to authenticated;
+grant execute on function public.my_hosted_rooms(text) to authenticated;
+grant execute on function public.leave_room(uuid) to authenticated;
+grant execute on function public.send_friend_request_for_post(uuid) to authenticated;
+grant execute on function public.send_friend_request_for_comment(uuid) to authenticated;
+grant execute on function public.send_friend_request_by_code(text) to authenticated;
+grant execute on function public.send_friend_request_for_event_comment(uuid) to authenticated;
+grant execute on function public.my_friend_code() to authenticated;
+grant execute on function public.respond_friend_request(uuid, text) to authenticated;
+grant execute on function public.cancel_friend_request(uuid) to authenticated;
+grant execute on function public.remove_friend(uuid) to authenticated;
+grant execute on function public.my_friendships() to authenticated;
+grant execute on function public.my_friend_request_count() to authenticated;
+grant execute on function public.get_leaderboard(int) to authenticated;
+grant execute on function public.ensure_my_alias() to authenticated;
+grant execute on function public.my_quota() to authenticated;
+grant execute on function public.list_events(text) to authenticated;
+grant execute on function public.create_event(text, text, text, timestamptz, int, numeric, text, int, int, int, boolean) to authenticated;
+grant execute on function public.cancel_event(uuid) to authenticated;
+grant execute on function public.request_event_close(uuid, text) to authenticated;
+grant execute on function public.admin_list_close_requests(text) to authenticated;
+grant execute on function public.admin_resolve_close_request(uuid, boolean, text) to authenticated;
+grant execute on function public.my_notice_counts() to authenticated;
+grant execute on function public.create_room(text, uuid, text, int, int, int, int, text, boolean, double precision, double precision, real) to authenticated;
+grant execute on function public.set_room_status(uuid, text) to authenticated;
+grant execute on function public.list_feed(timestamptz, int, boolean, text, boolean, int, int, int, int, boolean, uuid, text) to authenticated;
+grant execute on function public.feed_districts(text) to authenticated;
+grant execute on function public.list_open_rooms(text, text) to authenticated;
+grant execute on function public.list_comments(uuid) to authenticated;
+grant execute on function public.delete_my_post(uuid) to authenticated;
+grant execute on function public.delete_my_comment(uuid) to authenticated;
+grant execute on function public.block_author_of_comment(uuid) to authenticated;
+grant execute on function public.get_monthly_leaderboard(int, int, text) to authenticated;
+grant execute on function public.my_game_stats() to authenticated;
+grant execute on function public.my_achievement_stats() to authenticated;
+grant execute on function public.my_event_raffles() to authenticated;
+grant execute on function public.dm_open(uuid, uuid, uuid, text) to authenticated;
+grant execute on function public.dm_list() to authenticated;
+grant execute on function public.dm_unread_count() to authenticated;
+grant execute on function public.dm_view(uuid) to authenticated;
+grant execute on function public.dm_send(uuid, text) to authenticated;
+grant execute on function public.dm_block(uuid) to authenticated;
+-- Özel mesajları moderatör yalnızca ŞİKAYET EDİLMİŞSE okuyabilir (şikayet incelemesi); yazışmaların geri kalanı kapalıdır
+revoke all on public.dm_threads, public.dm_messages from anon, authenticated;
+grant select on public.dm_messages to authenticated;
+drop policy if exists dm_messages_admin_reported on public.dm_messages;
+create policy dm_messages_admin_reported on public.dm_messages for select to authenticated
+  using (public.is_admin() and exists (select 1 from public.reports r where r.target_type = 'dm' and r.target_id = dm_messages.id));
+grant execute on function public.vv_start(uuid) to authenticated;
+grant execute on function public.vv_ready(uuid) to authenticated;
+grant execute on function public.vv_begin_night(uuid) to authenticated;
+grant execute on function public.vv_night_action(uuid, uuid) to authenticated;
+grant execute on function public.vv_end_night(uuid) to authenticated;
+grant execute on function public.vv_begin_vote(uuid) to authenticated;
+grant execute on function public.vv_cast_vote(uuid, uuid) to authenticated;
+grant execute on function public.vv_end_vote(uuid) to authenticated;
+grant execute on function public.vv_view(uuid) to authenticated;
+grant execute on function public.vv_whisper(uuid, uuid, text, uuid) to authenticated;
+grant execute on function public.vv_dead_say(uuid, text) to authenticated;
+revoke all on public.vv_dead_chat from anon, authenticated;
+grant select on public.vv_dead_chat to authenticated;
+drop policy if exists vv_dead_chat_admin_select on public.vv_dead_chat;
+create policy vv_dead_chat_admin_select on public.vv_dead_chat for select to authenticated using (public.is_admin());
+-- Fısıltılar yalnızca vv_view ve vv_whisper ile; tabloyu yalnızca moderatör (şikayet incelemesi) doğrudan okur
+revoke all on public.vv_whispers from anon, authenticated;
+grant select on public.vv_whispers to authenticated;
+drop policy if exists vv_whispers_admin_select on public.vv_whispers;
+create policy vv_whispers_admin_select on public.vv_whispers for select to authenticated using (public.is_admin());
+
+-- Moderatör fonksiyonları (içeride ayrıca moderatör kontrolü yapılır)
+grant execute on function public.admin_get_post_author(uuid) to authenticated;
+grant execute on function public.admin_get_comment_author(uuid) to authenticated;
+grant execute on function public.admin_mute_user(uuid, int, text) to authenticated;
+grant execute on function public.admin_unmute_user(uuid) to authenticated;
+grant execute on function public.admin_ban_user(uuid, text) to authenticated;
+grant execute on function public.admin_unban_user(uuid) to authenticated;
+grant execute on function public.admin_set_hidden(text, uuid, boolean) to authenticated;
+grant execute on function public.admin_resolve_report(uuid, text) to authenticated;
+grant execute on function public.my_event_code(uuid) to authenticated;
+grant execute on function public.regenerate_event_code(uuid) to authenticated;
+grant execute on function public.verify_event_attendance(uuid, text, int, int) to authenticated;
+grant execute on function public.toggle_event_like(uuid) to authenticated;
+grant execute on function public.add_event_comment(uuid, text) to authenticated;
+grant execute on function public.list_event_comments(uuid) to authenticated;
+grant execute on function public.delete_my_event_comment(uuid) to authenticated;
+grant execute on function public.my_bubble_skins() to authenticated;
+grant execute on function public.set_bubble_skin(text) to authenticated;
+grant execute on function public.get_game_leaderboard(text, int, int, text) to authenticated;
+grant execute on function public.ranking_info() to authenticated;
+grant execute on function public.my_titles() to authenticated;
+grant execute on function public.get_game_champion(text) to authenticated;
+grant execute on function public.my_game_result(uuid) to authenticated;
+grant execute on function public.my_points_this_month() to authenticated;
+grant execute on function public.admin_grant_premium(uuid, public.package_type) to authenticated;
+grant execute on function public.list_perks() to authenticated;
+grant execute on function public.admin_save_perk(uuid, text, text, text, text, text, date, boolean, int) to authenticated;
+grant execute on function public.admin_delete_perk(uuid) to authenticated;
+grant execute on function public.admin_revoke_premium(uuid) to authenticated;
+grant execute on function public.get_venue(uuid) to authenticated;
+grant execute on function public.list_venue_reviews(uuid) to authenticated;
+grant execute on function public.save_venue_review(uuid, int, text) to authenticated;
+grant execute on function public.delete_my_venue_review(uuid) to authenticated;
+grant execute on function public.create_sponsor_code() to authenticated;
+grant execute on function public.my_sponsor_panel() to authenticated;
+grant execute on function public.redeem_sponsor_code(text) to authenticated;
+grant execute on function public.list_map_venues() to authenticated;
+grant execute on function public.admin_list_sponsors() to authenticated;
+grant execute on function public.admin_save_venue(uuid, text, text, text, text, int, int, int) to authenticated;
+grant execute on function public.admin_remove_venue_from_map(uuid) to authenticated;
+grant execute on function public.admin_set_venue_image(uuid, text) to authenticated;
+grant execute on function public.set_game_invites(boolean) to authenticated;
+grant execute on function public.room_invite_targets(uuid) to authenticated;
+grant execute on function public.send_room_invites(uuid, uuid[], boolean) to authenticated;
+grant execute on function public.accept_room_invite(uuid) to authenticated;
+grant execute on function public.room_invite_message(uuid, text) to authenticated;
+grant execute on function public.room_invite_thread(uuid) to authenticated;
+grant execute on function public.my_room_invite(uuid) to authenticated;
+grant execute on function public.room_accepted_invites(uuid) to authenticated;
 revoke all on public.room_invite_msgs from anon, authenticated;
 grant execute on function public.set_team_seeking(uuid, boolean) to authenticated;
 grant execute on function public.list_team_seekers(uuid) to authenticated;

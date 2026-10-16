@@ -347,6 +347,8 @@ export function HoneycombMap({
 }: Props) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setViewState] = useState<View2 | null>(null);
+  /** Parmak haritayı kaydırıyor / yakınlaştırıyor (bu sırada yollar çizilmez) */
+  const [dragging, setDragging] = useState(false);
   // Ölçek çubuğu: yakınlaşma değişince kısa bir süre görünür (ilk açılışta görünmez)
   const [scaleShown, setScaleShown] = useState(false);
   const zoomKey = view ? Math.round(Math.log(view.scale) * 40) : null;
@@ -547,6 +549,7 @@ export function HoneycombMap({
     let moved = 0;
     let startedAt = 0;
     let tapAt = { x: 0, y: 0 };
+    let dragFlag = false;
 
     const pts = (e: GestureResponderEvent) =>
       Array.from(e.nativeEvent.touches ?? []).map((t) => ({ x: t.locationX, y: t.locationY }));
@@ -570,6 +573,10 @@ export function HoneycombMap({
       onPanResponderMove: (e) => {
         const now = pts(e);
         if (!startView || now.length === 0) return;
+        if (moved >= TAP_SLOP && !dragFlag) {
+          dragFlag = true;
+          setDragging(true);
+        }
         if (now.length !== startPts.length) {
           // parmak sayısı değişti: bu andan itibaren yeniden başla
           begin(e);
@@ -597,7 +604,17 @@ export function HoneycombMap({
           }
         }
       },
+      onPanResponderTerminate: () => {
+        if (dragFlag) {
+          dragFlag = false;
+          setDragging(false);
+        }
+      },
       onPanResponderRelease: () => {
+        if (dragFlag) {
+          dragFlag = false;
+          setDragging(false);
+        }
         const v = live.view;
         if (moved < TAP_SLOP && Date.now() - startedAt < 600 && v) {
           // dokunma: dokunulan peteği seç
@@ -646,7 +663,11 @@ export function HoneycombMap({
   // Yakınlaşınca petek ızgarası (yalnızca ekrandaki parçalar); uzaklaşınca kara ilçe sınırlarından boyanır
   const showGrid = view ? HEX_SIZE * SQ3 * view.scale >= GRID_MIN_HEX_PX : false;
   const tiles = view && showGrid ? tilesInView(g.tiles, view, size.w, size.h) : [];
-  // Mahalle sınırları ve adları haritada çizilmez (mahalle adı petek menüsünde yazar)
+  // Mahalle sınırları ve adları haritada çizilmez (mahalle adı petek menüsünde yazar).
+  // Ana yollar: yalnızca ekrandaki parçalar; petek adlarının göründüğü yakınlıkta ve parmakla kaydırıp
+  // yakınlaştırırken çizilmez (harita kasmasın)
+  const closeUp = view !== null && fitScale > 0 && view.scale >= fitScale * zoomMax(g) * CARDS_HIDE_RATIO;
+  const roadTiles = view && !closeUp && !dragging ? tilesInView(g.roadTiles, view, size.w, size.h) : [];
 
   return (
     <View style={styles.wrap} onLayout={onLayout} testID="honeycomb-map">
@@ -659,7 +680,9 @@ export function HoneycombMap({
             ))}
             {plain ? null : <LevelLayers levelPaths={levelPaths} />}
             {/* Ana yollar (otoyol, D-yolu): petek renklerinin üstünde, işaretlerin altında silüet */}
-            <RoadLayer d={g.roadPath} w={px(2.6)} />
+            {roadTiles.map((t) => (
+              <RoadLayer key={t.key} d={t.path} w={px(2.6)} />
+            ))}
             {!plain && treasurePaths.halo ? (
               <Path
                 d={treasurePaths.halo}

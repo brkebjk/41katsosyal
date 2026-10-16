@@ -57,7 +57,7 @@ import { useAuth } from '@/lib/auth';
 import { cellName, loadCellNames, onCellNamesChanged } from '@/lib/cellNames';
 import { confirmAction, notify } from '@/lib/dialog';
 import { eventCellMarks, listEvents, showsImageOnMap, type EventItem } from '@/lib/events';
-import { CITY_KEYS, CITY_NAMES, cityIn, setVisiting, useCity } from '@/lib/city';
+import { CITY_KEYS, CITY_NAMES, cityIn, getCityState, setVisiting, useCity } from '@/lib/city';
 import { cityOfR, districtOf, hexDistance, hoodOf, isLand, type Cell } from '@/lib/hex';
 import { locateMyCell, myCellNow, nearCell, useMyCell } from '@/lib/myCell';
 import { cellFeedSummary } from '@/lib/gameSeek';
@@ -345,6 +345,8 @@ function MapScreen({ resetKey }: { resetKey: number }) {
   async function onLocate() {
     const c = await locateMe(false);
     if (!c) return;
+    // Ziyaretteyken Konumum: kendi şehrine dönülür (harita bulunduğun peteğe gider)
+    if (getCityState().visiting) setVisiting(null);
     setFocus((f) => ({ cell: c, key: (f?.key ?? 0) + 1, farPx: LOCATE_FAR_PX }));
     setHereName(`Buradasın: ${cellName(c)}`);
     // Bulunduğun petek öne çıkar ve üstünde “İncele” düğmesi açılır
@@ -357,9 +359,13 @@ function MapScreen({ resetKey }: { resetKey: number }) {
   useFocusEffect(
     useCallback(() => {
       if (Date.now() < gate.until) return;
+      // Başka şehri ziyaret ederken kendi konumuna gidilmez, “Buradasın” yazmaz
+      if (getCityState().visiting) return;
       let alive = true;
       void locateMyCell('locate', false, true).then((c) => {
         if (!alive || !c) return;
+        const st = getCityState();
+        if (st.visiting || (st.my && cityOfR(c.r) !== st.my)) return;
         setFocus((f) => ({ cell: c, key: (f?.key ?? 0) + 1, farPx: LOCATE_FAR_PX }));
         setHereName(`Buradasın: ${cellName(c)}`);
         setSelected(null);

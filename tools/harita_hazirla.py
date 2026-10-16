@@ -23,7 +23,7 @@ Haritada mahalle sınırı çizilmez (mahalle adı yalnızca petek menüsünde g
 silüeti çizilir. Kocaeli'de körfezi çevreleyen ilçelerin adları kıyıya yakın yazılır.
 
 Kullanım (tools klasöründen): python3 harita_hazirla.py <da_3il.parquet> <places_3il.parquet> <yollar_3il.parquet> [--yalniz-harita]
-  --yalniz-harita: yalnızca uygulamanın harita dosyaları yazılır (yer listeleri ve sunucu petekleri değişmez)
+  --yalniz-harita: harita dosyaları ve sunucunun kara petekleri yazılır, yer listeleri (CSV) değişmez
 Gerekenler: pip install pyarrow shapely numpy
 """
 import collections
@@ -52,8 +52,11 @@ LAND_MIN = 0.25  # peteğin en az bu kadarı karaysa haritada
 UNIT = 10  # sınır koordinatları 10 m'lik tam sayı olarak saklanır (en yakın görünümde ~1 piksel)
 TOL_HOOD = 6.0  # mahalle sınırı sadeleştirme (m)
 TOL_FILL = 40.0  # uzaktan kara boyaması (m)
-TOL_ROAD = 25.0  # ana yol silüeti sadeleştirme (m)
-ROAD_MIN = 80.0  # bundan kısa (birleştirildikten sonra) yol parçası çizilmez (m)
+TOL_ROAD = 45.0  # ana yol silüeti sadeleştirme (m; telefonda harita kasmasın diye kaba)
+ROAD_MIN = 150.0  # bundan kısa (birleştirildikten sonra) yol parçası çizilmez (m)
+# Dar su yolları (İstanbul Boğazı): petekler iki kıyıyı birleştirip suyu kapatmasın diye suyun orta hattı bulunur,
+# bu hatta değen petekler su sayılır. Kutu (boylam/enlem) ve orta hattın aranmaya başlandığı nokta.
+STRAITS = {'istanbul': [{'box': (28.975, 40.995, 29.16, 41.24), 'seed': (29.058, 41.085), 'open': 3500.0}]}
 # Kocaeli: körfezi çevreleyen ilçelerin adları körfeze yakın yazılır (ziyaret görünümü Derince merkezlidir)
 GULF = {'kocaeli': {'line': [(29.60, 40.735), (29.72, 40.722), (29.82, 40.728), (29.90, 40.745), (29.94, 40.758)],
                     'districts': ['Başiskele', 'İzmit', 'Derince', 'Gölcük', 'Körfez'], 'inland': 1300.0}}
@@ -248,6 +251,7 @@ def build_city(c, da, places_tb, out_places, roads):
             nn = htree.query_nearest(pts[cand], max_distance=150, return_distance=False, all_matches=False)
             hood_of[cand[nn[0]]] = nn[1]
     keep_ix = np.where(hood_of >= 0)[0]
+    first_place = len(out_places)
     added = 0
     seen = {}
     n_out = 0
@@ -274,6 +278,62 @@ def build_city(c, da, places_tb, out_places, roads):
                            rank_of(cat, rec['l2']), f"{rec['conf']:.2f}", c['key']])
         n_out += 1
     print(c['key'], 'yer', n_out, 'kıyı için eklenen petek', added, 'toplam petek', len(cells))
+
+    # --- Dar su yolları: orta hatta değen petekler su ----------------------------------------------------
+    for st in STRAITS.get(c['key'], []):
+        bx0, by0 = g.proj(st['box'][0], st['box'][1])
+        bx1, by1 = g.proj(st['box'][2], st['box'][3])
+        water = shapely.box(bx0, by0, bx1, by1).difference(land)
+        sx, sy = g.proj(*st['seed'])
+        mid = []
+        for direction in (1, -1):
+            px = sx
+            y = sy if direction == 1 else sy - 100.0
+            while by0 <= y <= by1:
+                cut = water.intersection(LineString([(bx0, y), (bx1, y)]))
+                segs = [p for p in getattr(cut, 'geoms', [cut]) if p.geom_type == 'LineString' and p.length > 0]
+                if not segs:
+                    break
+                # Önceki orta noktaya en yakın su parçası (Haliç gibi yan kollara atlamasın)
+                seg = min(segs, key=lambda p: p.distance(Point(px, y)))
+                if seg.distance(Point(px, y)) > 1500:
+                    break
+                if seg.length > st['open']:
+                    mid.append((direction, (px, y)))
+                    break  # açık denize çıkıldı
+                mx = (seg.coords[0][0] + seg.coords[-1][0]) / 2
+                mid.append((direction, (mx, y)))
+                px = mx
+                y += 100.0 * direction
+        north = [pt for d_, pt in mid if d_ == 1]
+        south = [pt for d_, pt in mid if d_ == -1]
+        axis = LineString(list(reversed(south)) + north)
+        gone = [k for k in cells if Grid.hexagon(*k).intersects(axis)]
+        for k in gone:
+            del cells[k]
+        print(c['key'], 'su yolu orta hattı', round(axis.length / 1000, 1), 'km, suya dönen petek', len(gone))
+        # Bu peteklerdeki yerler (kıyı mekânları) en yakın kara peteğine alınır
+        gone_set = set(gone)
+        moved_n = 0
+        for row in out_places[first_place:]:
+            k = (row[10], row[11] - g.rOff)
+            if k not in gone_set:
+                continue
+            px_, py_ = g.proj(float(row[9]), float(row[8]))
+            best = None
+            for dq in range(-3, 4):
+                for dr in range(-3, 4):
+                    nk = (k[0] + dq, k[1] + dr)
+                    # Yalnızca yerin kendi ilçesindeki petek: Boğaz'ın karşı yakasına (başka ilçeye) geçmez
+                    if nk in cells and cells[nk] is not None and names[hoods[cells[nk]]['d']] == row[5]:
+                        cx_, cy_ = Grid.center(*nk)
+                        dd = math.hypot(cx_ - px_, cy_ - py_)
+                        if best is None or dd < best[0]:
+                            best = (dd, nk)
+            if best is not None:
+                row[10], row[11] = best[1][0], best[1][1] + g.rOff
+                moved_n += 1
+        print(c['key'], 'kıyıdaki komşu peteğe alınan yer', moved_n)
 
     # --- Sınır çizgileri -------------------------------------------------------------------------------
     net = unary_union([h['poly'].boundary for h in hoods])
@@ -446,6 +506,11 @@ def main():
         print(c['key'], 'dosya', round(os.path.getsize(p) / 1024), 'KB', 'ilçe çizgisi', len(out['districtLines']),
               'yol çizgisi', len(out['roadLines']))
     if only_map:
+        # Yer listeleri değişmez; sunucunun kara petekleri yine yazılır
+        with open(os.path.join(ROOT, 'supabase/map_land_ranges.sql'), 'w', encoding='utf-8') as fh:
+            vals = ',\n'.join(f'({r},{q0},{q1},{d})' for r, q0, q1, d in srv_all)
+            fh.write(f'insert into public.map_land_ranges (r, q0, q1, district) values\n{vals};\n')
+        print('sunucu aralığı', len(srv_all))
         return
     # Yer listesi (aynı yer iki şehrin kenarında iki kez çıkmasın: ilk şehir kalır)
     ids = set()

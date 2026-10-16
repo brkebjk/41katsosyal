@@ -155,8 +155,8 @@ export type CityGeo = {
   fillPath: string;
   /** İlçe sınırları ve kıyı (her zaman çizilir) */
   districtPath: string;
-  /** Ana yolların (otoyol, D-yolu) silüeti */
-  roadPath: string;
+  /** Ana yolların (otoyol, D-yolu) silüeti, parçalara bölünmüş (yalnızca ekrandaki parçalar çizilir) */
+  roadTiles: readonly Tile[];
   districtLabels: readonly DistrictLabel[];
   /** Açılış (ve ziyaret) görünümü: ortadaki ilçe ve ekrana sığan genişlik (metre) */
   home: { district: string; spanM: number };
@@ -168,7 +168,7 @@ export type CityGeo = {
  */
 const HOME: Record<CityKey, { district: string; spanM: number }> = {
   kocaeli: { district: 'Derince', spanM: 30_000 },
-  istanbul: { district: 'Kadıköy', spanM: 30_000 },
+  istanbul: { district: 'Kadıköy', spanM: 15_000 },
   izmir: { district: 'Balçova', spanM: 24_000 },
 };
 
@@ -392,7 +392,33 @@ export function cityGeo(city: CityKey): CityGeo {
 
   const fillPath = file.fill.map((s) => svgLine(linePoints(s, file.unit), true)).join('');
   const districtPath = file.districtLines.map((s) => svgLine(linePoints(s, file.unit), false)).join('');
-  const roadPath = (file.roadLines ?? []).map((s) => svgLine(linePoints(s, file.unit), false)).join('');
+  // Yollar ilk noktasının 10 km'lik parçasına konur; parçanın sınırı çizgilerin kapladığı alandır
+  const rg = new Map<string, { minX: number; maxX: number; minY: number; maxY: number; d: string[] }>();
+  for (const s of file.roadLines ?? []) {
+    const pts = linePoints(s, file.unit);
+    if (pts.length < 4) continue;
+    const k = `${Math.floor(pts[0] / TILE_M)}:${Math.floor(pts[1] / TILE_M)}`;
+    let t = rg.get(k);
+    if (!t) {
+      t = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, d: [] };
+      rg.set(k, t);
+    }
+    for (let i = 0; i + 1 < pts.length; i += 2) {
+      t.minX = Math.min(t.minX, pts[i]);
+      t.maxX = Math.max(t.maxX, pts[i]);
+      t.minY = Math.min(t.minY, -pts[i + 1]);
+      t.maxY = Math.max(t.maxY, -pts[i + 1]);
+    }
+    t.d.push(svgLine(pts, false));
+  }
+  const roadTiles: Tile[] = [...rg.entries()].map(([k, t]) => ({
+    key: `r${k}`,
+    minX: t.minX,
+    maxX: t.maxX,
+    minY: t.minY,
+    maxY: t.maxY,
+    path: t.d.join(''),
+  }));
 
   const geo: CityGeo = {
     key: city,
@@ -402,7 +428,7 @@ export function cityGeo(city: CityKey): CityGeo {
     tiles,
     fillPath,
     districtPath,
-    roadPath,
+    roadTiles,
     districtLabels: file.districtLabels.map(([name, x, y, areaKm2]) => ({ name, x, y, areaKm2 })),
     home: HOME[city],
   };
