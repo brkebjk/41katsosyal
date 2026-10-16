@@ -13,6 +13,7 @@ import type { Cell } from '@/lib/hex';
 import { notify } from '@/lib/dialog';
 import { findNearbyPlaces, type Place } from '@/lib/map';
 import { useDraftText } from '@/lib/drafts';
+import { contentCity } from '@/lib/city';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 type Props = {
@@ -94,8 +95,8 @@ export function InlineComposer({
     if (value.length > POST_MAX) return onError(`Gönderi en fazla ${POST_MAX} karakter olabilir.`);
     setBusy(true);
     const res = thread
-      ? await createPost(value, null, null, cell, thread.id)
-      : await createPost(value, cell ? null : (place?.id ?? null), replyTo?.id ?? null, cell);
+      ? await createPost(value, null, null, cell, thread.id, contentCity())
+      : await createPost(value, cell ? null : (place?.id ?? null), replyTo?.id ?? null, cell, null, contentCity());
     setBusy(false);
     if (res.error) return onError(res.error);
     setText('');

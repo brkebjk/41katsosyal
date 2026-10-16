@@ -44,6 +44,7 @@ import { useSponsorMenu } from '@/components/useSponsorMenu';
 import { VenueAdminModal } from '@/components/VenueAdminModal';
 import { CloseX } from '@/components/CloseX';
 import { MapEventPopup } from '@/components/MapEventPopup';
+import { TourTarget } from '@/components/TourTarget';
 import {
   FINDER_CATEGORIES,
   FinderButton,
@@ -627,6 +628,7 @@ function MapScreen({ resetKey }: { resetKey: number }) {
             plainCloseUp
             // Ziyarette etkinliklerin içine girilmez (yalnızca harita)
             onImagePress={city.readOnly ? undefined : (ids) => setEventPopup([...ids])}
+            controlsTourId="map-controls"
             leadingControls={
               <>
                 {!isSponsor ? <MigrateButton onPress={() => router.push('/sehir')} /> : null}
@@ -651,7 +653,7 @@ function MapScreen({ resetKey }: { resetKey: number }) {
           {!selected ? (
             <>
               {/* Sol üst: bilgi düğmesi ve harita durumu */}
-              <View style={styles.topBar} pointerEvents="box-none">
+              <TourTarget tourId="map-city" style={styles.topBar} pointerEvents="box-none">
                 {/* Şehir: kendi şehrim ya da ziyaret ettiğim şehir; dokununca şehirler (ziyaret modu) */}
                 <Pressable
                   onPress={() => setCityMenu((o) => !o)}
@@ -705,10 +707,10 @@ function MapScreen({ resetKey }: { resetKey: number }) {
                     <Text style={styles.chipText}>Üyelere kapalı</Text>
                   </View>
                 ) : null}
-              </View>
+              </TourTarget>
 
               {/* Üst orta: yüzen arama çubuğu (yer ve petek adı) */}
-              <MapSearchBar onPick={onSearchPick} city={viewCity} />
+              <MapSearchBar onPick={onSearchPick} city={viewCity} tourId="map-search" />
 
               {/* Sağ üst: büyük bildirim zili (harita düğmelerinden ayrı) */}
               <View style={styles.bellWrap} pointerEvents="box-none">
@@ -726,16 +728,16 @@ function MapScreen({ resetKey }: { resetKey: number }) {
               ) : null}
 
               {/* Sol: dikey renk açıklaması (dokununca sağa açılır) */}
-              <View style={styles.legendWrap} pointerEvents="box-none">
+              <TourTarget tourId="map-legend" style={styles.legendWrap} pointerEvents="box-none">
                 <View style={styles.legendStack} pointerEvents="box-none">
                   {/* Küçük bilgi düğmesi: renk açıklamasının hemen üstünde */}
                   <BreathingInfo onPress={() => setInfoOpen(true)} />
                   <Legend densityOpen={status.open} open={legendOpen} onToggle={() => setLegendOpen((o) => !o)} />
                 </View>
-              </View>
+              </TourTarget>
 
               {/* En alt: kaydırmalı filtreler (arka kutu yok): üstte zaman, altta tür */}
-              <View
+              <TourTarget tourId="map-filters"
                 style={styles.bottomStack}
                 pointerEvents="box-none"
                 onLayout={(e) => setBottomH(Math.round(e.nativeEvent.layout.height))}
@@ -814,7 +816,7 @@ function MapScreen({ resetKey }: { resetKey: number }) {
                     );
                   })}
                 </ScrollView>
-              </View>
+              </TourTarget>
             </>
           ) : (
             /* Petek menüsü: ortada açılan pencere; açıkken haritadaki diğer her şey gizlenir */

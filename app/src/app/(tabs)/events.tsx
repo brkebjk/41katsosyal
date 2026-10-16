@@ -43,6 +43,7 @@ import { eventImageUrl } from '@/lib/eventImage';
 import { eventGaugeAction } from '@/lib/eventQuota';
 import { locateMyCell } from '@/lib/myCell';
 import { ShareCooldownModal } from '@/components/ShareCooldownModal';
+import { TourTarget } from '@/components/TourTarget';
 import {
   EVENT_TAGS,
   eventShareWait,
@@ -159,7 +160,7 @@ function EventsScreen() {
   // Puanların açılması için gereken en az kişi (sunucu ayarından; kartlardaki “bekliyor” notunda kullanılır)
   const [minAttendees, setMinAttendees] = useState(DEFAULT_RULES.eventMinAttendees);
   // Etkinlikler her zaman kendi şehrimin (ziyaret yalnızca haritada olur)
-  const { my: viewCity } = useCity();
+  const { content: viewCity } = useCity();
 
   // Uygulama kapanmadan önce “Etkinlik oluştur” penceresinde yazılanlar varsa pencere yazılanlarla yeniden açılır
   // (uygulama açıkken bir kez)
@@ -442,7 +443,7 @@ function EventsScreen() {
       refreshing={refreshing}
       headerRight={
         quota ? (
-          <HexGauge
+          <TourTarget tourId="events-gauge"><HexGauge
             remaining={
               quota.is_moderator || quota.is_sponsor || quota.events_limit === null
                 ? null
@@ -458,14 +459,14 @@ function EventsScreen() {
               });
             }}
             testID="events-gauge"
-          />
+          /></TourTarget>
         ) : undefined
       }
       floatingFooter
       // Oluştur (solda) / Katılım Doğrula (sağda): Oyunlar ekranındaki gibi içeriğin üstünde yüzer (arkasında zemin yok)
       footer={
         <FloatingActions testID="events-actions">
-        <View style={styles.topButtons}>
+        <TourTarget tourId="events-actions" style={styles.topButtons}>
           <GameActionButton
             label="Oluştur"
             sub={limitReached ? 'Bu ayki hakkın bitti' : 'Etkinliğini aç'}
@@ -492,7 +493,7 @@ function EventsScreen() {
             testID="events-join"
             compact
           />
-        </View>
+        </TourTarget>
         </FloatingActions>
       }
       overlay={
@@ -693,7 +694,7 @@ function EventsScreen() {
       ) : null}
       {loaded && !loadError ? (
         category === null && !focusId ? (
-          <View style={styles.tileGrid}>
+          <TourTarget tourId="events-categories" style={styles.tileGrid}>
             {tileRows.map((row, ri) => (
               <View key={ri} style={[styles.tileRow, { gap }]}>
                 {row.map((c) => (
@@ -709,7 +710,7 @@ function EventsScreen() {
                 ))}
               </View>
             ))}
-          </View>
+          </TourTarget>
         ) : focusId || category === null ? null : (
           <View style={styles.selectedWrap}>
             <Pressable

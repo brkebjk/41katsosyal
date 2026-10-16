@@ -22,6 +22,7 @@ import { gameButtonImages } from '@/lib/images';
 import { listOpenRooms, type OpenRoom } from '@/lib/rooms';
 import { isBackendReady, supabase } from '@/lib/supabase';
 import { DEFAULT_RULES, getPointRules, type PointRules } from '@/lib/ranking';
+import { contentCity } from '@/lib/city';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 const ROOMS_REFRESH_MS = 10000;
@@ -94,7 +95,7 @@ export default function OpenRoomsScreen() {
       return;
     }
     const my = ++seq.current;
-    const res = await listOpenRooms(game);
+    const res = await listOpenRooms(game, contentCity());
     if (my !== seq.current) return; // daha yeni bir yenileme başladı
     setError(res.error);
     if (!res.error) setRooms(res.data);

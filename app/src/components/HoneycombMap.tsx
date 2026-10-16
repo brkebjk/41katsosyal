@@ -16,6 +16,7 @@ import { Image } from 'expo-image';
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
 import { Text } from '@/components/AppText';
+import { TourTarget } from '@/components/TourTarget';
 import type { EventCellMark } from '@/lib/events';
 import type { DensityCell } from '@/lib/map';
 import type { GameCellMark } from '@/lib/rooms';
@@ -81,6 +82,8 @@ const GRID_MIN_HEX_PX = 6;
 const ROAD_STROKE = isLight ? 'rgba(70, 82, 104, 0.30)' : 'rgba(232, 238, 246, 0.30)';
 /** Ölçek çubuğu: yakınlaşıp uzaklaşırken bu kadar ms görünür kalır */
 const SCALE_BAR_MS = 1600;
+/** Kaydırma / yakınlaştırma bitince yolların yeniden çizilmesi için beklenen süre */
+const ROADS_BACK_MS = 1000;
 const NICE_M = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000];
 const SQ3 = Math.sqrt(3);
 
@@ -121,12 +124,15 @@ function fitView(g: CityGeo, w: number, h: number): View2 {
  * `top` ve `bottom`, haritanın üstüne/altına binen katmanların (başlık, renk açıklaması) yüksekliğidir.
  */
 function homeView(g: CityGeo, w: number, h: number, top: number, bottom: number): View2 {
-  const c = g.districtLabels.find((l) => l.name === g.home.district);
-  if (!c) return fitView(g, w, h);
+  const b = g.home;
+  const availW = Math.max(w - 24, 80);
   const availH = Math.max(h - top - bottom, 80);
   const base = fitView(g, w, h).scale;
-  const scale = Math.min(Math.max(w / g.home.spanM, base), base * zoomMax(g));
-  return { scale, tx: w / 2 - c.x * scale, ty: top + availH / 2 + c.y * scale };
+  const fit = Math.min(availW / Math.max(b.maxX - b.minX, 1000), availH / Math.max(b.maxY - b.minY, 1000));
+  const scale = Math.min(Math.max(fit, base), base * zoomMax(g));
+  const cx = (b.minX + b.maxX) / 2;
+  const cy = (b.minY + b.maxY) / 2;
+  return { scale, tx: w / 2 - cx * scale, ty: top + availH / 2 + cy * scale };
 }
 
 /** Bir peteği (yaklaşık 70 px genişliğinde görünecek kadar yakınlaşarak) boş alanın ortasına getirir */
@@ -272,6 +278,8 @@ type Props = {
   controlsTop?: number;
   /** Verilirse düğme sütunu alttan bu uzaklıkta durur (üstten değil) */
   controlsBottom?: number;
+  /** Uygulama eğitiminde düğme sütununun adı */
+  controlsTourId?: string;
   /** Etkinlik olan petekler. Yoğunluktan bağımsız ayrı bir katmandır: peteğin çizgisi ve sayı işareti çizilir, rengi değişmez. */
   eventCells?: readonly EventCellMark[];
   /** Açık oyun odası olan petekler (oyun odası kurulurken seçilen bölge). Aynı petekte etkinlik de varsa çerçeve iki renge bölünür. */
@@ -330,6 +338,7 @@ export function HoneycombMap({
   hideControls = false,
   controlsTop = 10,
   controlsBottom,
+  controlsTourId,
   eventCells,
   gameCells,
   venueCells,
@@ -550,6 +559,17 @@ export function HoneycombMap({
     let startedAt = 0;
     let tapAt = { x: 0, y: 0 };
     let dragFlag = false;
+    /** Parmak kalktıktan sonra yolların geri gelmesi 1 sn bekler (hemen çizilince takılma hissi veriyordu) */
+    let showTimer: ReturnType<typeof setTimeout> | null = null;
+    const endDrag = () => {
+      if (!dragFlag) return;
+      if (showTimer) clearTimeout(showTimer);
+      showTimer = setTimeout(() => {
+        showTimer = null;
+        dragFlag = false;
+        setDragging(false);
+      }, ROADS_BACK_MS);
+    };
 
     const pts = (e: GestureResponderEvent) =>
       Array.from(e.nativeEvent.touches ?? []).map((t) => ({ x: t.locationX, y: t.locationY }));
@@ -565,6 +585,11 @@ export function HoneycombMap({
       onMoveShouldSetPanResponderCapture: () => true,
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: (e) => {
+        // Yeni dokunuş: yollar henüz geri gelmediyse gizli kalır
+        if (showTimer) {
+          clearTimeout(showTimer);
+          showTimer = null;
+        }
         moved = 0;
         startedAt = Date.now();
         begin(e);
@@ -604,17 +629,9 @@ export function HoneycombMap({
           }
         }
       },
-      onPanResponderTerminate: () => {
-        if (dragFlag) {
-          dragFlag = false;
-          setDragging(false);
-        }
-      },
+      onPanResponderTerminate: endDrag,
       onPanResponderRelease: () => {
-        if (dragFlag) {
-          dragFlag = false;
-          setDragging(false);
-        }
+        endDrag();
         const v = live.view;
         if (moved < TAP_SLOP && Date.now() - startedAt < 600 && v) {
           // dokunma: dokunulan peteği seç
@@ -1029,7 +1046,7 @@ export function HoneycombMap({
         : null}
       {view && scaleShown ? <ScaleBar scale={view.scale} bottom={(controlsBottom ?? 4) + 6} /> : null}
       {hideControls ? null : (
-        <View
+        <TourTarget tourId={controlsTourId ?? 'map-controls'}
           style={[styles.buttons, controlsBottom !== undefined ? { bottom: controlsBottom } : { top: controlsTop }]}
           pointerEvents="box-none"
         >
@@ -1048,7 +1065,7 @@ export function HoneycombMap({
             disabled={!view || view.scale <= fitScale * 1.02}
           />
           {extraControls}
-        </View>
+        </TourTarget>
       )}
     </View>
   );

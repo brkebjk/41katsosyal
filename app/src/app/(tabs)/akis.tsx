@@ -20,6 +20,7 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { Screen } from '@/components/Screen';
 import { SoftGlow } from '@/components/SoftGlow';
 import { isPetekIconName, PetekIcon } from '@/components/HexClusterIcon';
+import { TourTarget } from '@/components/TourTarget';
 import { useAuth } from '@/lib/auth';
 import { showDialog } from '@/lib/dialog';
 import { muteVerifyReminder, openIdentityVerify, takeVerifyReminder } from '@/lib/identity';
@@ -46,6 +47,7 @@ import { isFuture, isSubscriptionActive } from '@/lib/labels';
 import { useNotices } from '@/lib/notices';
 import { isBackendReady } from '@/lib/supabase';
 import { useTabResetKey } from '@/lib/tabReset';
+import { useCity } from '@/lib/city';
 import { brand, colors, fonts, fontSizes, isLight, radii, spacing } from '@/theme';
 
 type Notice = { text: string; error: boolean };
@@ -114,6 +116,15 @@ function FeedScreen() {
   const loadId = useRef(0);
 
   // Yeni gönderi, yorum ve beğeni herkese açıktır (susturulmamışsa); moderatör ayarıyla gönderi aboneliğe bağlanabilir
+  // Moderatör baktığı şehrin akışını görür (ziyaret); üye her zaman kendi şehrini
+  const { admin: cityAdmin, content: contentCityKey } = useCity();
+  const feedCity = cityAdmin ? contentCityKey : null;
+  const [seenFeedCity, setSeenFeedCity] = useState(feedCity);
+  if (seenFeedCity !== feedCity) {
+    // Şehir değişince öbür şehrin ilçe süzgeci temizlenir
+    setSeenFeedCity(feedCity);
+    setDistrict(null);
+  }
   const canPost = !muted && (isModerator || isSponsor || !requiresSubscription || subscribed);
   const canComment = !muted;
 
@@ -136,7 +147,7 @@ function FeedScreen() {
     const [feed, needsSubscription, ds] = await Promise.all([
       listFeed(undefined, feedFilter(here)),
       postsRequireSubscription(),
-      listFeedDistricts(),
+      listFeedDistricts(feedCity),
     ]);
     if (my !== loadId.current) return; // daha yeni bir yenileme başladı, eski cevap yok sayılır
     setRequiresSubscription(needsSubscription);
@@ -148,11 +159,11 @@ function FeedScreen() {
     }
     setLoaded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- feedFilter bu durumlardan türetilir
-  }, [mine, district, mentions, near, cellFilter]);
+  }, [mine, district, mentions, near, cellFilter, feedCity]);
 
   function feedFilter(here: Cell | null) {
     if (near || cellFilter) return { cell: cellFilter, near: !cellFilter, my: here };
-    return { mine, district, mentions };
+    return { mine, district, mentions, city: feedCity };
   }
 
   // Haritadaki petek menüsündeki “Petek akışı” bir petek gönderir: akış o peteğe süzülür
@@ -463,7 +474,7 @@ function FeedScreen() {
     <Screen
       title={brand.name}
       header={
-        <View style={styles.hdr} accessibilityRole="header" accessibilityLabel={brand.name}>
+        <TourTarget tourId="feed-header" style={styles.hdr} accessibilityRole="header" accessibilityLabel={brand.name}>
           {profile ? (
             <Pressable
               onPress={() => setFilterOpen(true)}
@@ -552,14 +563,14 @@ function FeedScreen() {
               <Ionicons name="document-text-outline" size={19} color={colors.highlight} />
             </Pressable>
           )}
-        </View>
+        </TourTarget>
       }
       floatingFooter
       onRefresh={onRefresh}
       refreshing={refreshing}
       footer={
         profile && canPost && !(near && (!myCell || cellFar)) ? (
-          <InlineComposer
+          <TourTarget tourId="feed-composer"><InlineComposer
             alias={profile.role === 'sponsor' ? profile.full_name : profile.alias}
             isSponsor={profile.role === 'sponsor'}
             replyTo={replyTo}
@@ -573,7 +584,7 @@ function FeedScreen() {
               void load();
             }}
             onError={(m) => setNotice({ text: m, error: true })}
-          />
+          /></TourTarget>
         ) : undefined
       }
       overlay={

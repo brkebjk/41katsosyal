@@ -5,6 +5,7 @@ import { Keyboard, Pressable, ScrollView, StyleSheet, TextInput, View } from 're
 import { Text } from '@/components/AppText';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { Popup } from '@/components/Popup';
+import { TourTarget } from '@/components/TourTarget';
 import { cellName } from '@/lib/cellNames';
 import { categoryInfo, EVENT_CATEGORIES } from '@/lib/eventCategories';
 import { GAMES } from '@/lib/gameCatalog';
@@ -37,10 +38,13 @@ type Hit = { kind: 'place'; place: Place; cell: Cell };
 export function MapSearchBar({
   onPick,
   city,
+  tourId,
 }: {
   onPick: (cell: Cell, label: string) => void;
   /** Hangi şehrin yerlerinde aranır (haritanın şehri) */
   city?: string | null;
+  /** Uygulama eğitiminde bu alanın adı */
+  tourId?: string;
 }) {
   const [text, setText] = useState('');
   const [focused, setFocused] = useState(false);
@@ -93,7 +97,7 @@ export function MapSearchBar({
   const open = focused && query.length >= 2;
 
   return (
-    <View style={styles.searchWrap} pointerEvents="box-none" testID="map-search">
+    <TourTarget tourId={tourId ?? 'map-search'} style={styles.searchWrap} pointerEvents="box-none" testID="map-search">
       <View style={styles.bar}>
         <Ionicons name="search" size={20} color={colors.primary} />
         <TextInput
@@ -166,7 +170,7 @@ export function MapSearchBar({
           </ScrollView>
         </View>
       ) : null}
-    </View>
+    </TourTarget>
   );
 }
 

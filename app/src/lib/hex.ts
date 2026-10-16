@@ -158,19 +158,30 @@ export type CityGeo = {
   /** Ana yolların (otoyol, D-yolu) silüeti, parçalara bölünmüş (yalnızca ekrandaki parçalar çizilir) */
   roadTiles: readonly Tile[];
   districtLabels: readonly DistrictLabel[];
-  /** Açılış (ve ziyaret) görünümü: ortadaki ilçe ve ekrana sığan genişlik (metre) */
-  home: { district: string; spanM: number };
+  /** Açılış (ve ziyaret) görünümünde ekrana sığdırılan alan (metre; y kuzeye) */
+  home: { minX: number; maxX: number; minY: number; maxY: number };
 };
 
 /**
- * Açılış görünümü: Kocaeli'de Derince, İstanbul'da Kadıköy, İzmir'de Balçova ortada; çevre ilçeler de görünür
- * (genişlik ekranın eni boyunca görünen mesafe).
+ * Açılış (ve ziyaret) görünümü, boylam / enlem kutusu: ekrana sığdırılır.
+ * Kocaeli: Derince ortada, körfez ilçeleri · İstanbul: Marmara'dan Karadeniz'e bütün Boğaz hattı ·
+ * İzmir: Karşıyaka ve altındaki ilçeler (Bayraklı, Bornova, Konak, Karabağlar, Balçova, Buca)
  */
-const HOME: Record<CityKey, { district: string; spanM: number }> = {
-  kocaeli: { district: 'Derince', spanM: 30_000 },
-  istanbul: { district: 'Kadıköy', spanM: 15_000 },
-  izmir: { district: 'Balçova', spanM: 24_000 },
+const HOME: Record<CityKey, [number, number, number, number]> = {
+  kocaeli: [29.65, 40.69, 30.0, 40.83],
+  istanbul: [28.97, 40.985, 29.13, 41.235],
+  izmir: [27.02, 38.36, 27.24, 38.5],
 };
+
+function homeBox(file: MapFile, b: [number, number, number, number]) {
+  const ml = mLon(file);
+  return {
+    minX: (b[0] - file.lon0) * ml,
+    maxX: (b[2] - file.lon0) * ml,
+    minY: (b[1] - file.lat0) * M_LAT,
+    maxY: (b[3] - file.lat0) * M_LAT,
+  };
+}
 
 const TILE_M = 10_000;
 const f1 = (n: number) => Math.round(n * 10) / 10;
@@ -430,7 +441,7 @@ export function cityGeo(city: CityKey): CityGeo {
     districtPath,
     roadTiles,
     districtLabels: file.districtLabels.map(([name, x, y, areaKm2]) => ({ name, x, y, areaKm2 })),
-    home: HOME[city],
+    home: homeBox(file, HOME[city]),
   };
   GEO[city] = geo;
   return geo;

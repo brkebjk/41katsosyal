@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { router, type Href } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/AppText';
@@ -9,147 +9,202 @@ import { ImageSlot } from '@/components/ImageSlot';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { imageAspect } from '@/lib/images';
 import { isTourDone, markTourDone } from '@/lib/onboarding';
-import { currentTab, onTabFocused } from '@/lib/tabReset';
+import { currentTab } from '@/lib/tabReset';
+import { setActiveTourId, useTourRect, type TourRect } from '@/lib/tour';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 type Step = {
-  /** Sekmenin adresteki adı (tabFocused ile gelen) */
+  /** Sekmenin adresteki adı ve açılacak adres */
   tab: string;
-  /** Sekme çubuğundaki sırası (0 = en sol) */
-  slot: number;
-  label: string;
+  path: Href;
+  /** Anlatılan alan (TourTarget) ya da sekme çubuğu */
+  target: string;
   icon: IconName;
   title: string;
-  items: { icon: IconName; lead: string; text: string }[];
+  text: string;
 };
 
-/** Sekme çubuğunun sırası: Akış · Etkinlik · Harita · Oyun · Profil */
-const TAB_COUNT = 5;
+const TABBAR = '__tabbar';
 
 const STEPS: Step[] = [
   {
+    tab: 'index',
+    path: '/',
+    target: TABBAR,
+    icon: 'apps',
+    title: 'Sekmeler',
+    text: 'Uygulamanın beş bölümü: Akış, Etkinlik, Harita, Oyun ve Profil. Şimdi hepsini sırayla gezelim.',
+  },
+  {
     tab: 'akis',
-    slot: 0,
-    label: 'Akış',
+    path: '/akis',
+    target: 'feed-header',
     icon: 'chatbubbles',
-    title: 'Akış: şehrinin sesi',
-    items: [
-      { icon: 'people', lead: 'Rumuzla paylaşım.', text: 'Şehrindeki herkesin gönderileri burada akar. Herkes rumuzuyla görünür; gerçek adın yalnızca arkadaşlarına görünür.' },
-      { icon: 'create', lead: 'Gönderi yaz.', text: 'Alttaki kutudan yaz; istersen yakınındaki bir mekânı ekle. Gönderiler bir hafta akışta kalır.' },
-      { icon: 'happy', lead: 'Tepki ve yorum.', text: 'Gönderiye güldüm, + ya da − ile tepki ver, yorum yaz. @#kod yazarak birini etiketleyebilirsin.' },
-      { icon: 'funnel', lead: 'Süz.', text: 'Sol üstteki huniyle yalnızca kendi gönderilerini, seni etiketleyenleri ya da bir ilçeyi görürsün.' },
-      { icon: 'mail', lead: 'Mesajlar ve kurallar.', text: 'Sağ üstte özel mesajların ve arkadaşların; yanında topluluk kuralları var. Uygunsuz içeriği gönderinin menüsünden şikayet edebilirsin.' },
-    ],
+    title: 'Akış: üstteki düğmeler',
+    text: 'Huni ile akışı süzersin (yalnızca kendi gönderilerin, seni etiketleyenler ya da bir ilçe). Yanında topluluk kuralları; sağda özel mesajların ve arkadaşların.',
+  },
+  {
+    tab: 'akis',
+    path: '/akis',
+    target: 'feed-composer',
+    icon: 'create',
+    title: 'Gönderi kutusu',
+    text: 'Şehrine rumuzunla yaz; istersen yakınındaki bir mekânı ekle. Gönderiler bir hafta akışta kalır. @#kod yazarak birini etiketleyebilirsin.',
   },
   {
     tab: 'events',
-    slot: 1,
-    label: 'Etkinlik',
+    path: '/events',
+    target: 'events-gauge',
     icon: 'calendar',
-    title: 'Etkinlik: yüz yüze buluş',
-    items: [
-      { icon: 'grid', lead: 'Kategoriler.', text: 'Şehrindeki buluşmalar kategorilere ayrılır: Oyun Geceleri, Sosyal Buluşmalar, Müzik & Eğlence, Konser & Festival ve daha fazlası.' },
-      { icon: 'add-circle', lead: 'Oluştur.', text: 'Kendi etkinliğini aç. Sağ üstteki petek göstergesi bu ay kaç etkinlik açabileceğini gösterir.' },
-      { icon: 'person-add', lead: 'Ön kayıt.', text: 'Bir etkinliğe katılacaksan ön kayıt yaptır; etkinlik yaklaşınca hatırlatılır.' },
-      { icon: 'enter', lead: 'Katılım Doğrula.', text: 'Etkinlikte düzenleyenin verdiği kodu buraya yazınca katılımın sayılır ve puan kazanırsın.' },
-      { icon: 'star', lead: 'PeopleHere Özel.', text: 'Sarı yıldızlı etkinlikleri moderatörler düzenler; daha çok puan verir. Kartlardaki “Haritada gör” etkinliğin yerini gösterir.' },
-    ],
+    title: 'Etkinlik hakkın',
+    text: 'Bu ay kaç etkinlik açabileceğini gösterir. Dokununca hakkını nasıl artıracağını görürsün.',
+  },
+  {
+    tab: 'events',
+    path: '/events',
+    target: 'events-categories',
+    icon: 'grid',
+    title: 'Kategoriler',
+    text: 'Şehrindeki yüz yüze buluşmalar kategorilere ayrılır. Bir kategoriye dokununca etkinlikleri açılır; ön kayıt yaptırabilir, “Haritada gör” ile yerini bulabilirsin.',
+  },
+  {
+    tab: 'events',
+    path: '/events',
+    target: 'events-actions',
+    icon: 'enter',
+    title: 'Oluştur ve Katılım Doğrula',
+    text: 'Oluştur ile kendi etkinliğini açarsın. Etkinlikte düzenleyenin verdiği kodu Katılım Doğrula’dan yazınca katılımın sayılır ve puan kazanırsın.',
   },
   {
     tab: 'index',
-    slot: 2,
-    label: 'Harita',
-    icon: 'map',
-    title: 'Harita: şehrin petekleri',
-    items: [
-      { icon: 'apps', lead: 'Petekler.', text: 'Şehrin 500 metrelik peteklere bölünmüş haritası. Renkler: yoğunluk, turkuaz etkinlik, mor oyun, mercan mekân, altın PeopleHere Özel. Soldaki şerit renkleri açıklar.' },
-      { icon: 'hand-left', lead: 'Peteğe dokun.', text: 'Petek yükselir; “İNCELE” ile menüsü açılır: petek akışı, Burada kim var?, Oyun arayanlar, etkinlikler, mekânlar ve hazine.' },
-      { icon: 'sync', lead: 'Göç ve ziyaret.', text: 'Sağdaki ⟳ düğmesi Şehrim’i açar: göç et ya da başka bir şehrin haritasına ziyaretçi olarak bak. Sol üstteki şehir düğmesi de ziyaret içindir.' },
-      { icon: 'search', lead: 'Bul.', text: 'Büyüteç bir oyun ya da etkinlik türünün olduğu petekleri okla gösterir. Üstteki arama çubuğuyla yer ya da petek adı ararsın.' },
-      { icon: 'locate', lead: 'Konumum ve filtreler.', text: 'Konumum seni peteğine götürür. Alttaki şeritlerle bugünü, bu haftayı ya da yalnızca bir türü süzersin; “Şehrin Temposu” şehrin ne kadar hareketli olduğunu gösterir.' },
-    ],
+    path: '/',
+    target: 'map-city',
+    icon: 'location',
+    title: 'Şehir düğmesi',
+    text: 'Haritanın şehri. Dokununca başka bir şehrin haritasına ziyaretçi olarak bakabilirsin; ziyarette yalnızca harita görünür.',
+  },
+  {
+    tab: 'index',
+    path: '/',
+    target: 'map-search',
+    icon: 'search',
+    title: 'Arama',
+    text: 'Bir yerin ya da peteğin adını yaz; harita o peteğe gider.',
+  },
+  {
+    tab: 'index',
+    path: '/',
+    target: 'map-controls',
+    icon: 'sync',
+    title: 'Harita düğmeleri',
+    text: 'Mor ⟳ Göç et (şehrini değiştir ya da başka şehre bak), sarı büyüteç (bir oyunun ya da etkinlik türünün olduğu petekleri gösterir), yakınlaştır, uzaklaştır, tüm şehir ve Konumum.',
+  },
+  {
+    tab: 'index',
+    path: '/',
+    target: 'map-legend',
+    icon: 'color-palette',
+    title: 'Renkler',
+    text: 'Petek renklerinin anlamı: yoğunluk, turkuaz etkinlik, mor oyun, mercan mekân, altın PeopleHere Özel. Bir peteğe dokun, “İNCELE” ile menüsünü aç: petek akışı, Burada kim var?, Oyun arayanlar, mekânlar.',
+  },
+  {
+    tab: 'index',
+    path: '/',
+    target: 'map-filters',
+    icon: 'funnel',
+    title: 'Filtreler',
+    text: 'Bugünü, bu haftayı ya da yalnızca bir türü (oyun, etkinlik, mekân) göster. Şehrin Temposu şehrin şu an ne kadar hareketli olduğunu gösterir.',
   },
   {
     tab: 'games',
-    slot: 3,
-    label: 'Oyun',
+    path: '/games',
+    target: 'games-podium',
+    icon: 'trophy',
+    title: 'Aylık Ödül Podyumu',
+    text: 'Bu ayın ilk üçü. Buradan sıralamaya (şehrin ve Tüm İller), oyun sıralamalarına ve ödüllere ulaşırsın.',
+  },
+  {
+    tab: 'games',
+    path: '/games',
+    target: 'games-tiles',
     icon: 'game-controller',
-    title: 'Oyun: birlikte oyna',
-    items: [
-      { icon: 'albums', lead: 'Oyunlar.', text: 'Köpekbalığı Kafesi, Vampir–Köylü, Bilgi Yarışması, Hazine Avı ve çekilişler. Bir oyuna dokununca giriş ekranı ve rehberi açılır.' },
-      { icon: 'people-circle', lead: 'Yan yana.', text: 'Aynı masada, telefonlarla oynanır; konum doğrulanır, odaya kodla girilir. Puan uzaktanla aynıdır, aylık hedefi daha yüksektir.' },
-      { icon: 'globe', lead: 'Uzaktan Eşleş.', text: 'Bütün illerden oyuncularla eşleşirsin. Açık oda yoksa 45 saniye sonra sana oda açılır, orada başkalarını beklersin.' },
-      { icon: 'add-circle', lead: 'Oda Oluştur ve Katıl.', text: 'Alttaki düğmelerle oda açar ya da arkadaşının verdiği davet koduyla katılırsın.' },
-      { icon: 'trophy', lead: 'Sıralama.', text: 'Sıralama kutusundan şehrinin ve Tüm İller’in aylık sıralamasına, oyun sıralamalarına ve ödüllere ulaşırsın. Oyun kutularındaki halka bu ay kalan puan hedefini gösterir.' },
-    ],
+    title: 'Oyunlar',
+    text: 'Köpekbalığı Kafesi, Vampir–Köylü, Bilgi Yarışması, Hazine Avı ve çekilişler. Yan yana (aynı masada) ya da uzaktan, bütün illerden oyuncularla oynarsın. Halka bu ay kalan puan hedefini gösterir.',
+  },
+  {
+    tab: 'games',
+    path: '/games',
+    target: 'games-actions',
+    icon: 'add-circle',
+    title: 'Oda Oluştur ve Katıl',
+    text: 'Oyun seçip oda açarsın ya da arkadaşının verdiği davet koduyla odasına katılırsın.',
   },
   {
     tab: 'profile',
-    slot: 4,
-    label: 'Profil',
+    path: '/profile',
+    target: 'profile-hero',
     icon: 'person',
-    title: 'Profil: senin alanın',
-    items: [
-      { icon: 'ribbon', lead: 'Puan ve seviye.', text: 'En üstte puanın, seviyen ve bu haftaki rumuzun görünür.' },
-      { icon: 'heart', lead: 'Arkadaşlarım.', text: 'Arkadaşlarını gör, arkadaşlık isteklerini yönet. Başka şehirdeki arkadaşının yanında şehri yazar.' },
-      { icon: 'location', lead: 'Şehrim.', text: 'Şehrini gör, göç listesine yazıl ya da başka şehirleri ziyaret et.' },
-      { icon: 'notifications', lead: 'Bildirim ve konum.', text: 'Hangi bildirimleri alacağını seç, telefon izinlerini gör.' },
-      { icon: 'settings', lead: 'Hesabım ve Uygulama.', text: 'Kullanıcı adın, kurtarma kelimelerin, engellediklerin, kişisel verilerin; sözleşmeler, SSS, yarışma kuralları ve bize ulaşın. Bir sorun görürsen “Bir Sorun Bildir”.' },
-    ],
+    title: 'Kimliğin',
+    text: 'Profil resmin, adın, bu haftaki rumuzun, seviyen ve puanın.',
+  },
+  {
+    tab: 'profile',
+    path: '/profile',
+    target: 'profile-menu',
+    icon: 'list',
+    title: 'Menü',
+    text: 'Arkadaşlarım, Şehrim (göç ve ziyaret), Bildirim ve konum. Aşağıda Hesabım, Kişisel Verilerim, sözleşmeler, SSS ve yarışma kuralları var.',
   },
 ];
 
+/** Alanın çevresindeki boşluk (px) */
+const PAD = 6;
+/** Kart için gereken en az yükseklik (px); alanın üstünde ya da altında bu kadar yer yoksa kart ekranın altına konur */
+const CARD_MIN_H = 190;
+
 /**
- * Uygulama eğitimi (ilk girişte, izin ekranları ve şehir seçiminden sonra bir kez): sırayla her sekmeye dokundurulur,
- * o sekmede neler olduğu ve hangi menüden nereye gidileceği anlatılır. En sonda hoş geldin ekranı; altında yarışma
- * kuralları ve ödül programı düğmeleri. Sekme çubuğu açık kalır (dokunulsun diye), ekranın geri kalanı kapanır.
+ * Uygulama eğitimi (ilk girişte, izin ekranları ve şehir seçiminden sonra bir kez): sekmeler kendiliğinden açılır,
+ * anlatılan alan dışındaki her yer kararır, açıklama yazar; Devam ile sıradaki alana geçilir. Sağ alttaki Geç
+ * eğitimi bitirir ve hoş geldin ekranını açar. Hoş geldin ekranında yarışma kuralları ve ödül programı düğmeleri var.
  */
 export function AppTour({ userId, tabBarHeight }: { userId: string; tabBarHeight: number }) {
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-  const [phase, setPhase] = useState<'checking' | 'tap' | 'info' | 'welcome' | 'done'>('checking');
+  const { width, height } = useWindowDimensions();
+  const [phase, setPhase] = useState<'checking' | 'steps' | 'welcome' | 'done'>('checking');
   const [index, setIndex] = useState(0);
   const step = STEPS[index];
+  const rootRef = useRef<View>(null);
+  const [origin, setOrigin] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const measured = useTourRect(phase === 'steps' && step.target !== TABBAR ? step.target : null);
 
   useEffect(() => {
     let alive = true;
     void isTourDone(userId).then((done) => {
       if (!alive) return;
       setIndex(0);
-      setPhase(done ? 'done' : currentTab() === STEPS[0].tab ? 'info' : 'tap');
+      setPhase(done ? 'done' : 'steps');
     });
     return () => {
       alive = false;
     };
   }, [userId]);
 
-  // İstenen sekmeye dokununca o sekmenin anlatımı açılır
+  // Adımın sekmesi açılır ve alanı ölçülmesi için işaretlenir
   useEffect(() => {
-    if (phase !== 'tap') return;
-    let t: ReturnType<typeof setTimeout> | null = null;
-    const off = onTabFocused((name) => {
-      // Sekme geçişi bittikten sonra (gezinme sırasında başka bileşen çizilirken durum değiştirilmez)
-      if (name === STEPS[index].tab) t = setTimeout(() => setPhase('info'), 0);
-    });
-    return () => {
-      off();
-      if (t) clearTimeout(t);
-    };
-  }, [phase, index]);
-
-  if (phase === 'checking' || phase === 'done') return null;
-
-  function next() {
-    const n = index + 1;
-    if (n >= STEPS.length) {
-      setPhase('welcome');
+    if (phase !== 'steps') {
+      setActiveTourId(null);
       return;
     }
-    setIndex(n);
-    setPhase(currentTab() === STEPS[n].tab ? 'info' : 'tap');
-  }
+    const s = STEPS[index];
+    if (currentTab() !== s.tab) router.navigate(s.path);
+    setActiveTourId(s.target === TABBAR ? null : s.target);
+  }, [phase, index]);
+
+  useEffect(() => () => setActiveTourId(null), []);
+
+  if (phase === 'checking' || phase === 'done') return null;
 
   async function finish(go?: '/kurallar' | '/oduller') {
     await markTourDone(userId);
@@ -157,10 +212,10 @@ export function AppTour({ userId, tabBarHeight }: { userId: string; tabBarHeight
     if (go) router.push(go);
   }
 
-  // Sekme çubuğunun yüksekliği (sekme düzenindekiyle aynı: 58 + alt boşluk)
-  const tabBarH = tabBarHeight;
-  const slotW = width / TAB_COUNT;
-  const arrowX = slotW * step.slot + slotW / 2 - 14;
+  function next() {
+    if (index + 1 >= STEPS.length) setPhase('welcome');
+    else setIndex(index + 1);
+  }
 
   if (phase === 'welcome') {
     return (
@@ -191,82 +246,123 @@ export function AppTour({ userId, tabBarHeight }: { userId: string; tabBarHeight
     );
   }
 
+  // Eğitim katmanının ekrandaki yeri (alanların ölçüsü pencereye göredir)
+  const W = origin?.w ?? width;
+  const H = origin?.h ?? height;
+  let hole: TourRect | null = null;
+  if (step.target === TABBAR) {
+    hole = { x: 0, y: H - tabBarHeight, w: W, h: tabBarHeight };
+  } else if (measured && origin) {
+    const x = Math.max(0, measured.x - origin.x - PAD);
+    const y = Math.max(0, measured.y - origin.y - PAD);
+    const x2 = Math.min(W, measured.x - origin.x + measured.w + PAD);
+    const y2 = Math.min(H, measured.y - origin.y + measured.h + PAD);
+    if (x2 > x && y2 > y) hole = { x, y, w: x2 - x, h: y2 - y };
+  }
+
+  // Kart: alanın altında ya da üstünde, hangisinde yer varsa; ikisinde de yoksa ekranın altında
+  const skipRow = insets.bottom + 44;
+  const top = insets.top + spacing.sm;
+  let cardStyle: { top?: number; bottom?: number } = { bottom: skipRow + spacing.sm };
+  if (hole) {
+    const below = H - (hole.y + hole.h) - skipRow;
+    const above = hole.y - top;
+    if (below >= CARD_MIN_H) cardStyle = { top: hole.y + hole.h + spacing.md };
+    else if (above >= CARD_MIN_H) cardStyle = { bottom: H - hole.y + spacing.md };
+  }
+
+  const dim = (s: { left: number; top: number; width: number; height: number }) => (
+    <View pointerEvents="none" style={[styles.dim, s]} />
+  );
+
   return (
-    <View style={[styles.cover, { bottom: tabBarH }]} testID="tour">
-      <View style={styles.dim} />
-      {phase === 'tap' ? (
-        <View style={styles.tapWrap} pointerEvents="box-none">
-          <View style={styles.tapCard}>
-            <Text style={styles.stepNo}>{`${index + 1} / ${STEPS.length}`}</Text>
-            <View style={styles.tapRow}>
-              <Ionicons name={step.icon} size={22} color={colors.primary} />
-              <Text style={styles.tapText}>{`Aşağıdaki ${step.label} sekmesine dokun`}</Text>
-            </View>
-          </View>
-          <Ionicons name="arrow-down" size={28} color="#FFFFFF" style={[styles.arrow, { left: arrowX }]} />
-        </View>
+    <View
+      ref={rootRef}
+      style={styles.cover}
+      onLayout={() =>
+        rootRef.current?.measureInWindow((x, y, w, h) => {
+          if (w > 0 && h > 0) setOrigin({ x, y, w, h });
+        })
+      }
+      testID="tour"
+    >
+      {/* Dokunuşlar alttaki ekrana geçmez; anlatılan alanın dışı kararır */}
+      <View style={styles.block} />
+      {hole ? (
+        <>
+          {dim({ left: 0, top: 0, width: W, height: hole.y })}
+          {dim({ left: 0, top: hole.y + hole.h, width: W, height: Math.max(0, H - hole.y - hole.h) })}
+          {dim({ left: 0, top: hole.y, width: hole.x, height: hole.h })}
+          {dim({ left: hole.x + hole.w, top: hole.y, width: Math.max(0, W - hole.x - hole.w), height: hole.h })}
+          <View
+            pointerEvents="none"
+            style={[styles.ring, { left: hole.x, top: hole.y, width: hole.w, height: hole.h }]}
+          />
+        </>
       ) : (
-        <View style={[styles.infoWrap, { paddingTop: insets.top + spacing.md }]}>
-          <View style={styles.infoCard}>
-            <View style={styles.infoHead}>
-              <Ionicons name={step.icon} size={22} color={colors.primary} />
-              <Text style={styles.infoTitle} accessibilityRole="header">
-                {step.title}
-              </Text>
-              <Text style={styles.stepNo}>{`${index + 1} / ${STEPS.length}`}</Text>
-            </View>
-            <ScrollView contentContainerStyle={styles.items}>
-              {step.items.map((it) => (
-                <View key={it.lead} style={styles.item}>
-                  <Ionicons name={it.icon} size={18} color={colors.primary} style={styles.itemIcon} />
-                  <Text style={styles.itemText}>
-                    <Text style={styles.itemLead}>{`${it.lead} `}</Text>
-                    {it.text}
-                  </Text>
-                </View>
-              ))}
-            </ScrollView>
-            <PrimaryButton label={index + 1 < STEPS.length ? 'Devam' : 'Bitir'} onPress={next} testID="tour-next" />
-          </View>
-        </View>
+        dim({ left: 0, top: 0, width: W, height: H })
       )}
+
+      <View style={[styles.card, cardStyle]} testID="tour-card">
+        <View style={styles.cardHead}>
+          <Ionicons name={step.icon} size={20} color={colors.primary} />
+          <Text style={styles.cardTitle} accessibilityRole="header">
+            {step.title}
+          </Text>
+          <Text style={styles.stepNo}>{`${index + 1} / ${STEPS.length}`}</Text>
+        </View>
+        <Text style={styles.cardText}>{step.text}</Text>
+        <PrimaryButton label={index + 1 < STEPS.length ? 'Devam' : 'Bitir'} onPress={next} testID="tour-next" />
+      </View>
+
+      <Pressable
+        onPress={() => setPhase('welcome')}
+        accessibilityRole="button"
+        accessibilityLabel="Eğitimi geç"
+        hitSlop={10}
+        testID="tour-skip"
+        style={({ pressed }) => [styles.skip, { bottom: insets.bottom + 10 }, pressed && styles.pressed]}
+      >
+        <Text style={styles.skipText}>Geç</Text>
+        <Ionicons name="play-skip-forward" size={13} color="#FFFFFF" />
+      </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  cover: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 90, elevation: 90 },
-  dim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(3, 8, 16, 0.62)' },
-  tapWrap: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: spacing.lg, paddingBottom: 40 },
-  tapCard: {
+  cover: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 90, elevation: 90 },
+  block: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  dim: { position: 'absolute', backgroundColor: 'rgba(3, 8, 16, 0.72)' },
+  ring: { position: 'absolute', borderRadius: 14, borderWidth: 2, borderColor: colors.primary },
+  card: {
+    position: 'absolute',
+    left: spacing.md,
+    right: spacing.md,
     gap: spacing.sm,
-    padding: spacing.lg,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surface,
-    borderWidth: 1.5,
-    borderColor: colors.primary,
-  },
-  tapRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  tapText: { flex: 1, color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md, lineHeight: 22 },
-  arrow: { position: 'absolute', bottom: 6 },
-  stepNo: { color: colors.textMuted, fontSize: fontSizes.xs, fontFamily: fonts.semi },
-  infoWrap: { flex: 1, paddingHorizontal: spacing.md, paddingBottom: spacing.md, justifyContent: 'flex-end' },
-  infoCard: {
-    maxHeight: '100%',
-    gap: spacing.md,
     padding: spacing.lg,
     borderRadius: radii.lg,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  infoHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  infoTitle: { flex: 1, color: colors.text, fontFamily: fonts.black, fontSize: fontSizes.lg },
-  items: { gap: spacing.md },
-  item: { flexDirection: 'row', gap: spacing.md },
-  itemIcon: { marginTop: 1 },
-  itemText: { flex: 1, color: colors.text, fontSize: fontSizes.sm, lineHeight: 20 },
-  itemLead: { fontFamily: fonts.extra },
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  cardTitle: { flex: 1, color: colors.text, fontFamily: fonts.black, fontSize: fontSizes.md },
+  cardText: { color: colors.text, fontSize: fontSizes.sm, lineHeight: 20 },
+  stepNo: { color: colors.textMuted, fontSize: fontSizes.xs, fontFamily: fonts.semi },
+  skip: {
+    position: 'absolute',
+    right: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+  },
+  skipText: { color: '#FFFFFF', fontSize: fontSizes.xs, fontFamily: fonts.semi },
+  pressed: { opacity: 0.7 },
   full: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 96, elevation: 96, backgroundColor: colors.bg },
   welcome: { gap: spacing.lg, paddingHorizontal: spacing.lg, alignItems: 'stretch' },
   logoPlate: {

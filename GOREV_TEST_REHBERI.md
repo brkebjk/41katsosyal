@@ -1,20 +1,24 @@
-# Görev Test Rehberi – Harita hızı, Boğaz, Kadıköy, ziyaret
+# Görev Test Rehberi – Yeni eğitim, admin her şehirde, yollar, açılış görünümleri
 
 ## A. Supabase'i güncelle
 1. **SQL Editor** > **+ New query** > `supabase/parcalar/1.sql` > **Run**.
-2. Aynısını `2.sql`, `3.sql`, `4.sql` için yap.
-3. CSV'leri yeniden yüklemen gerekmez: 4. adım, İstanbul'daki 758 kıyı yerinin peteğini kendisi düzeltir.
+2. Aynısını `2.sql`, `3.sql`, `4.sql` için yap. CSV yüklemen gerekmez.
 
-## B. Harita hızı
-1. İstanbul ve İzmir haritasında kaydır ve iki parmakla yakınlaştır. Donma olmamalı.
-2. Parmağın haritadayken yollar kısa süre kaybolur, bırakınca geri gelir.
-3. Petek adlarının yazdığı en yakın görünümde yollar hiç çizilmez.
+## B. Uygulama eğitimi (yeni hesapla ya da eğitimi görmemiş hesapla)
+1. İzinler ve şehir seçiminden sonra eğitim kendiliğinden başlar. Sekmelere dokunman gerekmez, sekmeler kendisi açılır.
+2. Her adımda yalnızca anlatılan alan açık kalır, geri kalan her yer kararır. Alanın açıklaması yazar.
+3. **Devam** ile sıradaki alan gelir (16 adım: sekmeler, Akış, Etkinlik, Harita, Oyun, Profil).
+4. Sağ alttaki küçük **Geç**: eğitim biter, yalnızca hoş geldin ekranı açılır.
+5. Hoş geldin ekranında **Yarışma kuralları**, **Ödül programı** ve **Başla** var.
 
-## C. Boğaz
-1. İstanbul'da Boğaz baştan sona (Marmara'dan Karadeniz'e) kesintisiz su olarak görünür.
-2. Bebek, Ortaköy, Arnavutköy gibi kıyı mekânlarını aratınca kendi yakasındaki peteğe gider (Bebek'teki bir yer Üsküdar'a geçmez).
+## C. Admin (moderatör) hesabı
+1. Başka şehri ziyaret et: kısıt yok. Petek menüsünün tamamı açılır.
+2. Akış ve Etkinlikler baktığın şehrin içeriğini gösterir. Oraya gönderi yazabilir, etkinlik açabilirsin.
+3. Üye hesabında değişiklik yok: ziyarette yalnızca harita görünür.
 
-## D. Ziyaret
-1. İstanbul'u ziyaret et: Kadıköy ortada, daha yakından açılır.
-2. Ziyarette üstte "Buradasın" kutusu çıkmaz, harita kendi konumuna gitmez.
-3. Ziyaretteyken **Konumum**'a basarsan kendi şehrine dönülür ve bulunduğun peteğe gidilir.
+## D. Harita
+1. Kaydırmayı bırakınca yollar 1 saniye sonra görünür.
+2. Ziyaret görünümleri:
+   - İstanbul: Marmara'dan Karadeniz'e bütün Boğaz hattı,
+   - İzmir: Karşıyaka ve altındaki ilçeler (Bayraklı, Bornova, Konak, Karabağlar, Balçova, Buca),
+   - Kocaeli: Derince ve körfez.

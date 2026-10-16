@@ -28,6 +28,7 @@ import { Screen } from '@/components/Screen';
 import { SponsorProfile } from '@/components/SponsorProfile';
 import { TextField } from '@/components/TextField';
 import { VerifyRewardsBox } from '@/components/VerifyPrizeNote';
+import { TourTarget } from '@/components/TourTarget';
 import type { AppTextKey } from '@/lib/account';
 import { getPlayCounts, progressFor, totalEarned, TOTAL_ACHIEVEMENTS } from '@/lib/achievements';
 import { useAuth } from '@/lib/auth';
@@ -453,7 +454,7 @@ function ProfileScreen() {
       ) : null}
 
       {/* Kimlik: avatar, gerçek ad, altında gizlenebilen rumuz ve rumuz sayacı */}
-      <View style={styles.hero}>
+      <TourTarget tourId="profile-hero" style={styles.hero}>
         <View style={styles.heroRow}>
           <View style={styles.gaugeCol}>
             {quota ? (
@@ -678,7 +679,7 @@ function ProfileScreen() {
             <Ionicons name="chevron-forward" size={20} color={colors.text} />
           </LinearGradient>
         </Pressable>
-      </View>
+      </TourTarget>
 
       {/* Oyun şampiyonu ünvanları */}
       {titles.length > 0 ? (
@@ -726,7 +727,7 @@ function ProfileScreen() {
         </Pressable>
       ) : null}
 
-      <Panel>
+      <TourTarget tourId="profile-menu"><Panel>
         <ListRow
           icon="people"
           title="Arkadaşlarım"
@@ -769,7 +770,7 @@ function ProfileScreen() {
             onPress={() => router.push('/moderator')}
           />
         ) : null}
-      </Panel>
+      </Panel></TourTarget>
 
       {/* Özelleştirmeler (açılır) */}
       <Section

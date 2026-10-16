@@ -378,7 +378,7 @@ grant execute on function public.admin_send_message(uuid, text, text) to authent
 grant execute on function public.admin_create_announcement(text, text) to authenticated;
 grant execute on function public.admin_list_announcements() to authenticated;
 grant execute on function public.admin_set_announcement_active(uuid, boolean) to authenticated;
-grant execute on function public.create_post(text, text, uuid, int, int, int, int, uuid) to authenticated;
+grant execute on function public.create_post(text, text, uuid, int, int, int, int, uuid, text) to authenticated;
 grant execute on function public.alias_profile(uuid, uuid, text) to authenticated;
 grant execute on function public.react_to_post(uuid, text) to authenticated;
 grant execute on function public.share_event_to_feed(uuid, text) to authenticated;

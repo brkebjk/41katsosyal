@@ -17,7 +17,7 @@ import { RecoveryPhraseSetup } from '@/components/RecoveryPhraseSetup';
 import { TextEditHost } from '@/components/TextEditHost';
 import { TopToastHost } from '@/components/TopToastHost';
 import { AuthProvider, useAuth } from '@/lib/auth';
-import { loadCity, resetCity, useCity } from '@/lib/city';
+import { loadCity, resetCity, setCityAdmin, useCity } from '@/lib/city';
 import { usePermissionsDone } from '@/lib/onboarding';
 import { resumeOnStart } from '@/lib/presence';
 import { colors, isLight } from '@/theme';
@@ -64,6 +64,10 @@ function RootNavigator() {
     if (isLoggedIn && profile?.id) void loadCity();
     else resetCity();
   }, [isLoggedIn, profile?.id]);
+  // Moderatör her şehirde her şeyi yapabilir
+  useEffect(() => {
+    setCityAdmin(isLoggedIn && profile?.role === 'admin');
+  }, [isLoggedIn, profile?.role, profile?.id]);
 
   return (
     // Uygulama açıkken ekran kapanmaz; dokunulmayınca kararır

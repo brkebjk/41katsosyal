@@ -25,9 +25,20 @@ export type CityState = {
   instant: boolean;
   /** Ziyaret edilen şehir (boşsa kendi şehrim) */
   visiting: CityKey | null;
+  /** Moderatör: her şehirde her şeyi yapabilir (ziyarette kısıt yok; akış ve etkinlikler baktığı şehrin) */
+  admin: boolean;
 };
 
-let state: CityState = { loaded: false, my: null, next: null, nextAt: null, moveAt: null, instant: false, visiting: null };
+let state: CityState = {
+  loaded: false,
+  my: null,
+  next: null,
+  nextAt: null,
+  moveAt: null,
+  instant: false,
+  visiting: null,
+  admin: false,
+};
 const listeners = new Set<() => void>();
 function emit(patch: Partial<CityState>) {
   state = { ...state, ...patch };
@@ -69,7 +80,7 @@ export async function loadCity(): Promise<void> {
 
 /** Oturum kapanınca */
 export function resetCity(): void {
-  emit({ loaded: false, my: null, next: null, nextAt: null, moveAt: null, instant: false, visiting: null });
+  emit({ loaded: false, my: null, next: null, nextAt: null, moveAt: null, instant: false, visiting: null, admin: false });
 }
 
 /** İlk şehir seçimi: `cell` telefonun bir kez aldığı konumun peteği (sunucu şehrin bu petekle uyuştuğuna bakar) */
@@ -101,6 +112,11 @@ export function setVisiting(city: CityKey | null): void {
   emit({ visiting: city && city !== state.my ? city : null });
 }
 
+/** Giriş yapan moderatör mü (kök düzen bildirir) */
+export function setCityAdmin(admin: boolean): void {
+  if (state.admin !== admin) emit({ admin });
+}
+
 export function getCityState(): CityState {
   return state;
 }
@@ -112,9 +128,19 @@ function subscribe(l: () => void) {
   };
 }
 
-export function useCity(): CityState & { view: CityKey | null; readOnly: boolean } {
+/**
+ * view: haritada bakılan şehir · readOnly: ziyaretçi (moderatörde hiç) · content: akışın ve etkinliklerin şehri
+ * (üyede her zaman kendi şehri; moderatörde baktığı şehir)
+ */
+export function useCity(): CityState & { view: CityKey | null; readOnly: boolean; content: CityKey | null } {
   const s = useSyncExternalStore(subscribe, getCityState, getCityState);
-  return { ...s, view: s.visiting ?? s.my, readOnly: s.visiting !== null };
+  const view = s.visiting ?? s.my;
+  return { ...s, view, readOnly: s.visiting !== null && !s.admin, content: s.admin ? view : s.my };
+}
+
+/** Akışın ve etkinliklerin şehri (hook dışında; moderatörde baktığı şehir) */
+export function contentCity(): CityKey | null {
+  return state.admin ? (state.visiting ?? state.my) : state.my;
 }
 
 /** Şehrin adı (boşsa boş) */
@@ -128,8 +154,8 @@ export function cityIn(c: CityKey | null | undefined): string {
   return { istanbul: 'İstanbul’da', kocaeli: 'Kocaeli’de', izmir: 'İzmir’de' }[c];
 }
 
-/** Kendi şehrimin haritası (oluşturma ekranları ve süs haritaları; şehir henüz okunmadıysa Kocaeli) */
+/** Kendi şehrimin haritası (oluşturma ekranları ve süs haritaları; moderatörde baktığı şehir; okunmadıysa Kocaeli) */
 export function useMyMapCity(): CityKey {
   const s = useSyncExternalStore(subscribe, getCityState, getCityState);
-  return s.my ?? 'kocaeli';
+  return (s.admin ? (s.visiting ?? s.my) : s.my) ?? 'kocaeli';
 }

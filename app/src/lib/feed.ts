@@ -191,6 +191,8 @@ export async function createPost(
   cell?: { cell: { q: number; r: number }; my: { q: number; r: number } } | null,
   /** Zincir: kendi gönderimin devamı (verilirse yer ve cevap eklenemez; petek ilk gönderiden alınır) */
   threadOf?: string | null,
+  /** Moderatör: başka şehrin akışına yazar (üyede sunucu yok sayar) */
+  city?: string | null,
 ): Promise<{ error: string | null; id: string | null }> {
   const { data, error } = await callRpc<string>(
     'create_post',
@@ -203,6 +205,7 @@ export async function createPost(
       p_my_q: cell?.my.q ?? null,
       p_my_r: cell?.my.r ?? null,
       p_thread_of: threadOf ?? null,
+      p_city: city ?? null,
     },
     FEED_TEXT,
   );

@@ -3170,10 +3170,12 @@ drop function if exists public.create_post(text, text, uuid, int, int, int, int)
 -- p_cell_q/r: petek akışına yazılır (genel akışta görünmez). p_my_q/r: telefonun bir kez aldığı konumun peteği;
 -- yazılan peteğe en çok cell_feed_max_distance (1) petek uzaklıkta olmalı. Tam konum sunucuya gelmez.
 -- p_thread_of: kendi gönderinin devamı (zincir). Devam, ilk gönderinin peteğine yazılır; petekteyse yine yakında olmak gerekir.
+-- p_city: moderatör başka bir şehrin akışına yazabilir (üyede yok sayılır; üye kendi şehrine yazar)
+drop function if exists public.create_post(text, text, uuid, int, int, int, int, uuid);
 create or replace function public.create_post(p_body text, p_place_id text default null, p_reply_to uuid default null,
                                               p_cell_q int default null, p_cell_r int default null,
                                               p_my_q int default null, p_my_r int default null,
-                                              p_thread_of uuid default null)
+                                              p_thread_of uuid default null, p_city text default null)
 returns uuid language plpgsql security definer set search_path = public as $$
 declare
   v public.profiles;
@@ -3249,6 +3251,9 @@ begin
           v_place.id, v_place.name, v_place.cat_label, v_place.district, v.role::text = 'sponsor', p_reply_to,
           p_cell_q, p_cell_r, p_thread_of, v_no,
           coalesce(public._cell_city(p_cell_r), (select t.city from public.posts t where t.id = p_thread_of),
+                   (select t.city from public.posts t where t.id = p_reply_to),
+                   case when v.role = 'admin' and exists (select 1 from public.cities c where c.key = p_city)
+                        then p_city end,
                    public._city_of(v.id)))
   returning id into v_id;
   -- Arşiv temizliği (ara sıra): feed_archive_days günden eski gönderiler silinir
@@ -4823,9 +4828,11 @@ language sql stable security definer set search_path = public as $$
            else (p.cell_q is null or public.is_admin()
                  or (coalesce(p_mine, false)
                      and exists (select 1 from public.post_authors a where a.post_id = p.id and a.author_id = auth.uid())))
-                -- Şehre özel akış (kendi gönderilerim ve beni etiketleyenler her şehirde görünür)
+                -- Şehre özel akış (kendi gönderilerim ve beni etiketleyenler her şehirde görünür). Başka şehrin
+                -- akışını yalnızca moderatör görür; üyede p_city yok sayılır
                 and (coalesce(p_mine, false) or coalesce(p_mentions, false)
-                     or p.city = coalesce(p_city, public._city_of(auth.uid())))
+                     or p.city = case when public.is_admin() then coalesce(p_city, public._city_of(auth.uid()))
+                                      else public._city_of(auth.uid()) end)
          end
      and (p_before is null or p.created_at < p_before)
      and (public.is_admin() or (not p.is_hidden and not public.post_blocked_by_me(p.id)))
@@ -4931,7 +4938,8 @@ language sql stable security definer set search_path = public as $$
   select p.place_district, count(*)::int
     from public.posts p
    where public._is_active_user()
-     and p.city = coalesce(p_city, public._city_of(auth.uid()))
+     and p.city = case when public.is_admin() then coalesce(p_city, public._city_of(auth.uid()))
+                       else public._city_of(auth.uid()) end
      and p.place_district is not null and btrim(p.place_district) <> ''
      and p.cell_q is null and p.thread_root is null and public._post_live(p.created_at, p.event_id)
      and (public.is_admin() or (not p.is_hidden and not public.post_blocked_by_me(p.id)))
@@ -22295,7 +22303,7 @@ grant execute on function public.admin_send_message(uuid, text, text) to authent
 grant execute on function public.admin_create_announcement(text, text) to authenticated;
 grant execute on function public.admin_list_announcements() to authenticated;
 grant execute on function public.admin_set_announcement_active(uuid, boolean) to authenticated;
-grant execute on function public.create_post(text, text, uuid, int, int, int, int, uuid) to authenticated;
+grant execute on function public.create_post(text, text, uuid, int, int, int, int, uuid, text) to authenticated;
 grant execute on function public.alias_profile(uuid, uuid, text) to authenticated;
 grant execute on function public.react_to_post(uuid, text) to authenticated;
 grant execute on function public.share_event_to_feed(uuid, text) to authenticated;

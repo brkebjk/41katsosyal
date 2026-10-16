@@ -16,6 +16,7 @@ import { Screen } from '@/components/Screen';
 import { SponsorCodeModal } from '@/components/SponsorCodeModal';
 import { VerifyPrizeNote } from '@/components/VerifyPrizeNote';
 import { useRoomActions } from '@/components/useRoomActions';
+import { TourTarget } from '@/components/TourTarget';
 import { useAuth } from '@/lib/auth';
 import { getQuota, type Quota } from '@/lib/events';
 import { setGameInvites } from '@/lib/invites';
@@ -275,7 +276,7 @@ function GamesScreen() {
       floatingFooter
       footer={
         <FloatingActions testID="games-actions">
-          <View style={styles.footerButtons}>
+          <TourTarget tourId="games-actions" style={styles.footerButtons}>
             <GameActionButton
               label="Oda Oluştur"
               sub="Oyun seç, odanı aç"
@@ -298,12 +299,12 @@ function GamesScreen() {
               testID="games-join"
               compact
             />
-          </View>
+          </TourTarget>
         </FloatingActions>
       }
     >
       {/* Aylık ödül podyumu: ayın ilk 3'ü; “Ödülleri gör” sıralama ekranını açar */}
-      <LinearGradient
+      <TourTarget tourId="games-podium"><LinearGradient
         colors={['#145A66', '#0F2333', '#0A1D2B']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -348,7 +349,7 @@ function GamesScreen() {
           <Ionicons name="gift" size={18} color="#1A1200" />
           <Text style={styles.podBtnText}>Ödülleri gör</Text>
         </Pressable>
-      </LinearGradient>
+      </LinearGradient></TourTarget>
 
       {/* Ekranı yarı yarıya paylaşan iki kutu: oyun davetleri (varsayılan kapalı) ve çekiliş */}
       <View style={styles.halfRow}>
@@ -426,7 +427,7 @@ function GamesScreen() {
         </Text>
         <Text style={styles.gamesHint}>Bir oyuna dokun, o oyunun açık odalarını gör.</Text>
       </View>
-      <View style={styles.grid}>
+      <TourTarget tourId="games-tiles" style={styles.grid}>
         {rows.map((row, i) => (
           <View key={i} style={[styles.row, { gap }]}>
             {row.map((key) => (
@@ -449,7 +450,7 @@ function GamesScreen() {
             ))}
           </View>
         ))}
-      </View>
+      </TourTarget>
 
       {actions.hint ? <Text style={styles.hint}>{actions.hint}</Text> : null}
       <InfoModal

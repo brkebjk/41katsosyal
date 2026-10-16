@@ -12,6 +12,7 @@ import { DragGrab, DragScreen } from '@/components/Sheet';
 import { CloseX } from '@/components/CloseX';
 import { createPost, mentionTag, POST_MAX } from '@/lib/feed';
 import type { Place } from '@/lib/map';
+import { contentCity } from '@/lib/city';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 type Props = {
@@ -44,7 +45,7 @@ export function PostComposer({ visible, alias, isSponsor = false, replyTo = null
     if (body.length > POST_MAX) return setError(`Gönderi en fazla ${POST_MAX} karakter olabilir.`);
     setError(null);
     setSubmitting(true);
-    const res = await createPost(body, place?.id ?? null, replyTo?.id ?? null);
+    const res = await createPost(body, place?.id ?? null, replyTo?.id ?? null, null, null, contentCity());
     setSubmitting(false);
     if (res.error) return setError(res.error);
     onCreated();

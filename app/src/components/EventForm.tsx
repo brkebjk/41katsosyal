@@ -26,6 +26,7 @@ import { DEFAULT_RULES, getPointRules } from '@/lib/ranking';
 import { REAL_NAME } from '@/lib/realName';
 import { gameCellMarks, listOpenRooms, type GameCellMark } from '@/lib/rooms';
 import { getSponsorPanel } from '@/lib/venues';
+import { contentCity } from '@/lib/city';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 type Props = {
@@ -218,10 +219,10 @@ export function EventForm({ visible, onClose, onCreated, userId, hostName, isMod
   useEffect(() => {
     if (!visible) return;
     let active = true;
-    void listEvents().then((res) => {
+    void listEvents(contentCity() ?? undefined).then((res) => {
       if (active && !res.error) setMarks(eventCellMarks(res.data));
     });
-    void listOpenRooms().then((res) => {
+    void listOpenRooms(undefined, contentCity()).then((res) => {
       if (active && !res.error) setGameMarks(gameCellMarks(res.data));
     });
     void getPointRules().then((r) => {
