@@ -11,6 +11,7 @@ import { ImageSlot } from '@/components/ImageSlot';
 import { PostCard } from '@/components/PostCard';
 import { useSponsorMenu } from '@/components/useSponsorMenu';
 import { InlineComposer } from '@/components/InlineComposer';
+import { PromoBanner } from '@/components/PromoBanner';
 import { MiniHexPicker } from '@/components/MiniHexPicker';
 import { PostDetail } from '@/components/PostDetail';
 import { DmInbox } from '@/components/DirectMessages';
@@ -22,7 +23,8 @@ import { SoftGlow } from '@/components/SoftGlow';
 import { isPetekIconName, PetekIcon } from '@/components/HexClusterIcon';
 import { TourTarget } from '@/components/TourTarget';
 import { useAuth } from '@/lib/auth';
-import { showDialog } from '@/lib/dialog';
+import { notify, showDialog } from '@/lib/dialog';
+import { featureOn, useLook } from '@/lib/look';
 import { muteVerifyReminder, openIdentityVerify, takeVerifyReminder } from '@/lib/identity';
 import { useIdentityEnabled } from '@/lib/identityFlag';
 import {
@@ -71,6 +73,7 @@ export default function FeedScreenTab() {
 
 function FeedScreen() {
   const { profile, refreshProfile, previewMode } = useAuth();
+  const look = useLook();
   const isModerator = profile?.role === 'admin';
   const isSponsor = profile?.role === 'sponsor';
   const sponsorMenu = useSponsorMenu(isModerator);
@@ -510,6 +513,13 @@ function FeedScreen() {
           {profile && !isSponsor ? (
             <Pressable
               onPress={() => {
+                // Yönetim panelinden kapatıldıysa açılmaz
+                if (!featureOn(look.features, 'mesajlar')) {
+                  void notify('Mesajlar kapalı', 'Özel mesajlar şu an kapalı. Daha sonra tekrar dene.', {
+                    icon: 'chatbubbles',
+                  });
+                  return;
+                }
                 setDmTarget(null);
                 setDmOpen(true);
               }}
@@ -825,6 +835,9 @@ function FeedScreen() {
         </Text>
       ) : null}
 
+      {/* Kampanya / duyuru şeridi (yönetim panelinden) */}
+      <PromoBanner style={styles.promo} />
+
       {/* Liste */}
       {!loaded ? (
         <Text style={styles.muted}>Akış yükleniyor…</Text>
@@ -857,10 +870,18 @@ function FeedScreen() {
       ) : posts.length === 0 ? (
         <View style={styles.empty}>
           <ImageSlot name="emptyFeed" style={styles.emptyImage} />
-          <Text style={styles.emptyTitle}>Henüz gönderi yok</Text>
+          <Text style={styles.emptyTitle}>Şehrinde ilk sözü sen söyle</Text>
           <Text style={styles.emptyText}>
-            {canPost ? 'İlk gönderiyi sen paylaş.' : 'İlk gönderi geldiğinde burada rumuzlarla akacak.'}
+            {canPost
+              ? 'Akış henüz sessiz. Aşağıdaki kutuya rumuzunla yaz; istersen yakınındaki bir mekânı da ekle. Bugün nereye gidiyorsun, kim gelir?'
+              : 'İlk gönderi geldiğinde burada rumuzlarla akacak.'}
           </Text>
+          <PrimaryButton
+            label="Etkinliklere göz at"
+            variant="ghost"
+            onPress={() => router.navigate('/events')}
+            testID="feed-empty-events"
+          />
         </View>
       ) : (
         <>
@@ -988,6 +1009,7 @@ function FilterChip({
 }
 
 const styles = StyleSheet.create({
+  promo: { paddingHorizontal: 0, marginBottom: 8 },
   // Ayraç çizgisi artık PostCard'ın alt düğme satırında; burada yalnızca gönderiler arası boşluk kalır
   postDivider: { paddingTop: spacing.xs },
   hdr: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

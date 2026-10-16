@@ -9,6 +9,7 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { Sheet } from '@/components/Sheet';
 import { askNotificationPermission, hasNotificationPermission, syncEventReminders } from '@/lib/localNotify';
 import { getNotifyPrefs, saveNotifyPrefs, type NotifyPrefs } from '@/lib/notifyPrefs';
+import { registerPush } from '@/lib/push';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 type Perms = { notify: boolean; location: boolean; locationCanAsk: boolean };
@@ -70,6 +71,7 @@ export function NotificationSettingsSheet({ onClose }: { onClose: () => void }) 
     }
     if (res.data) setPrefs(res.data);
     void syncEventReminders();
+    if (next.push) void registerPush(true);
   }
 
   async function allowNotify() {
@@ -77,6 +79,7 @@ export function NotificationSettingsSheet({ onClose }: { onClose: () => void }) 
     if (!ok) await Linking.openSettings();
     void loadPerms();
     void syncEventReminders();
+    if (ok) void registerPush(true);
   }
 
   async function allowLocation() {

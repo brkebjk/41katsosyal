@@ -45,6 +45,7 @@ import { VenueAdminModal } from '@/components/VenueAdminModal';
 import { CloseX } from '@/components/CloseX';
 import { EventCodeModal, type CodeRequest } from '@/components/EventCodeModal';
 import { MapEventPopup } from '@/components/MapEventPopup';
+import { PromoBanner } from '@/components/PromoBanner';
 import { TourTarget } from '@/components/TourTarget';
 import {
   FINDER_CATEGORIES,
@@ -79,6 +80,7 @@ import { venueImageUrl } from '@/lib/venueImage';
 import { useTabResetKey } from '@/lib/tabReset';
 import { useBackClose } from '@/lib/backPress';
 import { confirmMeetupSafety } from '@/lib/safety';
+import { featureOn, useLook } from '@/lib/look';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 const LEVEL_NAME = { 1: 'Hareketli', 2: 'Çok hareketli', 3: 'En hareketli' } as const;
@@ -158,6 +160,9 @@ function MapScreen({ resetKey }: { resetKey: number }) {
   /** Dokunulan ama henüz incelenmeyen petek: 3 boyutlu yükselir, üstünde “İNCELE” çıkar */
   const [preview, setPreview] = useState<Cell | null>(null);
   const [legendOpen, setLegendOpen] = useState(false);
+  /** “Şehrin şu an sessiz” kartı bu açılışta kapatıldı mı */
+  const [quietClosed, setQuietClosed] = useState(false);
+  const look = useLook();
   const [refreshing, setRefreshing] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -757,6 +762,19 @@ function MapScreen({ resetKey }: { resetKey: number }) {
                 onLayout={(e) => setBottomH(Math.round(e.nativeEvent.layout.height))}
               >
                 {error ? <Text style={styles.error}>{error}</Text> : null}
+                {/* Kampanya / duyuru şeridi (yönetim panelinden; ziyarette görünmez) */}
+                {!city.readOnly ? <PromoBanner /> : null}
+                {/* Şehirde hiç etkinlik ve açık oyun yokken: ilk adımı atmaya çağıran küçük kart */}
+                {!city.readOnly && !isSponsor && !quietClosed && events.length === 0 && rooms.length === 0 ? (
+                  <QuietCityCard
+                    canCreateEvent={featureOn(look.features, 'etkinlik_acma')}
+                    onEvent={() =>
+                      router.navigate({ pathname: '/events', params: { create: '1', t: String(Date.now()) } })
+                    }
+                    onGame={() => router.navigate('/games')}
+                    onClose={() => setQuietClosed(true)}
+                  />
+                ) : null}
                 {/* Tüm haritanın genel aktifliği (filtrelerin hemen üstünde) */}
                 <View style={styles.activityWrap} pointerEvents="none">
                   <View style={[styles.activityBox, { borderColor: activity.color }]} testID="map-activity">
@@ -1015,6 +1033,56 @@ function MapScreen({ resetKey }: { resetKey: number }) {
 }
 
 /** Ziyarette petek menüsü: yalnızca özet (etkinlik, oyun, mekân sayısı); içeriklere girilmez */
+/** Şehirde etkinlik ve açık oyun yokken haritanın altında çıkan küçük kart: ilk adımı sen at */
+function QuietCityCard({
+  canCreateEvent,
+  onEvent,
+  onGame,
+  onClose,
+}: {
+  canCreateEvent: boolean;
+  onEvent: () => void;
+  onGame: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <View style={styles.quietWrap} pointerEvents="box-none">
+      <View style={styles.quietCard} testID="map-quiet">
+        <View style={styles.quietHead}>
+          <Ionicons name="sparkles" size={16} color={colors.highlight} />
+          <Text style={styles.quietTitle}>Şehrin şu an sessiz</Text>
+          <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel="Kartı kapat">
+            <Ionicons name="close" size={16} color={colors.textMuted} />
+          </Pressable>
+        </View>
+        <Text style={styles.quietText}>İlk etkinliği sen aç ya da bir oyun başlat; harita senin hareketinle renklenir.</Text>
+        <View style={styles.quietRow}>
+          {canCreateEvent ? (
+          <Pressable
+            onPress={onEvent}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.quietBtn, { backgroundColor: colors.event }, pressed && styles.eventRowPressed]}
+            testID="map-quiet-event"
+          >
+            <Ionicons name="calendar" size={14} color="#04211F" />
+            <Text style={styles.quietBtnText}>Etkinlik aç</Text>
+          </Pressable>
+          ) : null}
+          <Pressable
+            onPress={onGame}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.quietBtn, { backgroundColor: colors.game }, pressed && styles.eventRowPressed]}
+            testID="map-quiet-game"
+          >
+            <Ionicons name="game-controller" size={14} color="#1A1036" />
+            <Text style={styles.quietBtnText}>Oyun başlat</Text>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function VisitCellSummary({ events, rooms, venues }: { events: number; rooms: number; venues: number }) {
   const parts = [
     events > 0 ? `${events} yaklaşan etkinlik` : null,
@@ -1566,6 +1634,31 @@ const styles = StyleSheet.create({
   legendRowV: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 13 },
   legendToggle: { alignItems: 'center', marginTop: 2 },
   activityWrap: { alignItems: 'center' },
+  quietWrap: { alignItems: 'center', paddingHorizontal: spacing.md },
+  quietCard: {
+    width: '100%',
+    maxWidth: 420,
+    gap: 6,
+    padding: spacing.md,
+    borderRadius: radii.lg,
+    backgroundColor: colors.overlay,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  quietHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  quietTitle: { flex: 1, color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.sm },
+  quietText: { color: colors.textMuted, fontSize: fontSizes.xs, lineHeight: 17 },
+  quietRow: { flexDirection: 'row', gap: spacing.sm, marginTop: 2 },
+  quietBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: radii.md,
+  },
+  quietBtnText: { color: '#0B1F2E', fontFamily: fonts.extra, fontSize: fontSizes.xs },
   activityBox: {
     flexDirection: 'row',
     alignItems: 'center',

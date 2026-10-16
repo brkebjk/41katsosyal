@@ -65,6 +65,7 @@ const COMMON_TEXT: Record<string, string> = {
   session_replaced: 'Hesabına başka bir telefondan giriş yapıldı. Bu telefondaki oturum kapatıldı.',
   reserved_name: 'Bu ad kullanılamaz. “PeopleHere”, “Moderatör” veya “Yönetici” içeren adlar ayrılmıştır.',
   city_required: 'Önce şehrini seç (Profil > Şehrim).',
+  feature_off: 'Bu bölüm şu an kapalı. Daha sonra tekrar dene.',
   wrong_city: 'Yalnızca kendi şehrinin haritasında etkinlik açabilirsin.',
 };
 

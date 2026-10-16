@@ -4096,6 +4096,7 @@ declare
   v_fid uuid;
   v_n int;
 begin
+  perform public._require_feature('mesajlar');
   perform public._require_city();
   v := public._require_user();
   if char_length(q) not between 2 and 60 then raise exception 'dm_target_not_found'; end if;
@@ -7805,6 +7806,7 @@ declare
   v_room uuid;
   v_live uuid;
 begin
+  perform public._require_feature('uzaktan');
   perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
@@ -7831,6 +7833,7 @@ end $$;
 create or replace function public.sk_match_join()
 returns jsonb language plpgsql security definer set search_path = public as $$
 begin
+  perform public._require_feature('uzaktan');
   perform public._require_city();
   return public.match_join('shark_cage');
 end $$;

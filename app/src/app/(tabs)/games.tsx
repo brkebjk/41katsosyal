@@ -18,6 +18,7 @@ import { VerifyPrizeNote } from '@/components/VerifyPrizeNote';
 import { useRoomActions } from '@/components/useRoomActions';
 import { TourTarget } from '@/components/TourTarget';
 import { useAuth } from '@/lib/auth';
+import { featureOn, useLook } from '@/lib/look';
 import { getQuota, type Quota } from '@/lib/events';
 import { setGameInvites } from '@/lib/invites';
 import { getGamePlayerCounts, listMyEventRaffles } from '@/lib/rooms';
@@ -70,6 +71,7 @@ export default function GamesScreenTab() {
 function GamesScreen() {
   const { width } = useWindowDimensions();
   const { profile, account, refreshAccount } = useAuth();
+  const look = useLook();
   const [top, setTop] = useState<RankRow[] | null>(null);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [invitesOn, setInvitesOn] = useState<boolean | null>(null);
@@ -168,6 +170,12 @@ function GamesScreen() {
   /** Oyun kutusuna dokunuldu: açık oyunlarda önce o oyunun “Açık odalar” ekranı açılır. */
   function onTilePress(key: GameKey) {
     actions.setHint(null);
+    // Yönetim panelinden kapatılan oyun açılmaz
+    const feature = key === 'quiz' ? 'bilgi_yarismasi' : key === 'treasure_hunt' ? 'hazine' : null;
+    if (feature && !featureOn(look.features, feature)) {
+      actions.setHint(`${GAMES[key].title} şu an kapalı. Daha sonra tekrar dene.`);
+      return;
+    }
     if (key === 'treasure_hunt') {
       router.push('/hazine');
       return;

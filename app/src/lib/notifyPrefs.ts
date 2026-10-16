@@ -1,12 +1,25 @@
 // Bildirim tercihleri: hangi tür bildirimlerin geleceğini üye seçer. Tercihler sunucuda saklanır;
 // kapatılan türde (oyun daveti, arkadaşlık isteği, bahsetme) sunucu bildirimi hiç oluşturmaz.
+// “Telefona anlık bildirim” kapalıysa hiçbir bildirim telefona gönderilmez (bildirim kutusunda yine görünür);
+// “Mesajlar” ve “Ekip davetleri” yalnızca telefona gönderilmeyi belirler.
 
 import { callRpc, type Result } from '@/lib/rpc';
 
-export type NotifyPrefKey = 'game_invite' | 'special_events' | 'friend_request' | 'mention' | 'event_reminder';
+export type NotifyPrefKey =
+  | 'push'
+  | 'game_invite'
+  | 'special_events'
+  | 'friend_request'
+  | 'mention'
+  | 'dm'
+  | 'team_invite'
+  | 'event_reminder';
 export type NotifyPrefs = Record<NotifyPrefKey, boolean>;
 
 type IconName =
+  | 'phone-portrait'
+  | 'chatbubbles'
+  | 'people'
   | 'game-controller'
   | 'sparkles'
   | 'person-add'
@@ -14,6 +27,12 @@ type IconName =
   | 'alarm';
 
 export const PREF_ITEMS: { key: NotifyPrefKey; title: string; subtitle: string; icon: IconName }[] = [
+  {
+    key: 'push',
+    title: 'Telefona anlık bildirim',
+    subtitle: 'Uygulama kapalıyken de telefonuna gelsin (kim olduğu ya da ne yazdığı görünmez)',
+    icon: 'phone-portrait',
+  },
   { key: 'game_invite', title: 'Oyun davetleri', subtitle: 'Yakındaki ya da arkadaşının oyun odası çağrısı', icon: 'game-controller' },
   {
     key: 'special_events',
@@ -23,6 +42,13 @@ export const PREF_ITEMS: { key: NotifyPrefKey; title: string; subtitle: string; 
   },
   { key: 'friend_request', title: 'Arkadaşlık istekleri', subtitle: 'Biri seni arkadaş olarak eklemek istediğinde', icon: 'person-add' },
   { key: 'mention', title: 'Bahsetmeler', subtitle: 'Akışta biri senden @rumuzunla bahsettiğinde', icon: 'at' },
+  { key: 'dm', title: 'Mesajlar', subtitle: 'Yeni özel mesaj geldiğinde telefonuna bildirim', icon: 'chatbubbles' },
+  {
+    key: 'team_invite',
+    title: 'Ekip davetleri',
+    subtitle: 'Bir etkinlik ekibine davet edildiğinde telefonuna bildirim',
+    icon: 'people',
+  },
   {
     key: 'event_reminder',
     title: 'Etkinlik hatırlatmaları',
@@ -32,6 +58,9 @@ export const PREF_ITEMS: { key: NotifyPrefKey; title: string; subtitle: string; 
 ];
 
 export const ALL_ON: NotifyPrefs = {
+  push: true,
+  dm: true,
+  team_invite: true,
   game_invite: true,
   special_events: true,
   friend_request: true,

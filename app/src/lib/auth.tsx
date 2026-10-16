@@ -19,6 +19,7 @@ import { getDeviceId } from '@/lib/device';
 import { clearAllDrafts } from '@/lib/drafts';
 import { startPurchases, stopPurchases, syncSubscription } from '@/lib/purchases';
 import { setSessionReplacedHandler } from '@/lib/rpc';
+import { unregisterPush } from '@/lib/push';
 import { isBackendReady, supabase } from '@/lib/supabase';
 
 export type Profile = {
@@ -408,6 +409,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     setPreviewMode(false);
     if (!supabase) return;
+    // Bu telefona bu üyenin bildirimleri gelmesin
+    await unregisterPush();
     await supabase.auth.signOut({ scope: 'local' });
   }, []);
 

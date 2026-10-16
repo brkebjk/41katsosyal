@@ -30,12 +30,17 @@ async function prepare(): Promise<void> {
   prepared = true;
   try {
     setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowBanner: true,
-        shouldShowList: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-      }),
+      // Sunucudan gelen bildirim (adresi `url`) uygulama açıkken telefonun üst şeridinde gösterilmez; uygulama
+      // içindeki üstten kayan bildirim zaten çıkar (iki kez görünmesin)
+      handleNotification: async (n) => {
+        const remote = typeof (n.request.content.data as { url?: unknown } | null)?.url === 'string';
+        return {
+          shouldShowBanner: !remote,
+          shouldShowList: !remote,
+          shouldPlaySound: !remote,
+          shouldSetBadge: false,
+        };
+      },
     });
     if (Platform.OS === 'android') {
       await setNotificationChannelAsync(CHANNEL, {

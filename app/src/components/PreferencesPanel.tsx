@@ -7,6 +7,7 @@ import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/AppText';
 import { notify, showDialog } from '@/lib/dialog';
+import { readStartTab, saveStartTab, START_TABS, type StartTab } from '@/lib/startTab';
 import { colors, fonts, fontSizes, radii, saveThemePref, spacing, themePref, type ThemePref } from '@/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -23,6 +24,12 @@ const THEMES: { key: ThemePref; label: string; icon: IconName }[] = [
  */
 export function PreferencesPanel({ canInvite }: { canInvite: boolean }) {
   const [theme, setTheme] = useState<ThemePref>(themePref);
+  const [startTab, setStartTab] = useState<StartTab>(() => readStartTab());
+
+  function onStartTab(next: StartTab) {
+    if (next === startTab) return;
+    if (saveStartTab(next)) setStartTab(next);
+  }
 
   async function onTheme(next: ThemePref) {
     if (next === theme) return;
@@ -109,6 +116,32 @@ export function PreferencesPanel({ canInvite }: { canInvite: boolean }) {
                   style={({ pressed }) => [styles.segBtn, on && styles.segOn, pressed && styles.pressed]}
                 >
                   <Ionicons name={t.icon} size={14} color={on ? colors.primaryText : colors.textMuted} />
+                  <Text style={[styles.segText, on && styles.segTextOn]}>{t.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+        <View style={[styles.row, styles.divided]}>
+          <View style={styles.rowHead}>
+            <View style={styles.icon}>
+              <Ionicons name="home" size={18} color={colors.primary} />
+            </View>
+            <Text style={styles.rowTitle}>Açılış sekmesi</Text>
+          </View>
+          <View style={styles.segment}>
+            {START_TABS.map((t) => {
+              const on = startTab === t.key;
+              return (
+                <Pressable
+                  key={t.key}
+                  onPress={() => onStartTab(t.key)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={`Uygulama ${t.label} sekmesiyle açılsın`}
+                  testID={`start-${t.key}`}
+                  style={({ pressed }) => [styles.segBtn, on && styles.segOn, pressed && styles.pressed]}
+                >
                   <Text style={[styles.segText, on && styles.segTextOn]}>{t.label}</Text>
                 </Pressable>
               );

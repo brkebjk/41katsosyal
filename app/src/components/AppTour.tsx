@@ -10,7 +10,7 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { imageAspect } from '@/lib/images';
 import { isTourDone, markTourDone } from '@/lib/onboarding';
 import { currentTab } from '@/lib/tabReset';
-import { setActiveTourId, useTourRect, type TourRect } from '@/lib/tour';
+import { setActiveTourId, setTourRunning, useTourRect, type TourRect } from '@/lib/tour';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -28,6 +28,9 @@ type Step = {
 
 const TABBAR = '__tabbar';
 
+/**
+ * Eğitim 7 adımdır. Diğer alanlar, eğitimden sonra o sekme ilk açıldığında kısa ipucu olarak anlatılır (bkz. TIPS).
+ */
 const STEPS: Step[] = [
   {
     tab: 'index',
@@ -35,63 +38,15 @@ const STEPS: Step[] = [
     target: TABBAR,
     icon: 'apps',
     title: 'Sekmeler',
-    text: 'Uygulamanın beş bölümü: Akış, Etkinlik, Harita, Oyun ve Profil. Şimdi hepsini sırayla gezelim.',
-  },
-  {
-    tab: 'akis',
-    path: '/akis',
-    target: 'feed-header',
-    icon: 'chatbubbles',
-    title: 'Akış: üstteki düğmeler',
-    text: 'Huni ile akışı süzersin (yalnızca kendi gönderilerin, seni etiketleyenler ya da bir ilçe). Yanında topluluk kuralları; sağda özel mesajların ve arkadaşların.',
-  },
-  {
-    tab: 'akis',
-    path: '/akis',
-    target: 'feed-composer',
-    icon: 'create',
-    title: 'Gönderi kutusu',
-    text: 'Şehrine rumuzunla yaz; istersen yakınındaki bir mekânı ekle. Gönderiler bir hafta akışta kalır. @#kod yazarak birini etiketleyebilirsin.',
-  },
-  {
-    tab: 'events',
-    path: '/events',
-    target: 'events-gauge',
-    icon: 'calendar',
-    title: 'Etkinlik hakkın',
-    text: 'Bu ay kaç etkinlik açabileceğini gösterir. Dokununca hakkını nasıl artıracağını görürsün.',
-  },
-  {
-    tab: 'events',
-    path: '/events',
-    target: 'events-categories',
-    icon: 'grid',
-    title: 'Kategoriler',
-    text: 'Şehrindeki yüz yüze buluşmalar kategorilere ayrılır. Bir kategoriye dokununca etkinlikleri açılır; ön kayıt yaptırabilir, “Haritada gör” ile yerini bulabilirsin.',
-  },
-  {
-    tab: 'events',
-    path: '/events',
-    target: 'events-actions',
-    icon: 'enter',
-    title: 'Oluştur ve Katılım Doğrula',
-    text: 'Oluştur ile kendi etkinliğini açarsın. Etkinlikte düzenleyenin verdiği kodu Katılım Doğrula’dan yazınca katılımın sayılır ve puan kazanırsın.',
+    text: 'Uygulamanın beş bölümü: Akış, Etkinlik, Harita, Oyun ve Profil. Kısaca hepsini gezelim.',
   },
   {
     tab: 'index',
     path: '/',
-    target: 'map-city',
-    icon: 'location',
-    title: 'Şehir düğmesi',
-    text: 'Haritanın şehri. Dokununca başka bir şehrin haritasına ziyaretçi olarak bakabilirsin; ziyarette yalnızca harita görünür.',
-  },
-  {
-    tab: 'index',
-    path: '/',
-    target: 'map-search',
-    icon: 'search',
-    title: 'Arama',
-    text: 'Bir yerin ya da peteğin adını yaz; harita o peteğe gider.',
+    target: 'map-legend',
+    icon: 'color-palette',
+    title: 'Şehrin haritası',
+    text: 'Petek renkleri şehrin nerede hareketli olduğunu gösterir: turkuaz etkinlik, mor oyun, mercan mekân. Bir peteğe dokun, “İNCELE” ile menüsünü aç: petek akışı, Burada kim var?, Oyun arayanlar.',
   },
   {
     tab: 'index',
@@ -99,31 +54,23 @@ const STEPS: Step[] = [
     target: 'map-controls',
     icon: 'sync',
     title: 'Harita düğmeleri',
-    text: 'Mor ⟳ Göç et (şehrini değiştir ya da başka şehre bak), sarı büyüteç (bir oyunun ya da etkinlik türünün olduğu petekleri gösterir), yakınlaştır, uzaklaştır, tüm şehir ve Konumum.',
+    text: 'Mor ⟳ Göç et ve başka şehre bak, sarı büyüteç bir oyunun ya da etkinliğin olduğu petekleri gösterir. Altta yakınlaştır, uzaklaştır, tüm şehir ve Konumum.',
   },
   {
-    tab: 'index',
-    path: '/',
-    target: 'map-legend',
-    icon: 'color-palette',
-    title: 'Renkler',
-    text: 'Petek renklerinin anlamı: yoğunluk, turkuaz etkinlik, mor oyun, mercan mekân, altın PeopleHere Özel. Bir peteğe dokun, “İNCELE” ile menüsünü aç: petek akışı, Burada kim var?, Oyun arayanlar, mekânlar.',
+    tab: 'akis',
+    path: '/akis',
+    target: 'feed-composer',
+    icon: 'create',
+    title: 'Akış',
+    text: 'Şehrine rumuzunla yaz; istersen yakınındaki bir mekânı ekle. Gönderiler bir hafta akışta kalır. @#kod yazarak birini etiketleyebilirsin.',
   },
   {
-    tab: 'index',
-    path: '/',
-    target: 'map-filters',
-    icon: 'funnel',
-    title: 'Filtreler',
-    text: 'Bugünü, bu haftayı ya da yalnızca bir türü (oyun, etkinlik, mekân) göster. Şehrin Temposu şehrin şu an ne kadar hareketli olduğunu gösterir.',
-  },
-  {
-    tab: 'games',
-    path: '/games',
-    target: 'games-podium',
-    icon: 'trophy',
-    title: 'Aylık Ödül Podyumu',
-    text: 'Bu ayın ilk üçü. Buradan sıralamaya (şehrin ve Tüm İller), oyun sıralamalarına ve ödüllere ulaşırsın.',
+    tab: 'events',
+    path: '/events',
+    target: 'events-categories',
+    icon: 'calendar',
+    title: 'Etkinlikler',
+    text: 'Şehrindeki yüz yüze buluşmalar kategorilere ayrılır. Bir kategoriye dokununca etkinlikleri açılır; katılabilir, “Haritada gör” ile yerini bulabilirsin.',
   },
   {
     tab: 'games',
@@ -131,33 +78,87 @@ const STEPS: Step[] = [
     target: 'games-tiles',
     icon: 'game-controller',
     title: 'Oyunlar',
-    text: 'Köpekbalığı Kafesi, Vampir–Köylü, Bilgi Yarışması, Hazine Avı ve çekilişler. Yan yana (aynı masada) ya da uzaktan, bütün illerden oyuncularla oynarsın. Halka bu ay kalan puan hedefini gösterir.',
-  },
-  {
-    tab: 'games',
-    path: '/games',
-    target: 'games-actions',
-    icon: 'add-circle',
-    title: 'Oda Oluştur ve Katıl',
-    text: 'Oyun seçip oda açarsın ya da arkadaşının verdiği davet koduyla odasına katılırsın.',
-  },
-  {
-    tab: 'profile',
-    path: '/profile',
-    target: 'profile-hero',
-    icon: 'person',
-    title: 'Kimliğin',
-    text: 'Profil resmin, adın, bu haftaki rumuzun, seviyen ve puanın.',
+    text: 'Köpekbalığı Kafesi, Vampir–Köylü, Bilgi Yarışması, Hazine Avı ve çekilişler. Yan yana ya da uzaktan oynar, puan toplarsın. Halka bu ay kalan puan hedefini gösterir.',
   },
   {
     tab: 'profile',
     path: '/profile',
     target: 'profile-menu',
-    icon: 'list',
-    title: 'Menü',
-    text: 'Arkadaşlarım, Şehrim (göç ve ziyaret), Bildirim ve konum. Aşağıda Hesabım, Kişisel Verilerim, sözleşmeler, SSS ve yarışma kuralları var.',
+    icon: 'person',
+    title: 'Profil',
+    text: 'Arkadaşlarım, Şehrim (göç ve ziyaret), Bildirim tercihleri. Aşağıda Hesabım, Kişisel Verilerim, sözleşmeler ve yarışma kuralları var.',
   },
 ];
+
+export type Tip = { target: string; icon: IconName; title: string; text: string };
+
+/** Eğitimden sonra sekme ilk açıldığında bir kez gösterilen kısa ipuçları (sekme adına göre) */
+export const TIPS: Record<string, Tip[]> = {
+  index: [
+    {
+      target: 'map-city',
+      icon: 'location',
+      title: 'Şehir düğmesi',
+      text: 'Dokununca başka bir şehrin haritasına ziyaretçi olarak bakarsın. Ziyarette o şehrin etkinliklerine de katılabilirsin.',
+    },
+    {
+      target: 'map-search',
+      icon: 'search',
+      title: 'Arama',
+      text: 'Bir yerin ya da peteğin adını yaz; harita o peteğe gider.',
+    },
+    {
+      target: 'map-filters',
+      icon: 'funnel',
+      title: 'Filtreler',
+      text: 'Bugünü, bu haftayı ya da yalnızca bir türü göster. Şehrin Temposu şehrin şu an ne kadar hareketli olduğunu söyler.',
+    },
+  ],
+  akis: [
+    {
+      target: 'feed-header',
+      icon: 'options',
+      title: 'Akışın düğmeleri',
+      text: 'Huni ile akışı süzersin (kendi gönderilerin, seni etiketleyenler ya da bir ilçe). Sağda özel mesajların ve arkadaşların.',
+    },
+  ],
+  events: [
+    {
+      target: 'events-gauge',
+      icon: 'speedometer',
+      title: 'Etkinlik hakkın',
+      text: 'Bu ay kaç etkinlik açabileceğini gösterir. Dokununca hakkını nasıl artıracağını görürsün.',
+    },
+    {
+      target: 'events-actions',
+      icon: 'enter',
+      title: 'Oluştur ve Katılım Doğrula',
+      text: 'Oluştur ile kendi etkinliğini açarsın. Etkinlikte düzenleyenin söylediği kodu Katılım Doğrula’dan yazınca puan kazanırsın.',
+    },
+  ],
+  games: [
+    {
+      target: 'games-podium',
+      icon: 'trophy',
+      title: 'Aylık Ödül Podyumu',
+      text: 'Bu ayın ilk üçü. Buradan sıralamaya, oyun sıralamalarına ve ödüllere ulaşırsın.',
+    },
+    {
+      target: 'games-actions',
+      icon: 'add-circle',
+      title: 'Oda Oluştur ve Katıl',
+      text: 'Oyun seçip oda açarsın ya da arkadaşının verdiği kodla odasına katılırsın.',
+    },
+  ],
+  profile: [
+    {
+      target: 'profile-hero',
+      icon: 'id-card',
+      title: 'Kimliğin',
+      text: 'Profil resmin, adın, bu haftaki rumuzun, seviyen ve puanın. Puanına dokununca nasıl kazandığını görürsün.',
+    },
+  ],
+};
 
 /** Alanın çevresindeki boşluk (px) */
 const PAD = 6;
@@ -203,6 +204,12 @@ export function AppTour({ userId, tabBarHeight }: { userId: string; tabBarHeight
   }, [phase, index]);
 
   useEffect(() => () => setActiveTourId(null), []);
+
+  // Eğitim sürerken sekme ipuçları gösterilmez
+  useEffect(() => {
+    setTourRunning(phase !== 'done');
+    return () => setTourRunning(false);
+  }, [phase]);
 
   if (phase === 'checking' || phase === 'done') return null;
 

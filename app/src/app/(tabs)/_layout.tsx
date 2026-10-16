@@ -1,10 +1,13 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Tabs } from 'expo-router';
+import { router, Tabs } from 'expo-router';
 import { useEffect } from 'react';
 import { AppState, StyleSheet, View, type ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppTour } from '@/components/AppTour';
+import { TabTips } from '@/components/TabTips';
+import { CitySplash } from '@/components/CitySplash';
+import { featureOn, loadLook, resetLook, useLook } from '@/lib/look';
 import { HexClusterIcon } from '@/components/HexClusterIcon';
 import { NoticeDot } from '@/components/NoticeDot';
 import { useAuth } from '@/lib/auth';
@@ -13,14 +16,21 @@ import { isLiveNotifyOn, startLiveNotify } from '@/lib/liveNotify';
 import { clearEventReminders, syncEventReminders } from '@/lib/localNotify';
 import { refreshNotices, resetNotices, useNotices } from '@/lib/notices';
 import { usePermissionsDone } from '@/lib/onboarding';
-import { tabFocused } from '@/lib/tabReset';
+import { currentTab, tabFocused } from '@/lib/tabReset';
+import { readStartTab, START_TABS } from '@/lib/startTab';
+import { useTourRunning } from '@/lib/tour';
 import { pollToasts, resetToastClock } from '@/lib/topToast';
+import { listenPushTaps, registerPush } from '@/lib/push';
+import { watchUpdates } from '@/lib/updates';
 import { callRpc } from '@/lib/rpc';
 import { colors, fonts, isLight } from '@/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 type DotKey = 'profile' | 'events' | 'map';
+
+/** Açılış sekmesine bu açılışta geçildi mi (bir kez) */
+let startTabApplied = false;
 
 /** Anlık bildirim bağlantısı yokken sunucuya “yeni bildirim var mı?” diye sorma aralığı */
 const TOAST_POLL_MS = 8_000;
@@ -89,6 +99,16 @@ export default function TabsLayout() {
   // Bekleyen üye (haritalarımızın dışından girdi, şehri yok): yalnızca Harita (ziyaret) ve Profil sekmeleri görünür
   const noCity = city.loaded && !city.my;
   const hideForWaiting = noCity ? { href: null } : null;
+  // Yönetim panelinden kapatılan Akış sekmesi gizlenir
+  const look = useLook();
+  const hideFeed = noCity || !featureOn(look.features, 'akis') ? { href: null } : null;
+  // Görünüm (özellikler, kampanya şeridi, açılış görseli, özel gün teması): açılışta ve şehir değişince okunur
+  const lookCity = city.content;
+  useEffect(() => {
+    if (!userId) return;
+    void loadLook(lookCity);
+  }, [userId, lookCity]);
+  useEffect(() => () => resetLook(), []);
   const tourReady = permissionsDone && !!account && !account.needs_recovery && city.loaded && !!city.my;
 
   // Çevrimiçi sinyali: uygulama açıkken 5 dakikada bir ve uygulamaya dönünce (yalnızca moderatör görür)
@@ -104,6 +124,35 @@ export default function TabsLayout() {
     });
     return () => {
       clearInterval(t);
+      sub.remove();
+    };
+  }, [userId]);
+
+  // Açılış sekmesi (Profil > Tercihler): uygulama açılınca bir kez, eğitim bittiyse o sekmeye geçilir
+  const tourRunning = useTourRunning();
+  const tourShown = tourReady && !!profile?.id && profile.role !== 'sponsor';
+  useEffect(() => {
+    if (startTabApplied || !userId || !city.loaded || noCity) return;
+    if (tourShown && tourRunning) return;
+    startTabApplied = true;
+    const pick = START_TABS.find((t) => t.key === readStartTab());
+    if (pick && pick.key !== 'index' && currentTab() === 'index') router.navigate(pick.path);
+  }, [userId, city.loaded, noCity, tourShown, tourRunning]);
+
+  // Uzaktan güncelleme: yeni sürüm hazırsa sorulur (mağazadan indirmeden)
+  useEffect(() => watchUpdates(), []);
+
+  // Uzaktan bildirim: telefonun bildirim adresi sunucuya yazılır (izin varsa); bildirime dokununca ilgili ekran açılır.
+  // Uygulamaya dönünce yeniden denenir (izin sonradan telefon ayarlarından verilmiş olabilir).
+  useEffect(() => {
+    if (!userId) return;
+    void registerPush();
+    const stop = listenPushTaps();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void registerPush();
+    });
+    return () => {
+      stop();
       sub.remove();
     };
   }, [userId]);
@@ -203,7 +252,7 @@ export default function TabsLayout() {
     >
       <Tabs.Screen
         name="akis"
-        options={{ title: 'Akış', tabBarIcon: tabIcon('chatbubbles', 'chatbubbles-outline'), ...hideForWaiting }}
+        options={{ title: 'Akış', tabBarIcon: tabIcon('chatbubbles', 'chatbubbles-outline'), ...hideFeed }}
       />
       <Tabs.Screen
         name="events"
@@ -228,6 +277,10 @@ export default function TabsLayout() {
       />
     </Tabs>
       {showTour && profile ? <AppTour key={profile.id} userId={profile.id} tabBarHeight={58 + bottom} /> : null}
+      {/* Şehir açılış görseli (yönetim panelinden): uygulama açılınca bir kez, eğitim sırasında değil */}
+      {!(showTour && tourRunning) ? <CitySplash /> : null}
+      {/* Eğitimden sonra: sekme ilk açıldığında kısa ipuçları */}
+      {showTour && profile ? <TabTips key={`tips-${profile.id}`} userId={profile.id} tabBarHeight={58 + bottom} /> : null}
     </View>
   );
 }

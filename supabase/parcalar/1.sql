@@ -3221,6 +3221,7 @@ declare
   v_no int := 0;
   m record;
 begin
+  perform public._require_feature('akis');
   v := public._require_writer('post_requires_premium');
   -- Akış şehre özeldir: şehrini seçmeyen yazamaz; gönderi yazanın şehrine (petek gönderisi peteğin şehrine) yazılır
   if public._city_of(v.id) is null then raise exception 'city_required'; end if;
@@ -3331,6 +3332,7 @@ declare
   v_body text := btrim(coalesce(p_body, ''));
   v_id uuid;
 begin
+  perform public._require_feature('akis');
   perform public._require_city();
   v := public._require_writer(null); -- yorum yazmak herkese açık (susturulmamış olmak yeter)
   if char_length(v_body) not between 1 and 300 then raise exception 'invalid_body'; end if;
@@ -3885,6 +3887,8 @@ begin
   if v_room.game_type = 'quiz' then raise exception 'game_not_available'; end if;
   -- Ziyaretçi (başka şehrin odası) ve bekleyen üye (şehri yok) yalnızca etkinlik oyununa girer; oyundan puan almaz
   -- (puan kuralı oyun bitişinde). Uzaktan odaya şehri olmayan giremez.
+  -- Yönetim panelinden kapatılan oyun türüne girilmez
+  perform public._require_feature(case when v_room.remote then 'uzaktan' else 'yan_yana' end);
   if v.role <> 'admin' then
     if v_room.remote then
       if public._city_of(v.id) is null then raise exception 'city_required'; end if;
@@ -3993,6 +3997,7 @@ returns uuid language plpgsql security definer set search_path = public as $$
 declare
   v_code text;
 begin
+  perform public._require_feature('uzaktan');
   perform public._require_city();
   perform public._require_user();
   select c.code into v_code
@@ -4119,6 +4124,7 @@ declare
   v_premium boolean;
   v_limit int;
 begin
+  perform public._require_feature('etkinlik_acma');
   perform public._require_city();
   v := public._require_writer(null);
   v_premium := v.premium_until is not null and v.premium_until > now();
@@ -4540,6 +4546,7 @@ declare
   v_need int := greatest(1, public.setting_int('pts_event_min_attendees', 4));
   a record;
 begin
+  perform public._require_feature('yan_yana');
   perform public._require_city();
   v := public._require_writer(null);
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;

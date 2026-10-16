@@ -1,0 +1,69 @@
+name: Uygulama güncellemesini gönder
+
+# app/ klasöründe değişiklik gönderilince yeni sürüm (EAS Update) telefonlara gider.
+# Gerekenler (bir kez): app.json'da EAS proje kimliği (extra.eas.projectId) ve GitHub'da gizli anahtarlar:
+#   EXPO_TOKEN, EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY
+#   (isteğe bağlı) EXPO_PUBLIC_REVENUECAT_IOS_KEY, EXPO_PUBLIC_REVENUECAT_ANDROID_KEY
+# Bunlar yoksa iş akışı hata vermeden atlanır.
+
+on:
+  push:
+    branches: [claude/kind-goodall-dy5z7y]
+    paths:
+      - app/**
+      - .github/workflows/uygulama-guncelleme.yml
+  workflow_dispatch:
+
+concurrency:
+  group: uygulama-guncelleme
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gonder:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Hazır mı
+        id: hazir
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          SB_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+        run: |
+          PID=$(node -e "const a=require('./app.json');process.stdout.write((a.expo.extra&&a.expo.extra.eas&&a.expo.extra.eas.projectId)||'')")
+          if [ -z "$EXPO_TOKEN" ] || [ -z "$SB_URL" ] || [ -z "$PID" ]; then
+            echo "::notice::Uzaktan güncelleme henüz kurulmadı (EXPO_TOKEN, EXPO_PUBLIC_SUPABASE_URL ya da EAS proje kimliği eksik). Atlandı."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.hazir.outputs.ok == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Paketleri kur
+        if: steps.hazir.outputs.ok == 'true'
+        run: npm ci --no-audit --no-fund
+
+      - name: Güncellemeyi gönder
+        if: steps.hazir.outputs.ok == 'true'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          EXPO_PUBLIC_REVENUECAT_IOS_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_IOS_KEY }}
+          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
+          MESAJ: ${{ github.event.head_commit.message }}
+        run: |
+          npx --yes eas-cli@latest update --branch production --message "$(printf '%s' "${MESAJ:-Güncelleme}" | head -c 200)" --non-interactive

@@ -2392,6 +2392,7 @@ declare
   v_pts int;
   a record;
 begin
+  perform public._require_feature('hazine');
   perform public._require_city();
   v := public._require_user();
   if v.role <> 'user' then raise exception 'forbidden'; end if;
@@ -3359,6 +3360,7 @@ declare
   v_limit int := greatest(1, public.setting_int('quiz_daily_games', 25));
   v_min_wait int := least(30, greatest(0, public.setting_int('quiz_search_min_seconds', 10)));
 begin
+  perform public._require_feature('bilgi_yarismasi');
   perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
@@ -4155,6 +4157,7 @@ declare
   v_orders jsonb;
   v_id uuid;
 begin
+  perform public._require_feature('bilgi_yarismasi');
   perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
@@ -5144,6 +5147,7 @@ declare
   v_id uuid;
   i int;
 begin
+  perform public._require_feature('bilgi_yarismasi');
   perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
@@ -5193,6 +5197,7 @@ declare
   v_color text;
   v_fails int;
 begin
+  perform public._require_feature('bilgi_yarismasi');
   perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
@@ -6065,6 +6070,7 @@ declare
   v_n1 text := left(btrim(regexp_replace(coalesce(p_name1, ''), '\s+', ' ', 'g')), 14);
   v_n2 text := left(btrim(regexp_replace(coalesce(p_name2, ''), '\s+', ' ', 'g')), 14);
 begin
+  perform public._require_feature('bilgi_yarismasi');
   perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
@@ -6589,6 +6595,7 @@ declare
   v_week date := public.current_alias_week();
   t public.dm_threads;
 begin
+  perform public._require_feature('mesajlar');
   perform public._require_city();
   v := public._require_writer(null);
   if v.role::text <> 'user' then raise exception 'dm_not_allowed'; end if;
@@ -6734,6 +6741,7 @@ declare
   v_other_read timestamptz;
   v_id uuid;
 begin
+  perform public._require_feature('mesajlar');
   perform public._require_city();
   v := public._require_writer(null);
   select * into t from public.dm_threads where id = p_thread and (user_a = v.id or user_b = v.id) for update;

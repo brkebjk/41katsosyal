@@ -7,9 +7,11 @@ import { ApprovalsPage } from './Approvals';
 import { BackupPage } from './Backup';
 import { CellNamesPage } from './CellNames';
 import { CloseRequestsPage } from './CloseRequests';
+import { ErrorsPage } from './Errors';
 import { EventsPage } from './Events';
 import { FeedPage } from './Feed';
 import { LeadersPage } from './Leaders';
+import { LookPage } from './Look';
 import { LogPage } from './Log';
 import { MembersPage } from './Members';
 import { ModMessagesPage } from './ModMessages';
@@ -50,7 +52,9 @@ export type Page =
   | 'log'
   | 'traffic'
   | 'retention'
-  | 'backup';
+  | 'backup'
+  | 'look'
+  | 'errors';
 
 /** Menü: konuya göre gruplanmış bölümler */
 export const NAV_GROUPS: { title: string; items: { value: Page; label: string }[] }[] = [
@@ -101,6 +105,8 @@ export const NAV_GROUPS: { title: string; items: { value: Page; label: string }[
   {
     title: 'Sistem',
     items: [
+      { value: 'look', label: 'Görünüm' },
+      { value: 'errors', label: 'Hatalar' },
       { value: 'settings', label: 'Ayarlar' },
       { value: 'texts', label: 'Uygulama metinleri' },
       { value: 'uitexts', label: 'Yazı düzeltmeleri' },
@@ -174,5 +180,9 @@ export function renderPage(page: Page, p: PageProps): ReactNode {
       return <RetentionPage onNotice={p.onNotice} onGo={p.onGo} />;
     case 'backup':
       return <BackupPage onNotice={p.onNotice} />;
+    case 'look':
+      return <LookPage onNotice={p.onNotice} />;
+    case 'errors':
+      return <ErrorsPage onNotice={p.onNotice} />;
   }
 }

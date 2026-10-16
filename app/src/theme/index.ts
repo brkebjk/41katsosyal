@@ -92,7 +92,65 @@ const lightColors: typeof darkColors = {
   venue: '#FF9F6B',
 };
 
-export const colors: typeof darkColors = isLight ? lightColors : darkColors;
+// Özel gün teması (yönetim panelinden): ana renk, ikinci vurgu ve dikkat rengi geçici olarak değişir. Sunucudan gelen tema
+// telefonda saklanır ve bir sonraki açılışta, ekranlar çizilmeden önce uygulanır. Tarih aralığı dışındaysa uygulanmaz.
+const LOOK_THEME_KEY = 'peoplehere_look_theme';
+const HEX = /^#[0-9A-Fa-f]{6}$/;
+
+type LookTheme = { primary?: string; accent?: string; highlight?: string; from?: string; to?: string };
+
+function readLookTheme(): LookTheme | null {
+  try {
+    const v = SecureStore.getItem(LOOK_THEME_KEY);
+    if (!v) return null;
+    const t = JSON.parse(v) as LookTheme;
+    const now = Date.now();
+    if (t.from && Number.isFinite(Date.parse(t.from)) && now < Date.parse(t.from)) return null;
+    if (t.to && Number.isFinite(Date.parse(t.to)) && now > Date.parse(t.to)) return null;
+    return t;
+  } catch {
+    return null;
+  }
+}
+
+/** Sunucudan gelen özel gün temasını saklar (bir sonraki açılışta uygulanır). Boş = tema kapalı. */
+export function saveLookTheme(raw: Record<string, unknown>): void {
+  const t: LookTheme = {};
+  for (const k of ['primary', 'accent', 'highlight'] as const) {
+    const v = raw[k];
+    if (typeof v === 'string' && HEX.test(v)) t[k] = v;
+  }
+  if (typeof raw.from === 'string') t.from = raw.from;
+  if (typeof raw.to === 'string') t.to = raw.to;
+  try {
+    if (!t.primary && !t.accent && !t.highlight) SecureStore.deleteItemAsync(LOOK_THEME_KEY).catch(() => {});
+    else SecureStore.setItem(LOOK_THEME_KEY, JSON.stringify(t));
+  } catch {
+    // saklanamazsa tema uygulanmaz
+  }
+}
+
+/** Ana rengin üstündeki yazı: açık renk zeminde koyu, koyu zeminde beyaz */
+function textOn(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? '#04211F' : '#FFFFFF';
+}
+
+function withLook(base: typeof darkColors): typeof darkColors {
+  const t = readLookTheme();
+  if (!t) return base;
+  return {
+    ...base,
+    ...(t.primary ? { primary: t.primary, primaryText: textOn(t.primary) } : null),
+    ...(t.accent ? { accent: t.accent } : null),
+    ...(t.highlight ? { highlight: t.highlight } : null),
+  };
+}
+
+export const colors: typeof darkColors = withLook(isLight ? lightColors : darkColors);
 
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 

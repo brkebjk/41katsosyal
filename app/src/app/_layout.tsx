@@ -2,7 +2,7 @@ import { Montserrat_600SemiBold } from '@expo-google-fonts/montserrat/600SemiBol
 import { Montserrat_800ExtraBold } from '@expo-google-fonts/montserrat/800ExtraBold';
 import { Montserrat_900Black } from '@expo-google-fonts/montserrat/900Black';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import { Stack, usePathname, type ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { View } from 'react-native';
@@ -18,9 +18,26 @@ import { TextEditHost } from '@/components/TextEditHost';
 import { TopToastHost } from '@/components/TopToastHost';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { loadCity, resetCity, setCityAdmin, useCity } from '@/lib/city';
+import { installCrashReporting, reportError, setCrashScreen } from '@/lib/crash';
 import { usePermissionsDone } from '@/lib/onboarding';
 import { resumeOnStart } from '@/lib/presence';
 import { colors, isLight } from '@/theme';
+
+// Çökme takibi: yakalanmamış hatalar (yalnızca hatanın yeri) sunucuya bildirilir
+installCrashReporting();
+
+/** Bir ekran çizilirken hata olursa: uygulama kapanmaz, hata bildirilir ve tekrar denenebilir */
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  useEffect(() => {
+    reportError(error, true);
+  }, [error]);
+  return (
+    <FullScreenState
+      message="Bir şeyler ters gitti. Hatanın yeri bize iletildi; tekrar deneyebilirsin."
+      actions={[{ label: 'Tekrar dene', onPress: () => void retry() }]}
+    />
+  );
+}
 
 export default function RootLayout() {
   // Marka yazı tipi yüklenirken kısa bir bekleme; yüklenemese bile uygulama açılır.
@@ -49,6 +66,11 @@ export default function RootLayout() {
  */
 function RootNavigator() {
   const { loading, isLoggedIn, profile, profileError, retryProfile, signOut, account, refreshAccount } = useAuth();
+  // Hata olursa hangi ekranda olduğu bilinsin (yalnızca ekran adı)
+  const pathname = usePathname();
+  useEffect(() => {
+    setCrashScreen(pathname);
+  }, [pathname]);
 
   // Uygulama (yeniden) açılınca: uzaktan oyundan çıkarılır; yan yana oyundaysa odaya geri döner ve sorulur.
   useEffect(() => {

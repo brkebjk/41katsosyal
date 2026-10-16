@@ -31,6 +31,7 @@ import { Screen } from '@/components/Screen';
 import { SectionHeader } from '@/components/SectionHeader';
 import { TitleBadge } from '@/components/TitleBadge';
 import { useAuth } from '@/lib/auth';
+import { featureOn, useLook } from '@/lib/look';
 import { cityIn, useCity } from '@/lib/city';
 import { areaOf } from '@/lib/hex';
 import { confirmAction, notify } from '@/lib/dialog';
@@ -118,11 +119,12 @@ export default function EventsScreenTab() {
 
 function EventsScreen() {
   const { profile } = useAuth();
+  const look = useLook();
   const { width } = useWindowDimensions();
   // null = kategori kutuları, 'all' = Keşfet (tüm etkinlikler), diğerleri = bir kategori
   const [category, setCategory] = useState<EventCategory | 'all' | 'team' | null>(null);
   // Haritadan “Etkinliği gör”: yalnızca o etkinlik açık (genişletilmiş) gösterilir
-  const params = useLocalSearchParams<{ ev?: string; t?: string }>();
+  const params = useLocalSearchParams<{ ev?: string; t?: string; create?: string }>();
   const evKey = params.ev ? `${params.ev},${params.t ?? ''}` : null;
   const [appliedEv, setAppliedEv] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
@@ -131,6 +133,17 @@ function EventsScreen() {
     if (evKey && params.ev && !consumedEventKeys.has(evKey)) {
       consumedEventKeys.add(evKey);
       setFocusId(params.ev);
+    }
+  }
+  // Haritadaki “Şehrin şu an sessiz” kartından: etkinlik oluşturma penceresi açılır (bir kez)
+  const createKey = params.create ? `${params.create},${params.t ?? ''}` : null;
+  const [appliedCreate, setAppliedCreate] = useState<string | null>(null);
+  const [createAsked, setCreateAsked] = useState(false);
+  if (createKey !== appliedCreate) {
+    setAppliedCreate(createKey);
+    if (createKey && !consumedEventKeys.has(`c:${createKey}`)) {
+      consumedEventKeys.add(`c:${createKey}`);
+      setCreateAsked(true);
     }
   }
   const [myOpen, setMyOpen] = useState(false);
@@ -365,6 +378,18 @@ function EventsScreen() {
   const roomActions = useRoomActions({ isModerator });
   const canComment = !isFuture(profile?.muted_until);
   const limitReached = quota !== null && quota.events_limit !== null && quota.events_used >= quota.events_limit;
+  // Yönetim panelinden etkinlik açma kapatıldıysa Oluştur kapalıdır
+  const createOn = featureOn(look.features, 'etkinlik_acma');
+  const canCreate = createOn && !limitReached && quota !== null;
+  function openCreate() {
+    setFormKey((k) => k + 1);
+    setFormOpen(true);
+  }
+  // İstenen oluşturma penceresi, hak bilgisi gelince açılır (hak yoksa açılmaz; düğme zaten kapalıdır)
+  if (createAsked && quota !== null) {
+    setCreateAsked(false);
+    if (!limitReached) openCreate();
+  }
 
   const focused = focusId ? (events.find((e) => e.id === focusId) ?? null) : null;
   const visibleEvents = focused
@@ -469,12 +494,12 @@ function EventsScreen() {
         <TourTarget tourId="events-actions" style={styles.topButtons}>
           <GameActionButton
             label="Oluştur"
-            sub={limitReached ? 'Bu ayki hakkın bitti' : 'Etkinliğini aç'}
+            sub={!createOn ? 'Şu an kapalı' : limitReached ? 'Bu ayki hakkın bitti' : 'Etkinliğini aç'}
             icon="add-circle"
             colors={['#FF7A59', '#E5533D']}
             edge="#A8361F"
             art={gameButtonImages.create}
-            disabled={limitReached || quota === null}
+            disabled={!createOn || limitReached || quota === null}
             onPress={() => {
               setFormKey((k) => k + 1);
               setFormOpen(true);
@@ -763,12 +788,15 @@ function EventsScreen() {
       ) : events.length === 0 ? (
         <View style={styles.stateBox}>
           <Ionicons name="calendar-outline" size={42} color={colors.textMuted} />
-          <Text style={styles.stateTitle}>Yaklaşan etkinlik yok</Text>
+          <Text style={styles.stateTitle}>Şehrinde henüz yaklaşan etkinlik yok</Text>
           <Text style={styles.stateText}>
             {isBackendReady
-              ? 'Yeni bir buluşma eklendiğinde burada görünecek.'
+              ? 'İlk buluşmayı sen başlat: bir kahve, oyun gecesi ya da yürüyüş. Açtığın etkinlik haritada ve burada herkese görünür.'
               : 'Sunucu bağlantısı kurulunca etkinlikler burada listelenecek.'}
           </Text>
+          {isBackendReady && canCreate ? (
+            <PrimaryButton label="İlk etkinliği sen aç" onPress={openCreate} testID="events-empty-create" />
+          ) : null}
         </View>
       ) : visibleEvents.length === 0 ? (
         <View style={styles.stateBox}>
@@ -780,7 +808,10 @@ function EventsScreen() {
           <Text style={styles.stateTitle}>
             {category === 'team' ? 'Şu an ekip arayan yok' : 'Bu kategoride etkinlik yok'}
           </Text>
-          <Text style={styles.stateText}>Başka bir kategoriye göz at ya da yeni bir etkinlik oluştur.</Text>
+          <Text style={styles.stateText}>Başka bir kategoriye göz at ya da bu türde ilk etkinliği sen aç.</Text>
+          {category !== 'team' && canCreate ? (
+            <PrimaryButton label="Etkinlik oluştur" variant="ghost" onPress={openCreate} testID="events-cat-create" />
+          ) : null}
         </View>
       ) : (
         <>

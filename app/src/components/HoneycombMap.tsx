@@ -252,6 +252,31 @@ function ScaleBar({ scale, bottom }: { scale: number; bottom: number }) {
   );
 }
 
+const AnimatedPath = Animated.createAnimatedComponent(Path);
+/** Hareketli bölgelerin parlaması: bir yarım tur (ms) */
+const GLOW_HALF_MS = 1400;
+
+/**
+ * Şehrin hareketli bölgeleri (2. ve 3. seviye petekler) hafifçe parlar: üstlerinde beyaz bir katman yavaşça belirip
+ * kaybolur. Harita kaydırılırken durur (kasmasın).
+ */
+const GlowLayer = memo(function GlowLayer({ d, paused }: { d: string; paused: boolean }) {
+  const [op] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    if (!d || paused) {
+      op.setValue(0);
+      return;
+    }
+    const step = (to: number) =>
+      Animated.timing(op, { toValue: to, duration: GLOW_HALF_MS, easing: Easing.inOut(Easing.sin), useNativeDriver: false });
+    const loop = Animated.loop(Animated.sequence([step(0.32), step(0)]));
+    loop.start();
+    return () => loop.stop();
+  }, [d, paused, op]);
+  if (!d) return null;
+  return <AnimatedPath d={d} fill="#FFFFFF" opacity={op} />;
+});
+
 /** Renkli petekler. Yalnızca veri yenilenince değişir. */
 const LevelLayers = memo(function LevelLayers({ levelPaths }: { levelPaths: [string, string, string] }) {
   return (
@@ -393,6 +418,25 @@ export function HoneycombMap({
     [live],
   );
 
+  // Açılış: harita hafifçe büyüyerek belirir (her şehir değişiminde bir kez)
+  const [intro] = useState(() => new Animated.Value(0));
+  const introStarted = useRef(false);
+  const hasView = view !== null;
+  useEffect(() => {
+    if (!hasView || introStarted.current) return;
+    introStarted.current = true;
+    Animated.timing(intro, {
+      toValue: 1,
+      duration: 650,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [hasView, intro]);
+  const introStyle = {
+    opacity: intro.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0, 1, 1] }),
+    transform: [{ scale: intro.interpolate({ inputRange: [0, 1], outputRange: [1.07, 1] }) }],
+  };
+
   const levelPaths = useMemo<[string, string, string]>(() => {
     const by: Cell[][] = [[], [], []];
     for (const d of density) {
@@ -402,6 +446,8 @@ export function HoneycombMap({
     }
     return [hexPath(by[0], HEX_INSET), hexPath(by[1], HEX_INSET), hexPath(by[2], HEX_INSET)];
   }, [density, g]);
+  // Parlayan katman: 2. ve 3. seviye (hareketli) petekler
+  const glowPath = levelPaths[1] + levelPaths[2];
 
   // Çerçeveler: yalnızca etkinlik = turkuaz, yalnızca oyun = mor, ikisi birden = sol yarı mor + sağ yarı turkuaz
   const frames = useMemo(() => {
@@ -704,6 +750,7 @@ export function HoneycombMap({
   return (
     <View style={styles.wrap} onLayout={onLayout} testID="honeycomb-map">
       {view ? (
+        <Animated.View pointerEvents="none" style={[styles.introLayer, introStyle]}>
         <Svg width={size.w} height={size.h} style={styles.svg}>
           <G transform={`translate(${view.tx} ${view.ty}) scale(${view.scale})`}>
             {showGrid ? null : <OutlineFill d={g.fillPath} />}
@@ -711,6 +758,7 @@ export function HoneycombMap({
               <TileLayer key={t.key} d={t.path} />
             ))}
             {plain ? null : <LevelLayers levelPaths={levelPaths} />}
+            {plain ? null : <GlowLayer d={glowPath} paused={dragging} />}
             {/* Ana yollar (otoyol, D-yolu): petek renklerinin üstünde, işaretlerin altında silüet */}
             {roadTiles.map((t) => (
               <RoadLayer key={t.key} d={t.path} w={px(2.6)} />
@@ -1022,6 +1070,7 @@ export function HoneycombMap({
             );
           })}
         </Svg>
+        </Animated.View>
       ) : null}
       <View style={[StyleSheet.absoluteFill, webTouch]} {...responder.panHandlers} testID="honeycomb-touch" />
       {view && !plain && imageMarks && imageMarks.length > 0 ? (
@@ -1249,6 +1298,7 @@ const styles = StyleSheet.create({
     borderColor: isLight ? '#0B1F2E' : '#F4F6FB',
   },
   svg: { position: 'absolute', top: 0, left: 0 },
+  introLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   buttons: { position: 'absolute', right: 8, gap: 6 },
   mapButton: {
     width: 38,

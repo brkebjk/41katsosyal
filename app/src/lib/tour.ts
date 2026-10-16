@@ -58,3 +58,20 @@ export function useTourRect(id: string | null): TourRect | null {
 export function clearTourRect(id: string): void {
   if (rects.delete(id)) emit();
 }
+
+let running = true;
+
+/** Eğitim sürüyor mu (sürerken ya da henüz bakılmadıysa sekme ipuçları gösterilmez) */
+export function setTourRunning(on: boolean): void {
+  if (running === on) return;
+  running = on;
+  emit();
+}
+
+export function useTourRunning(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => running,
+    () => running,
+  );
+}

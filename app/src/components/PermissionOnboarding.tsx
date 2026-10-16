@@ -10,6 +10,7 @@ import { Text } from '@/components/AppText';
 import { NotificationPrefsForm } from '@/components/NotificationPrefsForm';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { askNotificationPermission, syncEventReminders } from '@/lib/localNotify';
+import { registerPush } from '@/lib/push';
 import { ALL_ON, getNotifyPrefs, saveNotifyPrefs, type NotifyPrefs } from '@/lib/notifyPrefs';
 import { setPermissionsDone } from '@/lib/onboarding';
 import {
@@ -151,7 +152,7 @@ function NotifyStep({ total, onNext }: { total: number; onNext: () => void }) {
       return setError(res.error);
     }
     if (askOs) {
-      await askNotificationPermission();
+      if (await askNotificationPermission()) void registerPush(true);
       void syncEventReminders();
     }
     setBusy(false);

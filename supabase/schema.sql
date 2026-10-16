@@ -3218,6 +3218,7 @@ declare
   v_no int := 0;
   m record;
 begin
+  perform public._require_feature('akis');
   v := public._require_writer('post_requires_premium');
   -- Akış şehre özeldir: şehrini seçmeyen yazamaz; gönderi yazanın şehrine (petek gönderisi peteğin şehrine) yazılır
   if public._city_of(v.id) is null then raise exception 'city_required'; end if;
@@ -3328,6 +3329,7 @@ declare
   v_body text := btrim(coalesce(p_body, ''));
   v_id uuid;
 begin
+  perform public._require_feature('akis');
   perform public._require_city();
   v := public._require_writer(null); -- yorum yazmak herkese açık (susturulmamış olmak yeter)
   if char_length(v_body) not between 1 and 300 then raise exception 'invalid_body'; end if;
@@ -3882,6 +3884,8 @@ begin
   if v_room.game_type = 'quiz' then raise exception 'game_not_available'; end if;
   -- Ziyaretçi (başka şehrin odası) ve bekleyen üye (şehri yok) yalnızca etkinlik oyununa girer; oyundan puan almaz
   -- (puan kuralı oyun bitişinde). Uzaktan odaya şehri olmayan giremez.
+  -- Yönetim panelinden kapatılan oyun türüne girilmez
+  perform public._require_feature(case when v_room.remote then 'uzaktan' else 'yan_yana' end);
   if v.role <> 'admin' then
     if v_room.remote then
       if public._city_of(v.id) is null then raise exception 'city_required'; end if;
@@ -3990,6 +3994,7 @@ returns uuid language plpgsql security definer set search_path = public as $$
 declare
   v_code text;
 begin
+  perform public._require_feature('uzaktan');
   perform public._require_city();
   perform public._require_user();
   select c.code into v_code
@@ -4116,6 +4121,7 @@ declare
   v_premium boolean;
   v_limit int;
 begin
+  perform public._require_feature('etkinlik_acma');
   perform public._require_city();
   v := public._require_writer(null);
   v_premium := v.premium_until is not null and v.premium_until > now();
@@ -4537,6 +4543,7 @@ declare
   v_need int := greatest(1, public.setting_int('pts_event_min_attendees', 4));
   a record;
 begin
+  perform public._require_feature('yan_yana');
   perform public._require_city();
   v := public._require_writer(null);
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
@@ -9105,6 +9112,7 @@ declare
   v_pts int;
   a record;
 begin
+  perform public._require_feature('hazine');
   perform public._require_city();
   v := public._require_user();
   if v.role <> 'user' then raise exception 'forbidden'; end if;
@@ -10072,6 +10080,7 @@ declare
   v_limit int := greatest(1, public.setting_int('quiz_daily_games', 25));
   v_min_wait int := least(30, greatest(0, public.setting_int('quiz_search_min_seconds', 10)));
 begin
+  perform public._require_feature('bilgi_yarismasi');
   perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
@@ -10868,6 +10877,7 @@ declare
   v_orders jsonb;
   v_id uuid;
 begin
+  perform public._require_feature('bilgi_yarismasi');
   perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
@@ -11857,6 +11867,7 @@ declare
   v_id uuid;
   i int;
 begin
+  perform public._require_feature('bilgi_yarismasi');
   perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
@@ -11906,6 +11917,7 @@ declare
   v_color text;
   v_fails int;
 begin
+  perform public._require_feature('bilgi_yarismasi');
   perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
@@ -12778,6 +12790,7 @@ declare
   v_n1 text := left(btrim(regexp_replace(coalesce(p_name1, ''), '\s+', ' ', 'g')), 14);
   v_n2 text := left(btrim(regexp_replace(coalesce(p_name2, ''), '\s+', ' ', 'g')), 14);
 begin
+  perform public._require_feature('bilgi_yarismasi');
   perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
@@ -13302,6 +13315,7 @@ declare
   v_week date := public.current_alias_week();
   t public.dm_threads;
 begin
+  perform public._require_feature('mesajlar');
   perform public._require_city();
   v := public._require_writer(null);
   if v.role::text <> 'user' then raise exception 'dm_not_allowed'; end if;
@@ -13447,6 +13461,7 @@ declare
   v_other_read timestamptz;
   v_id uuid;
 begin
+  perform public._require_feature('mesajlar');
   perform public._require_city();
   v := public._require_writer(null);
   select * into t from public.dm_threads where id = p_thread and (user_a = v.id or user_b = v.id) for update;
@@ -17712,6 +17727,7 @@ declare
   v_fid uuid;
   v_n int;
 begin
+  perform public._require_feature('mesajlar');
   perform public._require_city();
   v := public._require_user();
   if char_length(q) not between 2 and 60 then raise exception 'dm_target_not_found'; end if;
@@ -21421,6 +21437,7 @@ declare
   v_room uuid;
   v_live uuid;
 begin
+  perform public._require_feature('uzaktan');
   perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
@@ -21447,6 +21464,7 @@ end $$;
 create or replace function public.sk_match_join()
 returns jsonb language plpgsql security definer set search_path = public as $$
 begin
+  perform public._require_feature('uzaktan');
   perform public._require_city();
   return public.match_join('shark_cage');
 end $$;
@@ -23496,5 +23514,328 @@ begin
   insert into public.app_settings (key, value, description)
   values ('peoplehere_v1', 'true', 'Tek seferlik: eski adın izleri temizlendi, giriş adresleri taşındı (değiştirme)');
 end $$;
+
+-- =====================================================================================================================
+-- Toparlanma paketi
+--   1) Çökme kayıtları: uygulamada bir hata olunca yalnızca hatanın yeri yazılır (üye kimliği, konum, cihaz kimliği yok)
+--   2) Uzaktan bildirim: bildirim kutusuna düşen bildirim, üye istediyse telefonuna da gider (içerik genel bir cümledir,
+--      kimin ne yazdığı gitmez). Tercihler: telefona bildirim, mesajlar, ekip davetleri (diğerleri önceki tercihler)
+--   3) Görünüm (yönetim panelinden): kampanya şeridi, özel gün teması, şehir açılış görseli, özellik aç/kapa
+-- =====================================================================================================================
+
+-- 1) Çökme kayıtları -------------------------------------------------------------------------------------------------
+create table if not exists public.client_errors (
+  fingerprint text primary key,
+  message text not null,
+  stack text not null default '',
+  screen text not null default '',
+  platform text not null default '',
+  app_version text not null default '',
+  fatal boolean not null default false,
+  count int not null default 1,
+  first_at timestamptz not null default now(),
+  last_at timestamptz not null default now()
+);
+alter table public.client_errors enable row level security;
+revoke all on public.client_errors from anon, authenticated;
+grant select, delete on public.client_errors to authenticated;
+drop policy if exists client_errors_admin_select on public.client_errors;
+create policy client_errors_admin_select on public.client_errors for select to authenticated using (public.is_admin());
+drop policy if exists client_errors_admin_delete on public.client_errors;
+create policy client_errors_admin_delete on public.client_errors for delete to authenticated using (public.is_admin());
+
+-- Hata metninden kişisel olabilecek parçalar silinir (e-posta, uzun sayılar, uygulama adresi dışındaki adresler)
+create or replace function public._scrub_error_text(p_text text, p_len int)
+returns text language sql immutable set search_path = public as $$
+  select left(
+    regexp_replace(
+      regexp_replace(
+        regexp_replace(coalesce(p_text, ''), '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', '<e-posta>', 'g'),
+        '[0-9]{6,}', '<sayı>', 'g'),
+      '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '<kimlik>', 'gi'),
+    p_len);
+$$;
+
+create or replace function public.report_client_error(
+  p_message text, p_stack text default '', p_screen text default '', p_platform text default '',
+  p_version text default '', p_fatal boolean default false)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_msg text := btrim(public._scrub_error_text(p_message, 300));
+  v_stack text := public._scrub_error_text(p_stack, 2000);
+  v_fp text;
+begin
+  if v_msg = '' then return; end if;
+  v_fp := md5(v_msg || '|' || split_part(v_stack, E'\n', 1) || '|' || split_part(v_stack, E'\n', 2) || '|'
+              || left(coalesce(p_platform, ''), 20));
+  -- Kayıt sınırı: en çok 2000 farklı hata tutulur (aynı hata yalnızca sayılır); 30 günden eski kayıtlar silinir
+  if random() < 0.05 then delete from public.client_errors where last_at < now() - interval '30 days'; end if;
+  if not exists (select 1 from public.client_errors where fingerprint = v_fp)
+     and (select count(*) from public.client_errors) >= 2000 then
+    return;
+  end if;
+  insert into public.client_errors (fingerprint, message, stack, screen, platform, app_version, fatal)
+  values (v_fp, v_msg, v_stack, left(public._scrub_error_text(p_screen, 120), 120), left(coalesce(p_platform, ''), 40),
+          left(coalesce(p_version, ''), 40), coalesce(p_fatal, false))
+  on conflict (fingerprint) do update
+     set count = least(public.client_errors.count + 1, 1000000000), last_at = now(),
+         screen = excluded.screen, app_version = excluded.app_version,
+         fatal = public.client_errors.fatal or excluded.fatal;
+end $$;
+revoke execute on function public._scrub_error_text(text, int) from public, anon, authenticated;
+revoke execute on function public.report_client_error(text, text, text, text, text, boolean) from public;
+grant execute on function public.report_client_error(text, text, text, text, text, boolean) to anon, authenticated;
+
+-- 2) Uzaktan bildirim -------------------------------------------------------------------------------------------------
+do $$ begin
+  create extension if not exists pg_net;
+exception when others then
+  raise warning 'pg_net kurulamadı: %. Telefona bildirim gönderilemez (Supabase > Database > Extensions > pg_net).', sqlerrm;
+end $$;
+
+create table if not exists public.push_tokens (
+  token text primary key check (char_length(token) between 10 and 300),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  platform text not null default '',
+  updated_at timestamptz not null default now()
+);
+create index if not exists push_tokens_user_idx on public.push_tokens (user_id);
+alter table public.push_tokens enable row level security;
+revoke all on public.push_tokens from anon, authenticated;
+
+alter table public.notification_prefs add column if not exists push boolean not null default true;
+alter table public.notification_prefs add column if not exists dm boolean not null default true;
+alter table public.notification_prefs add column if not exists team_invite boolean not null default true;
+
+create or replace function public._notif_on(p_user uuid, p_key text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((select case p_key
+                            when 'game_invite' then np.game_invite
+                            when 'special_events' then np.special_events
+                            when 'friend_request' then np.friend_request
+                            when 'mention' then np.mention
+                            when 'event_reminder' then np.event_reminder
+                            when 'push' then np.push
+                            when 'dm' then np.dm
+                            when 'team_invite' then np.team_invite
+                          end
+                     from public.notification_prefs np where np.user_id = p_user), true)
+     -- Kampanya / özel etkinlik bildirimleri için açık rıza da gerekir (Profil > Kişisel Verilerim)
+     and (p_key <> 'special_events'
+          or coalesce((select c.granted from public.user_consents c where c.user_id = p_user and c.key = 'marketing'), true));
+$$;
+
+create or replace function public.get_notification_prefs()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v public.profiles;
+begin
+  v := public._require_user();
+  return jsonb_build_object(
+    'game_invite', public._notif_on(v.id, 'game_invite'),
+    'special_events', public._notif_on(v.id, 'special_events'),
+    'friend_request', public._notif_on(v.id, 'friend_request'),
+    'mention', public._notif_on(v.id, 'mention'),
+    'event_reminder', public._notif_on(v.id, 'event_reminder'),
+    'push', public._notif_on(v.id, 'push'),
+    'dm', public._notif_on(v.id, 'dm'),
+    'team_invite', public._notif_on(v.id, 'team_invite'));
+end $$;
+
+create or replace function public.set_notification_prefs(p_prefs jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  k text;
+begin
+  v := public._require_user();
+  if p_prefs is null or jsonb_typeof(p_prefs) <> 'object' then raise exception 'invalid_prefs'; end if;
+  for k in select jsonb_object_keys(p_prefs) loop
+    if k not in ('game_invite', 'special_events', 'friend_request', 'mention', 'event_reminder', 'push', 'dm',
+                 'team_invite')
+       or jsonb_typeof(p_prefs -> k) <> 'boolean' then
+      raise exception 'invalid_prefs';
+    end if;
+  end loop;
+  insert into public.notification_prefs (user_id) values (v.id) on conflict (user_id) do nothing;
+  update public.notification_prefs np set
+    game_invite = coalesce((p_prefs ->> 'game_invite')::boolean, np.game_invite),
+    special_events = coalesce((p_prefs ->> 'special_events')::boolean, np.special_events),
+    friend_request = coalesce((p_prefs ->> 'friend_request')::boolean, np.friend_request),
+    mention = coalesce((p_prefs ->> 'mention')::boolean, np.mention),
+    event_reminder = coalesce((p_prefs ->> 'event_reminder')::boolean, np.event_reminder),
+    push = coalesce((p_prefs ->> 'push')::boolean, np.push),
+    dm = coalesce((p_prefs ->> 'dm')::boolean, np.dm),
+    team_invite = coalesce((p_prefs ->> 'team_invite')::boolean, np.team_invite),
+    updated_at = now()
+   where np.user_id = v.id;
+  return public.get_notification_prefs();
+end $$;
+
+-- Telefonun bildirim adresi (Expo): bir telefon tek üyeye bağlıdır; üye başına en çok 5 telefon
+create or replace function public.register_push_token(p_token text, p_platform text default '')
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+begin
+  v := public._require_user();
+  if p_token is null or p_token !~ '^Expo(nent)?PushToken\[[A-Za-z0-9_-]{10,200}\]$' then raise exception 'invalid_token'; end if;
+  insert into public.push_tokens (token, user_id, platform, updated_at)
+  values (p_token, v.id, left(coalesce(p_platform, ''), 20), now())
+  on conflict (token) do update set user_id = excluded.user_id, platform = excluded.platform, updated_at = now();
+  delete from public.push_tokens
+   where user_id = v.id
+     and token not in (select t.token from public.push_tokens t where t.user_id = v.id order by t.updated_at desc limit 5);
+end $$;
+
+create or replace function public.unregister_push_token(p_token text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  delete from public.push_tokens where token = p_token and user_id = auth.uid();
+end $$;
+
+-- Bildirim kutusuna yazılan her bildirim, üyenin tercihine göre telefonuna da gönderilir. Telefona giden yazı genel bir
+-- cümledir (kişi adı ya da mesaj içeriği gitmez). Gönderilemezse bildirim kaydı etkilenmez.
+create or replace function public._push_on_notification()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_tokens text[];
+  v_text text;
+  v_msgs jsonb;
+begin
+  if to_regproc('net.http_post') is null then return null; end if;
+  if not public._notif_on(new.user_id, 'push') then return null; end if;
+  if (new.kind = 'dm' and not public._notif_on(new.user_id, 'dm'))
+     or (new.kind = 'team_invite' and not public._notif_on(new.user_id, 'team_invite'))
+     or (new.kind = 'room_msg' and not public._notif_on(new.user_id, 'game_invite')) then
+    return null;
+  end if;
+  select array_agg(t.token) into v_tokens from public.push_tokens t where t.user_id = new.user_id;
+  if v_tokens is null then return null; end if;
+  v_text := case new.kind
+              when 'friend_request' then 'Yeni bir arkadaşlık isteğin var'
+              when 'game_invite' then 'Bir oyuna davet edildin'
+              when 'team_invite' then 'Bir etkinlik ekibine davet edildin'
+              when 'mention' then 'Akışta senden bahsedildi'
+              when 'dm' then 'Yeni bir mesajın var'
+              when 'room_msg' then 'Oyun odanda yeni bir mesaj var'
+              when 'admin_message' then 'Moderatörden bir mesajın var'
+              else 'Yeni bir bildirimin var' end;
+  select jsonb_agg(jsonb_build_object('to', tok, 'title', 'PeopleHere', 'body', v_text, 'sound', 'default',
+                                      'data', jsonb_build_object('url', '/?bell=' || new.id::text)))
+    into v_msgs from unnest(v_tokens) tok;
+  execute 'select net.http_post(url := $1, body := $2, headers := $3)'
+    using 'https://exp.host/--/api/v2/push/send', v_msgs,
+          '{"Content-Type": "application/json", "Accept": "application/json"}'::jsonb;
+  return null;
+exception when others then
+  return null;
+end $$;
+drop trigger if exists push_on_notification on public.notifications;
+create trigger push_on_notification after insert on public.notifications
+  for each row execute function public._push_on_notification();
+
+revoke execute on function public._push_on_notification() from public, anon, authenticated;
+revoke execute on function public.register_push_token(text, text) from public, anon;
+revoke execute on function public.unregister_push_token(text) from public, anon;
+grant execute on function public.register_push_token(text, text) to authenticated;
+grant execute on function public.unregister_push_token(text) to authenticated;
+
+-- 3) Görünüm ----------------------------------------------------------------------------------------------------------
+-- Özellik aç/kapa: kapalı özelliğe sunucu da izin vermez (moderatör deneyebilsin diye serbest). Ayar yoksa açıktır.
+insert into public.app_settings (key, value, description) values
+  ('feature_akis', 'true', 'Özellik: Akış (gönderi ve yorum yazma). false = kapalı'),
+  ('feature_etkinlik_acma', 'true', 'Özellik: üyelerin etkinlik açması. false = kapalı'),
+  ('feature_yan_yana', 'true', 'Özellik: yan yana oyunlar (etkinlik oyunları dahil). false = kapalı'),
+  ('feature_uzaktan', 'true', 'Özellik: uzaktan oyunlar (Köpekbalığı, Vampir–Köylü eşleştirme). false = kapalı'),
+  ('feature_bilgi_yarismasi', 'true', 'Özellik: Bilgi Yarışması. false = kapalı'),
+  ('feature_mesajlar', 'true', 'Özellik: özel mesajlar. false = kapalı'),
+  ('feature_hazine', 'true', 'Özellik: hazine avı. false = kapalı'),
+  ('look_theme', '{}', 'Özel gün teması: {"name","primary","accent","highlight","from","to"}; boş = kapalı'),
+  ('look_splash', '{}', 'Şehir açılış görselleri: {"kocaeli": "dosya yolu", ...} (app-look kutusu)')
+on conflict (key) do nothing;
+
+create or replace function public._feature_on(p_key text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((select (value #>> '{}')::boolean from public.app_settings where key = 'feature_' || p_key), true);
+$$;
+
+create or replace function public._require_feature(p_key text)
+returns void language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public._feature_on(p_key) and not public.is_admin() then raise exception 'feature_off'; end if;
+end $$;
+revoke execute on function public._feature_on(text) from public, anon, authenticated;
+revoke execute on function public._require_feature(text) from public, anon, authenticated;
+
+-- Kampanya / duyuru şeridi: Harita ve Akış'ın üstünde ince şerit. Şehir boşsa bütün şehirlerde görünür.
+create table if not exists public.promo_banners (
+  id uuid primary key default gen_random_uuid(),
+  text text not null check (char_length(btrim(text)) between 3 and 140),
+  link text check (link is null or link ~ '^/[A-Za-z0-9/_?=&.-]*$' or link ~ '^https://[^[:space:]]+$'),
+  color text not null default 'primary' check (color in ('primary', 'accent', 'highlight', 'event', 'game', 'venue')),
+  city text references public.cities (key),
+  starts_at timestamptz,
+  ends_at timestamptz,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+alter table public.promo_banners enable row level security;
+revoke all on public.promo_banners from anon, authenticated;
+grant select, insert, update, delete on public.promo_banners to authenticated;
+drop policy if exists promo_banners_admin on public.promo_banners;
+create policy promo_banners_admin on public.promo_banners for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+-- Açılış görselleri: herkese açık okunan "app-look" kutusu; yükleme ve silme yalnızca moderatöre açıktır
+do $$ begin
+  insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+  values ('app-look', 'app-look', true, 3145728, array['image/jpeg', 'image/png', 'image/webp'])
+  on conflict (id) do update
+     set public = true, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+  drop policy if exists app_look_admin_insert on storage.objects;
+  create policy app_look_admin_insert on storage.objects for insert to authenticated
+    with check (bucket_id = 'app-look' and public.is_admin());
+  drop policy if exists app_look_admin_update on storage.objects;
+  create policy app_look_admin_update on storage.objects for update to authenticated
+    using (bucket_id = 'app-look' and public.is_admin()) with check (bucket_id = 'app-look' and public.is_admin());
+  drop policy if exists app_look_admin_delete on storage.objects;
+  create policy app_look_admin_delete on storage.objects for delete to authenticated
+    using (bucket_id = 'app-look' and public.is_admin());
+exception when others then
+  raise warning 'app-look kutusu kurulamadı: %. Supabase > Storage bölümünden elle kurulmalı.', sqlerrm;
+end $$;
+
+-- Uygulamanın açılışta okuduğu görünüm: özellikler, özel gün teması (tarih aralığındaysa), şehrin kampanya şeritleri
+-- ve açılış görseli
+create or replace function public.app_look(p_city text default null)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  v_city text := coalesce(p_city, public._city_of(auth.uid()));
+  v_theme jsonb := coalesce((select value from public.app_settings where key = 'look_theme'), '{}'::jsonb);
+  v_splash jsonb := coalesce((select value from public.app_settings where key = 'look_splash'), '{}'::jsonb);
+begin
+  if auth.uid() is null then return '{}'::jsonb; end if;
+  if jsonb_typeof(v_theme) <> 'object'
+     or (v_theme ? 'from' and nullif(v_theme ->> 'from', '') is not null and now() < (v_theme ->> 'from')::timestamptz)
+     or (v_theme ? 'to' and nullif(v_theme ->> 'to', '') is not null and now() > (v_theme ->> 'to')::timestamptz) then
+    v_theme := '{}'::jsonb;
+  end if;
+  return jsonb_build_object(
+    'features', (select coalesce(jsonb_object_agg(substr(s.key, 9), coalesce((s.value #>> '{}')::boolean, true)), '{}'::jsonb)
+                   from public.app_settings s where s.key like 'feature\_%'),
+    'theme', v_theme,
+    'splash', case when jsonb_typeof(v_splash) = 'object' and v_city is not null then v_splash -> v_city end,
+    'banners', (select coalesce(jsonb_agg(jsonb_build_object('id', b.id, 'text', b.text, 'link', b.link, 'color', b.color)
+                                          order by b.created_at desc), '[]'::jsonb)
+                  from public.promo_banners b
+                 where b.active and (b.city is null or b.city = v_city)
+                   and (b.starts_at is null or b.starts_at <= now()) and (b.ends_at is null or b.ends_at > now())));
+exception when others then
+  -- Ayar bozuk yazıldıysa uygulama varsayılan görünümle açılır
+  return jsonb_build_object('features', '{}'::jsonb, 'theme', '{}'::jsonb, 'banners', '[]'::jsonb);
+end $$;
+revoke execute on function public.app_look(text) from public, anon;
+grant execute on function public.app_look(text) to authenticated;
+
 
 notify pgrst, 'reload schema';
