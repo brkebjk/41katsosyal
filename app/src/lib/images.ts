@@ -4,12 +4,9 @@
 // `assets/images/` klasöründe durur. Yeni bir görsel eklemek ya da değiştirmek için
 // dosyayı aynı adla klasöre koymak yeterlidir (adı değişirse buradaki `require` de değişir).
 
-import type { ImageSource } from 'expo-image';
+import type { ImageSourcePropType } from 'react-native';
 
 import type { EventCategory } from '@/lib/eventCategories';
-
-/** Görsel kaynağı: `require(...)` ile gelen dosya ya da adres. Görseller expo-image ile gösterilir. */
-export type ImageSourcePropType = number | ImageSource;
 
 export type ImageSpec = {
   /** Ekranda yer tutucuda gösterilen kısa ad */

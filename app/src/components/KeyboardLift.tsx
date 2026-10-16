@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Dimensions, Platform, View, type StyleProp, type ViewStyle, type ViewInstance } from 'react-native';
+import { Dimensions, Platform, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { liftFor, useKeyboardHeight, useKeyboardTop } from '@/lib/keyboard';
@@ -22,7 +22,7 @@ const EXTRA_GAP = 6;
 
 export function KeyboardLift({ style, children, inModal = false }: Props) {
   const keyboardTop = useKeyboardTop();
-  const ref = useRef<ViewInstance>(null);
+  const ref = useRef<View>(null);
   const [bottom, setBottom] = useState<number | null>(null);
 
   // Klavye açılınca kutunun ekrandaki alt kenarı ölçülür. Klavye ve ekran aynı anda değişebildiği için

@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Link, router } from 'expo-router';
 import { useRef, useState } from 'react';
-import { StyleSheet, View, type TextInputInstance } from 'react-native';
+import { StyleSheet, View, type TextInput } from 'react-native';
 
 import { Text } from '@/components/AppText';
 import { AuthShell } from '@/components/AuthShell';
@@ -18,7 +18,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const passwordRef = useRef<TextInputInstance>(null);
+  const passwordRef = useRef<TextInput>(null);
 
   async function onSubmit() {
     if (submitting) return;

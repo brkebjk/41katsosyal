@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
-import { View, type LayoutChangeEvent, type ViewProps, type ViewInstance } from 'react-native';
+import { View, type LayoutChangeEvent, type ViewProps } from 'react-native';
 
 import { clearTourRect, reportTourRect, useActiveTourId } from '@/lib/tour';
 
@@ -9,9 +9,9 @@ type Props = ViewProps & { tourId: string };
  * Uygulama eğitiminde anlatılacak alan. Sıradan bir View gibi davranır (aynı stil ve özellikler); eğitim bu alanı
  * anlatırken alan ekrandaki yerini ölçüp bildirir.
  */
-export const TourTarget = forwardRef<ViewInstance, Props>(function TourTarget({ tourId, onLayout, ...rest }, outer) {
-  const ref = useRef<ViewInstance>(null);
-  useImperativeHandle(outer, () => ref.current as ViewInstance);
+export const TourTarget = forwardRef<View, Props>(function TourTarget({ tourId, onLayout, ...rest }, outer) {
+  const ref = useRef<View>(null);
+  useImperativeHandle(outer, () => ref.current as View);
   const active = useActiveTourId() === tourId;
 
   const measure = () => {

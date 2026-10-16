@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Link, router } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, View, type TextInputInstance } from 'react-native';
+import { Pressable, StyleSheet, View, type TextInput } from 'react-native';
 
 import { Text } from '@/components/AppText';
 import { useIdentityEnabled } from '@/lib/identityFlag';
@@ -25,8 +25,8 @@ export default function RegisterScreen() {
   const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const usernameRef = useRef<TextInputInstance>(null);
-  const passwordRef = useRef<TextInputInstance>(null);
+  const usernameRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
 
   async function onSubmit() {
     if (submitting) return;

@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, type Href } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type ViewInstance } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/AppText';
@@ -176,7 +176,7 @@ export function AppTour({ userId, tabBarHeight }: { userId: string; tabBarHeight
   const [phase, setPhase] = useState<'checking' | 'steps' | 'welcome' | 'done'>('checking');
   const [index, setIndex] = useState(0);
   const step = STEPS[index];
-  const rootRef = useRef<ViewInstance>(null);
+  const rootRef = useRef<View>(null);
   const [origin, setOrigin] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const measured = useTourRect(phase === 'steps' && step.target !== TABBAR ? step.target : null);
 

@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as SecureStore from 'expo-secure-store';
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View, type ViewInstance } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/AppText';
 import { PrimaryButton } from '@/components/PrimaryButton';
@@ -48,7 +48,7 @@ export function TabTips({ userId, tabBarHeight }: { userId: string; tabBarHeight
   const [pos, setPos] = useState<{ tab: string | null; i: number }>({ tab: null, i: 0 });
   const ready = readyTab !== null && readyTab === tab;
   const index = pos.tab === tab ? pos.i : 0;
-  const rootRef = useRef<ViewInstance>(null);
+  const rootRef = useRef<View>(null);
   const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => onTabFocused((name) => setTab(name)), []);

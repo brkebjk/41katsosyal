@@ -5,7 +5,7 @@
 // Kaldırırken: dosyalardaki `import { Text } from '@/components/AppText'` satırları yeniden react-native'e çevrilir.
 
 import { forwardRef, useSyncExternalStore, type ReactNode } from 'react';
-import { Text as RNText, type TextInstance, type TextProps } from 'react-native';
+import { Text as RNText, type TextProps } from 'react-native';
 
 import { getTextEditState, openTextEditor, subscribeTextEdit } from '@/lib/textEdit';
 import { UI_STRINGS } from '@/lib/uiStrings.generated';
@@ -19,10 +19,10 @@ function plainString(children: ReactNode): string | null {
   return null;
 }
 
-export type Text = TextInstance;
+export type Text = RNText;
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- tür ve bileşen aynı adı taşır (react-native Text gibi)
-export const Text = forwardRef<TextInstance, TextProps>(function AppText(props, ref) {
+export const Text = forwardRef<RNText, TextProps>(function AppText(props, ref) {
   const st = useSyncExternalStore(subscribeTextEdit, getTextEditState, getTextEditState);
   if (!st.editing && st.overrides.size === 0) return <RNText ref={ref} {...props} />;
   const src = plainString(props.children);

@@ -1,21 +1,19 @@
-# Görev Test Rehberi – Expo SDK 58'e geçiş
+# Görev Test Rehberi – Expo SDK 57'ye geri dönüş
 
-Telefondaki Expo Go en son sürüme (SDK 58) güncellendiği için uygulama "Project is incompatible with this version of
-Expo Go" hatası veriyordu. Proje SDK 58'e yükseltildi. Uygulamanın görünüşünde ve kurallarında hiçbir değişiklik yok.
+App Store'daki Expo Go henüz SDK 57'yi açıyor. Proje yeniden SDK 57'ye alındı. Uygulamanın görünüşünde ve
+kurallarında hiçbir değişiklik yok.
 
-## A. Bilgisayarda güncelle
-1. `git pull origin claude/kind-goodall-dy5z7y`
-2. `app` klasöründeki **node_modules** klasörünü sil (eski paketler yenileriyle karışmasın).
-3. `cd app`, sonra `npm install`
-4. `npx expo start -c --tunnel` (tunnel'ın önünde iki tire var)
-5. Telefonda Expo Go'yu kapatıp aç ve QR kodu okut.
+## A. Bilgisayardaki projeyi düzelt
+Terminalden yanlışlıkla çalışan komut, bilgisayarındaki paketleri SDK 58'e çevirmiş olabilir. Önce onu geri al:
+1. Proje klasöründe: `git stash` (o komutun yaptığı değişiklikleri kenara koyar, hiçbir şey silinmez).
+2. `git pull origin claude/kind-goodall-dy5z7y`
+3. `app` klasöründeki **node_modules** klasörünü sil.
+4. `cd app`, sonra `npm install`
+5. `npx expo start -c --tunnel` (tunnel'ın önünde iki tire var)
+6. Terminal "Expo Go'yu güncelle", "upgrade" ya da "install" diye bir şey sorarsa **No (Hayır)** de.
+7. Telefonda Expo Go'yu kapatıp aç ve QR kodu okut.
 
-## B. Kontrol et
-1. Uygulama hatasız açılıyor ve **Harita** sekmesiyle başlıyor (Tercihler'de başka bir açılış sekmesi seçtiysen o sekmeyle).
-2. Giriş ve kayıt: şifre kutusuna geçiş (klavyedeki "ileri" tuşu) çalışıyor.
-3. Uygulama eğitimi ve sekme ipuçları doğru yeri çerçeveliyor.
-4. Mesajlarda, oyun sohbetinde (Köpekbalığı Kafesi, Vampir–Köylü) ve Bilgi Yarışması sohbetinde liste en alta kayıyor.
-5. Etkinlik açma penceresinde klavye açılınca yazı kutusu görünür kalıyor, saat seçici kayıyor.
-6. Avatarlar, oyun kutucukları, rol kartları ve rol ikonları görünüyor.
-
-Bir sorun görürsen ekranın fotoğrafını ya da hata yazısını bana gönder.
+## B. Hâlâ hata verirse
+1. Telefonda Expo Go'yu aç, sağ alttaki **Settings** (ya da profil) bölümüne gir.
+2. "Supported SDK" ya da "SDK" yazan satırdaki sayıyı bana yaz.
+3. Terminalde `cd app` içindeyken `npx expo --version` yaz ve çıkan sayıyı da bana gönder.
