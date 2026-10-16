@@ -5,12 +5,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/AppText';
 import { EVENT_COLOR, GAME_COLOR, HoneycombMap, SEA } from '@/components/HoneycombMap';
+import { useMyMapCity } from '@/lib/city';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { TextField } from '@/components/TextField';
 import { DragGrab, DragScreen } from '@/components/Sheet';
 import { CloseX } from '@/components/CloseX';
 import type { EventCellMark } from '@/lib/events';
-import { cellOf, districtOf, isLand, type Cell } from '@/lib/hex';
+import { areaOf, cellOf, CITY_NAMES, isLandIn, type Cell } from '@/lib/hex';
 import { searchPlaces, type Place } from '@/lib/map';
 import type { GameCellMark } from '@/lib/rooms';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
@@ -71,6 +72,7 @@ function PickerBody({
   onClose,
   onPick,
 }: Props) {
+  const mapCity = useMyMapCity();
   const [selected, setSelected] = useState<Cell | null>(initial);
   const [focus, setFocus] = useState<{ cell: Cell; key: number } | null>(initial ? { cell: initial, key: 1 } : null);
   const [placeName, setPlaceName] = useState<string | null>(null);
@@ -87,7 +89,7 @@ function PickerBody({
     const my = ++seq.current;
     const t = setTimeout(() => {
       setSearching(true);
-      void searchPlaces(q).then((res) => {
+      void searchPlaces(q, mapCity).then((res) => {
         if (my !== seq.current) return;
         setSearching(false);
         setMessage(res.error);
@@ -95,12 +97,12 @@ function PickerBody({
       });
     }, 350);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [query, mapCity]);
 
   function pickPlace(p: Place) {
     const cell = cellOf(p.lon, p.lat);
-    if (!isLand(cell.q, cell.r)) {
-      setMessage('Bu yer Kocaeli haritasının dışında görünüyor. Başka bir yer dene.');
+    if (!isLandIn(mapCity, cell.q, cell.r)) {
+      setMessage(`Bu yer ${CITY_NAMES[mapCity]} haritasının dışında görünüyor. Başka bir yer dene.`);
       return;
     }
     setMessage(null);
@@ -116,7 +118,7 @@ function PickerBody({
   const gameCount = selected
     ? ((gameCells ?? []).find((g) => g.q === selected.q && g.r === selected.r)?.count ?? 0)
     : 0;
-  const district = selected ? (districtOf(selected.q, selected.r) ?? 'Kocaeli') : null;
+  const district = selected ? areaOf(selected.q, selected.r) : null;
 
   return (
     <View style={styles.root}>
@@ -178,6 +180,8 @@ function PickerBody({
 
           <View style={styles.mapArea}>
             <HoneycombMap
+              key={mapCity}
+              city={mapCity}
               density={NO_DENSITY}
               selected={selected}
               onSelect={(c) => {

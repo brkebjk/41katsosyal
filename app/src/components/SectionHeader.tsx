@@ -6,7 +6,7 @@ import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 type Props = {
   title: string;
-  /** true ise "41. Kat Özel" biçimi: sarı çerçeve ve yıldız simgesi */
+  /** true ise "PeopleHere Özel" biçimi: sarı çerçeve ve yıldız simgesi */
   official?: boolean;
   /** Gruptaki öğe sayısı */
   count?: number;
@@ -14,7 +14,7 @@ type Props = {
   hint?: string;
 };
 
-/** Listelerde grup başlığı. Moderatörün başlattıkları "41. Kat Özel" olarak ayrı ve üstte gösterilir. */
+/** Listelerde grup başlığı. Moderatörün başlattıkları "PeopleHere Özel" olarak ayrı ve üstte gösterilir. */
 export function SectionHeader({ title, official = false, count, hint }: Props) {
   return (
     <View style={styles.wrap} accessibilityRole="header">

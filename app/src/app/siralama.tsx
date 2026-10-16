@@ -6,7 +6,6 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/AppText';
 import { GamePointsModal } from '@/components/GamePointsModal';
-import { CrewBoard } from '@/components/CrewBoard';
 import { InfoModal } from '@/components/InfoModal';
 import { ListRow, Panel } from '@/components/Panel';
 import { PointRulesPanel } from '@/components/PointRulesPanel';
@@ -20,6 +19,7 @@ import { VerifyPrizeNote } from '@/components/VerifyPrizeNote';
 import { TitleBadge } from '@/components/TitleBadge';
 import { ACHIEVEMENTS } from '@/lib/achievements';
 import { useAuth } from '@/lib/auth';
+import { CITY_NAMES, useCity } from '@/lib/city';
 import { DEFAULT_CONTEST, contestOn, getContest, type Contest } from '@/lib/contest';
 import { fmtPts, fmtPtsSigned, formatDate, lastDayBefore, monthTitle } from '@/lib/labels';
 import { rankingInfoContent } from '@/lib/rankInfo';
@@ -50,7 +50,9 @@ const MEDAL: Record<number, string> = { 1: '#FFC93C', 2: '#C9D1E3', 3: '#E39A5B'
 /** Oyun sıralaması sekmeleri: çekiliş sıralamada yer almaz */
 const GAME_TABS = ACHIEVEMENTS.filter((g) => g.game !== 'raffle');
 
-type Mode = 'points' | 'games' | 'crew';
+type Mode = 'points' | 'games';
+/** 'city' = kendi şehrimin sıralaması, 'all' = Tüm İller */
+type Scope = 'city' | 'all';
 type BoardRow = {
   place: number;
   full_name: string;
@@ -65,6 +67,11 @@ type BoardRow = {
 export default function LeaderboardScreen() {
   const { profile } = useAuth();
   const isModerator = profile?.role === 'admin';
+  const { my: myCity } = useCity();
+  const [scope, setScope] = useState<Scope>('city');
+  // Şehri olmayan (seçmemiş) üye yalnızca Tüm İller'i görür
+  const cityParam = scope === 'city' && myCity ? myCity : null;
+  const scopeLabel = cityParam ? CITY_NAMES[cityParam] : 'Tüm İller';
   // Ekranda her zaman bu ayın tablosu; geçen hafta ve geçen ay “Kesinleşmiş sonuçlar” penceresinde
   const period: RankPeriod = 'this';
   const [showAll, setShowAll] = useState(false);
@@ -79,10 +86,9 @@ export default function LeaderboardScreen() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const requestId = useRef(0);
   // Bir oyunun ekranından gelindiyse doğrudan o oyunun sıralaması açılır
-  const params = useLocalSearchParams<{ game?: string; tab?: string }>();
+  const params = useLocalSearchParams<{ game?: string }>();
   const startGame = GAME_TABS.some((g) => g.game === params.game) ? (params.game as string) : null;
-  const [mode, setMode] = useState<Mode>(params.tab === 'crew' ? 'crew' : startGame ? 'games' : 'points');
-  const [crewKey, setCrewKey] = useState(0);
+  const [mode, setMode] = useState<Mode>(startGame ? 'games' : 'points');
   const [game, setGame] = useState<string>(startGame ?? GAME_TABS[0].game);
   const [gameRows, setGameRows] = useState<GameRankRow[]>([]);
   const [champion, setChampion] = useState<GameChampion | null>(null);
@@ -94,14 +100,14 @@ export default function LeaderboardScreen() {
   const [info, setInfo] = useState<RankingInfo | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
 
-  const loadGame = useCallback(async (g: string, p: RankPeriod) => {
+  const loadGame = useCallback(async (g: string, p: RankPeriod, c: string | null) => {
     if (!isBackendReady) {
       setGameLoaded(true);
       return;
     }
     // Oyun hızlıca değiştirilirse eski oyunun cevabı yenisinin üstüne yazmasın
     const my = ++gameRequestId.current;
-    const [res, champ, inf] = await Promise.all([getGameLeaderboard(g, p), getGameChampion(g), getRankingInfo()]);
+    const [res, champ, inf] = await Promise.all([getGameLeaderboard(g, p, c), getGameChampion(g), getRankingInfo()]);
     if (my !== gameRequestId.current) return;
     setGameError(res.error);
     if (!res.error) setGameRows(res.data);
@@ -110,14 +116,14 @@ export default function LeaderboardScreen() {
     setGameLoaded(true);
   }, []);
 
-  const load = useCallback(async (p: RankPeriod) => {
+  const load = useCallback(async (p: RankPeriod, c: string | null) => {
     if (!isBackendReady) {
       setLoaded(true);
       return;
     }
     // Dönem hızlıca değiştirilirse eski dönemin cevabı yenisinin üstüne yazmasın
     const my = ++requestId.current;
-    const [res, inf] = await Promise.all([getLeaderboard(p), getRankingInfo()]);
+    const [res, inf] = await Promise.all([getLeaderboard(p, c), getRankingInfo()]);
     if (my !== requestId.current) return;
     setError(res.error);
     if (!res.error) setRows(res.data);
@@ -134,9 +140,9 @@ export default function LeaderboardScreen() {
     useCallback(() => {
       void getContest().then(setContest);
       void getPointRules().then(setRules);
-      if (mode === 'points') void load(period);
-      else if (mode === 'games') void loadGame(game, period);
-    }, [load, loadGame, mode, period, game]),
+      if (mode === 'points') void load(period, cityParam);
+      else void loadGame(game, period, cityParam);
+    }, [load, loadGame, mode, period, game, cityParam]),
   );
 
   async function loadHistory() {
@@ -147,15 +153,22 @@ export default function LeaderboardScreen() {
 
   async function onRefresh() {
     setRefreshing(true);
-    if (mode === 'crew') {
-      setCrewKey((k) => k + 1);
-    } else if (mode === 'points') {
-      await load(period);
+    if (mode === 'points') {
+      await load(period, cityParam);
       if (historyOpen) await loadHistory();
     } else {
-      await loadGame(game, period);
+      await loadGame(game, period, cityParam);
     }
     setRefreshing(false);
+  }
+
+  function changeScope(s: Scope) {
+    if (s === scope) return;
+    setLoaded(false);
+    setRows([]);
+    setGameLoaded(false);
+    setGameRows([]);
+    setScope(s);
   }
 
   function changeGame(g: string) {
@@ -179,7 +192,7 @@ export default function LeaderboardScreen() {
   return (
     <Screen
       title="Sıralama"
-      subtitle={`${mode === 'points' ? '' : mode === 'crew' ? 'Klanlar · ' : 'Oyunlar · '}${monthTitle(thisMonth ? 0 : 1)}`}
+      subtitle={`${scopeLabel} · ${mode === 'points' ? '' : 'Oyunlar · '}${monthTitle(thisMonth ? 0 : 1)}`}
       onRefresh={onRefresh}
       refreshing={refreshing}
       onBack={() => (router.canGoBack() ? router.back() : router.replace('/games'))}
@@ -201,6 +214,8 @@ export default function LeaderboardScreen() {
           <FinalResultsSheet
             game={mode === 'games' ? game : null}
             gameTitle={GAME_TABS.find((g) => g.game === game)?.title}
+            city={cityParam}
+            scopeLabel={scopeLabel}
             onClose={() => setFinalOpen(false)}
           />
         ) : null
@@ -210,15 +225,22 @@ export default function LeaderboardScreen() {
         options={[
           { value: 'points', label: 'Genel puan' },
           { value: 'games', label: 'Oyunlar' },
-          { value: 'crew', label: 'Klan' },
         ]}
         value={mode}
         onChange={setMode}
       />
+      {myCity ? (
+        <Segmented<Scope>
+          options={[
+            { value: 'city', label: CITY_NAMES[myCity] },
+            { value: 'all', label: 'Tüm İller' },
+          ]}
+          value={scope}
+          onChange={changeScope}
+        />
+      ) : null}
 
-      {mode === 'crew' ? (
-        <CrewBoard refreshKey={crewKey} />
-      ) : mode === 'games' ? (
+      {mode === 'games' ? (
         <GameBoard
           game={game}
           rows={gameRows}

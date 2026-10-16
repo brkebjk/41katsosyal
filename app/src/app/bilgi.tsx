@@ -22,6 +22,7 @@ import { ArenaView, cardLook, type ArenaLive } from '@/components/ArenaView';
 import { Avatar } from '@/components/Avatar';
 import { GameLinks } from '@/components/GameLinks';
 import { HoneycombMap } from '@/components/HoneycombMap';
+import { useMyMapCity } from '@/lib/city';
 import { InfoModal } from '@/components/InfoModal';
 import { KeyboardLift } from '@/components/KeyboardLift';
 import { Popup } from '@/components/Popup';
@@ -1212,8 +1213,9 @@ function IntroLine({ icon, text }: { icon: React.ComponentProps<typeof Ionicons>
   );
 }
 
-/** Arama ekranındaki harita: Kocaeli peteklerinin üzerinde büyüteçli avatar dolaşır */
+/** Arama ekranındaki harita: şehrin peteklerinin üzerinde büyüteçli avatar dolaşır */
 function SearchMap({ avatar }: { avatar: number }) {
+  const mapCity = useMyMapCity();
   const [box, setBox] = useState({ w: 0, h: 0 });
   const [pos] = useState(() => new Animated.ValueXY({ x: 0, y: 0 }));
   useEffect(() => {
@@ -1242,7 +1244,7 @@ function SearchMap({ avatar }: { avatar: number }) {
       onLayout={(e: LayoutChangeEvent) => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
       pointerEvents="none"
     >
-      <HoneycombMap density={[]} selected={null} onSelect={() => {}} hideControls />
+      <HoneycombMap key={mapCity} city={mapCity} density={[]} selected={null} onSelect={() => {}} hideControls />
       <Animated.View style={[styles.seeker, { transform: pos.getTranslateTransform() }]}>
         <Avatar index={avatar} size={58} ring />
         <View style={styles.lens}>

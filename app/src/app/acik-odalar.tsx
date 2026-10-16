@@ -29,7 +29,7 @@ const ROOMS_REFRESH_MS = 10000;
 /**
  * Bir oyunun “Açık odalar” ekranı: en üstte katılıma açık odalar (moderatörünkiler üstte), altında dokununca açılan
  * puan tablosu ve oyunun kısa anlatımı; en altta yüzen yuvarlak “Kodla katıl” düğmesi.
- * Köpekbalığı ve Vampir–Köylü’de buradan oda açılmaz. Listede yan yana odalar, etkinlik oyunları ve 41. Kat Özel
+ * Köpekbalığı ve Vampir–Köylü’de buradan oda açılmaz. Listede yan yana odalar, etkinlik oyunları ve PeopleHere Özel
  * oyunlar görünür; hepsine oda koduyla ve konum doğrulamasıyla girilir. Uzaktan odalar listelenmez: Uzaktan Eşleş’te
  * bekleyen bir uzaktan oda varsa oyuncu oraya kendiliğinden alınır.
  */
@@ -185,19 +185,19 @@ export default function OpenRoomsScreen() {
           <SectionHeader title="Açık odalar" />
           <Text style={styles.empty} testID="rooms-empty">
             {party
-              ? `Şu an açık ${GAMES[game].title} odası yok. Burada yan yana odalar, etkinlik oyunları ve 41. Kat Özel oyunlar görünür; girmek için oda kodu ve konum doğrulaması gerekir. Uzaktan oynamak için giriş ekranındaki Uzaktan Eşleş’i kullan.`
+              ? `Şu an açık ${GAMES[game].title} odası yok. Burada yan yana odalar, etkinlik oyunları ve PeopleHere Özel oyunlar görünür; girmek için oda kodu ve konum doğrulaması gerekir. Uzaktan oynamak için giriş ekranındaki Uzaktan Eşleş’i kullan.`
               : `Şu an ${GAMES[game].title} için açık oda yok. İlk odayı sen aç.`}
           </Text>
         </View>
       ) : (
         <View style={styles.block}>
           {party ? (
-            <Text style={styles.empty}>Yan yana odalar, etkinlik oyunları ve 41. Kat Özel oyunlar. Girmek için oda kodu ve konum doğrulaması gerekir.</Text>
+            <Text style={styles.empty}>Yan yana odalar, etkinlik oyunları ve PeopleHere Özel oyunlar. Girmek için oda kodu ve konum doğrulaması gerekir.</Text>
           ) : null}
-          {/* Moderatörün açtıkları "41. Kat Özel" olarak üstte, ayrı gösterilir */}
+          {/* Moderatörün açtıkları "PeopleHere Özel" olarak üstte, ayrı gösterilir */}
           {official.length > 0 ? (
             <>
-              <SectionHeader title="41. Kat Özel" official count={official.length} />
+              <SectionHeader title="PeopleHere Özel" official count={official.length} />
               {official.map(renderRoom)}
             </>
           ) : null}
@@ -222,7 +222,7 @@ export default function OpenRoomsScreen() {
           >
             <Ionicons name="podium" size={18} color={colors.primary} />
             <Text style={[styles.pointsTitle, styles.flex]}>Puan tablosu</Text>
-            <Text style={styles.pointsBadge}>{`Yan yana ${rules.sideMult}x`}</Text>
+            <Text style={styles.pointsBadge}>Yan yana = uzaktan</Text>
             <Ionicons name={pointsOpen ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
           </Pressable>
           {pointsOpen ? (
@@ -242,7 +242,7 @@ export default function OpenRoomsScreen() {
               ['Puan için en az', `${rules.partyMinPlayers} oyuncu (moderatör sayılmaz)`],
               [
                 'Yan yana',
-                `Uzaktan oyunun ${rules.sideMult} katı puan, konum doğrulanır; ayda en çok ${fmtNum(rules.sideMonthPoints)} puan`,
+                `Tablodaki puan, konum doğrulanır; ayda en çok ${fmtNum(rules.sideMonthPoints)} puan`,
               ],
               ['Uzaktan', `Tablodaki puan; ayda en çok ${fmtNum(rules.remoteMonthPoints)} puan`],
               ['Mekân bonusu', `Mekân koduyla mekânda oynanan yan yana oyun +%${Math.max(0, rules.venueBonusPct - 100)}`],

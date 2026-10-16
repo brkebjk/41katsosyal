@@ -8,6 +8,7 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { TextField } from '@/components/TextField';
 import { notify } from '@/lib/dialog';
 import { PROBLEM_CATEGORIES, submitProblemReport, type ProblemCategory } from '@/lib/problemReport';
+import { clearDraft, useDraftText } from '@/lib/drafts';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 /**
@@ -17,6 +18,8 @@ import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 export function ProblemReportPopup({ defaultName, onClose }: { defaultName: string; onClose: () => void }) {
   const [category, setCategory] = useState<ProblemCategory | null>(null);
   const [message, setMessage] = useState('');
+  // Yazılan açıklama taslak olarak saklanır (uygulama kapanıp açılsa da kaybolmaz)
+  useDraftText('problem-report', message, setMessage);
   const [name, setName] = useState(defaultName);
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -32,6 +35,7 @@ export function ProblemReportPopup({ defaultName, onClose }: { defaultName: stri
     const res = await submitProblemReport({ category, message, name, email, phone });
     setSending(false);
     if (res.error) return setError(res.error);
+    clearDraft('problem-report');
     onClose();
     await notify(
       'Bildirimin alındı',

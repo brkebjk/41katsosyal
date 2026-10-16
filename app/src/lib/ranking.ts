@@ -65,10 +65,15 @@ export async function getRankingInfo(): Promise<RankingInfo | null> {
   };
 }
 
-export async function getLeaderboard(period: RankPeriod): Promise<{ data: RankRow[]; error: string | null }> {
+/** `city`: şehrin sıralaması; boş (null) = Tüm İller */
+export async function getLeaderboard(
+  period: RankPeriod,
+  city: string | null = null,
+): Promise<{ data: RankRow[]; error: string | null }> {
   const { data, error } = await callRpc<RankRow[]>('get_monthly_leaderboard', {
     p_limit: 100,
     p_months_ago: period === 'last' ? 1 : 0,
+    p_city: city,
   });
   const rows = (data ?? []).map((r) => ({
     ...r,
@@ -82,10 +87,11 @@ export async function getLeaderboard(period: RankPeriod): Promise<{ data: RankRo
 /** Geçen haftanın (pazartesi–pazar) kesinleşmiş sıralaması; `game` boşsa genel puan. */
 export async function getLastWeekLeaderboard(
   game: string | null,
+  city: string | null = null,
 ): Promise<{ data: { place: number; full_name: string; score: number; is_me: boolean }[]; error: string | null }> {
   const { data, error } = await callRpc<{ place: number; full_name: string; score: number; is_me: boolean }[]>(
     'get_last_week_leaderboard',
-    { p_game: game, p_limit: 10 },
+    { p_game: game, p_limit: 10, p_city: city },
   );
   return {
     data: (data ?? []).map((r) => ({ ...r, place: Number(r.place), score: Number(r.score) })),
@@ -143,11 +149,13 @@ export type GameRankRow = {
 export async function getGameLeaderboard(
   game: string,
   period: RankPeriod = 'this',
+  city: string | null = null,
 ): Promise<{ data: GameRankRow[]; error: string | null }> {
   const { data, error } = await callRpc<GameRankRow[]>('get_game_leaderboard', {
     p_game: game,
     p_limit: 50,
     p_months_ago: period === 'last' ? 1 : 0,
+    p_city: city,
   });
   const rows = (data ?? []).map((r) => ({
     ...r,
@@ -241,7 +249,7 @@ export type PointRules = {
   eventAttend10: number;
   eventAttend20: number;
   eventAttend40: number;
-  /** 41. Kat Özel etkinliklerde her basamağa eklenen puan */
+  /** PeopleHere Özel etkinliklerde her basamağa eklenen puan */
   eventAttendOfficialBonus: number;
   /** Etkinlikte puanların açılması için kodla ve konumla doğrulanması gereken en az kişi sayısı */
   eventMinAttendees: number;
@@ -251,7 +259,7 @@ export type PointRules = {
   pairCooldownDays: number;
   /** Bir üye aynı gün (Türkiye saati) aynı kategorideki kaç etkinlikten katılım puanı alır (0 = sınırsız) */
   eventCategoryDaily: number;
-  /** Bir üye aynı üyenin açtığı etkinliklerden kaç günde bir katılım puanı alır (0 = sınırsız; 41. Kat Özel hariç) */
+  /** Bir üye aynı üyenin açtığı etkinliklerden kaç günde bir katılım puanı alır (0 = sınırsız; PeopleHere Özel hariç) */
   eventHostDays: number;
   /** Etkinlik başladıktan kaç saat sonra kapanır */
   eventDurationHours: number;
@@ -271,8 +279,6 @@ export type PointRules = {
   quizMaxLives: number;
   quizLifeMinutes: number;
   quizDailyGames: number;
-  /** Yan yana oyunun puan çarpanı (uzaktan oyunun kaç katı) */
-  sideMult: number;
   /** Her oyunun aylık puan hedefi (sınırı): uzaktan / yan yana */
   remoteMonthPoints: number;
   sideMonthPoints: number;
@@ -323,7 +329,6 @@ export const DEFAULT_RULES: PointRules = {
   quizMaxLives: 5,
   quizLifeMinutes: 30,
   quizDailyGames: 100000,
-  sideMult: 7,
   remoteMonthPoints: 250,
   sideMonthPoints: 1750,
   venueBonusPct: 125,
@@ -367,7 +372,6 @@ const RULE_KEYS: Record<string, keyof PointRules> = {
   quiz_max_lives: 'quizMaxLives',
   quiz_life_minutes: 'quizLifeMinutes',
   quiz_daily_games: 'quizDailyGames',
-  pts_side_mult: 'sideMult',
   pts_remote_month_points: 'remoteMonthPoints',
   pts_side_month_points: 'sideMonthPoints',
   pts_venue_bonus_pct: 'venueBonusPct',
@@ -413,7 +417,6 @@ export type GoalGame = 'shark_cage' | 'vampire_villager';
 export type GameGoals = {
   remote_cap: number;
   side_cap: number;
-  side_mult: number;
   venue_pct: number;
   party_min_players: number;
   /** Bilgi Yarışması: bu ay kazanılan / aylık hedef (seviye çarpanı dahil) */
@@ -432,7 +435,6 @@ export async function getMyGameGoals(): Promise<GameGoals | null> {
   return {
     remote_cap: n(data.remote_cap),
     side_cap: n(data.side_cap),
-    side_mult: n(data.side_mult) || 1,
     venue_pct: n(data.venue_pct) || 100,
     party_min_players: n(data.party_min_players),
     quiz: { earned: n(data.quiz?.earned), cap: n(data.quiz?.cap) },

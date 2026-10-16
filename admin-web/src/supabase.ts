@@ -25,7 +25,7 @@ function makeClient(): SupabaseClient | null {
   }
   try {
     return createClient(url, anonKey, {
-      auth: { persistSession: true, autoRefreshToken: true, storageKey: 'kat41-admin' },
+      auth: { persistSession: true, autoRefreshToken: true, storageKey: 'peoplehere-admin' },
     });
   } catch (e) {
     configProblem = `Sunucu bağlantısı kurulamadı: ${String(e)}`;
@@ -36,7 +36,7 @@ function makeClient(): SupabaseClient | null {
 export const supabase: SupabaseClient | null = makeClient();
 export const isBackendReady = supabase !== null;
 
-const LOGIN_DOMAIN = import.meta.env.VITE_LOGIN_DOMAIN || 'uye.kat41sosyal.app';
+const LOGIN_DOMAIN = import.meta.env.VITE_LOGIN_DOMAIN || 'uye.peoplehere.app';
 
 /** Mobil uygulamadaki gibi: kullanıcı adı giriş adresine çevrilir ("@" içeriyorsa olduğu gibi) */
 export function loginEmail(input: string): string {

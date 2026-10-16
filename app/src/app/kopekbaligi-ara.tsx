@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '@/components/AppText';
 import { Avatar } from '@/components/Avatar';
 import { HoneycombMap } from '@/components/HoneycombMap';
+import { useMyMapCity } from '@/lib/city';
 import { Bubbles } from '@/components/SharkStage';
 import { useAuth } from '@/lib/auth';
 import { notify } from '@/lib/dialog';
@@ -20,8 +21,8 @@ const LOBBY_AT = 3;
 
 /**
  * Uzaktan eşleştirme (Köpekbalığı Kafesi ve Vampir–Köylü; `?oyun=vampire_villager`): Bilgi Yarışması'ndaki gibi
- * haritanın üstünde avatar dolaşır. Sırada 3 kişi olunca (ya da yer olan bir lobi varsa hemen) bekleme odası açılır
- * ve oyun ekranına geçilir.
+ * haritanın üstünde avatar dolaşır. Başlamamış açık bir oda varsa hemen ona yerleşilir; sırada 3 kişi olunca ya da
+ * 45 sn içinde eşleşme bulunamazsa oda açılır (tek başına beklenebilir) ve oyun ekranına geçilir.
  */
 export default function SharkSearchScreen() {
   const params = useLocalSearchParams<{ oyun?: string }>();
@@ -32,6 +33,8 @@ export default function SharkSearchScreen() {
   const [waiting, setWaiting] = useState(1);
   const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  /** Tek başına oda açılmasına kalan saniye (sunucu bildirir, arada saniyede bir azalır) */
+  const [soloLeft, setSoloLeft] = useState<number | null>(null);
   const matched = useRef(false);
 
   // Sıraya gir, birkaç saniyede bir sor; eşleşince oyun ekranına geç
@@ -42,6 +45,9 @@ export default function SharkSearchScreen() {
       matched.current = true;
       router.replace({ pathname: vampire ? '/vampir' : '/kopekbaligi', params: { id: room } });
     };
+    const solo = (left: number | null | undefined) => {
+      if (typeof left === 'number' && Number.isFinite(left)) setSoloLeft(Math.max(0, Math.ceil(left)));
+    };
     void matchJoin(game).then((res) => {
       if (!alive) return;
       if (res.error) {
@@ -49,16 +55,25 @@ export default function SharkSearchScreen() {
         return;
       }
       if (res.data?.room) go(res.data.room);
-      else setWaiting(res.data?.waiting ?? 1);
+      else {
+        setWaiting(res.data?.waiting ?? 1);
+        solo(res.data?.solo_left);
+      }
     });
     const t = setInterval(() => {
       void matchPoll().then((st) => {
         if (!alive || !st) return;
         if (st.room) go(st.room);
-        else setWaiting(st.waiting);
+        else {
+          setWaiting(st.waiting);
+          solo(st.solo_left);
+        }
       });
     }, POLL_MS);
-    const c = setInterval(() => setSeconds((x) => x + 1), 1000);
+    const c = setInterval(() => {
+      setSeconds((x) => x + 1);
+      setSoloLeft((x) => (x === null ? null : Math.max(0, x - 1)));
+    }, 1000);
     return () => {
       alive = false;
       clearInterval(t);
@@ -79,7 +94,7 @@ export default function SharkSearchScreen() {
       <Bubbles count={12} />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <Text style={styles.title}>{vampire ? '🧛 Oyuncular aranıyor…' : '🦈 Oyuncular aranıyor…'}</Text>
-        <Text style={styles.sub}>Haritanın her yerinden uzaktan oyuncu aranıyor.</Text>
+        <Text style={styles.sub}>Bütün illerden uzaktan oyuncu aranıyor.</Text>
         <SearchMap avatar={profile?.avatar_index ?? 1} lens={vampire ? '🧛' : '🤿'} />
         <View style={styles.seats} accessibilityLabel={`Sırada ${waiting} kişi`}>
           {Array.from({ length: LOBBY_AT }).map((_, i) => (
@@ -89,7 +104,9 @@ export default function SharkSearchScreen() {
           ))}
         </View>
         <Text style={styles.info}>
-          {`${LOBBY_AT} kişi olunca bekleme odası açılır. Odada yeterli kişi olunca “Hazırım” düğmesi açılır; kalabalık oyun daha çok puan verir.`}
+          {soloLeft !== null && soloLeft > 0
+            ? `Açık bir oda varsa hemen ona yerleşirsin. ${soloLeft} sn içinde bulunamazsa senin için oda açılır, orada başkalarını bekleyebilirsin.`
+            : `Açık bir oda varsa hemen ona yerleşirsin; yoksa sana bir oda açılır ve orada başkalarını bekleyebilirsin. Odada yeterli kişi olunca “Hazırım” düğmesi açılır.`}
         </Text>
         <Text style={styles.time}>{`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`}</Text>
         <View style={styles.privacy}>
@@ -126,8 +143,9 @@ export default function SharkSearchScreen() {
   );
 }
 
-/** Kocaeli peteklerinin üstünde dalgıç maskeli avatar dolaşır */
+/** Şehrin peteklerinin üstünde dalgıç maskeli avatar dolaşır */
 function SearchMap({ avatar, lens }: { avatar: number; lens: string }) {
+  const mapCity = useMyMapCity();
   const [box, setBox] = useState({ w: 0, h: 0 });
   const [pos] = useState(() => new Animated.ValueXY({ x: 0, y: 0 }));
   useEffect(() => {
@@ -156,7 +174,7 @@ function SearchMap({ avatar, lens }: { avatar: number; lens: string }) {
       onLayout={(e: LayoutChangeEvent) => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
       pointerEvents="none"
     >
-      <HoneycombMap density={[]} selected={null} onSelect={() => {}} hideControls />
+      <HoneycombMap key={mapCity} city={mapCity} density={[]} selected={null} onSelect={() => {}} hideControls />
       <View style={styles.mapTint} />
       <Animated.View style={[styles.seeker, { transform: pos.getTranslateTransform() }]}>
         <Avatar index={avatar} size={58} ring />

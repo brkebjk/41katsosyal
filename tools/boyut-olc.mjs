@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 41. Kat Sosyal — indirme boyutu ölçümü
+// PeopleHere — indirme boyutu ölçümü
 //
 // Kullanım (proje klasöründen):
 //   node tools/boyut-olc.mjs            -> android + ios paketini derler, tablo basar
@@ -20,7 +20,7 @@ const asJson = process.argv.includes('--json');
 const mb = (n) => (n / 1024 / 1024).toFixed(2).replace('.', ',') + ' MB';
 
 const result = {};
-const work = mkdtempSync(join(tmpdir(), 'kat41-boyut-'));
+const work = mkdtempSync(join(tmpdir(), 'peoplehere-boyut-'));
 
 for (const platform of ['android', 'ios']) {
   const out = join(work, platform);

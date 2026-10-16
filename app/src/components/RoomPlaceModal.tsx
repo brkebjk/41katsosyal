@@ -10,7 +10,7 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { RealNameNotice } from '@/components/RealNameNotice';
 import { TextField } from '@/components/TextField';
 import { eventCellMarks, listEvents, type EventCellMark } from '@/lib/events';
-import { districtOf, hexDistance, isLand, type Cell } from '@/lib/hex';
+import { areaOf, hexDistance, isLand, type Cell } from '@/lib/hex';
 import { REAL_NAME } from '@/lib/realName';
 import {
   gameCellMarks,
@@ -129,7 +129,7 @@ function Card({ request }: { request: PlaceRequest }) {
         />
         <View style={styles.cellText}>
           <Text style={styles.cellTitle}>
-            {cell ? `${districtOf(cell.q, cell.r) ?? 'Kocaeli'} bölgesi seçildi` : 'Haritadan petek seç'}
+            {cell ? `${areaOf(cell.q, cell.r)} bölgesi seçildi` : 'Haritadan petek seç'}
           </Text>
           <Text style={styles.cellSub}>
             {cell

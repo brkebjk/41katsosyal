@@ -16,6 +16,7 @@ import {
   type AccountStatus,
 } from '@/lib/account';
 import { getDeviceId } from '@/lib/device';
+import { clearAllDrafts } from '@/lib/drafts';
 import { startPurchases, stopPurchases, syncSubscription } from '@/lib/purchases';
 import { setSessionReplacedHandler } from '@/lib/rpc';
 import { isBackendReady, supabase } from '@/lib/supabase';
@@ -247,6 +248,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!sessionLoaded) return;
     if (!userId) {
+      // Oturum kapandı: bu telefondaki yazı taslakları da silinir
+      void clearAllDrafts();
       // eslint-disable-next-line react-hooks/set-state-in-effect -- veri yükleme: durum sunucudan gelen cevapla güncellenir
       setProfile(null);
       setAccount(null);
@@ -417,7 +420,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           error: error.message.includes('invalid_name')
             ? 'Ad 2 ile 60 karakter arasında olmalı.'
             : error.message.includes('reserved_name')
-              ? 'Bu ad kullanılamaz. “41. Kat”, “Moderatör” veya “Yönetici” içeren adlar ayrılmıştır.'
+              ? 'Bu ad kullanılamaz. “PeopleHere”, “Moderatör” veya “Yönetici” içeren adlar ayrılmıştır.'
               : error.message.includes('name_locked_verified')
                 ? 'Doğrulanmış hesabın adı nüfustaki addır; değiştirilemez.'
               : error.message.includes('name_change_used')

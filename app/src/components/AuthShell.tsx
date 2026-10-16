@@ -22,14 +22,14 @@ type Props = {
 };
 
 const FEATURES: { icon: IconName; label: string }[] = [
-  { icon: 'game-controller', label: 'Masa oyunları' },
+  { icon: 'people', label: 'Yeni insanlar' },
   { icon: 'calendar', label: 'Etkinlikler' },
-  { icon: 'chatbubbles', label: 'Anonim akış' },
+  { icon: 'game-controller', label: 'Oyunlar' },
 ];
 
 /** Giriş ve kayıt ekranlarının ortak görünümü: tam ekran arka plan, logo, slogan, kart. */
 export function AuthShell({ title, subtitle, children, compact = false }: Props) {
-  const logoHeight = compact ? 72 : 118;
+  const logoHeight = compact ? 80 : 128;
 
   return (
     <View style={styles.root}>
@@ -49,8 +49,13 @@ export function AuthShell({ title, subtitle, children, compact = false }: Props)
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.brand}>
-              {/* Logo, şeffaf kalıp arkadaki kule ile karışmasın diye opak bir plakanın üstünde durur */}
-              <View style={[styles.plate, compact && styles.plateCompact]}>
+              {/* Logo (işaret + PeopleHere yazısı) koyu zemin için çizildi: opak koyu bir plakanın üstünde durur */}
+              <View
+                style={[styles.plate, compact && styles.plateCompact]}
+                accessible
+                accessibilityRole="header"
+                accessibilityLabel={brand.name}
+              >
                 <LinearGradient
                   colors={['#1D2547', '#071622']}
                   start={{ x: 0.2, y: 0 }}
@@ -59,10 +64,6 @@ export function AuthShell({ title, subtitle, children, compact = false }: Props)
                 />
                 <ImageSlot name="logo" style={{ height: logoHeight, aspectRatio: imageAspect.logo }} />
               </View>
-
-              <Text style={[styles.brandName, compact && styles.brandNameCompact]} accessibilityRole="header">
-                {brand.name}
-              </Text>
 
               <View style={styles.sloganPill}>
                 <Ionicons name="sparkles" size={14} color={colors.primary} />
@@ -124,17 +125,6 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   plateCompact: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: 22 },
-  brandName: {
-    color: '#F2FAFF', // fotoğrafın üstünde: her temada açık renk
-    fontFamily: fonts.black,
-    fontSize: 30,
-    letterSpacing: 0.6,
-    textAlign: 'center',
-    textShadowColor: 'rgba(0, 0, 0, 0.55)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
-  },
-  brandNameCompact: { fontSize: 24 },
   sloganPill: {
     flexDirection: 'row',
     alignItems: 'center',

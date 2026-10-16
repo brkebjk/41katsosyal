@@ -79,11 +79,11 @@ export function isFuture(iso: string | null | undefined): boolean {
 
 /** Üyelerin kullanamayacağı adlar: resmi hesabı taklit edenler. Sunucudaki denetimle aynı kural. */
 export const RESERVED_NAME_TEXT =
-  'Bu ad kullanılamaz. “41. Kat”, “Moderatör” veya “Yönetici” içeren adlar ayrılmıştır.';
+  'Bu ad kullanılamaz. “PeopleHere”, “Moderatör” veya “Yönetici” içeren adlar ayrılmıştır.';
 
 export function isReservedName(name: string): boolean {
   const plain = name.toLowerCase().replace(/[^a-z0-9ğüşıöçâîû]/g, '');
-  return /(41kat|moderat|yonetici|yönetici)/.test(plain);
+  return /(peoplehere|moderat|yonetici|yönetici)/.test(plain);
 }
 
 /** Hazine Avı ödülü: ömür boyu abonelik (bitişi 2100'e yazılır) */

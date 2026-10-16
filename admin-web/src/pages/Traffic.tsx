@@ -57,7 +57,7 @@ export function TrafficPage({ onNotice, onMember }: { onNotice: (n: Notice) => v
   function exportCsv() {
     if (!rows) return;
     downloadFile(
-      `41kat-trafik-kayitlari-${stamp()}.csv`,
+      `peoplehere-trafik-kayitlari-${stamp()}.csv`,
       toCsv(
         rows.map((r) => ({ ...r, time: when(r.created_at), utc: r.created_at, act: ACTION[r.action] ?? r.action })),
         [

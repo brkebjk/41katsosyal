@@ -56,7 +56,7 @@ export function AppInfoButtons() {
           accessibilityLabel="Kapat"
         >
           <View style={styles.card} testID="version-card">
-            <ImageSlot name="logo" style={{ height: 150, aspectRatio: imageAspect.logo }} />
+            <ImageSlot name="logoMark" style={{ height: 120, aspectRatio: imageAspect.logoMark }} />
             <Text style={styles.name}>{brand.name}</Text>
             <Text style={styles.version}>{`Sürüm ${appVersion()} · ${Platform.OS === 'ios' ? 'iOS' : 'Android'}`}</Text>
           </View>

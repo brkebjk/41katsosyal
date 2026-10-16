@@ -44,7 +44,7 @@ export function RoomRow({ room, isModerator, onPress, onEvent }: Props) {
         ) : room.is_official ? (
           <View style={[styles.eventTag, styles.officialTag]}>
             <Ionicons name="star" size={12} color="#1A1200" />
-            <Text style={[styles.eventTagText, styles.officialTagText]}>41. Kat Özel Oyun</Text>
+            <Text style={[styles.eventTagText, styles.officialTagText]}>PeopleHere Özel Oyun</Text>
           </View>
         ) : null}
         <Text style={styles.title} numberOfLines={1}>

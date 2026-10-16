@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/AppText';
 import { HoneycombMap } from '@/components/HoneycombMap';
+import { useMyMapCity } from '@/lib/city';
 import { InfoModal } from '@/components/InfoModal';
 import { KeyboardLift } from '@/components/KeyboardLift';
 import { Popup } from '@/components/Popup';
@@ -14,7 +15,7 @@ import { useAuth } from '@/lib/auth';
 import { cellName } from '@/lib/cellNames';
 import { notify } from '@/lib/dialog';
 import { HOW_TO_PLAY } from '@/lib/gameInfo';
-import { districtOf, type Cell } from '@/lib/hex';
+import { areaOf, type Cell } from '@/lib/hex';
 import { formatWhen } from '@/lib/labels';
 import { locateMyCell } from '@/lib/myCell';
 import {
@@ -40,6 +41,7 @@ const TREASURE_STEPS = [1, 10, 25, 50, 100];
  * yalnızca o hazine); en altta sabit kod kutusu.
  */
 export default function TreasureScreen() {
+  const mapCity = useMyMapCity();
   const { profile } = useAuth();
   const canPlay = profile?.role === 'user';
   const [list, setList] = useState<Treasure[]>([]);
@@ -182,6 +184,8 @@ export default function TreasureScreen() {
           {/* Mini harita: yalnızca hazineler */}
           <View style={[styles.mapBox, { height: Math.round(height * 0.27) }]}>
             <HoneycombMap
+              key={mapCity}
+              city={mapCity}
               density={[]}
               selected={picked ? selected : null}
               onSelect={(c) => setSelected(c && list.some((t) => t.cell_q === c.q && t.cell_r === c.r) ? c : null)}
@@ -263,7 +267,7 @@ export default function TreasureScreen() {
                   </View>
                   <View style={styles.cardFoot}>
                     <Text style={styles.cardMeta} numberOfLines={1}>
-                      {`${districtOf(t.cell_q, t.cell_r) ?? 'Kocaeli'} · son gün ${formatWhen(new Date(t.expires_at))}`}
+                      {`${areaOf(t.cell_q, t.cell_r)} · son gün ${formatWhen(new Date(t.expires_at))}`}
                     </Text>
                     <Pressable
                       onPress={() => setHintFor(t)}

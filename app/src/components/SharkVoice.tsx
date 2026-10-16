@@ -25,7 +25,7 @@ import { fonts } from '@/theme';
 // durur: en geç 10 dakika sonra silinir (şikâyet edilen en çok 14 gün). Expo Go'da da çalışır.
 
 const MAX_MS = 10000;
-const INFO_KEY = 'kat41.pttInfo';
+const INFO_KEY = 'peoplehere.pttInfo';
 /** Bilgi penceresi bir kez görüldüyse tekrar diskten okunmaz (kayıt düğmeye basar basmaz başlasın) */
 let infoSeen = false;
 
@@ -394,7 +394,7 @@ export function PushToTalk({
       void AsyncStorage.setItem(INFO_KEY, '1').catch(() => {});
       const perm = await requestRecordingPermissionsAsync();
       if (!perm.granted) {
-        await notify('Mikrofon izni yok', 'Telefonunun ayarlarından 41. Kat Sosyal için mikrofon iznini açabilirsin.', {
+        await notify('Mikrofon izni yok', 'Telefonunun ayarlarından PeopleHere için mikrofon iznini açabilirsin.', {
           icon: null,
         });
       }
@@ -402,7 +402,7 @@ export function PushToTalk({
     }
     const perm = await requestRecordingPermissionsAsync();
     if (!perm.granted) {
-      await notify('Mikrofon izni yok', 'Telefonunun ayarlarından 41. Kat Sosyal için mikrofon iznini açabilirsin.', {
+      await notify('Mikrofon izni yok', 'Telefonunun ayarlarından PeopleHere için mikrofon iznini açabilirsin.', {
         icon: null,
       });
       return;

@@ -6,7 +6,7 @@ import { DialogHost } from '@/components/DialogHost';
 import { KeyboardLift } from '@/components/KeyboardLift';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { TextField } from '@/components/TextField';
-import { districtOf, type Cell } from '@/lib/hex';
+import { areaOf, type Cell } from '@/lib/hex';
 import { adminSaveVenue, type SponsorRow } from '@/lib/venues';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
@@ -108,7 +108,7 @@ function Card({ onClose, sponsors, sponsor, cell, onSaved }: Props) {
       {cell ? (
         <Text
           style={styles.message}
-        >{`${districtOf(cell.q, cell.r) ?? 'Kocaeli'} bölgesindeki bu peteğe bir sponsor hesabı mekân olarak yerleştirilir. Mekân, yalnızca bu petek açılınca etkinliklerin altında görünür.`}</Text>
+        >{`${areaOf(cell.q, cell.r)} bölgesindeki bu peteğe bir sponsor hesabı mekân olarak yerleştirilir. Mekân, yalnızca bu petek açılınca etkinliklerin altında görünür.`}</Text>
       ) : null}
       {needPick ? (
         sponsors.length === 0 ? (

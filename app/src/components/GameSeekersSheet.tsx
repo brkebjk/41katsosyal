@@ -23,7 +23,7 @@ import {
   type GameSeeker,
   type SeekGame,
 } from '@/lib/gameSeek';
-import { districtOf, type Cell } from '@/lib/hex';
+import { areaOf, type Cell } from '@/lib/hex';
 import { timeAgo } from '@/lib/labels';
 import { anchorOf, type MenuAnchor } from '@/lib/menuAnchor';
 import { locateMyCell, nearCell } from '@/lib/myCell';
@@ -182,7 +182,7 @@ export function GameSeekersSheet({ cell, onClose }: { cell: Cell; onClose: () =>
     <>
       <Sheet
         title="Oyun arayanlar"
-        subtitle={`${cellName(cell)} · ${districtOf(cell.q, cell.r) ?? 'Kocaeli'} · bugün`}
+        subtitle={`${cellName(cell)} · ${areaOf(cell.q, cell.r)} · bugün`}
         onClose={onClose}
       >
         {error ? (

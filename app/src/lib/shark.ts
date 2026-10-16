@@ -300,7 +300,13 @@ export const sharkVote = (roomId: string, target: string | null) => call('sk_vot
 // Uzaktan eşleştirme
 // ---------------------------------------------------------------------------
 
-export type MatchState = { room: string | null; waiting: number; searching?: boolean };
+export type MatchState = {
+  room: string | null;
+  waiting: number;
+  searching?: boolean;
+  /** Eşleşme bulunamazsa tek başına bekleyeceğin odanın açılmasına kalan saniye (eski sunucuda gelmez) */
+  solo_left?: number | null;
+};
 
 /** Eşleşme sırasına gir (eşleşirse oda kimliği döner) */
 /** Eşleşmek için sıraya gir (iki oyunda: Köpekbalığı Kafesi ve Vampir–Köylü) */

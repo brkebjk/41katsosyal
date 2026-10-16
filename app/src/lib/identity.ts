@@ -117,7 +117,7 @@ export function takeIdentityVerifyRequest(): boolean {
   return v;
 }
 
-const REMIND_KEY = (userId: string) => `kat41.verifyReminder.${userId}`;
+const REMIND_KEY = (userId: string) => `peoplehere.verifyReminder.${userId}`;
 /** Türkiye saatiyle bugünün tarihi (YYYY-AA-GG) */
 const todayTr = () => new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 10);
 

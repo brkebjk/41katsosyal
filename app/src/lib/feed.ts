@@ -135,6 +135,8 @@ export type FeedFilter = {
   near?: boolean;
   /** Telefonun bir kez aldığı konumun peteği (yalnızca petek numarası gider) */
   my?: { q: number; r: number } | null;
+  /** Bakılan şehrin akışı (ziyaret); boşsa kendi şehrim */
+  city?: string | null;
 };
 
 /** Akış listesi (en yeni önce). `before` verilirse o tarihten eski gönderiler gelir. */
@@ -152,6 +154,7 @@ export async function listFeed(before?: string, filter?: FeedFilter): Promise<{ 
       p_my_q: filter?.my?.q ?? null,
       p_my_r: filter?.my?.r ?? null,
       p_near: filter?.near === true,
+      p_city: filter?.city ?? null,
     },
     FEED_TEXT,
   );
@@ -167,8 +170,8 @@ export async function getPost(id: string): Promise<{ data: Post | null; error: s
 /** Süzgeçte seçilebilecek ilçeler (konumlu gönderisi olanlar) ve gönderi sayıları. */
 export type FeedDistrict = { district: string; post_count: number };
 
-export async function listFeedDistricts(): Promise<{ data: FeedDistrict[]; error: string | null }> {
-  const { data, error } = await callRpc<FeedDistrict[]>('feed_districts', {}, FEED_TEXT);
+export async function listFeedDistricts(city?: string | null): Promise<{ data: FeedDistrict[]; error: string | null }> {
+  const { data, error } = await callRpc<FeedDistrict[]>('feed_districts', { p_city: city ?? null }, FEED_TEXT);
   return {
     data: (data ?? []).map((d) => ({ district: d.district, post_count: Number(d.post_count) })),
     error,

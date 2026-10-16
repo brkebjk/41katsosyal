@@ -19,7 +19,7 @@ export const CONSENTS: { key: ConsentKey; title: string; text: string }[] = [
   {
     key: 'marketing',
     title: 'Kampanya ve özel etkinlik bildirimleri',
-    text: '41. Kat Özel etkinlikleri, kampanyalar ve duyurular hakkında bana bildirim gönderilmesine izin veriyorum. Kapalıyken bu bildirimler gönderilmez.',
+    text: 'PeopleHere Özel etkinlikleri, kampanyalar ve duyurular hakkında bana bildirim gönderilmesine izin veriyorum. Kapalıyken bu bildirimler gönderilmez.',
   },
   {
     key: 'map_density',
@@ -119,7 +119,7 @@ export function readableExport(raw: Row): Row {
   const invites = (raw.davetler ?? {}) as Row;
   return {
     'Bu dosya nedir?':
-      '41. Kat Sosyal uygulamasında sana ait tutulan kişisel verilerin dökümüdür (KVKK madde 11 kapsamındaki bilgi ' +
+      'PeopleHere uygulamasında sana ait tutulan kişisel verilerin dökümüdür (KVKK madde 11 kapsamındaki bilgi ' +
       'edinme hakkın). Her bölümde en yeni 1000 kayıt yer alır. Tarih ve saatler İstanbul saatidir. Başka üyelerin ' +
       'gerçek adı ya da kullanıcı adı bu dosyaya yazılmaz; yalnızca o anki rumuzları yazılır.',
     'Dosyanın oluşturulduğu an': when(raw.olusturulma),
@@ -247,7 +247,7 @@ export async function exportMyData(): Promise<Result> {
   if (error || !data) return { error: error ?? 'Veri dosyası hazırlanamadı.' };
   try {
     const day = new Date().toISOString().slice(0, 10);
-    const file = new File(Paths.cache, `41kat-veri-dosyasi-${day}.json`);
+    const file = new File(Paths.cache, `peoplehere-veri-dosyasi-${day}.json`);
     if (file.exists) file.delete();
     file.create();
     file.write(JSON.stringify(readableExport(data), null, 2));

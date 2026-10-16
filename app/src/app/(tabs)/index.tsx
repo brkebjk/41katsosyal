@@ -50,7 +50,8 @@ import { useAuth } from '@/lib/auth';
 import { cellName, loadCellNames, onCellNamesChanged } from '@/lib/cellNames';
 import { confirmAction, notify } from '@/lib/dialog';
 import { eventCellMarks, listEvents, showsImageOnMap, type EventItem } from '@/lib/events';
-import { districtOf, hexDistance, isLand, type Cell } from '@/lib/hex';
+import { CITY_KEYS, CITY_NAMES, cityIn, setVisiting, useCity } from '@/lib/city';
+import { cityOfR, districtOf, hexDistance, hoodOf, isLand, type Cell } from '@/lib/hex';
 import { locateMyCell, myCellNow, nearCell, useMyCell } from '@/lib/myCell';
 import { cellFeedSummary } from '@/lib/gameSeek';
 import { formatWhen, timeAgo } from '@/lib/labels';
@@ -135,6 +136,10 @@ export default function MapScreenTab() {
 
 function MapScreen({ resetKey }: { resetKey: number }) {
   const { height } = useWindowDimensions();
+  // Haritanın şehri: kendi şehrim ya da ziyaret ettiğim şehir (ziyarette harita yalnızca okunur)
+  const city = useCity();
+  const viewCity = city.view ?? 'kocaeli';
+  const [cityMenu, setCityMenu] = useState(false);
   const [status, setStatus] = useState<MapStatus | null>(null);
   const [density, setDensity] = useState<DensityCell[]>([]);
   const [loaded, setLoaded] = useState(!isBackendReady);
@@ -195,6 +200,9 @@ function MapScreen({ resetKey }: { resetKey: number }) {
     const q = Number(params.q);
     const r = Number(params.r);
     if (paramKey && Number.isInteger(q) && Number.isInteger(r) && isLand(q, r)) {
+      // Başka şehrin peteğiyse o şehir ziyaret edilir (harita o şehre geçer)
+      const pc = cityOfR(r);
+      if (pc && pc !== viewCity) setVisiting(pc);
       // “Haritada gör”: menü açılmaz; petek 3 boyutlu “İNCELE” haliyle, biraz uzaktan gösterilir
       setSelected(null);
       setPreview({ q, r });
@@ -208,6 +216,17 @@ function MapScreen({ resetKey }: { resetKey: number }) {
   useEffect(() => {
     if (paramKey) gate.hold(5000);
   }, [paramKey, gate]);
+
+  // Şehir değişince (ziyaret / dönüş / göç) seçim ve oklar temizlenir; veriler o şehre göre yeniden okunur
+  const [seenCity, setSeenCity] = useState(viewCity);
+  if (seenCity !== viewCity) {
+    setSeenCity(viewCity);
+    setSelected(null);
+    setPreview((p) => (p && cityOfR(p.r) === viewCity ? p : null));
+    setPointers(null);
+    setEventPopup(null);
+    setSheet(null);
+  }
 
   // Başka sekmeye geçince yalnızca açık pencereler kapanır; harita görünümü ve veriler korunur
   const [seenReset, setSeenReset] = useState(resetKey);
@@ -228,11 +247,11 @@ function MapScreen({ resetKey }: { resetKey: number }) {
     const my = ++seq.current;
     void loadCellNames();
     // Etkinlik katmanı yoğunluktan bağımsızdır; harita üyelere kapalıyken de etkinlikler görünür
-    const evs = await listEvents();
+    const evs = await listEvents(viewCity);
     if (my !== seq.current) return;
     if (!evs.error) setEvents(evs.data);
     // Oyun katmanı: yan yana oynanan, katılıma açık odalar (yalnızca bölge ve adres tarifi; kod hiç görünmez)
-    const rms = await listOpenRooms();
+    const rms = await listOpenRooms(undefined, viewCity);
     if (my !== seq.current) return;
     if (!rms.error) setRooms(rms.data);
     // Mekânlar petek penceresinde (etkinliklerin altında) listelenir; haritada peteğin altında küçük bir nokta olur
@@ -265,7 +284,7 @@ function MapScreen({ resetKey }: { resetKey: number }) {
       setDensity([]);
     }
     setLoaded(true);
-  }, []);
+  }, [viewCity]);
 
   // Sekmeye her gelişte harita tazelenir, açıkken 20 dakikada bir yenilenir; başka ekrana geçilince filtre sıfırlanır
   useFocusEffect(
@@ -392,7 +411,7 @@ function MapScreen({ resetKey }: { resetKey: number }) {
     setRefreshing(false);
   }
 
-  // Filtre: yalnızca seçilen tür görünür; 41. Kat Özel etkinlik/oyunlar ve yoğunluk her zaman görünür
+  // Filtre: yalnızca seçilen tür görünür; PeopleHere Özel etkinlik/oyunlar ve yoğunluk her zaman görünür
   const near = useCallback(
     (q: number | null, r: number | null) =>
       when !== 'near' || (myCell !== null && q !== null && r !== null && hexDistance({ q, r }, myCell) <= NEAR_RADIUS),
@@ -434,7 +453,7 @@ function MapScreen({ resetKey }: { resetKey: number }) {
     return { label: 'Sakin', color: '#8EA2C8' };
   }, [density, events, rooms, treasures, nowTick]);
   const marks = useMemo(() => eventCellMarks(shownEvents), [shownEvents]);
-  // Görselli öne çıkan etkinlikler: yalnızca Konser & Festival ve 41. Kat Özel etkinlikler peteğin üstünde kart görsel
+  // Görselli öne çıkan etkinlikler: yalnızca Konser & Festival ve PeopleHere Özel etkinlikler peteğin üstünde kart görsel
   const imageMarks = useMemo(() => {
     const by = new Map<string, { q: number; r: number; uris: string[]; ids: string[] }>();
     for (const e of shownEvents) {
@@ -538,7 +557,7 @@ function MapScreen({ resetKey }: { resetKey: number }) {
     return (
       <Screen
         title="Harita"
-        subtitle="Kocaeli’de bu hafta nerede hareket var?"
+        subtitle={`${cityIn(viewCity)} bu hafta nerede hareket var?`}
         onRefresh={onRefresh}
         refreshing={refreshing}
         headerRight={isBackendReady ? <NotificationBell onPress={() => setNotifOpen(true)} /> : undefined}
@@ -569,6 +588,8 @@ function MapScreen({ resetKey }: { resetKey: number }) {
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.mapArea}>
           <HoneycombMap
+            key={viewCity}
+            city={viewCity}
             density={density}
             // Seçili petek düz turuncu çerçeve yerine yükselmiş (3B) olarak gösterilir; menü açıkken de kapanınca da
             selected={null}
@@ -612,6 +633,48 @@ function MapScreen({ resetKey }: { resetKey: number }) {
             <>
               {/* Sol üst: bilgi düğmesi ve harita durumu */}
               <View style={styles.topBar} pointerEvents="box-none">
+                {/* Şehir: kendi şehrim ya da ziyaret ettiğim şehir; dokununca şehirler (ziyaret modu) */}
+                <Pressable
+                  onPress={() => setCityMenu((o) => !o)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Şehir: ${CITY_NAMES[viewCity]}${city.readOnly ? ', ziyaretçisin' : ''}. Başka şehre bak`}
+                  testID="map-city"
+                  style={({ pressed }) => [styles.chip, city.readOnly && styles.chipVisit, pressed && styles.eventRowPressed]}
+                >
+                  <Ionicons name={city.readOnly ? 'eye-outline' : 'location'} size={14} color={colors.primary} />
+                  <Text style={styles.chipText}>{CITY_NAMES[viewCity]}</Text>
+                  <Ionicons name={cityMenu ? 'chevron-up' : 'chevron-down'} size={13} color={colors.textMuted} />
+                </Pressable>
+                {cityMenu ? (
+                  <View style={styles.cityMenu} testID="map-city-menu">
+                    {CITY_KEYS.map((c) => {
+                      const mine = c === city.my;
+                      const on = c === viewCity;
+                      return (
+                        <Pressable
+                          key={c}
+                          onPress={() => {
+                            setCityMenu(false);
+                            setVisiting(mine ? null : c);
+                          }}
+                          accessibilityRole="button"
+                          testID={`map-city-${c}`}
+                          style={({ pressed }) => [styles.cityRow, on && styles.cityRowOn, pressed && styles.eventRowPressed]}
+                        >
+                          <Ionicons name={mine ? 'home' : 'eye-outline'} size={15} color={on ? colors.primary : colors.textMuted} />
+                          <Text style={[styles.cityRowText, on && styles.cityRowTextOn]}>
+                            {mine ? `${CITY_NAMES[c]} (şehrim)` : `${CITY_NAMES[c]} · ziyaret et`}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ) : null}
+                {city.readOnly ? (
+                  <View style={[styles.chip, styles.chipVisit]} pointerEvents="none" testID="map-visit-chip">
+                    <Text style={styles.chipText}>Ziyaretçisin, yalnızca bakabilirsin</Text>
+                  </View>
+                ) : null}
                 {!status.open ? (
                   <View style={[styles.chip, styles.chipWarn]} pointerEvents="none" testID="map-density-soon-chip">
                     <Ionicons name="time-outline" size={14} color={colors.accent} />
@@ -626,7 +689,7 @@ function MapScreen({ resetKey }: { resetKey: number }) {
               </View>
 
               {/* Üst orta: yüzen arama çubuğu (yer ve petek adı) */}
-              <MapSearchBar onPick={onSearchPick} />
+              <MapSearchBar onPick={onSearchPick} city={viewCity} />
 
               {/* Sağ üst: büyük bildirim zili (harita düğmelerinden ayrı) */}
               <View style={styles.bellWrap} pointerEvents="box-none">
@@ -756,9 +819,11 @@ function MapScreen({ resetKey }: { resetKey: number }) {
                         </Pressable>
                       ) : null}
                     </View>
-                    <Text
-                      style={styles.cellMenuDistrict}
-                    >{`${districtOf(selected.q, selected.r) ?? 'Kocaeli'} bölgesi`}</Text>
+                    <Text style={styles.cellMenuDistrict}>
+                      {[hoodOf(selected.q, selected.r), districtOf(selected.q, selected.r) ?? CITY_NAMES[viewCity]]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </Text>
                   </View>
                   <Pressable
                     onPress={closeCellMenu}
@@ -777,7 +842,7 @@ function MapScreen({ resetKey }: { resetKey: number }) {
                     <CellFeedButton
                       key={`feed-${selected.q},${selected.r}`}
                       cell={selected}
-                      near={nearCell(myCell, selected)}
+                      near={!city.readOnly && nearCell(myCell, selected)}
                       onOpen={() => void openCellFeed(selected)}
                     />
                   ) : null}
@@ -881,7 +946,7 @@ function MapScreen({ resetKey }: { resetKey: number }) {
         <PresenceSheet
           key={`${selected.q},${selected.r}`}
           cell={selected}
-          canCheckIn={!isSponsor}
+          canCheckIn={!isSponsor && !city.readOnly}
           presenceOpen={status.presence_open ?? false}
           onClose={() => setSheet(null)}
         />
@@ -1039,7 +1104,7 @@ function Legend({ densityOpen, open, onToggle }: { densityOpen: boolean; open: b
     { key: 'event', swatch: <View style={styles.eventDot} />, label: 'Etkinlik' },
     { key: 'venue', swatch: <View style={styles.venueSwatch} />, label: 'Mekân' },
     { key: 'treasure', swatch: <Ionicons name="search" size={11} color={TREASURE_COLORS.kolay} />, label: 'Hazine' },
-    { key: 'official', swatch: <Text style={styles.officialStar}>★</Text>, label: '41. Kat Özel' },
+    { key: 'official', swatch: <Text style={styles.officialStar}>★</Text>, label: 'PeopleHere Özel' },
   ];
   return (
     <Pressable
@@ -1178,7 +1243,7 @@ function GamesHere({ rooms }: { rooms: OpenRoom[] }) {
               {r.game_title}
             </Text>
             <Text style={styles.eventRowMeta} numberOfLines={2}>
-              {[r.is_official ? '41. Kat Özel' : r.host_name, `${r.player_count} oyuncu`, r.place_note]
+              {[r.is_official ? 'PeopleHere Özel' : r.host_name, `${r.player_count} oyuncu`, r.place_note]
                 .filter(Boolean)
                 .join(' · ')}
             </Text>
@@ -1324,7 +1389,7 @@ function InfoModal({ visible, onClose, status }: { visible: boolean; onClose: ()
               <ListRow
                 icon="grid-outline"
                 title="Petekler"
-                subtitle="Kocaeli peteklere bölünür; her peteğin bir adı vardır. Renk, o bölgede bu hafta ne kadar hareket olduğunu gösterir. En yoğun peteğin çevresindeki petekler de bir ton koyulaşır."
+                subtitle="Şehir peteklere bölünür; her peteğin bir adı vardır. İnce çizgiler mahalle, kalın çizgiler ilçe sınırlarıdır. Renk, o bölgede bu hafta ne kadar hareket olduğunu gösterir. En yoğun peteğin çevresindeki petekler de bir ton koyulaşır."
               />
               <ListRow
                 icon="add-circle-outline"
@@ -1349,7 +1414,7 @@ function InfoModal({ visible, onClose, status }: { visible: boolean; onClose: ()
               <ListRow
                 icon="funnel-outline"
                 title="Filtre ve konumum"
-                subtitle="Alttaki iki şeritten yalnızca Konser & Festival etkinliklerini, oyunları, etkinlikleri ya da mekânları; bugünü, bu haftayı ya da yakınını seçebilirsin. Bir peteğe dokununca büyük petek menüsü açılır; oradan petek akışına gidebilirsin. 41. Kat Özel etkinlikler ve yoğunluk her zaman görünür. Başka ekrana geçince filtre sıfırlanır. “Konumum” düğmesi konumuna bir kez bakıp seni peteğine götürür; konumun sunucuya gönderilmez."
+                subtitle="Alttaki iki şeritten yalnızca Konser & Festival etkinliklerini, oyunları, etkinlikleri ya da mekânları; bugünü, bu haftayı ya da yakınını seçebilirsin. Bir peteğe dokununca büyük petek menüsü açılır; oradan petek akışına gidebilirsin. PeopleHere Özel etkinlikler ve yoğunluk her zaman görünür. Başka ekrana geçince filtre sıfırlanır. “Konumum” düğmesi konumuna bir kez bakıp seni peteğine götürür; konumun sunucuya gönderilmez."
               />
               <ListRow
                 icon="location-outline"
@@ -1383,7 +1448,7 @@ function InfoModal({ visible, onClose, status }: { visible: boolean; onClose: ()
               ) : null}
             </Panel>
             <Text style={styles.credit}>
-              Harita 41. Kat Sosyal tarafından çizilmiştir. Yer verisi: Overture Maps Foundation (CDLA-Permissive-2.0).
+              Harita PeopleHere tarafından çizilmiştir. Yer verisi: Overture Maps Foundation (CDLA-Permissive-2.0).
             </Text>
           </ScrollView>
           <PrimaryButton label="Tamam" onPress={onClose} />
@@ -1615,6 +1680,20 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   chipWarn: { borderColor: 'rgba(124, 140, 255, 0.6)' },
+  chipVisit: { borderColor: colors.primary },
+  cityMenu: {
+    alignSelf: 'flex-start',
+    gap: 2,
+    padding: 6,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  cityRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 9, borderRadius: 10 },
+  cityRowOn: { backgroundColor: colors.surfaceAlt },
+  cityRowText: { color: colors.text, fontFamily: fonts.semi, fontSize: 14 },
+  cityRowTextOn: { color: colors.primary, fontFamily: fonts.extra },
   chipText: { color: colors.text, fontFamily: fonts.semi, fontSize: 13 },
   bottomCard: {
     position: 'absolute',

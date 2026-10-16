@@ -111,7 +111,7 @@ async function soap(url: string, method: string, inner: string): Promise<Answer>
         'Content-Type': 'text/xml; charset=utf-8',
         SOAPAction: `"http://tckimlik.nvi.gov.tr/WS/${method}"`,
         // Güvenlik duvarı tarayıcı dışı istemcileri reddedebiliyor: sıradan bir istemci gibi görün
-        'User-Agent': 'Mozilla/5.0 (compatible; 41KatSosyal/1.0)',
+        'User-Agent': 'Mozilla/5.0 (compatible; PeopleHere/1.0)',
         Accept: 'text/xml, application/soap+xml, */*',
         'Accept-Language': 'tr-TR,tr;q=0.9',
       },

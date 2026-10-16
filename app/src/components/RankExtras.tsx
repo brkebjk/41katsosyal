@@ -70,8 +70,20 @@ export function RankTimers({ info, onFinal, onMore }: { info: RankingInfo | null
 
 type FinalRow = { place: number; full_name: string; score: number; is_me: boolean };
 
-/** Kesinleşmiş sonuçlar: geçen hafta ve geçen ay (genel puan ya da seçili oyun). */
-export function FinalResultsSheet({ game, gameTitle, onClose }: { game: string | null; gameTitle?: string; onClose: () => void }) {
+/** Kesinleşmiş sonuçlar: geçen hafta ve geçen ay (genel puan ya da seçili oyun); `city` boşsa Tüm İller. */
+export function FinalResultsSheet({
+  game,
+  gameTitle,
+  city = null,
+  scopeLabel,
+  onClose,
+}: {
+  game: string | null;
+  gameTitle?: string;
+  city?: string | null;
+  scopeLabel?: string;
+  onClose: () => void;
+}) {
   const [period, setPeriod] = useState<'week' | 'month'>('week');
   const [rows, setRows] = useState<FinalRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,12 +93,12 @@ export function FinalResultsSheet({ game, gameTitle, onClose }: { game: string |
     (async () => {
       let res: { data: FinalRow[]; error: string | null };
       if (period === 'week') {
-        res = await getLastWeekLeaderboard(game);
+        res = await getLastWeekLeaderboard(game, city);
       } else if (game) {
-        const g = await getGameLeaderboard(game, 'last');
+        const g = await getGameLeaderboard(game, 'last', city);
         res = { data: g.data.map((r) => ({ place: r.place, full_name: r.full_name, score: r.score, is_me: r.is_me })), error: g.error };
       } else {
-        const g = await getLeaderboard('last');
+        const g = await getLeaderboard('last', city);
         res = { data: g.data.map((r) => ({ place: r.place, full_name: r.full_name, score: r.points, is_me: r.is_me })), error: g.error };
       }
       if (!active) return;
@@ -96,12 +108,12 @@ export function FinalResultsSheet({ game, gameTitle, onClose }: { game: string |
     return () => {
       active = false;
     };
-  }, [period, game]);
+  }, [period, game, city]);
 
   return (
     <Sheet
       title="Kesinleşmiş sonuçlar"
-      subtitle={game ? `${gameTitle ?? 'Oyun'} sıralaması · bu sonuçlar artık değişmez` : 'Genel puan · bu sonuçlar artık değişmez'}
+      subtitle={`${game ? `${gameTitle ?? 'Oyun'} sıralaması` : 'Genel puan'}${scopeLabel ? ` · ${scopeLabel}` : ''} · bu sonuçlar artık değişmez`}
       onClose={onClose}
     >
       <Segmented<'week' | 'month'>

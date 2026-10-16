@@ -15,7 +15,7 @@ class Boundary extends Component<{ children: ReactNode }, { error: string | null
     return (
       <div className="center">
         <div className="login card">
-          <h1>41. Kat Yönetim</h1>
+          <h1>PeopleHere Yönetim</h1>
           <p className="error">Panel açılırken hata oluştu:</p>
           <p className="pre small">{this.state.error}</p>
           <button className="btn btn-primary" onClick={() => window.location.reload()}>

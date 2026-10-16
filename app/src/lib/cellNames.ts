@@ -3,40 +3,63 @@
 // Ad, peteğin haritadaki sırasından kendiliğinden üretilir; aynı ad iki petekte çıkmaz. Moderatör bir peteğe başka ad
 // verirse (sunucudaki map_cell_names) o ad kullanılır. Moderatör adları uygulama açıkken bir kez okunur.
 
-import { LAND_CELLS, type Cell } from '@/lib/hex';
+import { cityCells, type Cell } from '@/lib/hex';
 import { callRpc, callRpcVoid, type Result } from '@/lib/rpc';
 
 const FIRST = [
-  'adalar', 'akıncı', 'altın', 'anka', 'arı', 'asma', 'aslan', 'ayaz', 'ayva', 'badem', 'bakır', 'balık',
-  'başak', 'bayrak', 'bulut', 'ceviz', 'ceylan', 'çakıl', 'çam', 'çay', 'çınar', 'çiçek', 'dalga', 'defne',
-  'demir', 'deniz', 'doğan', 'dolunay', 'duman', 'elma', 'erik', 'fener', 'fırtına', 'gelincik', 'gök',
-  'gümüş', 'güneş', 'hilal', 'ılgın', 'ırmak', 'ilkbahar', 'inci', 'kale', 'kanarya', 'kaplan', 'kartal',
-  'kavak', 'kelebek', 'keklik', 'kestane', 'kırlangıç', 'kızılcık', 'kumru', 'kuzey', 'lale', 'leylek',
-  'martı', 'mehtap', 'menekşe', 'mercan', 'meşe', 'nar', 'nergis', 'ok', 'papatya', 'poyraz', 'rüzgar',
-  'sakız', 'serçe', 'servi', 'sis', 'söğüt', 'sümbül', 'şafak', 'şahin', 'şimşek', 'turna', 'yakamoz',
-  'yaprak', 'yıldız', 'yunus', 'zeytin',
+  'adalar', 'akıncı', 'altın', 'anka', 'arı', 'asma', 'aslan', 'ayaz', 'ayva', 'badem', 'bakır', 'balık', 'başak',
+  'bayrak', 'bulut', 'ceviz', 'ceylan', 'çakıl', 'çam', 'çay', 'çınar', 'çiçek', 'dalga', 'defne', 'demir', 'deniz',
+  'doğan', 'dolunay', 'duman', 'elma', 'erik', 'fener', 'fırtına', 'gelincik', 'gök', 'gümüş', 'güneş', 'hilal',
+  'ılgın', 'ırmak', 'ilkbahar', 'inci', 'kale', 'kanarya', 'kaplan', 'kartal', 'kavak', 'kelebek', 'keklik',
+  'kestane', 'kırlangıç', 'kızılcık', 'kumru', 'kuzey', 'lale', 'leylek', 'martı', 'mehtap', 'menekşe', 'mercan',
+  'meşe', 'nar', 'nergis', 'ok', 'papatya', 'poyraz', 'rüzgar', 'sakız', 'serçe', 'servi', 'sis', 'söğüt', 'sümbül',
+  'şafak', 'şahin', 'şimşek', 'turna', 'yakamoz', 'yaprak', 'yıldız', 'yunus', 'zeytin', 'akasya', 'akarsu',
+  'akçaağaç', 'alabalık', 'amber', 'anemon', 'arpa', 'aslanağzı', 'atlas', 'ayçiçeği', 'bağ', 'begonya', 'berrak',
+  'boncuk', 'buğday', 'bülbül', 'çağla', 'çalı', 'çamlık', 'çiğdem', 'çilek', 'dut', 'ebegümeci', 'eflatun', 'elmas',
+  'erguvan', 'fesleğen', 'fındık', 'fıstık', 'gardenya', 'göl', 'gökkuşağı', 'hanımeli', 'hatmi', 'hurma', 'ıhlamur',
+  'iğde', 'incir', 'kaktüs', 'kamelya', 'karanfil', 'kardelen', 'kavun', 'kayın', 'kiraz', 'kumsal', 'lavanta',
+  'leylak', 'limon', 'mandalina', 'manolya', 'mersin', 'mimoza', 'nane', 'nilüfer', 'orkide', 'palmiye', 'pamuk',
+  'pelin', 'portakal', 'reyhan', 'sardunya', 'sedir', 'şebboy', 'şeftali', 'taflan', 'turunç', 'üzüm', 'vişne',
+  'yasemin', 'yonca', 'zambak', 'zerdali', 'akik', 'alev', 'alkım', 'altay', 'ateş', 'ayışığı', 'bakla', 'bal',
+  'balaban', 'bambu', 'billur', 'bora', 'çakır', 'doruk', 'ekin', 'ela', 'ezgi', 'fidan', 'filiz', 'gonca',
+  'kehribar', 'kına', 'kuğu', 'kum', 'lacivert', 'mavi', 'mor', 'okyanus', 'opal', 'papağan', 'pembe', 'petek',
+  'pırlanta', 'safir', 'sarı', 'sedef', 'selvi', 'serin', 'su', 'tarçın', 'toprak', 'turkuaz', 'uzay', 'yakut',
+  'yeşil', 'zümrüt',
 ];
 
 const SECOND = [
-  'sahili', 'tepesi', 'geçidi', 'koyu', 'yamacı', 'meydanı', 'korusu', 'vadisi', 'çarşısı', 'bayırı',
-  'burnu', 'sırtı', 'yolu', 'köşesi', 'durağı', 'bahçesi', 'limanı', 'iskelesi', 'kapısı', 'çeşmesi',
-  'köprüsü', 'ovası', 'yaylası', 'düzlüğü', 'yokuşu', 'kıyısı', 'deresi', 'pınarı', 'kuyusu', 'kulesi',
-  'avlusu', 'sokağı', 'mahallesi', 'semti', 'obası', 'harmanı', 'bağı', 'bostanı', 'tarlası', 'çayırı',
-  'ormanı', 'gölü', 'adası', 'körfezi', 'boğazı', 'kayası', 'mağarası', 'zirvesi', 'eteği', 'kanyonu',
-  'kenarı', 'ucu', 'başı', 'dibi', 'yatağı', 'çatısı', 'konağı', 'hanı', 'sarayı', 'kalesi', 'surları',
-  'bendi', 'şelalesi', 'kumsalı', 'feneri', 'yuvası', 'otağı', 'çadırı', 'sofrası', 'pazarı', 'değirmeni',
-  'ambarı',
+  'sahili', 'tepesi', 'geçidi', 'koyu', 'yamacı', 'meydanı', 'korusu', 'vadisi', 'çarşısı', 'bayırı', 'burnu',
+  'sırtı', 'yolu', 'köşesi', 'durağı', 'bahçesi', 'limanı', 'iskelesi', 'kapısı', 'çeşmesi', 'köprüsü', 'ovası',
+  'yaylası', 'düzlüğü', 'yokuşu', 'kıyısı', 'deresi', 'pınarı', 'kuyusu', 'kulesi', 'avlusu', 'sokağı', 'mahallesi',
+  'semti', 'obası', 'harmanı', 'bağı', 'bostanı', 'tarlası', 'çayırı', 'ormanı', 'gölü', 'adası', 'körfezi',
+  'boğazı', 'kayası', 'mağarası', 'zirvesi', 'eteği', 'kanyonu', 'kenarı', 'ucu', 'başı', 'dibi', 'yatağı', 'çatısı',
+  'konağı', 'hanı', 'sarayı', 'kalesi', 'surları', 'bendi', 'şelalesi', 'kumsalı', 'feneri', 'yuvası', 'otağı',
+  'çadırı', 'sofrası', 'pazarı', 'değirmeni', 'ambarı', 'aralığı', 'bucağı', 'çıkmazı', 'dönemeci', 'dörtyolu',
+  'eşiği', 'gediği', 'göleti', 'gözesi', 'kavşağı', 'kemeri', 'kovuğu', 'köşkü', 'kulübesi', 'meşeliği', 'mezrası',
+  'ocağı', 'odası', 'perdesi', 'rıhtımı', 'sahanlığı', 'sarnıcı', 'seddi', 'taşlığı', 'tepeciği', 'toprağı',
+  'tüneli', 'uçurumu', 'yalısı', 'yazlığı', 'yolağzı', 'yöresi', 'zeytinliği', 'adacığı', 'ağılı', 'arkı', 'çardağı',
+  'çiftliği', 'dalyanı', 'düzü', 'fidanlığı', 'gölcüğü', 'hamamı', 'havuzu', 'ılıcası', 'kanalı', 'koruluğu', 'köyü',
+  'kuytusu', 'mesiresi', 'otlağı', 'pervazı', 'sazlığı', 'vahası', 'yaylağı', 'yeşilliği', 'yurdu', 'bağlığı',
+  'dikmesi', 'fırını', 'gölgesi', 'ırmağı', 'karşısı', 'şeridi', 'ağzı', 'arkası', 'bölgesi', 'çevresi', 'çukuru',
+  'göbeği', 'merkezi', 'mevkii', 'önü', 'sınırı', 'tarafı', 'üstü', 'yakası', 'yanı', 'ortası', 'havası', 'ışığı',
+  'rüzgarı', 'suyu', 'taşı', 'serinliği', 'bucakları', 'gezisi', 'kulübü', 'bayramı', 'şenliği', 'izi', 'sesi',
+  'rengi', 'kokusu', 'yıldızı', 'ayı', 'güneşi', 'baharı', 'yazı', 'kışı', 'güzü', 'akşamı', 'sabahı', 'şafağı',
 ];
 
 const TOTAL = FIRST.length * SECOND.length;
 /** TOTAL ile aralarında asal: sıradaki petekler birbirine benzemeyen adlar alır, hiçbir ad tekrar etmez */
 const STRIDE = 7919;
 
+/** Bütün şehirlerin petekleri tek sırada (Kocaeli, İstanbul, İzmir): ad bütün uygulamada tektir */
+const ORDER = ['kocaeli', 'istanbul', 'izmir'] as const;
 let indexByKey: Map<string, number> | null = null;
+function allCells(): Cell[] {
+  return ORDER.flatMap((c) => [...cityCells(c)]);
+}
 function cellIndex(q: number, r: number): number | null {
   if (!indexByKey) {
     indexByKey = new Map();
-    LAND_CELLS.forEach((c, i) => indexByKey?.set(`${c.q},${c.r}`, i));
+    allCells().forEach((c, i) => indexByKey?.set(`${c.q},${c.r}`, i));
   }
   return indexByKey.get(`${q},${r}`) ?? null;
 }
@@ -90,7 +113,7 @@ let generatedNames: Set<string> | null = null;
 export function cellNameInUse(name: string): boolean {
   if (!generatedNames) {
     generatedNames = new Set();
-    for (const c of LAND_CELLS) {
+    for (const c of allCells()) {
       const n = generatedCellName(c.q, c.r);
       if (n) generatedNames.add(n);
     }
@@ -108,7 +131,7 @@ export function cleanCellName(text: string): string {
 const NAME_TEXT: Record<string, string> = {
   invalid_cell_name: 'Ad 3–40 karakter olmalı; küçük harf ve rakam, kelimeler arasında tire (ör. adalar-sahili).',
   cell_name_taken: 'Bu ad başka bir peteğe verilmiş. Başka bir ad seç.',
-  invalid_cell: 'Bu petek Kocaeli haritasında değil.',
+  invalid_cell: 'Bu petek haritada değil.',
 };
 
 /** Moderatör: peteğe ad ver. Boş ad = moderatörün adı silinir, üretilen ada dönülür. */

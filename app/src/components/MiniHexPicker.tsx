@@ -31,7 +31,7 @@ function lines(name: string): string[] {
 
 /**
  * Yakınımdaki petekler için mini petek haritası: bulunduğum petek ortada (sarı, “Buradasın”), çevresindeki 6 petek
- * adlarıyla. Bir peteğe dokununca o peteğin akışı açılır. Denizdeki/Kocaeli dışındaki petekler soluk ve seçilemez.
+ * adlarıyla. Bir peteğe dokununca o peteğin akışı açılır. Denizdeki/şehir dışındaki petekler soluk ve seçilemez.
  */
 export function MiniHexPicker({
   visible,

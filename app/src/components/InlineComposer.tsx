@@ -12,6 +12,7 @@ import { createPost, mentionTag, POST_MAX, THREAD_MAX } from '@/lib/feed';
 import type { Cell } from '@/lib/hex';
 import { notify } from '@/lib/dialog';
 import { findNearbyPlaces, type Place } from '@/lib/map';
+import { useDraftText } from '@/lib/drafts';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 type Props = {
@@ -48,6 +49,12 @@ export function InlineComposer({
   onError,
 }: Props) {
   const [text, setText] = useState('');
+  // Yazılan gönderi taslak olarak saklanır (uygulama kapanıp açılsa da kaybolmaz); yanıt ve zincir ayrı tutulur
+  useDraftText(
+    replyTo ? `post-reply:${replyTo.id}` : threadOf ? `post-thread:${threadOf.id}` : cell ? 'post-cell' : 'post',
+    text,
+    setText,
+  );
   const [place, setPlace] = useState<Place | null>(null);
   const [placeOpen, setPlaceOpen] = useState(false);
   const [locating, setLocating] = useState(false);

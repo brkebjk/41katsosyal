@@ -118,7 +118,7 @@ export function FeedRulesPopup({ onClose }: { onClose: () => void }) {
   return (
     <Popup
       title="Topluluk ve Yazışma Kuralları"
-      subtitle="41. Kat Sosyal'de herkesin güvende ve rahat yazışması için"
+      subtitle="PeopleHere'de herkesin güvende ve rahat yazışması için"
       icon="document-text"
       onClose={onClose}
       testID="feed-rules"

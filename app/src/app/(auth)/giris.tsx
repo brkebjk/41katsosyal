@@ -34,7 +34,7 @@ export default function LoginScreen() {
   }
 
   return (
-    <AuthShell title="Giriş yap" subtitle="Hesabınla 41. Kat Sosyal'e geri dön.">
+    <AuthShell title="Giriş yap" subtitle="Hesabınla PeopleHere'e geri dön.">
       {!isBackendReady ? (
         <View style={styles.devBox}>
           <Ionicons name="construct-outline" size={18} color={colors.primary} />

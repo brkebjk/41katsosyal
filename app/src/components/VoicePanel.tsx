@@ -18,7 +18,7 @@ import {
 import { fonts } from '@/theme';
 
 const POLL_MS = 2000;
-const MIC_INFO_KEY = 'kat41.voiceMicInfo';
+const MIC_INFO_KEY = 'peoplehere.voiceMicInfo';
 
 /** Mikrofon izni istenmeden önce bir kez gösterilen açıklama */
 const MIC_REASON =

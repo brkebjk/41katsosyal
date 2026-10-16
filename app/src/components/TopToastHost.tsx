@@ -5,7 +5,6 @@ import { Animated, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/AppText';
-import { CrewInviteButtons } from '@/components/CrewInviteButtons';
 import { FriendRequestButtons } from '@/components/FriendRequestButtons';
 import { RoomInviteChat } from '@/components/RoomInviteChat';
 import { notificationTarget } from '@/lib/notifications';
@@ -15,7 +14,7 @@ import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 const SHOW_MS = 5000;
-/** Arkadaşlık isteği ve klan daveti: 5 sn durur; seçilmezse bildirim kutusunda (klan daveti mesaj kutusunda da) bekler */
+/** Arkadaşlık isteği: 5 sn durur; seçilmezse bildirim kutusunda Onayla / Reddet ile bekler */
 const FRIEND_SHOW_MS = 5000;
 const stamp = () => String(Date.now());
 
@@ -26,8 +25,6 @@ function iconFor(kind: string, akind: unknown): IconName {
   if (kind === 'friend_request') return 'person-add';
   if (kind === 'game_invite') return 'game-controller';
   if (kind === 'team_invite') return 'people';
-  if (kind === 'crew_invite') return 'people-circle';
-  if (kind === 'crew_mention') return 'people';
   if (kind === 'mention') return 'at';
   if (kind === 'room_msg') return 'chatbubble-ellipses';
   return 'notifications';
@@ -47,7 +44,7 @@ export function TopToastHost() {
     Animated.spring(y, { toValue: 0, useNativeDriver: true, friction: 8 }).start();
     const t = setTimeout(() => {
       Animated.timing(y, { toValue: -160, duration: 220, useNativeDriver: true }).start(() => showToast(null));
-    }, toast.kind === 'friend_request' || toast.kind === 'crew_invite' ? FRIEND_SHOW_MS : SHOW_MS);
+    }, toast.kind === 'friend_request' ? FRIEND_SHOW_MS : SHOW_MS);
     return () => clearTimeout(t);
   }, [toast, y]);
 
@@ -93,12 +90,6 @@ export function TopToastHost() {
             {toast.kind === 'friend_request' && typeof toast.data.request_id === 'string' ? (
               <FriendRequestButtons
                 requestId={toast.data.request_id}
-                onDone={() => setTimeout(() => showToast(null), 1200)}
-              />
-            ) : null}
-            {toast.kind === 'crew_invite' && typeof toast.data.invite_id === 'string' ? (
-              <CrewInviteButtons
-                inviteId={toast.data.invite_id}
                 onDone={() => setTimeout(() => showToast(null), 1200)}
               />
             ) : null}

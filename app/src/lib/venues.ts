@@ -123,7 +123,7 @@ const VENUE_TEXT: Record<string, string> = {
   invalid_hours: 'Kapanış saati 2 ile 60 karakter arasında olmalı (örn. “Her gün 02:00”).',
   invalid_quota: 'Kod kotası 0 ile 1000 arasında olmalı.',
   invalid_name: 'Ad 2 ile 60 karakter arasında olmalı.',
-  invalid_cell: 'Haritadan Kocaeli içinde bir petek seçmelisin.',
+  invalid_cell: 'Haritadan şehrin içinde bir petek seçmelisin.',
 };
 
 function num(x: unknown): number | null {

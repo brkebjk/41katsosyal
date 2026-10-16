@@ -26,8 +26,6 @@ export type PointsTableData = {
   rows: { place: number; points: number }[];
   /** Oyuncu sayısına göre 1. sıranın puanı (“kalabalık oyun, çok puan”) */
   ladder: { players: number; first: number; plus: boolean }[];
-  /** Yan yana oyunun puan çarpanı (tablodaki puanlar uzaktan oyunun puanıdır) */
-  sideMult: number;
 };
 
 /**
@@ -48,7 +46,7 @@ export function pointsTable(rules: PointRules, players?: number, minPlayers?: nu
   const sizes = Array.from(new Set([min, 5, 6, 8, 10, 12])).filter((n) => n >= min && n < capAt);
   sizes.push(capAt);
   const ladder = sizes.map((n) => ({ players: n, first: topPoints(n, cap), plus: n === capAt }));
-  return { size, actual: players ?? null, minPlayers: min, rows, ladder, sideMult: Math.max(1, rules.sideMult) };
+  return { size, actual: players ?? null, minPlayers: min, rows, ladder };
 }
 
 /**
@@ -80,8 +78,8 @@ export function gamePointsInfo(
     ...extra,
     {
       icon: 'people-circle',
-      lead: `Yan yana ×${rules.sideMult}.`,
-      text: `Aynı masada (konum doğrulanarak) oynanan oyun, uzaktan oyunun ${rules.sideMult} katı puan verir. Mekân kodu ile mekânda oynarsan +%${Math.max(0, rules.venueBonusPct - 100)}.`,
+      lead: 'Yan yana da uzaktan da aynı puan.',
+      text: `Her sıranın puanı iki oyunda da aynıdır; yan yana oyunun (aynı masada, konum doğrulanır) aylık hedefi daha yüksektir. Mekân kodu ile mekânda oynarsan +%${Math.max(0, rules.venueBonusPct - 100)}.`,
     },
     {
       icon: 'flag',
@@ -266,7 +264,7 @@ export const HOW_TO_PLAY: Record<string, InfoItem[]> = {
     {
       icon: 'headset',
       lead: 'Uzaktan oyna.',
-      text: 'Uzaktan Eşleş ile herkes kendi telefonundan oynar. Sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur (her tartışmada 10 sn). Yan yana oyun 7 kat puan verir.',
+      text: 'Uzaktan Eşleş ile herkes kendi telefonundan oynar. Sabah tartışmasında bas-konuş ses mesajlarıyla konuşulur (her tartışmada 10 sn). Yan yana oyunun aylık puan hedefi daha yüksektir.',
     },
     {
       icon: 'trophy',

@@ -1,14 +1,14 @@
 import * as SecureStore from 'expo-secure-store';
 import { Appearance } from 'react-native';
 
-// 41. Kat Sosyal tasarım ayarları: renkler, boşluklar, köşe yuvarlaklıkları.
+// PeopleHere tasarım ayarları: renkler, boşluklar, köşe yuvarlaklıkları.
 // Uygulamanın görünümünü değiştirmek istediğimizde sadece bu dosyaya dokunmamız yeterli.
 
 // Tema: Açık (varsayılan), Koyu ya da Sistem (telefonun ayarına uyar). Seçim telefonda saklanır ve uygulama
 // AÇILIRKEN, ekranlar çizilmeden önce okunur (renkler ekranların stillerine açılışta yazıldığı için tema değişikliği
 // uygulama yeniden açılınca uygulanır). Harita katman renkleri iki temada da aynıdır (harita okunurluğu).
 export type ThemePref = 'dark' | 'light' | 'system';
-const THEME_KEY = 'kat41_theme';
+const THEME_KEY = 'peoplehere_theme';
 
 function readThemePref(): ThemePref {
   try {
@@ -110,6 +110,6 @@ export const fonts = {
 } as const;
 
 export const brand = {
-  name: '41. Kat Sosyal',
-  slogan: 'Dünyadan bir kat yukarıda buluşuyoruz',
+  name: 'PeopleHere',
+  slogan: 'Şehrindeki insanlarla tanış, buluş, eğlen',
 } as const;

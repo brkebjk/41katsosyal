@@ -9,7 +9,7 @@ import { TextField } from '@/components/TextField';
 import { CELL_NAME_RE, cellName, cleanCellName, generatedCellName, setCellName } from '@/lib/cellNames';
 import { EVENT_CATEGORIES } from '@/lib/eventCategories';
 import { GAMES } from '@/lib/gameCatalog';
-import { districtOf, type Cell } from '@/lib/hex';
+import { areaOf, type Cell } from '@/lib/hex';
 import { checkInHere, getPresence, type Presence } from '@/lib/map';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
@@ -17,7 +17,7 @@ import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 // Harita filtresi
 // ---------------------------------------------------------------------------------------------
 
-/** Gizlenen katmanlar. Boş = her şey görünür. 41. Kat Özel etkinlik ve oyunlar filtreden etkilenmez. */
+/** Gizlenen katmanlar. Boş = her şey görünür. PeopleHere Özel etkinlik ve oyunlar filtreden etkilenmez. */
 export type MapFilter = { hiddenCats: string[]; hiddenGames: string[]; hideVenues: boolean };
 export const EMPTY_FILTER: MapFilter = { hiddenCats: [], hiddenGames: [], hideVenues: false };
 
@@ -43,7 +43,7 @@ export function MapFilterSheet({
   return (
     <Sheet
       title="Haritada ne görünsün?"
-      subtitle="Başka sekmeye geçince filtre sıfırlanır. 41. Kat Özel etkinlik ve oyunlar her zaman görünür."
+      subtitle="Başka sekmeye geçince filtre sıfırlanır. PeopleHere Özel etkinlik ve oyunlar her zaman görünür."
       onClose={onClose}
     >
       <Text style={styles.group}>Etkinlik kategorileri</Text>
@@ -166,7 +166,7 @@ export function PresenceSheet({
   }, []);
 
   return (
-    <Sheet title={cellName(cell)} subtitle={`${districtOf(cell.q, cell.r) ?? 'Kocaeli'} · şu an burada kim var?`} onClose={onClose}>
+    <Sheet title={cellName(cell)} subtitle={`${areaOf(cell.q, cell.r)} · şu an burada kim var?`} onClose={onClose}>
       {presenceOpen ? (
         <View style={styles.countBox} testID="presence-count">
           <Ionicons name="people" size={26} color={colors.primary} />
@@ -230,7 +230,7 @@ export function RenameCellSheet({ cell, onClose }: { cell: Cell; onClose: () => 
   }
 
   return (
-    <Sheet title="Petek adını değiştir" subtitle={`${districtOf(cell.q, cell.r) ?? 'Kocaeli'} · herkes bu adı görür`} onClose={onClose}>
+    <Sheet title="Petek adını değiştir" subtitle={`${areaOf(cell.q, cell.r)} · herkes bu adı görür`} onClose={onClose}>
       <TextField
         label="Petek adı"
         icon="pricetag-outline"

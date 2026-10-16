@@ -6,7 +6,7 @@ import { Avatar } from '@/components/Avatar';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { VenueAdminModal } from '@/components/VenueAdminModal';
 import { confirmAction } from '@/lib/dialog';
-import { districtOf } from '@/lib/hex';
+import { areaOf } from '@/lib/hex';
 import { isBackendReady } from '@/lib/supabase';
 import { adminListSponsors, adminRemoveVenueFromMap, starsText, type SponsorRow } from '@/lib/venues';
 import { pickAndUploadVenueImage, setVenueImage, venueImageUrl } from '@/lib/venueImage';
@@ -90,7 +90,7 @@ export function VenuesTab({ onNotice }: { onNotice: (n: { text: string; error: b
         rows.map((s) => {
           const where =
             s.cell_q !== null && s.cell_r !== null
-              ? `Haritada · ${districtOf(s.cell_q, s.cell_r) ?? 'Kocaeli'}`
+              ? `Haritada · ${areaOf(s.cell_q, s.cell_r)}`
               : s.has_venue
                 ? 'Bilgisi var, haritada değil'
                 : 'Mekân bilgisi girilmemiş';

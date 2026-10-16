@@ -23,7 +23,6 @@ const TYPE: Record<ReportGroup['type'], string> = {
   vv_whisper: 'Vampir fısıltısı',
   vv_dead: 'Vampir elenenler sohbeti',
   dm: 'Özel mesaj',
-  crew_msg: 'Klan sohbeti',
   sk_voice: 'Köpekbalığı Kafesi ses mesajı',
 };
 

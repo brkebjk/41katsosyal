@@ -13,7 +13,7 @@ import { EventComments } from '@/components/EventComments';
 import { SponsorMark } from '@/components/SponsorMark';
 import { useSponsorMenu } from '@/components/useSponsorMenu';
 import { useRoomActions } from '@/components/useRoomActions';
-import { EventForm } from '@/components/EventForm';
+import { EVENT_DRAFT_KEY, EventForm } from '@/components/EventForm';
 import { EventPointsModal } from '@/components/EventPointsModal';
 import { FloatingActions } from '@/components/FloatingActions';
 import { GameActionButton } from '@/components/GameActionButton';
@@ -31,8 +31,10 @@ import { Screen } from '@/components/Screen';
 import { SectionHeader } from '@/components/SectionHeader';
 import { TitleBadge } from '@/components/TitleBadge';
 import { useAuth } from '@/lib/auth';
-import { districtOf } from '@/lib/hex';
+import { cityIn, useCity } from '@/lib/city';
+import { areaOf } from '@/lib/hex';
 import { confirmAction, notify } from '@/lib/dialog';
+import { loadDraft } from '@/lib/drafts';
 import { gameButtonImages } from '@/lib/images';
 import { shareEventToFeed } from '@/lib/feed';
 import { multiplierText, setTeamSeeking, teamMultiplier } from '@/lib/invites';
@@ -104,6 +106,9 @@ const CONCERT_RULES =
 /** Bir kez işlenen “Etkinliği gör” yönlendirmeleri (sekme yeniden kurulunca tekrar uygulanmaz) */
 const consumedEventKeys = new Set<string>();
 
+/** Etkinlik taslağı bu açılışta kontrol edildi mi */
+let draftChecked = false;
+
 /** Sekmeden ayrılınca ekran baştan kurulur (açık pencereler kapanır, seçimler sıfırlanır) */
 export default function EventsScreenTab() {
   const resetKey = useTabResetKey('events');
@@ -153,6 +158,20 @@ function EventsScreen() {
   const safety = useSafetyMenu(safetyFor ? { type: 'event', id: safetyFor } : null);
   // Puanların açılması için gereken en az kişi (sunucu ayarından; kartlardaki “bekliyor” notunda kullanılır)
   const [minAttendees, setMinAttendees] = useState(DEFAULT_RULES.eventMinAttendees);
+  // Ziyaret modu: başka şehrin etkinlikleri listelenir, etkinlik açılamaz
+  const { view: viewCity, readOnly: visiting } = useCity();
+
+  // Uygulama kapanmadan önce “Etkinlik oluştur” penceresinde yazılanlar varsa pencere yazılanlarla yeniden açılır
+  // (uygulama açıkken bir kez)
+  useEffect(() => {
+    if (draftChecked || visiting) return;
+    draftChecked = true;
+    void loadDraft<object>(EVENT_DRAFT_KEY).then((d) => {
+      if (!d) return;
+      setFormKey((k) => k + 1);
+      setFormOpen(true);
+    });
+  }, [visiting]);
 
   useEffect(() => {
     let active = true;
@@ -170,14 +189,14 @@ function EventsScreen() {
       setLoaded(true);
       return;
     }
-    const [list, q] = await Promise.all([listEvents(), getQuota()]);
+    const [list, q] = await Promise.all([listEvents(viewCity ?? undefined), getQuota()]);
     setLoadError(list.error);
     if (!list.error) setEvents(list.data);
     if (q.data) setQuota(q.data);
     setLoaded(true);
     // Sekmedeki kırmızı nokta da güncel kalsın (kod girilince ya da etkinlik kalkınca kaybolur)
     void refreshNotices();
-  }, []);
+  }, [viewCity]);
 
   // Sekmeye her gelindiğinde liste tazelenir
   useFocusEffect(
@@ -416,7 +435,9 @@ function EventsScreen() {
   return (
     <Screen
       title="Etkinlikler"
-      subtitle="Yüz yüze buluşmalar, masa oyunu geceleri"
+      subtitle={
+        visiting ? `Ziyaretçisin · ${cityIn(viewCity)} etkinlikler` : `${cityIn(viewCity)} yüz yüze buluşmalar`
+      }
       onRefresh={onRefresh}
       refreshing={refreshing}
       headerRight={
@@ -447,12 +468,12 @@ function EventsScreen() {
         <View style={styles.topButtons}>
           <GameActionButton
             label="Oluştur"
-            sub={limitReached ? 'Bu ayki hakkın bitti' : 'Etkinliğini aç'}
+            sub={visiting ? 'Ziyarette açılamaz' : limitReached ? 'Bu ayki hakkın bitti' : 'Etkinliğini aç'}
             icon="add-circle"
             colors={['#FF7A59', '#E5533D']}
             edge="#A8361F"
             art={gameButtonImages.create}
-            disabled={limitReached || quota === null}
+            disabled={visiting || limitReached || quota === null}
             onPress={() => {
               setFormKey((k) => k + 1);
               setFormOpen(true);
@@ -764,10 +785,10 @@ function EventsScreen() {
         <>
           {officialEvents.length > 0 ? (
             <SectionHeader
-              title="41. Kat Özel"
+              title="PeopleHere Özel"
               official
               count={officialEvents.length}
-              hint="41. Kat Sosyal moderatörlerinin düzenlediği etkinlikler"
+              hint="PeopleHere moderatörlerinin düzenlediği etkinlikler"
             />
           ) : null}
           {officialEvents.map(renderEvent)}
@@ -908,9 +929,9 @@ function EventCard({
   const free = ev.fee_amount <= 0;
   const official = ev.is_official;
   const sponsorId = ev.host_sponsor_id ?? null;
-  // Köşedeki kurdele: 41. Kat Özel, Konser & Festival ya da Mekân Etkinliği
+  // Köşedeki kurdele: PeopleHere Özel, Konser & Festival ya da Mekân Etkinliği
   const ribbon = official
-    ? { label: '41. Kat Özel', color: '#FFC83D' }
+    ? { label: 'PeopleHere Özel', color: '#FFC83D' }
     : ev.category === 'konser_festival'
       ? { label: 'Konser & Festival', color: '#FF7AD9' }
       : sponsorId
@@ -1012,7 +1033,7 @@ function EventCard({
                 <Ionicons name="map-outline" size={13} color={colors.event} />
                 <Text
                   style={styles.heroChipText}
-                >{`Haritada gör · ${districtOf(ev.cell_q, ev.cell_r) ?? 'Kocaeli'}`}</Text>
+                >{`Haritada gör · ${areaOf(ev.cell_q, ev.cell_r)}`}</Text>
               </Pressable>
             ) : null}
           </View>
@@ -1066,7 +1087,7 @@ function EventCard({
           style={({ pressed }) => [styles.mapLink, pressed && styles.mapLinkPressed]}
         >
           <Ionicons name="map-outline" size={16} color={colors.event} />
-          <Text style={styles.mapLinkText}>{`Haritada gör · ${districtOf(ev.cell_q, ev.cell_r) ?? 'Kocaeli'}`}</Text>
+          <Text style={styles.mapLinkText}>{`Haritada gör · ${areaOf(ev.cell_q, ev.cell_r)}`}</Text>
         </Pressable>
       ) : null}
 

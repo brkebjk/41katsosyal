@@ -10,7 +10,7 @@ import * as Application from 'expo-application';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-const KEY = 'kat41_device_id';
+const KEY = 'peoplehere_device_id';
 let cached: string | null = null;
 
 function randomId(): string {

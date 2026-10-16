@@ -2,10 +2,10 @@
 
 Bu klasördeki dosyalar, harita verisini yeniden üretmek ve indirme boyutunu ölçmek içindir. Bu işleri Claude yapar; sen hiçbirini çalıştırmak zorunda değilsin.
 
-- `yer_listesi_hazirla.py`: Overture Maps yerlerinden Kocaeli listesini hazırlar ve `supabase/places_kocaeli.csv` dosyasını üretir (hassas kategoriler çıkarılır).
-- `petek_izgarasi_hazirla.py`: Kocaeli'nin kara peteklerini hesaplar, `kocaeli_cells.json` dosyasını üretir (uygulamadaki `src/lib/kocaeliCells.json` ve şemadaki `map_land_ranges` bununla aynıdır).
-- `hexgrid.py`: petek matematiği; uygulamadaki `src/lib/hex.ts` ile birebir aynı sonucu vermelidir.
-- `boyut-olc.mjs`: uygulamanın Android ve iPhone paketini derleyip indirme boyutunu ölçer (kod, görseller, yazı tipleri). Her sürümden önce çalıştırılır; sonuç `BOYUT_TAKIBI.md` tablosuna yazılır. Komut: `node tools/boyut-olc.mjs --json`
-
-Yer listesini her ay yenilemek için Claude'a yazman yeterli.
+- `overture_indir.py`: Overture Maps'ten üç ilin (İstanbul, Kocaeli, İzmir) mahalle sınırlarını ve yerlerini indirir.
+- `harita_hazirla.py`: şehir başına petek haritasını (`app/src/lib/maps/*.json`), yer listelerini (`supabase/places_<şehir>.csv`) ve şemadaki `map_land_ranges` verisini üretir. Bütün şehirlerde petek çapı aynıdır (500 m).
+- `yer_kurallari.py`: yer listesine hangi mekânların girdiği (hassas kategoriler çıkarılır) ve kategori adları.
+- `boyut-olc.mjs`: uygulamanın Android ve iPhone paketini derleyip indirme boyutunu ölçer. Komut: `node tools/boyut-olc.mjs --json`
 - `sema-parcala.mjs`: `supabase/schema.sql` dosyasını SQL Editor'ın kabul ettiği boyutta `supabase/parcalar/1.sql, 2.sql, ...` parçalarına böler. Şema her değiştiğinde çalıştırılır. Komut: `node tools/sema-parcala.mjs`
+
+Yer listesini yenilemek için Claude'a yazman yeterli.

@@ -17,10 +17,11 @@ import { TextField } from '@/components/TextField';
 import { CloseX } from '@/components/CloseX';
 import { cellName } from '@/lib/cellNames';
 import { notify, showDialog } from '@/lib/dialog';
+import { clearDraft, loadDraft, saveDraft } from '@/lib/drafts';
 import { pickEventImage, uploadEventImage, type PickedImage } from '@/lib/eventImage';
 import { createEvent, eventCellMarks, listEvents, setEventOfficial, type EventCellMark } from '@/lib/events';
 import { AGE_OPTIONS, EVENT_CATEGORIES, type EventCategory } from '@/lib/eventCategories';
-import { districtOf, type Cell } from '@/lib/hex';
+import { areaOf, type Cell } from '@/lib/hex';
 import { DEFAULT_RULES, getPointRules } from '@/lib/ranking';
 import { REAL_NAME } from '@/lib/realName';
 import { gameCellMarks, listOpenRooms, type GameCellMark } from '@/lib/rooms';
@@ -100,6 +101,22 @@ function cleanFee(text: string, previous: string): string {
   return t;
 }
 
+/** Etkinlik oluştur penceresinin taslağı (uygulama arka planda kapatılsa da yazılanlar kaybolmaz; görsel saklanmaz) */
+export const EVENT_DRAFT_KEY = 'event-form';
+type EventDraft = {
+  title: string;
+  description: string;
+  location: string;
+  startsAt: string | null;
+  capacity: string;
+  category: EventCategory | null;
+  minAge: number | null;
+  withGames: boolean;
+  paid: boolean;
+  fee: string;
+  cell: Cell | null;
+};
+
 function parseFee(text: string): number {
   return Number(text.trim().replace(',', '.'));
 }
@@ -136,6 +153,66 @@ export function EventForm({ visible, onClose, onCreated, userId, hostName, isMod
   const scrollRef = useRef<ScrollView>(null);
   const descRef = useRef<TextInput>(null);
   const locRef = useRef<TextInput>(null);
+  const [draftReady, setDraftReady] = useState(false);
+
+  // Pencere açılınca kayıtlı taslak varsa yazılanlar geri gelir
+  useEffect(() => {
+    if (!visible) return;
+    let alive = true;
+    void loadDraft<EventDraft>(EVENT_DRAFT_KEY).then((d) => {
+      if (!alive) return;
+      if (d) {
+        setTitle(d.title ?? '');
+        setDescription(d.description ?? '');
+        setLocation(d.location ?? '');
+        const at = d.startsAt ? new Date(d.startsAt) : null;
+        setStartsAt(at && !Number.isNaN(at.getTime()) ? at : null);
+        setCapacity(d.capacity ?? '');
+        setCategory(d.category ?? null);
+        setMinAge(d.minAge ?? null);
+        setWithGames(!!d.withGames);
+        setPaid(!!d.paid);
+        setFee(d.fee ?? '');
+        // Mekân hesabında petek mekânın peteğidir, taslaktan gelmez
+        if (!isSponsor && d.cell) setCell(d.cell);
+      }
+      setDraftReady(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [visible, isSponsor]);
+
+  // Yazıldıkça taslak kaydedilir (boş formda taslak tutulmaz)
+  useEffect(() => {
+    if (!visible || !draftReady) return;
+    const empty =
+      !title.trim() && !description.trim() && !location.trim() && !startsAt && !capacity.trim() && !category && !fee.trim();
+    saveDraft(
+      EVENT_DRAFT_KEY,
+      empty
+        ? null
+        : ({
+            title,
+            description,
+            location,
+            startsAt: startsAt ? startsAt.toISOString() : null,
+            capacity,
+            category,
+            minAge,
+            withGames,
+            paid,
+            fee,
+            cell: isSponsor ? null : cell,
+          } satisfies EventDraft),
+    );
+  }, [visible, draftReady, isSponsor, title, description, location, startsAt, capacity, category, minAge, withGames, paid, fee, cell]);
+
+  /** Çarpı: bilerek kapatıldı, taslak silinir (dışarı dokunma ya da geri tuşu taslağı korur) */
+  function closeAndDiscard() {
+    clearDraft(EVENT_DRAFT_KEY);
+    onClose();
+  }
 
   // Form açılınca haritada gösterilecek mevcut etkinlik bölgeleri yüklenir
   useEffect(() => {
@@ -243,15 +320,15 @@ export function EventForm({ visible, onClose, onCreated, userId, hostName, isMod
       if (result.error.startsWith('Aynı petekte')) return bad('cell', result.error);
       return setError(result.error);
     }
-    // Moderatör Konser & Festival açtıysa: 41. Kat Özel mi, normal konser mi?
+    // Moderatör Konser & Festival açtıysa: PeopleHere Özel mi, normal konser mi?
     if (isModerator && category === 'konser_festival' && result.id) {
       const official = await showDialog<boolean>({
         title: 'Nasıl yayınlansın?',
         message:
-          '41. Kat Özel etkinliği seçersen 41. Kat Özel olarak listelenir ve herkese duyuru gider. Seçmezsen Konser & Festival olarak listelenir.',
+          'PeopleHere Özel etkinliği seçersen PeopleHere Özel olarak listelenir ve herkese duyuru gider. Seçmezsen Konser & Festival olarak listelenir.',
         icon: 'mic',
         buttons: [
-          { label: '41. Kat Özel etkinliği', value: true, style: 'primary' },
+          { label: 'PeopleHere Özel etkinliği', value: true, style: 'primary' },
           { label: 'Normal Konser & Festival', value: false, style: 'ghost' },
         ],
         cancelValue: false,
@@ -263,6 +340,7 @@ export function EventForm({ visible, onClose, onCreated, userId, hostName, isMod
       imageError = (await uploadEventImage(userId, result.id, image)).error;
     }
     setSubmitting(false);
+    clearDraft(EVENT_DRAFT_KEY);
     onCreated(result.pending === true, imageError);
   }
 
@@ -297,7 +375,7 @@ export function EventForm({ visible, onClose, onCreated, userId, hostName, isMod
               Etkinlik oluştur
             </Text>
             <Pressable
-              onPress={onClose}
+              onPress={closeAndDiscard}
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel="Kapat"
@@ -318,7 +396,7 @@ export function EventForm({ visible, onClose, onCreated, userId, hostName, isMod
               {isModerator ? (
                 <View style={styles.hostBox}>
                   <Ionicons name="shield-checkmark" size={20} color={colors.accent} />
-                  <Text style={styles.hostText}>Etkinlik “41. Kat Sosyal” adıyla yayınlanır.</Text>
+                  <Text style={styles.hostText}>Etkinlik “PeopleHere” adıyla yayınlanır.</Text>
                 </View>
               ) : (
                 <RealNameNotice text={`${REAL_NAME.eventHost} Görünecek ad: ${hostName}.`} />
@@ -403,7 +481,7 @@ export function EventForm({ visible, onClose, onCreated, userId, hostName, isMod
                       {venueCell === undefined
                         ? 'Mekânının peteği yükleniyor…'
                         : venueCell
-                          ? `${cellName(venueCell)} · ${districtOf(venueCell.q, venueCell.r) ?? 'Kocaeli'}`
+                          ? `${cellName(venueCell)} · ${areaOf(venueCell.q, venueCell.r)}`
                           : 'Mekânın haritada değil'}
                     </Text>
                     <Ionicons name="lock-closed" size={16} color={colors.textMuted} />
@@ -427,7 +505,7 @@ export function EventForm({ visible, onClose, onCreated, userId, hostName, isMod
                       color={cell ? colors.success : colors.primary}
                     />
                     <Text style={styles.cellTitle}>
-                      {cell ? `${cellName(cell)} · ${districtOf(cell.q, cell.r) ?? 'Kocaeli'}` : 'Haritadan petek seç'}
+                      {cell ? `${cellName(cell)} · ${areaOf(cell.q, cell.r)}` : 'Haritadan petek seç'}
                     </Text>
                     <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
                   </Pressable>

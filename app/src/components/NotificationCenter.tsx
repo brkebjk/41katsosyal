@@ -5,7 +5,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/AppText';
-import { CrewInviteButtons } from '@/components/CrewInviteButtons';
 import { FriendRequestButtons } from '@/components/FriendRequestButtons';
 import { DialogHost } from '@/components/DialogHost';
 import { KeyboardLift } from '@/components/KeyboardLift';
@@ -15,7 +14,7 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { TextField } from '@/components/TextField';
 import { CloseX } from '@/components/CloseX';
 import { cellName } from '@/lib/cellNames';
-import { districtOf } from '@/lib/hex';
+import { areaOf } from '@/lib/hex';
 import { respondTeamInvite } from '@/lib/invites';
 import { timeAgo } from '@/lib/labels';
 import {
@@ -41,8 +40,6 @@ const KIND_ICON: Record<NotificationKind, IconName> = {
   mention: 'at',
   dm: 'chatbubbles',
   room_msg: 'chatbubble-ellipses',
-  crew_invite: 'people-circle',
-  crew_mention: 'people',
   announcement: 'megaphone',
 };
 
@@ -55,8 +52,6 @@ const KIND_COLOR: Record<NotificationKind, string> = {
   mention: colors.accent,
   dm: colors.primary,
   room_msg: colors.game,
-  crew_invite: colors.success,
-  crew_mention: colors.success,
   announcement: colors.primary,
 };
 
@@ -221,7 +216,7 @@ export function NotificationPanel({ onClose }: { onClose: () => void }) {
                       {n.body ? <Text style={styles.itemBody}>{n.body}</Text> : null}
                       {n.kind === 'game_invite' && typeof n.data.q === 'number' && typeof n.data.r === 'number' ? (
                         <Text style={styles.itemPlace}>
-                          {`Bölge: ${cellName({ q: n.data.q, r: n.data.r })} · ${districtOf(n.data.q, n.data.r) ?? 'Kocaeli'}`}
+                          {`Bölge: ${cellName({ q: n.data.q, r: n.data.r })} · ${areaOf(n.data.q, n.data.r)}`}
                         </Text>
                       ) : null}
                       {typeof n.data.code === 'string' && n.data.code ? (
@@ -253,9 +248,6 @@ export function NotificationPanel({ onClose }: { onClose: () => void }) {
                       ) : null}
                       {n.kind === 'friend_request' && typeof n.data.request_id === 'string' ? (
                         <FriendRequestButtons requestId={n.data.request_id} />
-                      ) : null}
-                      {n.kind === 'crew_invite' && typeof n.data.invite_id === 'string' ? (
-                        <CrewInviteButtons inviteId={n.data.invite_id} />
                       ) : null}
                       {n.kind === 'team_invite' && typeof n.data.invite_id === 'string' ? (
                         <TeamInviteActions inviteId={n.data.invite_id} initial={String(n.data.status ?? 'pending')} />

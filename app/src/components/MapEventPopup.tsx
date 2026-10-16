@@ -18,9 +18,9 @@ import { syncEventReminders } from '@/lib/localNotify';
 import { confirmMeetupSafety } from '@/lib/safety';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
-/** Kartın köşesindeki etiket: 41. Kat Özel, Konser & Festival ya da Tanıtım & İşbirliği */
+/** Kartın köşesindeki etiket: PeopleHere Özel, Konser & Festival ya da Tanıtım & İşbirliği */
 function ribbonOf(e: EventItem): { label: string; color: string } | null {
-  if (e.is_official) return { label: '41. Kat Özel', color: '#FFC83D' };
+  if (e.is_official) return { label: 'PeopleHere Özel', color: '#FFC83D' };
   if (e.category === 'konser_festival') return { label: 'Konser & Festival', color: '#FF7AD9' };
   if (e.tag === 'tanitim_isbirligi') return { label: 'Tanıtım & İşbirliği', color: colors.accent };
   return null;

@@ -1,7 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/AppText';
-import { RemoteIcon, SideIcon } from '@/components/GameModeIcons';
 import type { PointsTableData } from '@/lib/gameInfo';
 import { colors, fonts, radii, spacing } from '@/theme';
 
@@ -10,8 +9,7 @@ import { colors, fonts, radii, spacing } from '@/theme';
  * 1. sıranın puanı nasıl büyür. Hücreler yan yana dizilir, böylece tablo uzayıp ekranı kaplamaz.
  */
 export function PointsTable({ data }: { data: PointsTableData }) {
-  const { size, actual, minPlayers, rows, ladder, sideMult } = data;
-  const side = (n: number) => Math.round(n * sideMult * 2) / 2;
+  const { size, actual, minPlayers, rows, ladder } = data;
   const tooFew = actual !== null && actual < minPlayers;
   const caption =
     actual === null
@@ -22,25 +20,16 @@ export function PointsTable({ data }: { data: PointsTableData }) {
   return (
     <View style={styles.wrap} testID="points-table">
       <Text style={styles.caption}>{caption}</Text>
-      <View style={styles.legendRow}>
-        <RemoteIcon size={15} />
-        <Text style={styles.legend}>uzaktan (büyük sayı)</Text>
-        <SideIcon size={13} />
-        <Text style={styles.legend}>{`yan yana ×${sideMult}`}</Text>
-      </View>
+      <Text style={styles.legend}>Yan yana ve uzaktan oyunda puan aynıdır.</Text>
       <View style={styles.grid} accessibilityRole="list">
         {rows.map((r) => (
           <View
             key={r.place}
             style={styles.cell}
-            accessibilityLabel={`${r.place}. sıra uzaktan ${r.points} puan, yan yana ${side(r.points)} puan`}
+            accessibilityLabel={`${r.place}. sıra ${r.points} puan`}
           >
             <Text style={styles.place}>{r.place}. sıra</Text>
             <Text style={styles.points}>{r.points}</Text>
-            <View style={styles.sideRow}>
-              <SideIcon size={10} />
-              <Text style={styles.sidePoints}>{side(r.points)}</Text>
-            </View>
           </View>
         ))}
       </View>
@@ -79,10 +68,7 @@ const styles = StyleSheet.create({
   },
   place: { color: colors.textMuted, fontSize: 11 },
   points: { color: colors.highlight, fontFamily: fonts.black, fontSize: 16 },
-  sidePoints: { color: colors.success, fontFamily: fonts.extra, fontSize: 11 },
   legend: { color: colors.textMuted, fontSize: 11, lineHeight: 15 },
-  legendRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' },
-  sideRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   ladder: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   step: {
     flexGrow: 1,

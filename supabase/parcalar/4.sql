@@ -1,6 +1,302 @@
 -- PARÇA 4 / 4 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+grant execute on function public.apply_event_leader(text, text, text[], text) to authenticated;
+grant execute on function public.admin_list_leader_applications(text) to authenticated;
+grant execute on function public.admin_resolve_leader_application(uuid, boolean, text) to authenticated;
+grant execute on function public.admin_set_event_leader(uuid, boolean) to authenticated;
+grant execute on function public.set_event_image(uuid, text) to authenticated;
+grant execute on function public.admin_list_event_approvals() to authenticated;
+grant execute on function public.admin_review_event(uuid, text, boolean, text) to authenticated;
+grant execute on function public.game_player_counts() to authenticated;
+grant execute on function public.list_treasures() to authenticated;
+grant execute on function public.my_treasure_status() to authenticated;
+grant execute on function public.redeem_treasure(text, int, int) to authenticated;
+grant execute on function public.admin_create_treasure(int, int, text, text, timestamptz) to authenticated;
+grant execute on function public.admin_remove_treasure(uuid) to authenticated;
+grant execute on function public.admin_list_treasures(text) to authenticated;
+grant execute on function public.admin_mark_treasures_seen() to authenticated;
+grant execute on function public._event_image_slot_ok(text) to authenticated;
+revoke all on public.treasures, public.treasure_failures from anon, authenticated;
+revoke all on public.cell_name_candidates, public.cell_candidate_runs from anon, authenticated;
+grant execute on function public.admin_set_treasure_images(uuid, text[]) to authenticated;
+grant execute on function public.get_concert_code(uuid) to authenticated;
+grant execute on function public.rate_event(uuid, int) to authenticated;
+grant execute on function public.host_close_event(uuid, int, int) to authenticated;
+grant execute on function public.event_share_wait(uuid) to authenticated;
+grant execute on function public.admin_set_event_tag(uuid, text) to authenticated;
+grant execute on function public.admin_set_event_official(uuid, boolean) to authenticated;
+grant execute on function public.get_notification_prefs() to authenticated;
+grant execute on function public.set_notification_prefs(jsonb) to authenticated;
+grant execute on function public.my_new_notifications(timestamptz) to authenticated;
+grant execute on function public.my_event_reminders() to authenticated;
+grant execute on function public.get_mod_thread(uuid) to authenticated;
+grant execute on function public.reply_mod_thread(uuid, text) to authenticated;
+grant execute on function public.list_my_mod_threads() to authenticated;
+grant execute on function public.admin_list_mod_threads() to authenticated;
+grant execute on function public.admin_end_mod_thread(uuid) to authenticated;
+revoke all on public.notification_prefs, public.mod_threads, public.mod_thread_messages from anon, authenticated;
+-- Bilgi Yarışması tabloları doğrudan okunamaz/yazılamaz; yalnızca 5q fonksiyonları. Sohbeti yalnızca moderatör okur.
+revoke all on public.quiz_questions, public.quiz_queue, public.quiz_matches, public.quiz_match_players,
+  public.quiz_answers, public.quiz_seen, public.quiz_best, public.quiz_chat from anon, authenticated;
+grant select on public.quiz_chat to authenticated;
+drop policy if exists quiz_chat_admin_select on public.quiz_chat;
+create policy quiz_chat_admin_select on public.quiz_chat for select to authenticated using (public.is_admin());
+grant execute on function public.quiz_lobby() to authenticated;
+grant execute on function public.quiz_find_match(int, int) to authenticated;
+grant execute on function public.quiz_cancel_search() to authenticated;
+grant execute on function public.quiz_start_solo(int, int) to authenticated;
+grant execute on function public.quiz_state(uuid) to authenticated;
+grant execute on function public.quiz_answer(uuid, int, int) to authenticated;
+grant execute on function public.quiz_leave(uuid) to authenticated;
+grant execute on function public.quiz_chat_send(uuid, text) to authenticated;
+grant execute on function public.quiz_block_opponent(uuid) to authenticated;
+grant execute on function public.admin_list_quiz_questions(text, text, int, int) to authenticated;
+grant execute on function public.admin_save_quiz_question(uuid, text, text, text[], int, int) to authenticated;
+grant execute on function public.quiz_solo_pick_chest(uuid, int) to authenticated;
+grant execute on function public.quiz_solo_state(uuid) to authenticated;
+grant execute on function public.quiz_solo_answer(uuid, int, int) to authenticated;
+grant execute on function public.quiz_solo_joker(uuid, text) to authenticated;
+grant execute on function public.quiz_solo_leave(uuid) to authenticated;
+grant execute on function public.quiz_solo_leaderboard(int) to authenticated;
+revoke all on public.quiz_trades from anon, authenticated;
+grant execute on function public.quiz_arena_create_room(text, int, int) to authenticated;
+grant execute on function public.quiz_arena_join_room(text, text, int, int) to authenticated;
+grant execute on function public.quiz_arena_ready(uuid) to authenticated;
+grant execute on function public.quiz_ping() to authenticated;
+grant execute on function public.quiz_side_start(text, text) to authenticated;
+grant execute on function public.quiz_side_state(uuid) to authenticated;
+grant execute on function public.quiz_side_answer(uuid, int, int, int) to authenticated;
+grant execute on function public.quiz_side_vote(uuid, int, text) to authenticated;
+grant execute on function public.quiz_side_leave(uuid) to authenticated;
+revoke all on public.quiz_side_games from anon, authenticated;
+revoke all on public.quiz_presence from anon, authenticated;
+grant execute on function public.quiz_online_leaderboard(int, int) to authenticated;
+grant execute on function public.admin_quiz_online_winners(int) to authenticated;
+grant execute on function public.admin_quiz_grant_online_reward(uuid, int) to authenticated;
+revoke all on public.quiz_code_attempts, public.quiz_online_rewards from anon, authenticated;
+grant execute on function public.quiz_arena_set_color(uuid, text) to authenticated;
+grant execute on function public.quiz_arena_kick(uuid, int) to authenticated;
+grant execute on function public.quiz_arena_start(uuid) to authenticated;
+grant execute on function public.quiz_arena_state(uuid) to authenticated;
+grant execute on function public.quiz_arena_vote(uuid, text) to authenticated;
+grant execute on function public.quiz_arena_answer(uuid, int, int) to authenticated;
+grant execute on function public.quiz_arena_use_card(uuid, int, int) to authenticated;
+grant execute on function public.quiz_arena_open_chest(uuid, int) to authenticated;
+grant execute on function public.quiz_arena_trade_offer(uuid, int, int) to authenticated;
+grant execute on function public.quiz_arena_trade_respond(uuid, boolean) to authenticated;
+grant execute on function public.quiz_arena_leave(uuid) to authenticated;
+grant execute on function public.quiz_block_player(uuid, int) to authenticated;
+revoke all on public.quiz_lives, public.quiz_solo_runs from anon, authenticated;
+grant execute on function public.admin_set_quiz_question_active(uuid, boolean) to authenticated;
+grant execute on function public.my_attended_events() to authenticated;
+revoke all on public.event_ratings from anon, authenticated;
+grant execute on function public.cell_leaders(int, int) to authenticated;
+grant execute on function public.admin_refresh_cell_candidates() to authenticated;
+grant execute on function public.admin_list_cell_candidates() to authenticated;
+grant execute on function public.admin_mark_cell_candidates_seen() to authenticated;
+revoke all on function public._award_event_create(uuid) from public, anon, authenticated;
+grant execute on function public.map_checkin(int, int) to authenticated;
+grant execute on function public.map_presence(int, int) to authenticated;
+grant execute on function public.list_cell_names() to authenticated;
+grant execute on function public.admin_set_cell_name(int, int, text) to authenticated;
+grant execute on function public.admin_award_points(uuid, int, text, uuid) to authenticated;
+grant execute on function public.admin_draw_raffle(uuid) to authenticated;
+
+-- Yalnızca sunucu tarafı (Edge Function) çağırır; uygulamadaki kullanıcılar çağıramaz
+grant execute on function public.service_set_store_premium(uuid, timestamptz) to service_role;
+grant execute on function public.service_identity_start(uuid, text) to service_role;
+grant execute on function public.service_identity_finish(uuid, text, text) to service_role;
+grant execute on function public.service_identity_refund(uuid) to service_role;
+grant execute on function public.service_voice_token(uuid, uuid) to service_role;
+grant execute on function public.set_profile_photo(text) to authenticated;
+grant execute on function public._profile_photo_slot_ok(text) to authenticated;
+grant execute on function public.admin_list_photo_approvals() to authenticated;
+grant execute on function public.admin_review_photo(uuid, text, boolean) to authenticated;
+grant execute on function public.admin_revoke_identity(uuid, text) to authenticated;
+grant execute on function public.admin_web_claim() to authenticated;
+grant execute on function public.admin_web_release() to authenticated;
+grant execute on function public.admin_retention_status() to authenticated;
+grant execute on function public.heartbeat() to authenticated;
+grant execute on function public.get_ui_texts() to anon, authenticated;
+grant execute on function public.admin_set_ui_text(text, text) to authenticated;
+grant execute on function public.admin_run_retention() to authenticated;
+grant execute on function public.admin_traffic_search(text, timestamptz, timestamptz, int) to authenticated;
+
+-- Profil resimleri (yalnızca doğrulanmış hesap): herkese açık okunan "profile-photos" kutusu; en çok 2 MB, jpg/png/webp.
+-- Dosya adı tahmin edilemez; adres yalnızca gerçek adın göründüğü yerlerde (arkadaşlara) verilir.
+do $$ begin
+  insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+  values ('profile-photos', 'profile-photos', true, 2097152, array['image/jpeg', 'image/png', 'image/webp'])
+  on conflict (id) do update
+     set public = true, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+  drop policy if exists profile_photos_owner_insert on storage.objects;
+  create policy profile_photos_owner_insert on storage.objects for insert to authenticated
+    with check (bucket_id = 'profile-photos' and public._profile_photo_slot_ok(name));
+  drop policy if exists profile_photos_owner_select on storage.objects;
+  create policy profile_photos_owner_select on storage.objects for select to authenticated
+    using (bucket_id = 'profile-photos' and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin()));
+  drop policy if exists profile_photos_owner_delete on storage.objects;
+  create policy profile_photos_owner_delete on storage.objects for delete to authenticated
+    using (bucket_id = 'profile-photos' and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin()));
+exception when others then
+  raise warning 'profile-photos kutusu kurulamadı: %. Supabase > Storage bölümünden elle kurulmalı.', sqlerrm;
+end $$;
+
+-- Mekân profil resimleri: herkese açık okunan "venue-images" kutusu; en çok 2 MB, yalnızca jpg/png/webp.
+-- Dosya yükleme, değiştirme ve silme yalnızca moderatöre açıktır.
+do $$ begin
+  insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+  values ('venue-images', 'venue-images', true, 2097152, array['image/jpeg', 'image/png', 'image/webp'])
+  on conflict (id) do update
+     set public = true, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+  drop policy if exists venue_images_admin_insert on storage.objects;
+  create policy venue_images_admin_insert on storage.objects for insert to authenticated
+    with check (bucket_id = 'venue-images' and public.is_admin());
+  drop policy if exists venue_images_admin_update on storage.objects;
+  create policy venue_images_admin_update on storage.objects for update to authenticated
+    using (bucket_id = 'venue-images' and public.is_admin()) with check (bucket_id = 'venue-images' and public.is_admin());
+  drop policy if exists venue_images_admin_delete on storage.objects;
+  create policy venue_images_admin_delete on storage.objects for delete to authenticated
+    using (bucket_id = 'venue-images' and public.is_admin());
+exception when others then
+  raise warning 'venue-images kutusu kurulamadı: %. Supabase > Storage bölümünden elle kurulmalı.', sqlerrm;
+end $$;
+
+-- Etkinlik görselleri: herkese açık okunan "event-images" kutusu; en çok 2 MB, yalnızca jpg/png/webp.
+-- Üye yalnızca kendi etkinliğinin klasörüne (<üye kimliği>/<etkinlik>/...) yükler; etkinlik başına tek görsel
+-- (moderatör reddederse en çok 2 kez daha denenebilir). Üye silemez. Görsel, set_event_image ile
+-- etkinliğe bağlanır ve moderatör onaylayana kadar başkasına adresi verilmez.
+do $$ begin
+  insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+  values ('event-images', 'event-images', true, 2097152, array['image/jpeg', 'image/png', 'image/webp'])
+  on conflict (id) do update
+     set public = true, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+  drop policy if exists event_images_owner_insert on storage.objects;
+  create policy event_images_owner_insert on storage.objects for insert to authenticated
+    with check (bucket_id = 'event-images' and public._is_active_user() and public._event_image_slot_ok(name));
+  drop policy if exists event_images_owner_select on storage.objects;
+  create policy event_images_owner_select on storage.objects for select to authenticated
+    using (bucket_id = 'event-images' and (storage.foldername(name))[1] = auth.uid()::text);
+  -- Görsel kaldırılamaz: yalnızca moderatör siler
+  drop policy if exists event_images_owner_delete on storage.objects;
+  create policy event_images_owner_delete on storage.objects for delete to authenticated
+    using (bucket_id = 'event-images' and public.is_admin());
+exception when others then
+  raise warning 'event-images kutusu kurulamadı: %. Supabase > Storage bölümünden elle kurulmalı.', sqlerrm;
+end $$;
+
+-- Hazine ipucu fotoğrafları: herkese açık okunan "treasure-images" kutusu; en çok 2 MB, jpg/png/webp. Yalnızca moderatör
+-- yükler ve siler.
+do $$ begin
+  insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+  values ('treasure-images', 'treasure-images', true, 2097152, array['image/jpeg', 'image/png', 'image/webp'])
+  on conflict (id) do update
+     set public = true, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+  drop policy if exists treasure_images_admin_insert on storage.objects;
+  create policy treasure_images_admin_insert on storage.objects for insert to authenticated
+    with check (bucket_id = 'treasure-images' and public.is_admin());
+  drop policy if exists treasure_images_admin_delete on storage.objects;
+  create policy treasure_images_admin_delete on storage.objects for delete to authenticated
+    using (bucket_id = 'treasure-images' and public.is_admin());
+exception when others then
+  raise warning 'treasure-images kutusu kurulamadı: %. Supabase > Storage bölümünden elle kurulmalı.', sqlerrm;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- 10) Canlı güncelleme (Realtime): yeni gönderi ve oyun değişiklikleri anında düşer
+-- ---------------------------------------------------------------------
+
+do $$ begin
+  begin alter publication supabase_realtime add table public.posts;
+  exception when duplicate_object or undefined_object then null; end;
+  begin alter publication supabase_realtime add table public.comments;
+  exception when duplicate_object or undefined_object then null; end;
+  begin alter publication supabase_realtime add table public.game_rooms;
+  exception when duplicate_object or undefined_object then null; end;
+  begin alter publication supabase_realtime add table public.room_players;
+  exception when duplicate_object or undefined_object then null; end;
+  begin alter publication supabase_realtime add table public.room_player_secrets;
+  exception when duplicate_object or undefined_object then null; end;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- 11) İLK MODERATÖR HESABI (bunu şimdi değil, uygulamada kayıt olduktan sonra çalıştır)
+--     (Veritabanındaki iç adı 'admin'dir, uygulamada "Moderatör" olarak görünür.)
+--
+-- Önce uygulamadan normal kullanıcı olarak kayıt ol. Sonra SQL Editor'de aşağıdaki
+-- satırı, e-posta adresini kendi adresinle değiştirerek tek başına çalıştır:
+--
+--   update public.profiles set role = 'admin'
+--    where id = (select id from auth.users where email = 'SENIN-EPOSTAN@ornek.com');
+-- ---------------------------------------------------------------------
+
+-- API'nin yeni fonksiyonları hemen görmesi için şema önbelleğini yenile
+-- ---------------------------------------------------------------------
+-- Bilgi Yarışması: ayarlar, soru bankası, oyunun açılması
+-- ---------------------------------------------------------------------
+insert into public.app_settings (key, value, description) values
+  ('pts_quiz_win', '1', '(Kullanılmıyor) Eski düello puanı; yerine pts_quiz_win_base ve oyuncu çarpanı'),
+  ('pts_quiz_win_base', '100', 'Bilgi Yarışması Uzaktan: kazananın taban puanı ×100 (100 = 1 puan). Oyuncu çarpanı: 2 kişi ×1.25, 3 ×1.5, 4 ×1.75, 5 ×2'),
+  ('pts_quiz_solo_5', '100', 'Bilgi Yarışması Solo: 5 doğruya puan ×100 (100 = 1 puan)'),
+  ('pts_quiz_solo_8', '120', 'Bilgi Yarışması Solo: 8 doğruya puan ×100 (120 = 1.2 puan)'),
+  ('pts_quiz_solo_12', '150', 'Bilgi Yarışması Solo: 12 doğruya puan ×100 (150 = 1.5 puan)'),
+  ('pts_quiz_daily_points', '10', 'Bilgi Yarışması: günde en çok kaç genel puan kazanılabilir'),
+  ('pts_quiz_month_points', '125', 'Bilgi Yarışması: ayda en çok kaç genel puan kazanılabilir'),
+  ('pts_quiz_private_group_daily', '5', 'Bilgi Yarışması özel oda: aynı kişilerden biriyle oynanan maçlardan günde en çok kaç puan'),
+  ('quiz_arena_rounds', '5', 'Bilgi Yarışması Uzaktan: raunt sayısı (her rauntta 2 soru)'),
+  ('quiz_arena_question_seconds', '10', 'Bilgi Yarışması Uzaktan: soru süresi (saniye). Doğru = 100 + kalan saniye × 10'),
+  ('quiz_arena_vote_seconds', '10', 'Bilgi Yarışması Uzaktan: kategori oylaması süresi (saniye)'),
+  ('quiz_arena_chaos_seconds', '20', 'Bilgi Yarışması Uzaktan: kaos aşaması (sandık ve takas) süresi (saniye)'),
+  ('quiz_arena_reveal_seconds', '6', 'Bilgi Yarışması Uzaktan: cevapların ve sonuçların gösterildiği süre (saniye)'),
+  ('quiz_arena_intro_seconds', '8', 'Bilgi Yarışması Uzaktan: maç başlamadan önceki geri sayım (saniye)'),
+  ('quiz_arena_ready_seconds', '30', 'Bilgi Yarışması Uzaktan: rastgele eşleşme bekleme odasında “Hazırım” için süre (saniye)'),
+  ('quiz_arena_wait_seconds', '20', '(Kullanılmıyor) Yerine quiz_arena_ready_seconds'),
+  ('quiz_side_daily', '10', 'Bilgi Yarışması Yan Yana: günde en çok kaç oyun (can harcamaz, puan vermez)'),
+  ('quiz_side_question_seconds', '15', 'Bilgi Yarışması Yan Yana: soru süresi (saniye)'),
+  ('quiz_side_reveal_seconds', '4', 'Bilgi Yarışması Yan Yana: cevapların gösterildiği süre (saniye)'),
+  ('quiz_search_min_seconds', '10', 'Bilgi Yarışması Uzaktan: rastgele eşleşmede herkesin en az kaç saniye rakip araması (sonra eşleşir)'),
+  ('quiz_side_vote_seconds', '10', 'Bilgi Yarışması Yan Yana: raunt başında kategori seçme süresi (saniye)'),
+  ('quiz_solo_rank_min_correct', '5', 'Bilgi Yarışması Solo: haftalık sıralamaya sayılması için koşunun en az doğru sayısı'),
+  ('quiz_champion_lives', '10', 'Bilgi Yarışması: geçen haftanın Solo Maraton ilk 3''ünün bu hafta en çok canı'),
+  ('quiz_arena_min_correct', '4', 'Bilgi Yarışması Uzaktan: kazananın puan alması için en az doğru sayısı'),
+  ('quiz_arena_hand', '4', 'Bilgi Yarışması Uzaktan: elde en çok kaç kart tutulabilir'),
+  ('quiz_bomb_percent', '20', 'Bilgi Yarışması Uzaktan: patlayan bombanın sildiği skor yüzdesi'),
+  ('quiz_max_lives', '5', 'Bilgi Yarışması: en çok can (her Solo ve Uzaktan oyun 1 can harcar)'),
+  ('quiz_life_minutes', '30', 'Bilgi Yarışması: kaç dakikada 1 can dolar'),
+  ('quiz_daily_games', '25', 'Bilgi Yarışması: günde en çok kaç oyun (Solo + Uzaktan) oynanabilir'),
+  ('quiz_freeze_seconds', '15', 'Bilgi Yarışması Solo: Süre Dondurma jokerinin süreye eklediği saniye'),
+  ('pts_quiz_same_opponent_daily', '1', 'Bilgi Yarışması: aynı rakibi yenerek günde en çok kaç kez puan alınır'),
+  ('quiz_questions_per_match', '7', 'Bilgi Yarışması: maç başına soru sayısı (son soru iki kat puan)'),
+  ('quiz_question_seconds', '12', 'Bilgi Yarışması: her soru için süre (saniye)'),
+  ('quiz_reveal_seconds', '3', 'Bilgi Yarışması: doğru cevabın gösterildiği süre (saniye)'),
+  ('quiz_intro_seconds', '4', 'Bilgi Yarışması: maç başlamadan önceki geri sayım (saniye)'),
+  ('quiz_stale_seconds', '25', 'Bilgi Yarışması: maçta bu kadar saniye sinyal gelmeyen oyuncu çıkmış sayılır ve kaybeder'),
+  ('quiz_daily_match_limit', '40', '(Kullanılmıyor) Yerine quiz_daily_games'),
+  ('quiz_solo_daily_limit', '15', '(Kullanılmıyor) Yerine quiz_daily_games')
+on conflict (key) do update set description = excluded.description;
+-- Paket 16: Bilgi Yarışması günlük/aylık puan tavanı 5/60 → 10/125 (moderatör değiştirdiyse dokunulmaz)
+update public.app_settings set value = '10' where key = 'pts_quiz_daily_points' and value = '5';
+update public.app_settings set value = '125' where key = 'pts_quiz_month_points' and value = '60';
+-- Paket 17: Uzaktan açıklama ekranları daha uzun (moderatör değiştirdiyse dokunulmaz)
+update public.app_settings set value = '10' where key = 'quiz_arena_vote_seconds' and value = '7';
+update public.app_settings set value = '20' where key = 'quiz_arena_chaos_seconds' and value = '12';
+update public.app_settings
+   set description = '(Kullanılmıyor) Yerine pts_quiz_daily_points'
+ where key = 'pts_quiz_daily_cap';
+update public.app_settings
+   set description = '(Kullanılmıyor) Yerine pts_quiz_month_points'
+ where key = 'pts_quiz_month_cap';
+update public.app_settings
+   set description = '(Kullanılmıyor) Eski oda usulü Bilgi Yarışması için en yüksek puan'
+ where key = 'pts_quiz_top_cap';
+update public.app_settings
+   set description = '(Kullanılmıyor) Eski oda usulü Bilgi Yarışması için en az oyuncu'
+ where key = 'pts_quiz_min_players';
+update public.game_types
+   set description = 'Solo Maraton ya da haritanın her yerinden rakiplerle yarış', min_players = 1, max_players = 5
+ where key = 'quiz';
+
 -- Başlangıç soru bankası (161soru). Doğru şık kayıtta ilk sıradadır; maçta şıklar her seferinde karıştırılır.
 -- Aynı soru zaten varsa (moderatör düzenlediyse de) dokunulmaz.
 insert into public.quiz_questions (category, question, options, correct) values
@@ -523,17 +819,18 @@ update public.app_settings set description = 'Uzaktan oyunun puanı, aynı sonuc
  where key = 'pts_remote_pct';
 
 -- YENİ PUAN DÜZENİ (v6): oyun hakkı yok, herkes istediği kadar oynar. Her oyunun aylık puan hedefi: uzaktan 250,
--- yan yana 1.750 (yan yana 7 kat puan, konum doğrulanır, en az 5 kişi). Mekân kodu: mekânda oynanan yan yana oyuna
+-- yan yana 1.750 (oyun başına puan ikisinde aynı, konum doğrulanır, en az 5 kişi). Mekân kodu: mekânda oynanan yan yana oyuna
 -- +%25. Bilgi Yarışması: günlük oyun ve günlük puan sınırı yok, ayda 250 puan. Etkinlik puanları büyür (etkinlikler
 -- oyunların gerisinde kalmasın). Ayarlar bir kez çevrilir; sonra moderatör web panelden değiştirebilir.
 insert into public.app_settings (key, value, description) values
-  ('pts_side_mult', '7', 'Yan yana oynanan oyunun puan çarpanı (uzaktan oyunun kaç katı)'),
   ('pts_remote_month_points', '250', 'Uzaktan oyunda her oyunun aylık puan sınırı (hedefi)'),
   ('pts_side_month_points', '1750', 'Yan yana oyunda her oyunun aylık puan sınırı (hedefi)'),
   ('pts_venue_bonus_pct', '125', 'Mekân kodu ile mekânda oynanan yan yana oyunun puanı (yüzde; 125 = +%25)'),
   ('pts_party_min_players', '5', 'Köpekbalığı Kafesi ve Vampir–Köylü puan için en az oyuncu'),
   ('sponsor_credit_valid_hours', '6', 'Mekân kodu kaç saat geçerli (bu sürede mekânda açılan yan yana oyuna bonus)')
 on conflict (key) do update set description = excluded.description;
+-- PeopleHere: yan yana oyun artık çarpan almaz (oyun başına puan uzaktanla aynı; yalnızca aylık sınır yüksek)
+delete from public.app_settings where key = 'pts_side_mult';
 do $$
 begin
   if not exists (select 1 from public.app_settings where key = 'pts_rules_v6') then
@@ -579,5 +876,47 @@ end $$;
 
 -- Oyun hakkı kalktığı için Seviye 2 ödülü değişir: aylık etkinlik hakkı en az 2 (eski "+1 oyun hakkı" yerine)
 update public.levels set perk = 'event_min2' where level = 2 and perk = 'game_plus1';
+
+-- Eski adın kayıtlı verilerdeki izleri temizlenir ve üyelerin giriş adresi yeni alan adına (uye.peoplehere.app)
+-- taşınır. Tek seferlik; bayrak yazıldıktan sonra bir daha çalışmaz. (Eski ad yalnızca bu taşıma için burada geçer.)
+do $$
+declare
+  v_old constant text := chr(52) || chr(49) || '. Kat';
+  v_old_dom constant text := '@uye.kat' || chr(52) || chr(49) || 'sosyal.app';
+begin
+  if exists (select 1 from public.app_settings where key = 'peoplehere_v1') then return; end if;
+  update public.posts set alias = 'PeopleHere' where alias = v_old || ' Sosyal';
+  update public.notifications
+     set title = left(replace(replace(title, v_old || ' Sosyal', 'PeopleHere'), v_old || ' Özel', 'PeopleHere Özel'), 120),
+         body = left(replace(replace(body, v_old || ' Sosyal', 'PeopleHere'), v_old || ' Özel', 'PeopleHere Özel'), 1000)
+   where title like '%' || v_old || '%' or body like '%' || v_old || '%';
+  update public.announcements
+     set title = left(replace(replace(title, v_old || ' Sosyal', 'PeopleHere'), v_old || ' Özel', 'PeopleHere Özel'), 120),
+         body = left(replace(replace(body, v_old || ' Sosyal', 'PeopleHere'), v_old || ' Özel', 'PeopleHere Özel'), 1000)
+   where title like '%' || v_old || '%' or body like '%' || v_old || '%';
+  -- Yazı düzeltmeleri: uygulamadaki yazı değiştiği için düzeltme de yeni yazıya taşınır
+  insert into public.ui_text_overrides (source, text, updated_by, updated_at)
+  select replace(replace(o.source, v_old || ' Sosyal', 'PeopleHere'), v_old || ' Özel', 'PeopleHere Özel'),
+         replace(replace(o.text, v_old || ' Sosyal', 'PeopleHere'), v_old || ' Özel', 'PeopleHere Özel'),
+         o.updated_by, o.updated_at
+    from public.ui_text_overrides o
+   where o.source like '%' || v_old || '%'
+  on conflict (source) do nothing;
+  delete from public.ui_text_overrides where source like '%' || v_old || '%';
+  update public.ui_text_overrides
+     set text = replace(replace(text, v_old || ' Sosyal', 'PeopleHere'), v_old || ' Özel', 'PeopleHere Özel')
+   where text like '%' || v_old || '%';
+  -- Giriş adresi (kullanıcı adı@alan adı; bu adrese hiçbir şey gönderilmez)
+  update auth.users set email = replace(email, v_old_dom, '@uye.peoplehere.app') where email like '%' || v_old_dom;
+  begin
+    update auth.identities
+       set identity_data = jsonb_set(identity_data, '{email}',
+                                     to_jsonb(replace(identity_data ->> 'email', v_old_dom, '@uye.peoplehere.app')))
+     where identity_data ->> 'email' like '%' || v_old_dom;
+  exception when others then null;
+  end;
+  insert into public.app_settings (key, value, description)
+  values ('peoplehere_v1', 'true', 'Tek seferlik: eski adın izleri temizlendi, giriş adresleri taşındı (değiştirme)');
+end $$;
 
 notify pgrst, 'reload schema';

@@ -21,6 +21,7 @@ import { Screen } from '@/components/Screen';
 import { SoftGlow } from '@/components/SoftGlow';
 import { isPetekIconName, PetekIcon } from '@/components/HexClusterIcon';
 import { useAuth } from '@/lib/auth';
+import { CITY_NAMES, setVisiting, useCity } from '@/lib/city';
 import { showDialog } from '@/lib/dialog';
 import { muteVerifyReminder, openIdentityVerify, takeVerifyReminder } from '@/lib/identity';
 import { useIdentityEnabled } from '@/lib/identityFlag';
@@ -39,7 +40,7 @@ import {
   type Reaction,
 } from '@/lib/feed';
 import { cellName } from '@/lib/cellNames';
-import { districtOf, isLand, type Cell } from '@/lib/hex';
+import { areaOf, isLand, type Cell } from '@/lib/hex';
 import { imageAspect } from '@/lib/images';
 import { locateMyCell, myCellNow, nearCell, useMyCell } from '@/lib/myCell';
 import { isFuture, isSubscriptionActive } from '@/lib/labels';
@@ -113,9 +114,19 @@ function FeedScreen() {
   const moreLock = useRef(false);
   const loadId = useRef(0);
 
+  // Ziyaret modu: başka şehrin akışı yalnızca okunur (gönderi ve yorum yok)
+  const city = useCity();
+  const visiting = city.readOnly ? city.view : null;
+  const [seenCity, setSeenCity] = useState(visiting);
+  if (seenCity !== visiting) {
+    // Şehir değişince ilçe süzgeci (öbür şehrin ilçesi) temizlenir
+    setSeenCity(visiting);
+    setDistrict(null);
+  }
+
   // Yeni gönderi, yorum ve beğeni herkese açıktır (susturulmamışsa); moderatör ayarıyla gönderi aboneliğe bağlanabilir
-  const canPost = !muted && (isModerator || isSponsor || !requiresSubscription || subscribed);
-  const canComment = !muted;
+  const canPost = !muted && !visiting && (isModerator || isSponsor || !requiresSubscription || subscribed);
+  const canComment = !muted && !visiting;
 
   const load = useCallback(async () => {
     if (!isBackendReady) {
@@ -136,7 +147,7 @@ function FeedScreen() {
     const [feed, needsSubscription, ds] = await Promise.all([
       listFeed(undefined, feedFilter(here)),
       postsRequireSubscription(),
-      listFeedDistricts(),
+      listFeedDistricts(visiting),
     ]);
     if (my !== loadId.current) return; // daha yeni bir yenileme başladı, eski cevap yok sayılır
     setRequiresSubscription(needsSubscription);
@@ -148,11 +159,11 @@ function FeedScreen() {
     }
     setLoaded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- feedFilter bu durumlardan türetilir
-  }, [mine, district, mentions, near, cellFilter]);
+  }, [mine, district, mentions, near, cellFilter, visiting]);
 
   function feedFilter(here: Cell | null) {
     if (near || cellFilter) return { cell: cellFilter, near: !cellFilter, my: here };
-    return { mine, district, mentions };
+    return { mine, district, mentions, city: visiting };
   }
 
   // Haritadaki petek menüsündeki “Petek akışı” bir petek gönderir: akış o peteğe süzülür
@@ -163,7 +174,6 @@ function FeedScreen() {
     m?: string;
     post?: string;
     dm?: string;
-    crew?: string;
   }>();
   // Özel mesajlar: bildirim, rumuz profili ya da arkadaş listesi bir yazışma gönderir; mesaj kutusu o sohbetle açılır
   const dmKey = params.dm ? `${params.dm},${params.t ?? ''}` : null;
@@ -175,17 +185,6 @@ function FeedScreen() {
     setAppliedDm(dmKey);
     if (takeFresh(dmKey ? `dm:${dmKey}` : null) && params.dm) {
       setDmTarget(params.dm);
-      setDmOpen(true);
-    }
-  }
-  // Klan sohbeti: etiket bildirimi ya da Klanım ekranı gönderir; mesaj kutusu klan sohbetiyle açılır
-  const crewKey = params.crew ? `crew,${params.t ?? ''}` : null;
-  const [appliedCrew, setAppliedCrew] = useState<string | null>(null);
-  const [crewTarget, setCrewTarget] = useState<string | null>(null);
-  if (crewKey !== appliedCrew) {
-    setAppliedCrew(crewKey);
-    if (takeFresh(crewKey ? `crew:${crewKey}` : null) && crewKey) {
-      setCrewTarget(crewKey);
       setDmOpen(true);
     }
   }
@@ -505,7 +504,7 @@ function FeedScreen() {
           <View style={styles.hdrLogo}>
             {/* Logonun arkasında temaya uygun hafif ışık (kenarları tamamen saydam: köşe görünmez) */}
             <SoftGlow width={104} height={76} color={colors.primary} opacity={isLight ? 0.14 : 0.2} />
-            {/* Yazısız logo (41 + kule); iki yandaki düğme sayısı eşit olduğu için tam ortada durur */}
+            {/* Yazısız logo (işaret); iki yandaki düğme sayısı eşit olduğu için tam ortada durur */}
             <ImageSlot name="logoMark" style={{ height: 72, aspectRatio: imageAspect.logoMark }} />
           </View>
           {profile && !isSponsor ? (
@@ -629,12 +628,10 @@ function FeedScreen() {
             <DmInbox
               visible={dmOpen}
               openId={dmTarget}
-              openCrew={crewTarget}
               subscribed={subscribed}
               onClose={() => {
                 setDmOpen(false);
                 setDmTarget(null);
-                setCrewTarget(null);
                 void dmUnreadCount().then(setDmUnread);
               }}
               onUnread={setDmUnread}
@@ -655,7 +652,19 @@ function FeedScreen() {
       ) : null}
 
       {/* Yeni gönderi kutusu ekranın en altındadır; yazamayan için açıklama */}
-      {profile ? (
+      {profile && visiting ? (
+        <View style={styles.lockCard} testID="feed-visiting">
+          <Ionicons name="eye-outline" size={20} color={colors.textMuted} />
+          <View style={styles.lockBody}>
+            <Text style={styles.lockText}>
+              {`${CITY_NAMES[visiting]} akışına ziyaretçi olarak bakıyorsun. Gönderi ve yorum yazamazsın.`}
+            </Text>
+            <Text style={styles.lockLink} accessibilityRole="button" onPress={() => setVisiting(null)}>
+              Şehrime dön
+            </Text>
+          </View>
+        </View>
+      ) : profile ? (
         canPost ? null : (
           <View style={styles.lockCard}>
             <Ionicons name="lock-closed" size={20} color={colors.textMuted} />
@@ -781,7 +790,7 @@ function FeedScreen() {
                 </Text>
                 <Text
                   style={styles.cellMapSub}
-                >{`${districtOf(cellFilter.q, cellFilter.r) ?? 'Kocaeli'} · Peteği haritada gör`}</Text>
+                >{`${areaOf(cellFilter.q, cellFilter.r)} · Peteği haritada gör`}</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
             </Pressable>

@@ -32,10 +32,13 @@ type Row = {
   photo_path: string | null;
   photo_status: string | null;
   last_seen_at: string | null;
+  city: string | null;
+  city_next: string | null;
+  city_next_at: string | null;
 };
 
 const COLUMNS =
-  'id, full_name, admin_real_name, alias, role, points, premium_until, muted_until, banned_at, ban_reason, created_at, identity_verified_at, photo_path, photo_status, last_seen_at';
+  'id, full_name, admin_real_name, alias, role, points, premium_until, muted_until, banned_at, ban_reason, created_at, identity_verified_at, photo_path, photo_status, last_seen_at, city, city_next, city_next_at';
 
 type Filter = 'all' | 'online' | 'verified' | 'subscribed' | 'muted' | 'banned' | 'staff';
 
@@ -43,6 +46,13 @@ type Filter = 'all' | 'online' | 'verified' | 'subscribed' | 'muted' | 'banned' 
 const ONLINE_MS = 10 * 60_000;
 const REFRESH_MS = 10 * 60_000;
 const isOnline = (r: Row) => Boolean(r.last_seen_at && Date.now() - Date.parse(r.last_seen_at) < ONLINE_MS);
+
+const CITIES: { value: string; label: string }[] = [
+  { value: 'istanbul', label: 'İstanbul' },
+  { value: 'kocaeli', label: 'Kocaeli' },
+  { value: 'izmir', label: 'İzmir' },
+];
+const cityLabel = (c: string | null) => CITIES.find((x) => x.value === c)?.label ?? 'Seçilmedi';
 
 const ROLE: Record<Row['role'], string> = { user: 'Üye', admin: 'Moderatör', sponsor: 'Mekân hesabı' };
 const PACKAGES: { value: PackageType; label: string }[] = [
@@ -213,6 +223,7 @@ function MemberDetail({ m, onNotice, onChanged }: { m: Row; onNotice: (n: Notice
   const [points, setPoints] = useState('');
   const [pointsReason, setPointsReason] = useState('');
   const photo = publicUrl('profile-photos', m.photo_path);
+  const [city, setCity] = useState(m.city ?? '');
 
   async function run(task: () => Promise<{ error: string | null }>, ok: string) {
     if (busy) return;
@@ -275,6 +286,11 @@ function MemberDetail({ m, onNotice, onChanged }: { m: Row; onNotice: (n: Notice
                 : 'Kontrolde'
             : 'Yok'}
         </dd>
+        <dt>Şehir</dt>
+        <dd>
+          {cityLabel(m.city)}
+          {m.city_next ? ` · göç listesinde: ${cityLabel(m.city_next)}${m.city_next_at ? ` (${when(m.city_next_at)})` : ''}` : ''}
+        </dd>
         <dt>Abonelik</dt>
         <dd>{isActive(m.premium_until) ? `${when(m.premium_until)} tarihine kadar` : 'Yok'}</dd>
         <dt>Susturma</dt>
@@ -282,6 +298,34 @@ function MemberDetail({ m, onNotice, onChanged }: { m: Row; onNotice: (n: Notice
         <dt>Askı</dt>
         <dd>{m.banned_at ? `${when(m.banned_at)}${m.ban_reason ? ` · ${m.ban_reason}` : ''}` : 'Yok'}</dd>
       </dl>
+
+      <h4>Şehri değiştir</h4>
+      <div className="actions">
+        <select value={city} onChange={(e) => setCity(e.target.value)} disabled={busy}>
+          <option value="" disabled>
+            Şehir seç
+          </option>
+          {CITIES.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+        <Button
+          kind="ghost"
+          disabled={busy || !city || (city === m.city && !m.city_next)}
+          onClick={() => {
+            if (!supabase || !window.confirm(`Üye hemen ${cityLabel(city)} şehrine taşınacak. Göç listesi kaydı varsa silinir.`)) return;
+            const sb = supabase;
+            void run(async () => {
+              const { error } = await sb.rpc('admin_set_city', { p_user: m.id, p_city: city });
+              return { error: error ? 'Şehir değiştirilemedi.' : null };
+            }, 'Üye taşındı.');
+          }}
+        >
+          Hemen taşı
+        </Button>
+      </div>
 
       {m.role === 'admin' ? (
         <p className="muted small">Moderatör hesapları burada değiştirilemez.</p>

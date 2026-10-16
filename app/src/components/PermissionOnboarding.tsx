@@ -24,7 +24,7 @@ import {
   type ThemePref,
 } from '@/theme';
 
-const flagKey = (userId: string) => `kat41_perm_onboard_v1_${userId.replace(/[^A-Za-z0-9_-]/g, '')}`;
+const flagKey = (userId: string) => `peoplehere_perm_onboard_v1_${userId.replace(/[^A-Za-z0-9_-]/g, '')}`;
 
 async function isDone(userId: string): Promise<boolean> {
   try {

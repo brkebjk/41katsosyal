@@ -7,7 +7,7 @@ import { Text } from '@/components/AppText';
 import { NoteModal } from '@/components/NoteModal';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { cellName } from '@/lib/cellNames';
-import { districtOf } from '@/lib/hex';
+import { areaOf } from '@/lib/hex';
 import { sendMemberMessage } from '@/lib/moderation';
 import { refreshNotices } from '@/lib/notices';
 import { callRpc, callRpcVoid } from '@/lib/rpc';
@@ -84,7 +84,7 @@ export function CellCandidatesTab({ onNotice }: { onNotice: (n: Notice) => void 
               </Text>
             </View>
             <Text style={styles.meta}>
-              {`${cellName({ q: c.cell_q, r: c.cell_r })} · ${districtOf(c.cell_q, c.cell_r) ?? 'Kocaeli'}`}
+              {`${cellName({ q: c.cell_q, r: c.cell_r })} · ${areaOf(c.cell_q, c.cell_r)}`}
             </Text>
             <Text style={styles.meta}>
               {`${c.kind === 'host' ? 'Etkinlik düzenleyen' : 'Oyun oynayan'} · son ay ${c.count_last}, önceki ay ${c.count_prev}`}

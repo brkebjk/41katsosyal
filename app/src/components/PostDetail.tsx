@@ -23,6 +23,7 @@ import { COMMENT_MAX, createComment, displayName, listComments, type Comment, ty
 import { timeAgo } from '@/lib/labels';
 import { profilePhotoUrl } from '@/lib/profilePhoto';
 import { venueImageUrl } from '@/lib/venueImage';
+import { useDraftText } from '@/lib/drafts';
 import { colors, fonts, fontSizes, spacing } from '@/theme';
 
 type Props = {
@@ -73,6 +74,8 @@ function PostDetailBody({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
   const [text, setText] = useState('');
+  // Yazılan yorum taslak olarak saklanır (uygulama kapanıp açılsa da kaybolmaz)
+  useDraftText(postId ? `comment:${postId}` : null, text, setText);
   const [sending, setSending] = useState(false);
   const [target, setTarget] = useState<ContentTarget | null>(null);
   const sendLock = useRef(false);

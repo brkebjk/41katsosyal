@@ -77,7 +77,8 @@ export default function VampireIntroScreen() {
   };
 
   const mine = goals?.games.vampire_villager;
-  const sideMult = goals?.side_mult ?? rules.sideMult;
+  // Yan yana ve uzaktan oyun aynı puanı verir; yan yananın yalnızca aylık hedefi yüksektir
+  const sideCap = goals?.side_cap ?? rules.sideMonthPoints;
 
   return (
     <View style={styles.root}>
@@ -117,10 +118,10 @@ export default function VampireIntroScreen() {
             bars={[
               {
                 key: 'side',
-                label: `Yan yana ×${sideMult}`,
+                label: 'Yan yana',
                 icon: <SideIcon size={14} />,
                 earned: mine?.side ?? 0,
-                cap: goals?.side_cap ?? rules.sideMonthPoints,
+                cap: sideCap,
                 color: '#FFB020',
               },
               {
@@ -201,7 +202,7 @@ export default function VampireIntroScreen() {
               } kişi.`}
             </Text>
             <Text style={styles.pointsLine}>
-              {`🏡 Yan yana ${sideMult}x puan · 🏪 Mekânda +%${Math.max(0, rules.venueBonusPct - 100)} · 🧛 5 görev ödülü ×1,25`}
+              {`🏡 Yan yana aylık hedef ${Math.round(sideCap).toLocaleString('tr-TR')} puan · 🏪 Mekânda +%${Math.max(0, rules.venueBonusPct - 100)} · 🧛 5 görev ödülü ×1,25`}
             </Text>
             <Text style={styles.pointsLink}>Puan tablosu ›</Text>
           </Pressable>
@@ -215,7 +216,7 @@ export default function VampireIntroScreen() {
               testID="vv-intro-side"
             >
               <View style={styles.bonus} pointerEvents="none">
-                <Text style={styles.bonusText}>{`${sideMult}x Puan`}</Text>
+                <Text style={styles.bonusText}>Büyük hedef</Text>
               </View>
               <Text style={styles.playEmoji}>🏡</Text>
               <Text style={styles.playTitle}>YAN YANA</Text>

@@ -63,7 +63,9 @@ const COMMON_TEXT: Record<string, string> = {
   invalid_action: 'Bu işlem geçersiz.',
   sponsor_not_allowed: 'Mekân hesapları bu işlemi yapamaz.',
   session_replaced: 'Hesabına başka bir telefondan giriş yapıldı. Bu telefondaki oturum kapatıldı.',
-  reserved_name: 'Bu ad kullanılamaz. “41. Kat”, “Moderatör” veya “Yönetici” içeren adlar ayrılmıştır.',
+  reserved_name: 'Bu ad kullanılamaz. “PeopleHere”, “Moderatör” veya “Yönetici” içeren adlar ayrılmıştır.',
+  city_required: 'Önce şehrini seç (Profil > Şehrim).',
+  wrong_city: 'Yalnızca kendi şehrinin haritasında etkinlik açabilirsin.',
 };
 
 /** Sunucunun hata mesajındaki kodu bulup anlaşılır bir cümleye çevirir. */

@@ -7,7 +7,7 @@ import { fonts } from '@/theme';
 
 export type GoalBar = {
   key: string;
-  /** Satırın başındaki kısa ad (ör. "🏖️ Yan yana ×7") */
+  /** Satırın başındaki kısa ad (ör. "Yan yana") */
   label: string;
   /** Adın önündeki simge (ör. yan yana / uzaktan simgesi) */
   icon?: ReactNode;

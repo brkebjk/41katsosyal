@@ -39,7 +39,7 @@ export type OpenRoom = {
   id: string;
   game_type: string;
   game_title: string;
-  /** Moderatör açtıysa "41. Kat Sosyal", üye açtıysa üyenin adı */
+  /** Moderatör açtıysa "PeopleHere", üye açtıysa üyenin adı */
   host_name: string;
   is_official: boolean;
   is_mine: boolean;
@@ -141,13 +141,17 @@ export async function listMyEventRaffles(): Promise<{ data: EventRaffle[]; error
 const ROOM_COLUMNS = 'id, game_type, host_id, status, state, created_at';
 
 /**
- * Katılıma açık odalar. Moderatörün açtıkları ("41. Kat Özel") listenin başında gelir.
+ * Katılıma açık odalar. Moderatörün açtıkları ("PeopleHere Özel") listenin başında gelir.
  * `gameType` verilirse yalnızca o oyunun odaları gelir (oyunun “Açık odalar” ekranı).
  */
-export async function listOpenRooms(gameType?: string): Promise<{ data: OpenRoom[]; error: string | null }> {
+/** city: yan yana odalar şehre özeldir (boş = kendi şehrim); uzaktan odalar bütün illere açıktır */
+export async function listOpenRooms(
+  gameType?: string,
+  city?: string | null,
+): Promise<{ data: OpenRoom[]; error: string | null }> {
   const { data, error } = await callRpc<OpenRoom[]>(
     'list_open_rooms',
-    gameType ? { p_game_type: gameType } : {},
+    { ...(gameType ? { p_game_type: gameType } : {}), ...(city ? { p_city: city } : {}) },
     ROOM_TEXT,
   );
   return { data: error ? [] : (data ?? []), error };
@@ -228,9 +232,18 @@ export async function leaveRoom(roomId: string): Promise<Result> {
  * Menüye dönen ya da uygulamayı yeniden açan kişiyi içinde olduğu bütün yan yana oyunlardan çıkarır.
  * Döner: çıkarıldığı odalar (boşsa zaten hiçbir oyunda değildi).
  */
-export async function leaveAllRooms(): Promise<{ left: LeftRoom[]; error: string | null }> {
-  const { data, error } = await callRpc<LeftRoom[]>('leave_all_rooms', {}, ROOM_TEXT);
+/** remoteOnly: uygulama açılışında yalnızca uzaktan oyunlardan çıkılır (yan yana oyuna geri dönülür) */
+export async function leaveAllRooms(remoteOnly = false): Promise<{ left: LeftRoom[]; error: string | null }> {
+  const { data, error } = await callRpc<LeftRoom[]>('leave_all_rooms', { p_remote_only: remoteOnly }, ROOM_TEXT);
   return { left: error ? [] : (data ?? []), error };
+}
+
+export type SideRoom = { id: string; game_type: string; status: 'lobby' | 'playing' };
+
+/** İçinde olduğum (süresi dolmamış) yan yana oyun odası; yoksa boş */
+export async function mySideRoom(): Promise<SideRoom | null> {
+  const { data } = await callRpc<SideRoom | null>('my_side_room');
+  return data ?? null;
 }
 
 /**

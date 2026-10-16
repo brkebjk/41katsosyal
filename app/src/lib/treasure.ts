@@ -12,7 +12,7 @@ export type Difficulty = 'kolay' | 'orta' | 'zor' | 'imkansiz';
 
 export const DIFFICULTIES: Difficulty[] = ['kolay', 'orta', 'zor', 'imkansiz'];
 
-/** Haritadaki renkler: yoğunluk (pembe), etkinlik (turkuaz), oyun (lila), mekân (mercan) ve 41. Kat (altın) ile çakışmaz */
+/** Haritadaki renkler: yoğunluk (pembe), etkinlik (turkuaz), oyun (lila), mekân (mercan) ve PeopleHere Özel (altın) ile çakışmaz */
 export const TREASURE_COLORS: Record<Difficulty, string> = {
   kolay: '#5BE37D',
   orta: '#3F8CFF',
@@ -62,7 +62,7 @@ const TREASURE_TEXT: Record<string, string> = {
   location_required: 'Kodu girmek için bulunduğun bölgenin bilinmesi gerekiyor. Konum iznini verip tekrar dene.',
   too_many_attempts: 'Çok fazla yanlış deneme yaptın. Bir süre sonra tekrar dene (saatte en çok 6, günde 20 deneme).',
   treasure_monthly_limit: 'Bu ayki hazine hakkını doldurdun. Hak her ayın başında yenilenir.',
-  invalid_cell: 'Bu petek Kocaeli haritasında değil.',
+  invalid_cell: 'Bu petek haritada değil.',
   invalid_difficulty: 'Zorluk seviyesini seç.',
   invalid_hint: 'İpucu 3 ile 300 karakter arasında olmalı.',
   invalid_expiry: 'Geçerlilik tarihi en az 1 saat, en çok 120 gün sonrası olmalı.',

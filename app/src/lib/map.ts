@@ -54,7 +54,7 @@ export type Place = {
 const MAP_TEXT: Record<string, string> = {
   map_closed: 'Harita şu an herkese açık değil.',
   presence_closed: 'Petekteki kişi sayısı şu an üyelere açık değil.',
-  invalid_cell: 'Bu petek Kocaeli haritasında değil.',
+  invalid_cell: 'Bu petek haritada değil.',
   place_not_found: 'Bu yer artık listede yok. Başka bir yer seç.',
 };
 
@@ -67,8 +67,13 @@ export async function getDensity(): Promise<{ data: DensityCell[]; error: string
   return { data: data ?? [], error };
 }
 
-export async function searchPlaces(query: string): Promise<{ data: Place[]; error: string | null }> {
-  const { data, error } = await callRpc<Place[]>('search_places', { p_query: query, p_limit: 20 }, MAP_TEXT);
+/** city: hangi şehrin yerlerinde aranır (boş = kendi şehrim) */
+export async function searchPlaces(query: string, city?: string | null): Promise<{ data: Place[]; error: string | null }> {
+  const { data, error } = await callRpc<Place[]>(
+    'search_places',
+    { p_query: query, p_limit: 20, ...(city ? { p_city: city } : {}) },
+    MAP_TEXT,
+  );
   return { data: data ?? [], error };
 }
 
@@ -174,7 +179,7 @@ const NOTICE: Record<LocationPurpose, { message: string; cancel: string }> = {
  * “Gerektiğinde konum iznini otomatik ver” seçeneği (bu telefonda saklanır). Açıksa “1 kez isteyeceğim” uyarısı bir
  * daha gösterilmez; konum gerektiğinde izin yoksa telefonun izin penceresi doğrudan açılır.
  */
-const AUTO_KEY = 'kat41_auto_location';
+const AUTO_KEY = 'peoplehere_auto_location';
 
 async function autoLocationOn(): Promise<boolean> {
   try {
@@ -333,7 +338,7 @@ export async function findNearbyPlaces(): Promise<NearbyResult | null> {
   if (!isLand(cell.q, cell.r)) {
     return {
       ok: false,
-      message: 'Kocaeli sınırları içinde görünmüyorsun, bu yüzden yer paylaşılamıyor.',
+      message: 'Şehrinin haritası içinde görünmüyorsun, bu yüzden yer paylaşılamıyor.',
     };
   }
   const { data, error } = await placesNearCell(cell);
@@ -380,7 +385,7 @@ export async function requireGameLocation(): Promise<GameLocation> {
         : fix.reason === 'mocked'
           ? MOCKED_TEXT
           : fix.reason === 'denied'
-            ? 'Konum izni verilmedi, bu yüzden oyuna girilemedi. İzin vermek için telefonunun ayarlarından 41. Kat Sosyal’e konum izni ver, sonra tekrar dene.'
+            ? 'Konum izni verilmedi, bu yüzden oyuna girilemedi. İzin vermek için telefonunun ayarlarından PeopleHere’e konum izni ver, sonra tekrar dene.'
             : fix.reason === 'timeout'
               ? 'Konumun şu an alınamadı. Birkaç saniye sonra tekrar dene.'
               : 'Telefonunun konum özelliği kapalı görünüyor. Konumu açıp tekrar dene.';
@@ -408,7 +413,7 @@ export async function requireEventLocation(): Promise<EventLocation> {
         : fix.reason === 'mocked'
           ? MOCKED_TEXT
           : fix.reason === 'denied'
-            ? 'Konum izni verilmedi, bu yüzden katılımın doğrulanamadı. İzin vermek için telefonunun ayarlarından 41. Kat Sosyal’e konum izni ver, sonra tekrar dene.'
+            ? 'Konum izni verilmedi, bu yüzden katılımın doğrulanamadı. İzin vermek için telefonunun ayarlarından PeopleHere’e konum izni ver, sonra tekrar dene.'
             : fix.reason === 'timeout'
               ? 'Konumun şu an alınamadı. Birkaç saniye sonra tekrar dene.'
               : 'Telefonunun konum özelliği kapalı görünüyor. Konumu açıp tekrar dene.';
@@ -437,7 +442,7 @@ export async function checkInHere(selected: Cell, nameOf: (c: Cell) => string): 
         fix.reason === 'mocked'
           ? MOCKED_TEXT
           : fix.reason === 'denied'
-            ? 'Konum izni verilmedi. Telefon ayarlarından 41. Kat Sosyal’e konum izni verip tekrar dene.'
+            ? 'Konum izni verilmedi. Telefon ayarlarından PeopleHere’e konum izni verip tekrar dene.'
             : fix.reason === 'timeout'
               ? 'Konumun şu an alınamadı. Birkaç saniye sonra tekrar dene.'
               : 'Telefonunun konum özelliği kapalı görünüyor. Konumu açıp tekrar dene.',
@@ -449,7 +454,7 @@ export async function checkInHere(selected: Cell, nameOf: (c: Cell) => string): 
       ok: false,
       message: isLand(here.q, here.r)
         ? `Şu an bu petekte değilsin. Yalnızca bulunduğun peteğe bildirim yapabilirsin; bulunduğun petek: ${nameOf(here)}.`
-        : 'Kocaeli haritasının içinde görünmüyorsun, bu yüzden bildirim yapılamaz.',
+        : 'Şehir haritalarının içinde görünmüyorsun, bu yüzden bildirim yapılamaz.',
     };
   }
   const { data, error } = await callRpc<{ ok: boolean; reason?: string; wait_minutes?: number }>(

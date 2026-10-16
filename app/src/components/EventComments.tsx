@@ -30,6 +30,7 @@ import { FRIEND_CONSEQUENCE, FRIEND_WARNING, sendRequestForEventComment } from '
 import { timeAgo } from '@/lib/labels';
 import { setHidden } from '@/lib/moderation';
 import { REAL_NAME } from '@/lib/realName';
+import { useDraftText } from '@/lib/drafts';
 import { colors, fonts, fontSizes, spacing } from '@/theme';
 
 // Uyarı penceresi, uygulama açıldıktan sonra ilk yorumdan önce bir kez gösterilir
@@ -60,6 +61,8 @@ function EventCommentsBody({ event, canWrite, isModerator, onClose, onCountDelta
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
   const [text, setText] = useState('');
+  // Yazılan yorum taslak olarak saklanır (uygulama kapanıp açılsa da kaybolmaz)
+  useDraftText(eventId ? `event-comment:${eventId}` : null, text, setText);
   const [sending, setSending] = useState(false);
   const [sheet, setSheet] = useState<Sheet>(null);
   const sendLock = useRef(false);

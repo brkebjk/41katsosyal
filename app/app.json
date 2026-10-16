@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "41. Kat Sosyal",
-    "slug": "41kat",
-    "scheme": "kat41",
+    "name": "PeopleHere",
+    "slug": "peoplehere",
+    "scheme": "peoplehere",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -11,19 +11,19 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#EEF3F7"
+      "backgroundColor": "#05101C"
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.kat41.app",
+      "bundleIdentifier": "com.peoplehere.app",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "41. Kat Sosyal, uzaktan oyunlarda sesli sohbet için mikrofonunu yalnızca konuşma sıran geldiğinde ve sen açık tuttuğunda kullanır. Sesin kaydedilmez, hiçbir yerde saklanmaz."
+        "NSMicrophoneUsageDescription": "PeopleHere, uzaktan oyunlarda sesli sohbet için mikrofonunu yalnızca konuşma sıran geldiğinde ve sen açık tuttuğunda kullanır. Sesin kaydedilmez, hiçbir yerde saklanmaz."
       }
     },
     "android": {
-      "package": "com.kat41.app",
+      "package": "com.peoplehere.app",
       "adaptiveIcon": {
-        "backgroundColor": "#071622",
+        "backgroundColor": "#05101C",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -42,12 +42,12 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#EEF3F7",
+          "backgroundColor": "#05101C",
           "image": "./assets/splash-icon.png",
-          "imageWidth": 200,
+          "imageWidth": 240,
           "resizeMode": "contain",
           "dark": {
-            "backgroundColor": "#071622",
+            "backgroundColor": "#05101C",
             "image": "./assets/splash-icon.png"
           }
         }
@@ -58,7 +58,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "41. Kat Sosyal, gönderine yer eklerken yakınındaki mekânları listelemek ve bir oyuna girerken oda sahibine yakın olduğunu (yaklaşık 100 metre) kontrol etmek için konumuna yalnızca uygulama açıkken ve her seferinde bir kez bakar. Konumun sürekli takip edilmez ve odaya girenin kesin konumu kaydedilmez.",
+          "locationWhenInUsePermission": "PeopleHere, gönderine yer eklerken yakınındaki mekânları listelemek ve bir oyuna girerken oda sahibine yakın olduğunu (yaklaşık 100 metre) kontrol etmek için konumuna yalnızca uygulama açıkken ve her seferinde bir kez bakar. Konumun sürekli takip edilmez ve odaya girenin kesin konumu kaydedilmez.",
           "isAndroidBackgroundLocationEnabled": false,
           "isIosBackgroundLocationEnabled": false
         }
@@ -66,16 +66,16 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "41. Kat Sosyal, moderatör mekân profil resmi seçerken galerine erişir.",
+          "photosPermission": "PeopleHere, moderatör mekân profil resmi seçerken galerine erişir.",
           "cameraPermission": "Cihaz dosyalarınız bizi ilgilendirmiyor. Kişi gerçekliğini maksimize etmek ve küçük yaşta kullanıcıların önüne geçmek için profil fotoğrafı eklemek için sadece kameranı kullanabilirsin.",
-          "microphonePermission": "41. Kat Sosyal, uzaktan oyunlarda sesli sohbet için mikrofonunu yalnızca konuşma sıran geldiğinde ve sen açık tuttuğunda kullanır. Sesin kaydedilmez, hiçbir yerde saklanmaz."
+          "microphonePermission": "PeopleHere, uzaktan oyunlarda sesli sohbet için mikrofonunu yalnızca konuşma sıran geldiğinde ve sen açık tuttuğunda kullanır. Sesin kaydedilmez, hiçbir yerde saklanmaz."
         }
       ],
       [
         "expo-camera",
         {
           "cameraPermission": "Cihaz dosyalarınız bizi ilgilendirmiyor. Kişi gerçekliğini maksimize etmek ve küçük yaşta kullanıcıların önüne geçmek için profil fotoğrafı eklemek için sadece kameranı kullanabilirsin.",
-          "microphonePermission": "41. Kat Sosyal, uzaktan oyunlarda sesli sohbet için mikrofonunu yalnızca konuşma sıran geldiğinde ve sen açık tuttuğunda kullanır. Sesin kaydedilmez, hiçbir yerde saklanmaz.",
+          "microphonePermission": "PeopleHere, uzaktan oyunlarda sesli sohbet için mikrofonunu yalnızca konuşma sıran geldiğinde ve sen açık tuttuğunda kullanır. Sesin kaydedilmez, hiçbir yerde saklanmaz.",
           "recordAudioAndroid": true
         }
       ],
@@ -96,7 +96,7 @@
       [
         "expo-contacts",
         {
-          "contactsPermission": "41. Kat Sosyal, arkadaşını davet ederken rehberinden seçtiğin kişiye hazır davet mesajı göndermek için rehberine erişir. Rehberin sunucuya gönderilmez."
+          "contactsPermission": "PeopleHere, arkadaşını davet ederken rehberinden seçtiğin kişiye hazır davet mesajı göndermek için rehberine erişir. Rehberin sunucuya gönderilmez."
         }
       ]
     ],

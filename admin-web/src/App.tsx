@@ -69,7 +69,7 @@ export function App() {
     return (
       <div className="center">
         <div className="login card">
-          <h1>41. Kat Yönetim</h1>
+          <h1>PeopleHere Yönetim</h1>
           <p className="error">{configProblem ?? 'Sunucu bağlantısı kurulamadı.'}</p>
           <p className="muted small">
             Değeri düzelttikten sonra Cloudflare'de Deployments sekmesinde en üstteki yayının yanındaki ⋯ menüsünden
@@ -112,7 +112,7 @@ export function App() {
         <span className="topbar-title">{pageLabel(page)}</span>
       </header>
       <aside className={`side ${menuOpen ? 'side-open' : ''}`}>
-        <div className="brand">41. Kat Yönetim</div>
+        <div className="brand">PeopleHere Yönetim</div>
         <nav>
           {NAV_GROUPS.map((g) => (
             <div key={g.title} className="nav-group">
@@ -176,7 +176,7 @@ function Login({
   return (
     <div className="center">
       <form className="login card" onSubmit={(e) => void submit(e)}>
-        <h1>41. Kat Yönetim</h1>
+        <h1>PeopleHere Yönetim</h1>
         <p className="muted">Moderatör hesabının uygulamadaki kullanıcı adı ve şifresiyle gir.</p>
         <NoticeBar notice={notice} onClose={() => onNotice(null)} />
         <label>

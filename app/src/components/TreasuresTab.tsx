@@ -8,7 +8,7 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { Segmented } from '@/components/Segmented';
 import { cellName } from '@/lib/cellNames';
 import { confirmAction } from '@/lib/dialog';
-import { districtOf } from '@/lib/hex';
+import { areaOf } from '@/lib/hex';
 import { formatWhen, timeAgo } from '@/lib/labels';
 import { refreshNotices } from '@/lib/notices';
 import {
@@ -93,7 +93,7 @@ export function TreasuresTab({ onNotice }: { onNotice: (n: Notice) => void }) {
             <Text style={styles.meta}>
               {t.found_at
                 ? `Bulan: ${t.finder_name ?? 'Silinmiş hesap'} · ${timeAgo(t.found_at)}`
-                : `${districtOf(t.cell_q, t.cell_r) ?? 'Kocaeli'} · son gün ${formatWhen(new Date(t.expires_at))}`}
+                : `${areaOf(t.cell_q, t.cell_r)} · son gün ${formatWhen(new Date(t.expires_at))}`}
             </Text>
             <View style={styles.btns}>
               <View style={styles.flex}>

@@ -8,7 +8,7 @@ import { Screen } from '@/components/Screen';
 import { joinRoom } from '@/lib/rooms';
 
 /**
- * Davet bağlantısı: `kat41://kopekbaligi-katil?kod=XXXXX` açılınca uzaktan Köpekbalığı Kafesi odasına katılır ve oyun
+ * Davet bağlantısı: `peoplehere://kopekbaligi-katil?kod=XXXXX` açılınca uzaktan Köpekbalığı Kafesi odasına katılır ve oyun
  * ekranına geçer. Oda dolmuş, başlamış ya da kapanmışsa nedeni yazar.
  */
 export default function SharkJoinLinkScreen() {

@@ -16,8 +16,8 @@ type State = {
   pending: string | null;
 };
 
-const CACHE_KEY = 'kat41.uiTexts';
-const MODE_KEY = 'kat41.textEditMode';
+const CACHE_KEY = 'peoplehere.uiTexts';
+const MODE_KEY = 'peoplehere.textEditMode';
 
 let wanted = false;
 let isAdmin = false;

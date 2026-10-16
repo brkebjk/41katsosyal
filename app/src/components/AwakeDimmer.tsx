@@ -2,7 +2,7 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, AppState, Keyboard, StyleSheet, View } from 'react-native';
 
-const TAG = 'kat41-app-awake';
+const TAG = 'peoplehere-app-awake';
 /** Bu kadar süre dokunulmazsa ekran kararır */
 const DIM_AFTER_MS = 2 * 60 * 1000;
 /** Kararmış ekranın koyuluğu (0 = hiç, 1 = siyah) */

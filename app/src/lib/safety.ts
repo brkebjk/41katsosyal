@@ -12,9 +12,9 @@ const TIPS =
   '• Rahatsız olursan hemen ayrıl; tehlike anında 112’yi ara ve kişiyi uygulamadan bildir.';
 
 const DISCLAIMER =
-  '41. Kat Sosyal yalnızca üyeleri bir araya getiren bir platformdur. Etkinliklerde ve oyunlarda üyeler arasında ' +
+  'PeopleHere yalnızca üyeleri bir araya getiren bir platformdur. Etkinliklerde ve oyunlarda üyeler arasında ' +
   'yaşanabilecek bireysel etkileşimlerden, fiziksel buluşmalarda doğabilecek olaylardan, kayıp, zarar ve ' +
-  'anlaşmazlıklardan 41. Kat Sosyal sorumlu değildir. Katılım tamamen kendi sorumluluğundadır.';
+  'anlaşmazlıklardan PeopleHere sorumlu değildir. Katılım tamamen kendi sorumluluğundadır.';
 
 /**
  * Bir etkinliğe katılmadan ya da herhangi bir katılım kodu (oyun odası, etkinlik) girmeden önce gösterilir.

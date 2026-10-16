@@ -1,12 +1,15 @@
 // "Oyunda kalma" kuralının uygulama tarafı.
 //
-// Yan yana oynanan oyunlarda (Vampir–Köylü ve sonrakiler) kişi oyun ekranından menüye dönerse, uygulamayı
-// kapatıp yeniden açarsa ya da uzun süre bağlantısı kesilirse oyundan çıkarılır. Sunucu bunu zaten kendisi de
-// uygular (oyun ekranı birkaç saniyede bir "buradayım" der; 45 sn gelmezse kişi çıkarılır). Bu dosya
-// uygulamanın "menüye döndüm / uygulama yeni açıldı" anında bunu hemen yapan kısmıdır.
+// Oyun ekranından menüye dönen kişi oyundan çıkarılır. Uygulamayı kapatıp yeniden açan kişi:
+//   * uzaktan oyundaysa oyundan çıkarılır,
+//   * yan yana oyundaysa odaya geri döner ve "oyunu terk etmek ister misin?" diye sorulur.
+// Sunucu bunu kendisi de uygular: oyun ekranı birkaç saniyede bir "buradayım" der; işaret uzaktan oyunda 45 sn,
+// yan yana oyunda 5 dk gelmezse kişi çıkarılır. Bu dosya uygulamanın "menüye döndüm / uygulama yeni açıldı" kısmıdır.
 
-import { notify } from '@/lib/dialog';
-import { leaveAllRooms, type LeftRoom } from '@/lib/rooms';
+import { router } from 'expo-router';
+
+import { notify, showDialog } from '@/lib/dialog';
+import { leaveAllRooms, leaveRoom, mySideRoom, type LeftRoom } from '@/lib/rooms';
 
 let inflight: Promise<void> | null = null;
 
@@ -38,4 +41,44 @@ export function leaveLiveGames(): Promise<void> {
     });
   }
   return inflight;
+}
+
+const GAME_SCREEN: Record<string, '/vampir' | '/kopekbaligi'> = {
+  vampire_villager: '/vampir',
+  shark_cage: '/kopekbaligi',
+};
+
+/**
+ * Uygulama açılınca: uzaktan oyunlardan çıkılır; yan yana oyundaysa odaya geri dönülür ve sorulur.
+ * "Oyunu terk et" denirse oyundan çıkılır (oyun başlamışsa elenir), menüye dönülür.
+ */
+export async function resumeOnStart(): Promise<void> {
+  const res = await leaveAllRooms(true);
+  if (res.left.length > 0) {
+    void notify('Oyundan ayrıldın', res.left.map(describe).join('\n\n'), { icon: 'exit-outline', tone: 'danger' });
+  }
+  const room = await mySideRoom();
+  const path = room ? GAME_SCREEN[room.game_type] : undefined;
+  if (!room || !path) return;
+  try {
+    router.push({ pathname: path, params: { id: room.id } });
+  } catch {
+    return; // gezinme henüz hazır değilse oyuncu odaya Oyunlar'dan döner
+  }
+  const leave = await showDialog<boolean>({
+    title: 'Oyuna geri döndün',
+    message:
+      room.status === 'playing'
+        ? 'Uygulama kapanmadan önce yan yana bir oyundaydın, kaldığın yerden devam ediyorsun. Oyunu terk edersen elenirsin ve geri dönemezsin.'
+        : 'Uygulama kapanmadan önce yan yana bir oyunun bekleme odasındaydın. Odadan çıkmak ister misin?',
+    icon: 'game-controller',
+    buttons: [
+      { label: 'Oyunda kal', value: false, style: 'primary' },
+      { label: room.status === 'playing' ? 'Oyunu terk et' : 'Odadan çık', value: true, style: 'danger' },
+    ],
+    cancelValue: false,
+  });
+  if (!leave) return;
+  await leaveRoom(room.id);
+  router.replace('/games');
 }

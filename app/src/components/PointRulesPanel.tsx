@@ -39,7 +39,7 @@ function ruleItems(rules: PointRules, contestOn: boolean): InfoItem[] {
     {
       icon: 'checkmark-circle',
       lead: `Etkinliğe katıl: +${rules.eventAttend}–${rules.eventAttend40}.`,
-      text: `Kalabalık etkinlik daha çok puan: ${attendTiersText(rules)}. 41. Kat Özel etkinliklerde her basamağa +${rules.eventAttendOfficialBonus}. Etkinlik yerinde, açan kişinin verdiği kodu yazarsın; bulunduğun bölge de bir kez kontrol edilir. Puan, etkinlikte en az ${rules.eventMinAttendees} kişinin katılımı doğrulanınca eklenir.${
+      text: `Kalabalık etkinlik daha çok puan: ${attendTiersText(rules)}. PeopleHere Özel etkinliklerde her basamağa +${rules.eventAttendOfficialBonus}. Etkinlik yerinde, açan kişinin verdiği kodu yazarsın; bulunduğun bölge de bir kez kontrol edilir. Puan, etkinlikte en az ${rules.eventMinAttendees} kişinin katılımı doğrulanınca eklenir.${
         rules.eventCategoryDaily > 0
           ? ` Aynı gün aynı kategoriden en çok ${rules.eventCategoryDaily} etkinlikten puan alırsın.`
           : ''
@@ -62,7 +62,7 @@ function ruleItems(rules: PointRules, contestOn: boolean): InfoItem[] {
     },
     {
       icon: 'game-controller',
-      lead: `Oyun oyna: uzaktan en çok +${rules.gameTopCap}, yan yana ×${rules.sideMult}.`,
+      lead: `Oyun oyna: 1. sıra en çok +${rules.gameTopCap}, yan yana ve uzaktan aynı.`,
       text: `Kalabalık oyun daha çok puan; puan bitirdiğin sıraya göre. Her oyundan ayda uzaktan ${rules.remoteMonthPoints}, yan yana ${rules.sideMonthPoints} puanlık hedef. Mekân koduyla mekânda +%${Math.max(0, rules.venueBonusPct - 100)}. Ayrıntısı aşağıda.`,
     },
     {

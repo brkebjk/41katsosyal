@@ -6,7 +6,7 @@
 import { callRpc, callRpcVoid, type Result } from '@/lib/rpc';
 import { supabase } from '@/lib/supabase';
 
-const LOGIN_DOMAIN = process.env.EXPO_PUBLIC_LOGIN_DOMAIN || 'uye.kat41sosyal.app';
+const LOGIN_DOMAIN = process.env.EXPO_PUBLIC_LOGIN_DOMAIN || 'uye.peoplehere.app';
 
 export const USERNAME_RE = /^[a-z0-9_.]{3,20}$/;
 export const USERNAME_HINT = '3–20 karakter: küçük harf (a–z), rakam, nokta ya da alt çizgi. Türkçe harf kullanma.';
@@ -42,7 +42,7 @@ export type SignupCheck =
 
 export const SIGNUP_CHECK_TEXT: Record<Exclude<SignupCheck, 'ok'>, string> = {
   invalid_username: `Kullanıcı adı uygun değil. ${USERNAME_HINT}`,
-  reserved_name: 'Bu kullanıcı adı kullanılamaz. “41kat”, “moderatör” veya “yönetici” içeren adlar ayrılmıştır.',
+  reserved_name: 'Bu kullanıcı adı kullanılamaz. “PeopleHere”, “moderatör” veya “yönetici” içeren adlar ayrılmıştır.',
   username_taken: 'Bu kullanıcı adı alınmış. Başka bir ad dene.',
   device_required: 'Bu telefon tanınamadı. Uygulamayı kapatıp yeniden aç.',
   device_used:

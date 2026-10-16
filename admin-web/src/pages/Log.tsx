@@ -62,7 +62,7 @@ export function LogPage() {
   function exportCsv() {
     if (!rows) return;
     downloadFile(
-      `41kat-islem-gunlugu-${stamp()}.csv`,
+      `peoplehere-islem-gunlugu-${stamp()}.csv`,
       toCsv(
         rows.map((r) => ({ ...r, time: when(r.created_at), admin: who(r.admin_id), target: who(r.target_user), act: label(r.action) })),
         [

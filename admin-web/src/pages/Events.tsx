@@ -19,7 +19,7 @@ type Ev = {
   host: { full_name: string; admin_real_name: string | null; role: string } | null;
 };
 
-/** Etkinlikler: yaklaşan ve geçmiş; iptal, resmî (41. Kat) işareti */
+/** Etkinlikler: yaklaşan ve geçmiş; iptal, resmî (PeopleHere) işareti */
 export function EventsPage({ onNotice }: { onNotice: (n: Notice) => void }) {
   const [tab, setTab] = useState<'upcoming' | 'past' | 'cancelled'>('upcoming');
   const [rows, setRows] = useState<Ev[] | null>(null);
@@ -95,7 +95,7 @@ export function EventsPage({ onNotice }: { onNotice: (n: Notice) => void }) {
                   e.category,
                   `kontenjan ${e.capacity}`,
                   e.approval !== 'approved' ? `onay: ${e.approval}` : null,
-                  staff && e.as_official ? '41. Kat resmî' : null,
+                  staff && e.as_official ? 'PeopleHere resmî' : null,
                 ]
                   .filter(Boolean)
                   .join(' · ')}
@@ -105,7 +105,7 @@ export function EventsPage({ onNotice }: { onNotice: (n: Notice) => void }) {
                 <div className="actions">
                   {staff ? (
                     <Button kind="ghost" onClick={() => void official(e)}>
-                      {e.as_official ? 'Resmî işaretini kaldır' : 'Resmî yap (41. Kat)'}
+                      {e.as_official ? 'Resmî işaretini kaldır' : 'Resmî yap (PeopleHere)'}
                     </Button>
                   ) : null}
                   <Button kind="danger" onClick={() => void cancel(e)}>

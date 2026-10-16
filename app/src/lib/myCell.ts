@@ -40,7 +40,7 @@ export function useMyCell(): Cell | null {
 
 /**
  * Konuma bir kez bakar ve peteğe çevirir. `reuse` true ise 15 dakikadan yeni bir konum varsa yeniden sormaz.
- * Kocaeli dışındaysa ya da konum alınamazsa açıklama gösterir ve boş döner.
+ * Şehir haritalarının dışındaysa ya da konum alınamazsa açıklama gösterir ve boş döner.
  */
 export async function locateMyCell(purpose: LocationPurpose, reuse = true, quiet = false): Promise<Cell | null> {
   if (reuse) {
@@ -59,7 +59,7 @@ export async function locateMyCell(purpose: LocationPurpose, reuse = true, quiet
   const c = cellOf(fix.lon, fix.lat);
   if (!isLand(c.q, c.r)) {
     if (!quiet)
-      void notify('Kocaeli dışındasın', 'Bulunduğun yer Kocaeli haritasının dışında görünüyor.', { icon: 'map' });
+      void notify('Harita dışındasın', 'Bulunduğun yer İstanbul, Kocaeli ve İzmir haritalarının dışında görünüyor.', { icon: 'map' });
     return null;
   }
   set({ cell: c, at: Date.now() });

@@ -319,7 +319,6 @@ function ReportsTab({
         g.type === 'vv_whisper' ||
         g.type === 'vv_dead' ||
         g.type === 'dm' ||
-        g.type === 'crew_msg' ||
         g.type === 'sk_voice'
       )
         return;
@@ -473,8 +472,6 @@ function ReportCard({
                     ? 'Elenenler sohbeti'
                     : group.type === 'dm'
                       ? 'Özel mesaj'
-                      : group.type === 'crew_msg'
-                        ? 'Klan sohbeti'
                       : group.type === 'sk_voice'
                         ? 'Ses mesajı (web panelde dinlenir)'
                         : 'Etkinlik yorumu';
@@ -485,7 +482,6 @@ function ReportCard({
     group.type !== 'vv_whisper' &&
     group.type !== 'vv_dead' &&
     group.type !== 'dm' &&
-    group.type !== 'crew_msg' &&
     group.type !== 'sk_voice';
   return (
     <View style={styles.reportCard} accessibilityLabel={`${typeLabel} şikayeti`}>

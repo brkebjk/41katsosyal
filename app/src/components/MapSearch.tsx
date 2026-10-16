@@ -34,7 +34,14 @@ type Hit = { kind: 'place'; place: Place; cell: Cell };
  * Haritanın üstünde yüzen, yarı saydam arama çubuğu: yer (mekân, cadde, semt) arar; her sonucun altında bulunduğu
  * peteğin adı küçük sarı yazıyla görünür. Bir sonuca dokununca harita o peteğe gider ve “İncele” düğmesi çıkar.
  */
-export function MapSearchBar({ onPick }: { onPick: (cell: Cell, label: string) => void }) {
+export function MapSearchBar({
+  onPick,
+  city,
+}: {
+  onPick: (cell: Cell, label: string) => void;
+  /** Hangi şehrin yerlerinde aranır (haritanın şehri) */
+  city?: string | null;
+}) {
   const [text, setText] = useState('');
   const [focused, setFocused] = useState(false);
   const [places, setPlaces] = useState<Place[]>([]);
@@ -52,7 +59,7 @@ export function MapSearchBar({ onPick }: { onPick: (cell: Cell, label: string) =
     let alive = true;
     setSearching(true);
     const t = setTimeout(() => {
-      void searchPlaces(query).then((res) => {
+      void searchPlaces(query, city).then((res) => {
         if (!alive) return;
         setPlaces(res.error ? [] : res.data);
         setSearching(false);
@@ -62,7 +69,7 @@ export function MapSearchBar({ onPick }: { onPick: (cell: Cell, label: string) =
       alive = false;
       clearTimeout(t);
     };
-  }, [query]);
+  }, [query, city]);
 
   // Yalnızca gerçek yerler listelenir; her yerin bulunduğu peteğin adı altında küçük sarı yazıyla görünür
   const hits: Hit[] = useMemo(() => {

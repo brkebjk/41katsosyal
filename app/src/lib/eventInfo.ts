@@ -10,7 +10,7 @@ export function eventInfoContent(r: PointRules): InfoContent {
       : null;
   const hostRule =
     r.eventHostDays > 0
-      ? `Aynı kişinin açtığı etkinliklerden ${r.eventHostDays} günde bir puan alırsın. 41. Kat Özel etkinliklerde bu sınır yoktur.`
+      ? `Aynı kişinin açtığı etkinliklerden ${r.eventHostDays} günde bir puan alırsın. PeopleHere Özel etkinliklerde bu sınır yoktur.`
       : null;
 
   return {
@@ -20,7 +20,7 @@ export function eventInfoContent(r: PointRules): InfoContent {
       {
         icon: 'checkmark-circle',
         lead: `Katıl: +${r.eventAttend}–${r.eventAttend40}.`,
-        text: `Kalabalık etkinlik daha çok puan: ${attendTiersText(r)}. 41. Kat Özel etkinliklerde her basamağa +${r.eventAttendOfficialBonus}. Puan için etkinlik yerinde, etkinliği açan kişinin verdiği kodu yazman gerekir; bulunduğun bölge de bir kez kontrol edilir. Sadece “Katıl”a basmak puan getirmez.`,
+        text: `Kalabalık etkinlik daha çok puan: ${attendTiersText(r)}. PeopleHere Özel etkinliklerde her basamağa +${r.eventAttendOfficialBonus}. Puan için etkinlik yerinde, etkinliği açan kişinin verdiği kodu yazman gerekir; bulunduğun bölge de bir kez kontrol edilir. Sadece “Katıl”a basmak puan getirmez.`,
       },
       {
         icon: 'people',

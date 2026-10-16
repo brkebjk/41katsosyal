@@ -39,7 +39,7 @@ function buildRows(l: Limits): Row[] {
     { label: 'Gönderi, yorum ve beğeni', icon: 'chatbubbles', free: true, subscribed: true },
     { label: 'Özel mesaj başlatma', icon: 'mail', free: 'Yalnızca cevap', subscribed: true },
     { label: 'Etkinlik oluşturma', icon: 'calendar', free: `ayda ${l.freeEvents}`, subscribed: `ayda ${l.subscriptionEvents}` },
-    { label: '41. Kat Özel ücretli etkinlikler', icon: 'star', free: 'Ücretli', subscribed: 'Ücretsiz' },
+    { label: 'PeopleHere Özel ücretli etkinlikler', icon: 'star', free: 'Ücretli', subscribed: 'Ücretsiz' },
   ];
 }
 
@@ -139,17 +139,17 @@ export default function SubscriptionScreen() {
 
           <View style={styles.hero}>
             <ImageSlot name="subscriptionBadge" style={styles.badge} />
-            <Text style={styles.title}>41. Kat Abonelik</Text>
+            <Text style={styles.title}>PeopleHere Abonelik</Text>
             <Text style={styles.lead}>
-              Daha çok etkinlik ve özel mesaj başlatma. 41. Kat Özel etkinliklerine ücretsiz katıl.
+              Daha çok etkinlik ve özel mesaj başlatma. PeopleHere Özel etkinliklerine ücretsiz katıl.
             </Text>
           </View>
 
-          {/* 41. Kat Özel etkinlikleri: ayda en az 4 kez */}
+          {/* PeopleHere Özel etkinlikleri: ayda en az 4 kez */}
           <View style={styles.specialBox} testID="subscription-special-events">
             <Ionicons name="star" size={22} color={colors.highlight} />
             <View style={styles.activeText}>
-              <Text style={styles.specialTitle}>41. Kat Özel etkinlikleri ayda en az 4 kez düzenlenir</Text>
+              <Text style={styles.specialTitle}>PeopleHere Özel etkinlikleri ayda en az 4 kez düzenlenir</Text>
               <Text style={styles.muted}>
                 Moderatörlerin düzenlediği bu etkinliklerin ücretli olanlarına aboneler ücretsiz katılır.
               </Text>

@@ -22,19 +22,17 @@ import type { GameCellMark } from '@/lib/rooms';
 import { TREASURE_COLORS, type Difficulty } from '@/lib/treasure';
 import { cellName } from '@/lib/cellNames';
 import {
-  BOUNDS,
+  cellAtLocal,
   cellCenter,
-  cellOfXY,
-  DISTRICT_LABELS,
+  cityGeo,
   HEX_INSET,
   HEX_SIZE,
   hexHalfPath,
   hexPath,
-  isLand,
-  LAND_CELLS,
-  LAND_TILES,
-  OUTLINE_PATH,
+  isLandIn,
   type Cell,
+  type CityGeo,
+  type CityKey,
   type Tile,
 } from '@/lib/hex';
 import { colors, fonts, isLight } from '@/theme';
@@ -45,7 +43,7 @@ export const LEVEL_COLORS = {
   2: 'rgba(255, 92, 122, 0.7)',
   3: '#FF5C7A',
 } as const;
-// Harita zemini temaya göre değişir; üstteki katman renkleri (etkinlik, oyun, yoğunluk, 41. Kat Özel) iki temada da aynıdır
+// Harita zemini temaya göre değişir; üstteki katman renkleri (etkinlik, oyun, yoğunluk, PeopleHere Özel) iki temada da aynıdır
 export const LAND_FILL = isLight ? '#D6E2EB' : '#1B2440';
 export const LAND_STROKE = isLight ? '#A9BDCC' : '#2C385C';
 export const SEA = isLight ? '#B7CFE0' : '#0E1424';
@@ -59,7 +57,7 @@ export const EVENT_COLOR = colors.event;
 export const GAME_COLOR = colors.game;
 /** Mekân (sponsor) peteği: peteğin alt kısmında küçük mercan nokta */
 export const VENUE_COLOR = colors.venue;
-/** 41. Kat Özel (moderatörün etkinliği ya da oyunu): altın sarısı petek ve yıldız */
+/** PeopleHere Özel (moderatörün etkinliği ya da oyunu): altın sarısı petek ve yıldız */
 export const OFFICIAL_COLOR = '#FFC83D';
 /** Seçili petek: etkinlik (turkuaz) ve yoğunluk (pembe) katmanlarından ayrılsın diye sarı (arayüzün ana renginden bağımsız) */
 const SELECT_COLOR = '#FFB020';
@@ -69,12 +67,22 @@ const MARKER_R = 10;
 /** Dokunulan peteğin üst yüzünün yükselme miktarı (ekran pikseli) */
 const LIFT_PX = 3;
 
-const MAX_ZOOM = 36; // kapsayıcı ölçeğin katı
+const MAX_ZOOM = 36; // kapsayıcı ölçeğin katı (REF_SPAN_M genişliğindeki şehirde)
+/** Büyük şehir (İzmir) ekrana sığınca daha küçük görünür; en yakın görünüm her şehirde aynı olsun diye çarpan büyür */
+const REF_SPAN_M = 140_000;
+function zoomMax(g: CityGeo): number {
+  const B = g.bounds;
+  return MAX_ZOOM * Math.max(1, Math.max(B.maxX - B.minX, B.maxY - B.minY) / REF_SPAN_M);
+}
 const TAP_SLOP = 8;
 /** Bir petek ekranda bundan küçükse (px) 5 binlik petek ızgarası hiç çizilmez; kara, ilçe sınırlarından boyanır. */
 const GRID_MIN_HEX_PX = 6;
-/** Açılış görünümünde ekrana sığdırılan ilçeler */
-const HOME_DISTRICTS = ['Körfez', 'Derince', 'Başiskele', 'Gölcük'];
+/** Bir petek ekranda bundan büyükse (px) mahalle sınırları, bundan büyükse mahalle adları çizilir */
+const HOOD_LINE_HEX_PX = 12;
+const HOOD_NAME_HEX_PX = 24;
+/** Mahalle sınırı ve adı: ilçe sınırından ince ve soluk */
+const HOOD_STROKE = isLight ? 'rgba(11, 31, 46, 0.32)' : 'rgba(244, 246, 251, 0.34)';
+const HOOD_TEXT = isLight ? 'rgba(11, 31, 46, 0.62)' : 'rgba(244, 246, 251, 0.66)';
 const SQ3 = Math.sqrt(3);
 
 type View2 = { scale: number; tx: number; ty: number };
@@ -82,6 +90,11 @@ type View2 = { scale: number; tx: number; ty: number };
 /** Dokunma işleyicilerinin okuduğu güncel değerler. Ekran çizimi bunları okumaz; yalnızca olay işleyicileri. */
 class LiveState {
   view: View2 | null = null;
+  /** Haritanın şehri (bileşen şehir değişince yeniden kurulur: key={city}) */
+  g: CityGeo;
+  constructor(g: CityGeo) {
+    this.g = g;
+  }
   w = 0;
   h = 0;
   topInset = 0;
@@ -93,13 +106,14 @@ class LiveState {
   }
 }
 
-/** Bütün Kocaeli ekrana sığar */
-function fitView(w: number, h: number): View2 {
-  const bw = BOUNDS.maxX - BOUNDS.minX;
-  const bh = BOUNDS.maxY - BOUNDS.minY;
+/** Bütün şehir ekrana sığar */
+function fitView(g: CityGeo, w: number, h: number): View2 {
+  const B = g.bounds;
+  const bw = B.maxX - B.minX;
+  const bh = B.maxY - B.minY;
   const scale = Math.min(w / bw, h / bh) * 0.97;
-  const cx = (BOUNDS.minX + BOUNDS.maxX) / 2;
-  const cy = -(BOUNDS.minY + BOUNDS.maxY) / 2;
+  const cx = (B.minX + B.maxX) / 2;
+  const cy = -(B.minY + B.maxY) / 2;
   return { scale, tx: w / 2 - cx * scale, ty: h / 2 - cy * scale };
 }
 
@@ -107,9 +121,9 @@ function fitView(w: number, h: number): View2 {
  * Açılış görünümü: Körfez, Derince, Başiskele ve Gölcük adları ekranda görünsün diye o bölgeye yakınlaşır.
  * `top` ve `bottom`, haritanın üstüne/altına binen katmanların (başlık, renk açıklaması) yüksekliğidir.
  */
-function homeView(w: number, h: number, top: number, bottom: number): View2 {
-  const pts = DISTRICT_LABELS.filter((l) => HOME_DISTRICTS.includes(l.name));
-  if (pts.length === 0) return fitView(w, h);
+function homeView(g: CityGeo, w: number, h: number, top: number, bottom: number): View2 {
+  const pts = g.districtLabels.filter((l) => g.home.includes(l.name));
+  if (pts.length === 0) return fitView(g, w, h);
   const xs = pts.map((p) => p.x);
   const ys = pts.map((p) => p.y);
   const minX = Math.min(...xs);
@@ -121,8 +135,8 @@ function homeView(w: number, h: number, top: number, bottom: number): View2 {
   const padBottom = bottom + 36;
   const availW = Math.max(w - 2 * padX, 80);
   const availH = Math.max(h - padTop - padBottom, 80);
-  const base = fitView(w, h).scale;
-  const scale = Math.min(availW / Math.max(maxX - minX, 1000), availH / Math.max(maxY - minY, 1000), base * MAX_ZOOM);
+  const base = fitView(g, w, h).scale;
+  const scale = Math.min(availW / Math.max(maxX - minX, 1000), availH / Math.max(maxY - minY, 1000), base * zoomMax(g));
   const cx = (minX + maxX) / 2;
   const cy = -(minY + maxY) / 2;
   return {
@@ -134,6 +148,7 @@ function homeView(w: number, h: number, top: number, bottom: number): View2 {
 
 /** Bir peteği (yaklaşık 70 px genişliğinde görünecek kadar yakınlaşarak) boş alanın ortasına getirir */
 function focusView(
+  g: CityGeo,
   cell: Cell,
   w: number,
   h: number,
@@ -143,18 +158,19 @@ function focusView(
   farPx?: number,
 ): View2 {
   const c = cellCenter(cell.q, cell.r);
-  const base = fitView(w, h).scale;
+  const base = fitView(g, w, h).scale;
   // farPx verilirse petek ekranda bu genişlikte görünür (biraz uzaktan, çevresi de görünsün diye)
   const want = (farPx ?? 70) / (HEX_SIZE * SQ3);
   const scale = farPx
-    ? Math.min(base * MAX_ZOOM, Math.max(base, want))
-    : Math.min(base * MAX_ZOOM, Math.max(current?.scale ?? base, want));
+    ? Math.min(base * zoomMax(g), Math.max(base, want))
+    : Math.min(base * zoomMax(g), Math.max(current?.scale ?? base, want));
   const cy = top + (h - top - bottom) / 2;
-  return clampView({ scale, tx: w / 2 - c.x * scale, ty: cy + c.y * scale }, w, h);
+  return clampView(g, { scale, tx: w / 2 - c.x * scale, ty: cy + c.y * scale }, w, h);
 }
 
 /** Verilen peteklerin hepsi (okları da sığacak kadar payla) boş alanda görünsün */
 function cellsView(
+  g: CityGeo,
   cells: readonly Cell[],
   w: number,
   h: number,
@@ -162,7 +178,7 @@ function cellsView(
   bottom: number,
   current: View2 | null,
 ): View2 {
-  if (cells.length === 1) return focusView(cells[0], w, h, top, bottom, current, 46);
+  if (cells.length === 1) return focusView(g, cells[0], w, h, top, bottom, current, 46);
   const pts = cells.map((c) => cellCenter(c.q, c.r));
   const xs = pts.map((p) => p.x);
   const ys = pts.map((p) => p.y);
@@ -175,22 +191,23 @@ function cellsView(
   const padBottom = bottom + 24;
   const availW = Math.max(w - 2 * padX, 80);
   const availH = Math.max(h - padTop - padBottom, 80);
-  const base = fitView(w, h).scale;
+  const base = fitView(g, w, h).scale;
   const scale = Math.max(
     base,
     Math.min(availW / Math.max(maxX - minX, 1), availH / Math.max(maxY - minY, 1), 46 / (HEX_SIZE * SQ3)),
   );
   const cx = (minX + maxX) / 2;
   const cy = -(minY + maxY) / 2;
-  return clampView({ scale, tx: padX + availW / 2 - cx * scale, ty: padTop + availH / 2 - cy * scale }, w, h);
+  return clampView(g, { scale, tx: padX + availW / 2 - cx * scale, ty: padTop + availH / 2 - cy * scale }, w, h);
 }
 
 /** Haritanın en az bir kısmı ekranda kalsın */
-function clampView(v: View2, w: number, h: number): View2 {
-  const left = BOUNDS.minX * v.scale + v.tx;
-  const right = BOUNDS.maxX * v.scale + v.tx;
-  const top = -BOUNDS.maxY * v.scale + v.ty;
-  const bottom = -BOUNDS.minY * v.scale + v.ty;
+function clampView(g: CityGeo, v: View2, w: number, h: number): View2 {
+  const B = g.bounds;
+  const left = B.minX * v.scale + v.tx;
+  const right = B.maxX * v.scale + v.tx;
+  const top = -B.maxY * v.scale + v.ty;
+  const bottom = -B.minY * v.scale + v.ty;
   const m = 0.15;
   let { tx, ty } = v;
   if (right < w * m) tx += w * m - right;
@@ -201,13 +218,13 @@ function clampView(v: View2, w: number, h: number): View2 {
 }
 
 /** Ekrana (ve biraz çevresine) değen kara parçaları */
-function tilesInView(v: View2, w: number, h: number): Tile[] {
+function tilesInView(list: readonly Tile[], v: View2, w: number, h: number): Tile[] {
   const m = 0.35;
   const x0 = (-v.tx - w * m) / v.scale;
   const x1 = (w - v.tx + w * m) / v.scale;
   const y0 = (-v.ty - h * m) / v.scale;
   const y1 = (h - v.ty + h * m) / v.scale;
-  return LAND_TILES.filter((t) => t.maxX >= x0 && t.minX <= x1 && t.maxY >= y0 && t.minY <= y1);
+  return list.filter((t) => t.maxX >= x0 && t.minX <= x1 && t.maxY >= y0 && t.minY <= y1);
 }
 
 /** Tek bir kara parçası (en çok ~150 petek). Yol değişmez, bu yüzden kaydırırken yeniden çizilmez. */
@@ -215,9 +232,14 @@ const TileLayer = memo(function TileLayer({ d }: { d: string }) {
   return <Path d={d} fill={LAND_FILL} />;
 });
 
-/** Uzaklaşınca (ızgara çizilmezken) kara: ilçe sınırlarının içi boyanır */
-const OutlineFill = memo(function OutlineFill() {
-  return <Path d={OUTLINE_PATH} fill={LAND_FILL} />;
+/** Uzaklaşınca (ızgara çizilmezken) kara boyanır (göller delik) */
+const OutlineFill = memo(function OutlineFill({ d }: { d: string }) {
+  return <Path d={d} fill={LAND_FILL} fillRule="evenodd" />;
+});
+
+/** Mahalle sınırlarının bir parçası (yakınlaşınca ekrandakiler çizilir) */
+const HoodLayer = memo(function HoodLayer({ d, w }: { d: string; w: number }) {
+  return <Path d={d} fill="none" stroke={HOOD_STROKE} strokeWidth={w} strokeLinejoin="round" strokeLinecap="round" />;
 });
 
 /** Renkli petekler. Yalnızca veri yenilenince değişir. */
@@ -232,6 +254,8 @@ const LevelLayers = memo(function LevelLayers({ levelPaths }: { levelPaths: [str
 });
 
 type Props = {
+  /** Haritanın şehri. Değişince harita yeniden kurulmalı (key={city}); yalnızca bu şehrin petekleri çizilir. */
+  city: CityKey;
   density: readonly DensityCell[];
   selected: Cell | null;
   onSelect: (cell: Cell | null) => void;
@@ -255,7 +279,7 @@ type Props = {
   gameCells?: readonly GameCellMark[];
   /** Mekân (sponsor) olan petekler: peteğin alt kısmındaki küçük noktayla ayrılır */
   venueCells?: readonly Cell[];
-  /** 41. Kat Özel etkinlik ya da oyun olan petekler: altın sarısı boyanır, ortasında yıldız çıkar */
+  /** PeopleHere Özel etkinlik ya da oyun olan petekler: altın sarısı boyanır, ortasında yıldız çıkar */
   officialCells?: readonly Cell[];
   /** Verilirse harita bu peteğe odaklanır (her yeni `key` yeniden odaklar) */
   focus?: { cell: Cell; key: number; farPx?: number } | null;
@@ -268,7 +292,7 @@ type Props = {
   onRaisedPress?: () => void;
   /** Büyüteç menüsü: bu peteklerin üstünde aşağı-yukarı zıplayan ok çıkar; her yeni `key` haritayı hepsini gösterecek şekilde sığdırır */
   pointers?: { cells: readonly Cell[]; key: number } | null;
-  /** Görselli öne çıkan etkinlikler (Konser & Festival, 41. Kat Özel, İşbirliği): peteğin üstünde küçük kart görseller */
+  /** Görselli öne çıkan etkinlikler (Konser & Festival, PeopleHere Özel, İşbirliği): peteğin üstünde küçük kart görseller */
   imageMarks?: readonly { q: number; r: number; uris: readonly string[]; ids: readonly string[] }[];
   /** Görsel karta dokununca: o petekteki görselli etkinliklerin kimlikleri */
   onImagePress?: (ids: readonly string[]) => void;
@@ -289,10 +313,11 @@ const DIFF_ORDER: Difficulty[] = ['kolay', 'orta', 'zor', 'imkansiz'];
 const webTouch = Platform.OS === 'web' ? ({ touchAction: 'none', userSelect: 'none' } as unknown as ViewStyle) : null;
 
 /**
- * Kocaeli'nin petek haritası. Kendi çizimimizdir (altlık harita yok). Üst kapsayıcının tamamını kaplar.
+ * Şehrin petek haritası (İstanbul, Kocaeli ya da İzmir). Kendi çizimimizdir (altlık harita yok). Üst kapsayıcının
+ * tamamını kaplar. İlçe sınırları ve kıyı her zaman, mahalle sınırları ve adları yakınlaşınca çizilir.
  * Tek parmakla kaydırılır, iki parmakla yakınlaştırılır; düğmeler de vardır.
  *
- * Hafif çizim: uzaklaşınca 5 binlik petek ızgarası çizilmez (kara, ilçe sınırlarından boyanır); yakınlaşınca yalnızca
+ * Hafif çizim: uzaklaşınca binlerce petekli ızgara çizilmez (kara, ilçe sınırlarından boyanır); yakınlaşınca yalnızca
  * ekrana değen kara parçaları çizilir. Parmak hareketi her ekran karesinde en çok bir kez çizime yansır.
  */
 export function HoneycombMap({
@@ -319,11 +344,14 @@ export function HoneycombMap({
   imageMarks,
   onImagePress,
   plainCloseUp = false,
+  city,
 }: Props) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setViewState] = useState<View2 | null>(null);
   // Dokunma işleyicilerinin okuduğu güncel değerler (ekran çizimi bunlardan okumaz)
-  const [live] = useState(() => new LiveState());
+  const [live] = useState(() => new LiveState(cityGeo(city)));
+  // Haritanın şehri bileşen ömrü boyunca değişmez (şehir değişince üst bileşen haritayı key={city} ile yeniden kurar)
+  const g = live.g;
   useEffect(() => {
     live.update({ onSelect, topInset, bottomInset });
   });
@@ -337,16 +365,16 @@ export function HoneycombMap({
   const levelPaths = useMemo<[string, string, string]>(() => {
     const by: Cell[][] = [[], [], []];
     for (const d of density) {
-      if (isLand(d.cell_q, d.cell_r) && d.level >= 1 && d.level <= 3) {
+      if (isLandIn(g.key, d.cell_q, d.cell_r) && d.level >= 1 && d.level <= 3) {
         by[d.level - 1].push({ q: d.cell_q, r: d.cell_r });
       }
     }
     return [hexPath(by[0], HEX_INSET), hexPath(by[1], HEX_INSET), hexPath(by[2], HEX_INSET)];
-  }, [density]);
+  }, [density, g]);
 
   // Çerçeveler: yalnızca etkinlik = turkuaz, yalnızca oyun = mor, ikisi birden = sol yarı mor + sağ yarı turkuaz
   const frames = useMemo(() => {
-    const land = (list: readonly Cell[] | undefined) => (list ?? []).filter((c) => isLand(c.q, c.r));
+    const land = (list: readonly Cell[] | undefined) => (list ?? []).filter((c) => isLandIn(g.key, c.q, c.r));
     const evs = land(eventCells);
     const gms = land(gameCells);
     const evKeys = new Set(evs.map((c) => `${c.q},${c.r}`));
@@ -360,30 +388,30 @@ export function HoneycombMap({
       bothEvent: both.length > 0 ? hexHalfPath(both, 'right', HEX_INSET) : '',
       bothGame: both.length > 0 ? hexHalfPath(both, 'left', HEX_INSET) : '',
     };
-  }, [eventCells, gameCells]);
+  }, [eventCells, gameCells, g]);
 
-  // Mekân petekleri (peteğin alt kısmında küçük mercan nokta) ve 41. Kat Özel petekler (altın sarısı dolgu + yıldız)
+  // Mekân petekleri (peteğin alt kısmında küçük mercan nokta) ve PeopleHere Özel petekler (altın sarısı dolgu + yıldız)
   const venueList = useMemo(() => {
     const seen = new Set<string>();
     return (venueCells ?? []).filter((c) => {
       const k = `${c.q},${c.r}`;
-      if (!isLand(c.q, c.r) || seen.has(k)) return false;
+      if (!isLandIn(g.key, c.q, c.r) || seen.has(k)) return false;
       seen.add(k);
       return true;
     });
-  }, [venueCells]);
+  }, [venueCells, g]);
   const officialList = useMemo(() => {
     const seen = new Set<string>();
     return (officialCells ?? []).filter((c) => {
       const k = `${c.q},${c.r}`;
-      if (!isLand(c.q, c.r) || seen.has(k)) return false;
+      if (!isLandIn(g.key, c.q, c.r) || seen.has(k)) return false;
       seen.add(k);
       return true;
     });
-  }, [officialCells]);
+  }, [officialCells, g]);
   const officialPath = useMemo(() => (officialList.length > 0 ? hexPath(officialList, HEX_INSET) : ''), [officialList]);
   // Hazine petekleri: zorluk başına bir yol; imkânsız hazinenin çevresi ayrı (daha açık) bir yol
-  const treasureList = useMemo(() => (treasureCells ?? []).filter((c) => isLand(c.q, c.r)), [treasureCells]);
+  const treasureList = useMemo(() => (treasureCells ?? []).filter((c) => isLandIn(g.key, c.q, c.r)), [treasureCells, g]);
   const treasurePaths = useMemo(() => {
     const own = new Set(treasureList.map((c) => `${c.q},${c.r}`));
     const by: Record<Difficulty, Cell[]> = { kolay: [], orta: [], zor: [], imkansiz: [] };
@@ -395,7 +423,7 @@ export function HoneycombMap({
         for (const [dq, dr] of NEIGHBORS) {
           const n = { q: c.q + dq, r: c.r + dr };
           const k = `${n.q},${n.r}`;
-          if (!isLand(n.q, n.r) || own.has(k) || haloSeen.has(k)) continue;
+          if (!isLandIn(g.key, n.q, n.r) || own.has(k) || haloSeen.has(k)) continue;
           haloSeen.add(k);
           halo.push(n);
         }
@@ -405,23 +433,23 @@ export function HoneycombMap({
       halo: halo.length > 0 ? hexPath(halo, HEX_INSET) : '',
       cells: DIFF_ORDER.map((d) => ({ d, path: by[d].length > 0 ? hexPath(by[d], HEX_INSET) : '' })),
     };
-  }, [treasureList]);
+  }, [treasureList, g]);
 
   // Sayı işaretleri: petek başına etkinlik ve oyun sayısı
   const markers = useMemo(() => {
     const by = new Map<string, { q: number; r: number; event: number; game: number }>();
     for (const e of eventCells ?? []) {
-      if (!isLand(e.q, e.r)) continue;
+      if (!isLandIn(g.key, e.q, e.r)) continue;
       by.set(`${e.q},${e.r}`, { q: e.q, r: e.r, event: e.count, game: 0 });
     }
-    for (const g of gameCells ?? []) {
-      if (!isLand(g.q, g.r)) continue;
-      const cur = by.get(`${g.q},${g.r}`);
-      if (cur) cur.game = g.count;
-      else by.set(`${g.q},${g.r}`, { q: g.q, r: g.r, event: 0, game: g.count });
+    for (const gc of gameCells ?? []) {
+      if (!isLandIn(g.key, gc.q, gc.r)) continue;
+      const cur = by.get(`${gc.q},${gc.r}`);
+      if (cur) cur.game = gc.count;
+      else by.set(`${gc.q},${gc.r}`, { q: gc.q, r: gc.r, event: 0, game: gc.count });
     }
     return [...by.values()];
-  }, [eventCells, gameCells]);
+  }, [eventCells, gameCells, g]);
 
   // Yeni bir odak isteği gelince harita o peteğe kayar
   const focusKey = focus?.key;
@@ -433,7 +461,7 @@ export function HoneycombMap({
     const id = requestAnimationFrame(() => {
       const { w, h } = live;
       if (w <= 0 || h <= 0) return;
-      const next = focusView({ q: focusQ, r: focusR }, w, h, live.topInset, live.bottomInset, live.view, focusFar);
+      const next = focusView(live.g, { q: focusQ, r: focusR }, w, h, live.topInset, live.bottomInset, live.view, focusFar);
       live.update({ view: next });
       setViewState(next);
     });
@@ -448,7 +476,7 @@ export function HoneycombMap({
     const id = requestAnimationFrame(() => {
       const { w, h } = live;
       if (w <= 0 || h <= 0) return;
-      const next = cellsView(pointerCells, w, h, live.topInset, live.bottomInset, live.view);
+      const next = cellsView(live.g, pointerCells, w, h, live.topInset, live.bottomInset, live.view);
       live.update({ view: next });
       setViewState(next);
     });
@@ -477,25 +505,25 @@ export function HoneycombMap({
     setSize({ w: width, h });
     if (!live.view) {
       const v = focus
-        ? focusView(focus.cell, width, h, live.topInset, live.bottomInset, null, focus.farPx)
-        : homeView(width, h, live.topInset, live.bottomInset);
+        ? focusView(g, focus.cell, width, h, live.topInset, live.bottomInset, null, focus.farPx)
+        : homeView(g, width, h, live.topInset, live.bottomInset);
       live.update({ view: v });
       setViewState(v);
     }
   }
 
-  const fitScale = size.w > 0 ? fitView(size.w, size.h).scale : 0;
+  const fitScale = size.w > 0 ? fitView(g, size.w, size.h).scale : 0;
 
   function zoomBy(factor: number) {
     const v = live.view;
     const { w, h } = live;
     if (!v) return;
-    const base = fitView(w, h).scale;
-    const scale = Math.min(base * MAX_ZOOM, Math.max(base * 0.9, v.scale * factor));
+    const base = fitView(g, w, h).scale;
+    const scale = Math.min(base * zoomMax(g), Math.max(base * 0.9, v.scale * factor));
     const k = scale / v.scale;
     // ekranın ortası sabit kalsın
     const next = { scale, tx: w / 2 - (w / 2 - v.tx) * k, ty: h / 2 - (h / 2 - v.ty) * k };
-    setView(clampView(next, w, h));
+    setView(clampView(g, next, w, h));
   }
 
   const [responder] = useState(() => {
@@ -539,18 +567,18 @@ export function HoneycombMap({
           const d1 = Math.hypot(now[0].x - now[1].x, now[0].y - now[1].y);
           const m0 = { x: (startPts[0].x + startPts[1].x) / 2, y: (startPts[0].y + startPts[1].y) / 2 };
           const m1 = { x: (now[0].x + now[1].x) / 2, y: (now[0].y + now[1].y) / 2 };
-          const base = fitView(w, h).scale;
-          const scale = Math.min(base * MAX_ZOOM, Math.max(base * 0.9, startView.scale * (d1 / d0)));
+          const base = fitView(g, w, h).scale;
+          const scale = Math.min(base * zoomMax(g), Math.max(base * 0.9, startView.scale * (d1 / d0)));
           const mx = (m0.x - startView.tx) / startView.scale;
           const my = (m0.y - startView.ty) / startView.scale;
           moved = 99;
-          setView(clampView({ scale, tx: m1.x - mx * scale, ty: m1.y - my * scale }, w, h));
+          setView(clampView(g, { scale, tx: m1.x - mx * scale, ty: m1.y - my * scale }, w, h));
         } else {
           const dx = now[0].x - startPts[0].x;
           const dy = now[0].y - startPts[0].y;
           moved = Math.max(moved, Math.hypot(dx, dy));
           if (moved >= TAP_SLOP) {
-            setView(clampView({ ...startView, tx: startView.tx + dx, ty: startView.ty + dy }, w, h));
+            setView(clampView(g, { ...startView, tx: startView.tx + dx, ty: startView.ty + dy }, w, h));
           }
         }
       },
@@ -560,8 +588,8 @@ export function HoneycombMap({
           // dokunma: dokunulan peteği seç
           const x = (tapAt.x - v.tx) / v.scale;
           const y = -((tapAt.y - v.ty) / v.scale);
-          const cell = cellOfXY(x, y);
-          live.onSelect?.(isLand(cell.q, cell.r) ? cell : null);
+          const cell = cellAtLocal(live.g.key, x, y);
+          live.onSelect?.(isLandIn(g.key, cell.q, cell.r) ? cell : null);
         }
       },
     });
@@ -569,8 +597,8 @@ export function HoneycombMap({
 
   const sel = selected && view ? hexPath([selected]) : null;
   // Paket 33: en yakın iki yakınlaşma basamağında petekler sade görünür: yoğunluk, etkinlik/oyun işaretleri, hazine,
-  // mekân, 41. Kat Özel ve ilçe adları gizlenir; yalnızca petek adları sarı yazıyla görünür (seçim ve İNCELE kalır)
-  const plain = plainCloseUp && view !== null && fitScale > 0 && view.scale >= fitScale * CARDS_HIDE_ZOOM;
+  // mekân, PeopleHere Özel ve ilçe adları gizlenir; yalnızca petek adları sarı yazıyla görünür (seçim ve İNCELE kalır)
+  const plain = plainCloseUp && view !== null && fitScale > 0 && view.scale >= fitScale * zoomMax(g) * CARDS_HIDE_RATIO;
   // Petek adları yalnızca ekranda görünen peteklerde yazılır. Ekranın ortasındakiler tam okunur, kenara doğru
   // saydamlaşır; çok soluk kalacaklar hiç çizilmez (yakınlaşınca harita kasmasın diye).
   const nameCells: { c: Cell; x: number; y: number; o: number }[] = [];
@@ -579,7 +607,7 @@ export function HoneycombMap({
     const cx = size.w / 2;
     const cy = size.h / 2;
     const reach = Math.max(1, Math.hypot(size.w, size.h) * 0.5);
-    for (const c of LAND_CELLS) {
+    for (const c of g.cells) {
       const p = cellCenter(c.q, c.r);
       const x = p.x * view.scale + view.tx;
       const y = -p.y * view.scale + view.ty;
@@ -602,14 +630,28 @@ export function HoneycombMap({
   const px = (n: number) => (view ? n / view.scale : 0);
   // Yakınlaşınca petek ızgarası (yalnızca ekrandaki parçalar); uzaklaşınca kara ilçe sınırlarından boyanır
   const showGrid = view ? HEX_SIZE * SQ3 * view.scale >= GRID_MIN_HEX_PX : false;
-  const tiles = view && showGrid ? tilesInView(view, size.w, size.h) : [];
+  const tiles = view && showGrid ? tilesInView(g.tiles, view, size.w, size.h) : [];
+  const hexPx = view ? HEX_SIZE * SQ3 * view.scale : 0;
+  const hoodTiles = view && hexPx >= HOOD_LINE_HEX_PX ? tilesInView(g.hoodTiles, view, size.w, size.h) : [];
+  // Mahalle adları: yakınlaşınca, ekranda ve yeterince büyük görünen mahallelerde (petek adlarının göründüğü en yakın
+  // görünümde yazılmaz, üst üste binmesin)
+  const hoodNames: { name: string; x: number; sx: number; sy: number }[] = [];
+  if (view && !plain && hexPx >= HOOD_NAME_HEX_PX) {
+    for (const l of g.hoodLabels) {
+      if (Math.sqrt(l.areaKm2) * 1000 * view.scale < 70) continue;
+      const sx = l.x * view.scale + view.tx;
+      const sy = -l.y * view.scale + view.ty;
+      if (sx < -40 || sy < -20 || sx > size.w + 40 || sy > size.h + 20) continue;
+      hoodNames.push({ name: l.name, x: l.x, sx, sy });
+    }
+  }
 
   return (
     <View style={styles.wrap} onLayout={onLayout} testID="honeycomb-map">
       {view ? (
         <Svg width={size.w} height={size.h} style={styles.svg}>
           <G transform={`translate(${view.tx} ${view.ty}) scale(${view.scale})`}>
-            {showGrid ? null : <OutlineFill />}
+            {showGrid ? null : <OutlineFill d={g.fillPath} />}
             {tiles.map((t) => (
               <TileLayer key={t.key} d={t.path} />
             ))}
@@ -670,7 +712,7 @@ export function HoneycombMap({
                 strokeLinecap="round"
               />
             ) : null}
-            {raised && isLand(raised.q, raised.r) ? (
+            {raised && isLandIn(g.key, raised.q, raised.r) ? (
               <G>
                 {/* Gölge ve yan yüz: petek yerden kalkmış gibi görünür */}
                 <G transform={`translate(0 ${px(9)})`}>
@@ -687,7 +729,7 @@ export function HoneycombMap({
                     strokeWidth={px(2.2)}
                     strokeLinejoin="round"
                   />
-                  {/* Peteğin kendi işaretleri (41. Kat Özel, etkinlik / oyun çerçevesi) de yükselen yüzle birlikte kalkar */}
+                  {/* Peteğin kendi işaretleri (PeopleHere Özel, etkinlik / oyun çerçevesi) de yükselen yüzle birlikte kalkar */}
                   {!plain && raisedMarks.official ? (
                     <Path
                       d={hexPath([raised], HEX_INSET)}
@@ -728,12 +770,17 @@ export function HoneycombMap({
                 </G>
               </G>
             ) : null}
+            {/* Mahalle sınırları (yakınlaşınca, yalnızca ekrandaki parçalar); ilçe sınırı ve kıyı her zaman */}
+            {hoodTiles.map((t) => (
+              <HoodLayer key={t.key} d={t.path} w={px(0.8)} />
+            ))}
             <Path
-              d={OUTLINE_PATH}
+              d={g.districtPath}
               fill="none"
               stroke={showGrid ? GRID_STROKE : LAND_STROKE}
-              strokeWidth={px(1.2)}
+              strokeWidth={px(1.4)}
               strokeLinejoin="round"
+              strokeLinecap="round"
             />
             {sel ? (
               <Path
@@ -745,7 +792,20 @@ export function HoneycombMap({
               />
             ) : null}
           </G>
-          {(plain ? [] : DISTRICT_LABELS).map((l) => {
+          {hoodNames.map((l) => (
+            <SvgText
+              key={`hn-${l.name}-${l.x}`}
+              x={l.sx}
+              y={l.sy}
+              fontSize={10}
+              fontFamily={fonts.semi}
+              fill={HOOD_TEXT}
+              textAnchor="middle"
+            >
+              {l.name}
+            </SvgText>
+          ))}
+          {(plain ? [] : g.districtLabels).map((l) => {
             // Küçük ilçelerin adı yalnızca yeterince yakınlaşınca yazılır (üst üste binmesin)
             const widthPx = Math.sqrt(l.areaKm2) * 1000 * view.scale;
             if (widthPx < 46) return null;
@@ -936,18 +996,19 @@ export function HoneycombMap({
       <View style={[StyleSheet.absoluteFill, webTouch]} {...responder.panHandlers} testID="honeycomb-touch" />
       {view && !plain && imageMarks && imageMarks.length > 0 ? (
         <ImageCards
+          city={g.key}
           marks={imageMarks}
           view={view}
           w={size.w}
           h={size.h}
           onPress={onImagePress}
-          hidden={fitScale > 0 && view.scale >= fitScale * CARDS_HIDE_ZOOM}
+          hidden={fitScale > 0 && view.scale >= fitScale * zoomMax(g) * CARDS_HIDE_RATIO}
         />
       ) : null}
       {pointers && view && pointers.cells.length > 0 ? (
         <BouncingArrows key={pointers.key} cells={pointers.cells} view={view} w={size.w} h={size.h} />
       ) : null}
-      {raised && view && onRaisedPress && isLand(raised.q, raised.r)
+      {raised && view && onRaisedPress && isLandIn(g.key, raised.q, raised.r)
         ? (() => {
             const p = cellCenter(raised.q, raised.r);
             const x = p.x * view.scale + view.tx;
@@ -978,10 +1039,10 @@ export function HoneycombMap({
           <MapButton icon="remove" label="Uzaklaştır" onPress={() => zoomBy(1 / 1.7)} testID="map-zoom-out" />
           <MapButton
             icon="scan-outline"
-            label="Tüm Kocaeli"
+            label={`Tüm ${g.name}`}
             onPress={() => {
               const { w, h } = live;
-              setView(fitView(w, h));
+              setView(fitView(g, w, h));
               live.onSelect?.(null);
             }}
             testID="map-fit"
@@ -999,13 +1060,15 @@ const CARD_H = 38;
 /** Arkadaki kartlar sola kaydığı için kart yığınının solunda bırakılan boşluk */
 const STACK_PAD = 20;
 /** En yakın iki yakınlaşma basamağında (en yakın ve bir üstü) kartlar gizlenir; altındaki peteğe basmak kolaylaşır */
-const CARDS_HIDE_ZOOM = MAX_ZOOM / 1.75;
+/** Ana haritada göstergelerin gizlendiği yakınlaşma (en yakın iki basamak): şehrin en yakın görünümüne göre */
+const CARDS_HIDE_RATIO = 1 / 1.75;
 
 /**
  * Peteğin üstünde küçük kart görseller. Bir petekte birden çok görselli etkinlik varsa kartlar arka arkaya, SOLA
  * doğru hafif kaydırılmış çerçeveler olarak dizilir (en çok 4) ve öndeki kartın köşesinde küçük sarı bir “+” olur.
  */
 function ImageCards({
+  city,
   marks,
   view,
   w,
@@ -1013,6 +1076,7 @@ function ImageCards({
   onPress,
   hidden = false,
 }: {
+  city: CityKey;
   marks: readonly { q: number; r: number; uris: readonly string[]; ids: readonly string[] }[];
   view: View2;
   w: number;
@@ -1027,7 +1091,7 @@ function ImageCards({
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none" testID="map-image-cards">
       {marks.map((m) => {
-        if (!isLand(m.q, m.r) || m.uris.length === 0) return null;
+        if (!isLandIn(city, m.q, m.r) || m.uris.length === 0) return null;
         const p = cellCenter(m.q, m.r);
         const x = p.x * view.scale + view.tx;
         const cy = -p.y * view.scale + view.ty;

@@ -88,23 +88,14 @@ function buildSections(
     title: 'Puanlar nasıl kazanılır',
     lines: [
       'Oyunlarda masadaki ya da odadaki oyuncu sayısı arttıkça puan çarpanı yükselir; yalnızca 1. değil, 2., 3. ve sonraki sıralar da puan kazanır. Arkadaşlarını davet ettikçe herkes daha çok puan alır.',
-      `Yan yana oyun (aynı masada, konum doğrulanır) uzaktan oyunun ${rules.sideMult} katı puan verir. Anlaşmalı bir mekânın koduyla o mekânda oynanan yan yana oyun +%${Math.max(0, rules.venueBonusPct - 100)} puan verir. Etkinlik oyunu Oyun Geceleri’nde 1,5 kat, Sosyal Buluşmalar ve Müzik & Eğlence’de 1,25 kat puan verir.`,
+      `Yan yana oyun (aynı masada, konum doğrulanır) uzaktan oyunla aynı puanı verir; yalnızca aylık puan hedefi daha yüksektir. Anlaşmalı bir mekânın koduyla o mekânda oynanan yan yana oyun +%${Math.max(0, rules.venueBonusPct - 100)} puan verir. Etkinlik oyunu Oyun Geceleri’nde 1,5 kat, Sosyal Buluşmalar ve Müzik & Eğlence’de 1,25 kat puan verir.`,
       `Aylık puan hedefleri: her oyundan ayda uzaktan en çok ${fmtNum(rules.remoteMonthPoints)}, yan yana en çok ${fmtNum(rules.sideMonthPoints)} puan; Bilgi Yarışması’ndan ${fmtNum(rules.quizMonthPoints)} puan kazanılır. Hedefe ulaşınca o ay o oyundan puan yazılmaz. Etkinlik puanlarında aylık hedef yoktur (düzenleyen sınırları aşağıda).`,
       `Etkinlik açmak: +${rules.eventCreate} puan (ayda en fazla ${rules.eventCreateMonthEvents} etkinlik).`,
-      `Etkinliğe katılıp kodu yazmak: kalabalık etkinlik daha çok puan getirir (${attendTiersText(rules)}); 41. Kat Özel etkinliklerde her basamağa +${rules.eventAttendOfficialBonus} puan eklenir. Etkinlik kalabalıklaştıkça daha önce puan alanlara da aradaki fark yazılır. Katılabileceğin etkinlik sayısında sınır yoktur; ancak puan, etkinlikte en az ${rules.eventMinAttendees} kişinin katılımı kodla ve bölge bilgisiyle doğrulanınca eklenir.`,
+      `Etkinliğe katılıp kodu yazmak: kalabalık etkinlik daha çok puan getirir (${attendTiersText(rules)}); PeopleHere Özel etkinliklerde her basamağa +${rules.eventAttendOfficialBonus} puan eklenir. Etkinlik kalabalıklaştıkça daha önce puan alanlara da aradaki fark yazılır. Katılabileceğin etkinlik sayısında sınır yoktur; ancak puan, etkinlikte en az ${rules.eventMinAttendees} kişinin katılımı kodla ve bölge bilgisiyle doğrulanınca eklenir.`,
       `Etkinliğine gelen katılımcılar: kişi başı +${rules.hostPerAttendee} puan (bir etkinlikte en fazla ${rules.hostAttendeeCap} kişi, ayda en fazla ${rules.hostMonthCap} puan).`,
       `Etkinliği puanlamak: katıldığın etkinliği puanlayınca +${rules.eventRate} puan; düzenleyen 5 yıldızda +${rules.eventRated5}, 4 yıldızda +${rules.eventRated4} puan alır (düzenleyen ayda en fazla ${rules.eventRatedMonthCap} puan; Konser & Festival ile moderatör ve mekân etkinlikleri hariç).`,
       `Oyun oynamak: oyuna ne kadar çok kişi katılırsa puan o kadar artar. 1. sıranın puanı oyuncu sayısı × kalabalık çarpanıdır: 4 kişiden sonra her oyuncu çarpanı %10 artırır (4 kişi 4, 6 kişi 7, 8 kişi 11, 10 kişi 16, en çok ${rules.gameTopCap}); puan, oyunu kaçıncı sırada bitirdiğine göre verilir: 1. sıra hepsini alır, her sıra aşağıda biraz azalır, son sıra 1 puan alır. Puan için oyun en az ${rules.gameMinPlayers} kişiyle (Köpekbalığı Kafesi ve Vampir–Köylü’de ${rules.partyMinPlayers} kişiyle) oynanmalıdır.`,
       `Bilgi Yarışması: uzaktan oynanır, oyun sayısı sınırsızdır ama her oyun 1 can harcar (en çok ${rules.quizMaxLives} can, her ${rules.quizLifeMinutes} dakikada 1 can dolar). ${quizRuleSummary(rules)} Özel odada aynı kişilerden biriyle oynanan maçlardan günde en çok 5 puan alınır. Solo / Hafta sıralamasında (haftanın toplam doğrusu, yalnızca 5+ doğrulu koşular) ilk 3 sonraki hafta 10 canla oynar; Çoklu / Ay (Uzaktan) sıralamasında ilk 3'e moderatör onayıyla 1 aylık abonelik verilir.${identityOn ? ' Bu ödülleri yalnızca hesabını doğrulamış üyeler alır.' : ''} Uzaktan maç başladıktan sonra çıkan kaybeder. Çekiliş puan getirmez.`,
-    ],
-  });
-
-  sections.push({
-    title: 'Klan Sıralaması',
-    lines: [
-      'Arkadaşlarınla en çok 5 kişilik bir klan kurabilirsin. Klana yalnızca klandaki birinin arkadaşı davet edilir.',
-      'Klan arkadaşlarıyla oynanan puanlı oyunların (aynı oyunda klandan en az 2 kişi) puanı Klan Sıralaması’na da yazılır. Kişisel puanın ve aylık hedeflerin değişmez; klan sıralaması hediyeye dahil değildir.',
-      'Klana yeni giren üyenin klan puanına katkısı 3 gün sonra sayılmaya başlar. Her üye haftada 1 kez klana girebilir (kurmak, katılmak ya da değiştirmek).',
     ],
   });
 

@@ -1,6 +1,434 @@
 -- PARÇA 2 / 4 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+-- Bir etkinlikte kodla ve konumla doğrulanan katılımcı sayısı eşiğe (pts_event_min_attendees, varsayılan 4) ulaşınca,
+-- bekleyen katılım puanları ve düzenleyen puanları açılır. Eşikten sonra gelenler anında alır. Etkinlik başına
+-- kişi sınırı, aynı kişiden 30 günde bir kuralı ve düzenleyenin aylık tavanı korunur; katılana aylık sınır YOKTUR.
+create or replace function public._release_event_points(p_event_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_ev public.events;
+  v_host public.profiles;
+  v_has_host boolean;
+  v_gives boolean;
+  v_official boolean;
+  v_pts int;
+  v_hpts int;
+  v_room int;
+  v_skip text;
+  v_cat_daily int := public.setting_int('pts_event_attend_category_daily', 1);
+  v_host_days int := public.setting_int('pts_event_attend_host_days', 2);
+  v_count int;
+  v_tier int;
+  r record;
+begin
+  select * into v_ev from public.events where id = p_event_id and not is_cancelled;
+  if not found then return; end if;
+  -- Aynı etkinlikte aynı anda iki doğrulama gelirse puan basamağı iki kez yazılmasın
+  perform pg_advisory_xact_lock(hashtext('event_points:' || p_event_id::text));
+  select count(*)::int into v_count from public.event_registrations
+   where event_id = p_event_id and checked_in_at is not null;
+  if v_count < greatest(1, public.setting_int('pts_event_min_attendees', 4)) then
+    return;
+  end if;
+  v_gives := v_ev.fee_amount <= 0 or public.setting_bool('pts_paid_events');
+  v_official := v_ev.created_by is null
+                or exists (select 1 from public.profiles h where h.id = v_ev.created_by and h.role = 'admin');
+  select * into v_host from public.profiles where id = v_ev.created_by;
+  v_has_host := found;
+  v_tier := public._event_attend_pts(v_count, v_official);
+
+  -- Kalabalık basamağı yükseldiyse daha önce puan alanlara aradaki fark yazılır (herkes son kalabalığın puanını alır).
+  -- Yalnızca bu etkinlikten katılım puanı almış olanlar (günlük/kategori kuralına takılanlar almaz).
+  if v_gives then
+    for r in
+      select er.user_id, er.attend_points
+        from public.event_registrations er join public.profiles pr on pr.id = er.user_id
+       where er.event_id = p_event_id and er.attend_rewarded and er.attend_points > 0
+         and er.attend_points < v_tier and pr.role = 'user'
+         for update of er
+    loop
+      perform public._award_points(r.user_id, v_tier - r.attend_points, 'event_attend',
+        'Kalabalık etkinlik (' || v_count || ' kişi): ' || left(v_ev.title, 40), p_event_id);
+      update public.event_registrations set attend_points = v_tier
+       where event_id = p_event_id and user_id = r.user_id;
+    end loop;
+  end if;
+
+  for r in
+    select er.user_id, er.checked_in_at, pr.role
+      from public.event_registrations er join public.profiles pr on pr.id = er.user_id
+     where er.event_id = p_event_id and er.checked_in_at is not null and not er.attend_rewarded
+     order by er.checked_in_at, er.user_id
+       for update of er
+  loop
+    update public.event_registrations set attend_rewarded = true
+     where event_id = p_event_id and user_id = r.user_id;
+    if not v_gives then continue; end if;
+
+    -- Katılana puan (moderatör sıralamada olmadığı için almaz). İki kural puanı kısar, ikisi de sunucuda uygulanır:
+    --   1) Günde (Türkiye saati) her kategoriden en çok pts_event_attend_category_daily etkinlikten puan alınır.
+    --   2) Aynı üyenin düzenlediği etkinliklerden pts_event_attend_host_days günde bir puan alınır (PeopleHere Özel hariç).
+    -- Böylece aynı kalabalığın kendi aralarında art arda etkinlik açıp puan toplaması kapanır. Puan verilmeyen katılımda
+    -- düzenleyen de o katılımdan puan almaz (yoksa düzenleyen için aynı hile sürerdi).
+    v_skip := null;
+    if r.role = 'user' then
+      if v_cat_daily > 0
+         and (select count(*) from public.event_registrations x
+                join public.events xe on xe.id = x.event_id
+               where x.user_id = r.user_id and x.event_id <> p_event_id and x.attend_points > 0
+                 and not xe.is_cancelled and xe.category = v_ev.category
+                 and (x.checked_in_at at time zone 'Europe/Istanbul')::date
+                     = (r.checked_in_at at time zone 'Europe/Istanbul')::date) >= v_cat_daily then
+        v_skip := 'category_daily';
+      elsif not v_official and v_host_days > 0
+         and exists (select 1 from public.event_registrations x
+                       join public.events xe on xe.id = x.event_id
+                      where x.user_id = r.user_id and x.event_id <> p_event_id and x.attend_points > 0
+                        and not xe.is_cancelled and xe.created_by = v_ev.created_by
+                        and x.checked_in_at between r.checked_in_at - make_interval(days => v_host_days)
+                                                and r.checked_in_at + make_interval(days => v_host_days)) then
+        v_skip := 'host_cooldown';
+      end if;
+    end if;
+
+    if r.role = 'user' and v_skip is null then
+      v_pts := v_tier;
+      perform public._award_points(r.user_id, v_pts, 'event_attend',
+        'Etkinliğe katıldın: ' || left(v_ev.title, 40), p_event_id);
+      update public.event_registrations set attend_points = v_pts
+       where event_id = p_event_id and user_id = r.user_id;
+    elsif v_skip is not null then
+      update public.event_registrations set attend_note = v_skip
+       where event_id = p_event_id and user_id = r.user_id;
+      continue; -- düzenleyen de bu katılımdan puan almaz
+    end if;
+
+    -- Düzenleyene puan: etkinlik başına kişi sınırı, aynı kişiden 30 günde bir, düzenleyenin aylık sınırı
+    if v_has_host and v_host.role = 'user' and v_host.banned_at is null
+       and (select count(*) from public.event_registrations x where x.event_id = p_event_id and x.host_rewarded)
+           < public.setting_int('pts_event_host_attendee_cap', 25)
+       and not exists (
+         select 1 from public.event_registrations r2 join public.events e2 on e2.id = r2.event_id
+          where r2.user_id = r.user_id and e2.created_by = v_host.id and r2.host_rewarded
+            and r2.checked_in_at > now() - make_interval(days => public.setting_int('pts_pair_cooldown_days', 30))) then
+      v_room := greatest(0, public.setting_int('pts_event_host_month_cap', 200)
+                - coalesce((select sum(pe.amount) from public.point_events pe
+                             where pe.user_id = v_host.id and pe.source = 'event_host'
+                               and pe.created_at >= public._month_start()), 0)::int);
+      v_hpts := least(public.setting_int('pts_event_host_per_attendee', 8), v_room);
+      if v_hpts > 0 then
+        perform public._award_points(v_host.id, v_hpts, 'event_host',
+          'Etkinliğine katılım doğrulandı: ' || left(v_ev.title, 40), p_event_id);
+        update public.event_registrations set host_rewarded = true
+         where event_id = p_event_id and user_id = r.user_id;
+      end if;
+    end if;
+  end loop;
+end $$;
+
+-- Katılımı koddan ve konumdan doğrula. Kayıtlı olmak, kodu bilmek, doğru zaman aralığında olmak ve etkinliğin
+-- bulunduğu bölgede (en çok 1 petek uzakta) görünmek gerekir. Telefon yalnızca bulunduğu peteğin numarasını yollar.
+-- Doğru kod ama konum yoksa 'location_required', etkinlik bölgesinden uzaksa 'too_far' hatası gelir (kayıt yapılmaz).
+-- Yanlış kod hata fırlatmaz ({ok:false}) ki deneme kaydı silinmesin; 10 dakikada 8 yanlıştan sonra 'too_many_attempts'.
+-- Puan: yeterli kişi doğrulanınca açılır (cevapta: verified = doğrulanan kişi, needed = gereken, points = senin puanın).
+drop function if exists public.verify_event_attendance(uuid, text);
+create or replace function public.verify_event_attendance(
+  p_event_id uuid, p_code text, p_cell_q int default null, p_cell_r int default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_ev public.events;
+  v_reg public.event_registrations;
+  v_code text := upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
+  v_real text;
+  v_needed int := greatest(1, public.setting_int('pts_event_min_attendees', 4));
+  v_verified int;
+  v_pts int;
+  v_note text;
+begin
+  v := public._require_user();
+  select * into v_ev from public.events where id = p_event_id and not is_cancelled;
+  if not found then raise exception 'event_not_found'; end if;
+  if v_ev.created_by is not distinct from v.id then raise exception 'host_cannot_checkin'; end if;
+  select * into v_reg from public.event_registrations
+   where event_id = p_event_id and user_id = v.id for update;
+  if not found then raise exception 'not_registered'; end if;
+  if v_reg.checked_in_at is not null then
+    select count(*)::int into v_verified from public.event_registrations
+     where event_id = p_event_id and checked_in_at is not null;
+    return jsonb_build_object('ok', true, 'already', true, 'points', 0, 'verified', v_verified,
+                              'needed', v_needed, 'released', v_reg.attend_rewarded, 'note', v_reg.attend_note);
+  end if;
+  if now() < v_ev.starts_at - make_interval(mins => public.setting_int('event_checkin_open_minutes_before', 60)) then
+    raise exception 'checkin_not_open';
+  end if;
+  if v_ev.closed_at is not null or now() > public._event_checkin_end(v_ev.starts_at, v_ev.category) then
+    raise exception 'checkin_closed';
+  end if;
+
+  delete from public.event_code_failures where failed_at < now() - interval '1 day';
+  if (select count(*) from public.event_code_failures f
+       where f.user_id = v.id and f.event_id = p_event_id and f.failed_at > now() - interval '10 minutes') >= 8 then
+    raise exception 'too_many_attempts';
+  end if;
+  select c.code into v_real from public.event_codes c where c.event_id = p_event_id;
+  if v_real is null or length(v_code) <> length(v_real) or v_code <> v_real then
+    insert into public.event_code_failures (user_id, event_id) values (v.id, p_event_id);
+    return jsonb_build_object('ok', false, 'reason', 'wrong_code');
+  end if;
+
+  -- Konum doğrulaması: kod doğruysa telefonun bulunduğu petek istenir ve etkinliğin peteğine yakın olmalı
+  if public.setting_bool('event_checkin_location_required') then
+    if not public._game_cell_given(p_cell_q, p_cell_r) then raise exception 'location_required'; end if;
+    if v_ev.cell_q is not null
+       and public._hex_dist(p_cell_q, p_cell_r, v_ev.cell_q, v_ev.cell_r)
+           > public.setting_int('event_checkin_max_cell_distance', 1) then
+      raise exception 'too_far';
+    end if;
+  end if;
+
+  -- Paket 24: bir üye aynı gün (Türkiye saati) aynı petekte yalnızca bir etkinliğe katılım doğrulayabilir
+  if v_ev.cell_q is not null and exists (
+       select 1 from public.event_registrations x join public.events xe on xe.id = x.event_id
+        where x.user_id = v.id and x.event_id <> p_event_id and x.checked_in_at is not null
+          and not xe.is_cancelled and xe.cell_q = v_ev.cell_q and xe.cell_r = v_ev.cell_r
+          and (x.checked_in_at at time zone 'Europe/Istanbul')::date = (now() at time zone 'Europe/Istanbul')::date) then
+    raise exception 'same_cell_today';
+  end if;
+
+  update public.event_registrations set checked_in_at = now()
+   where event_id = p_event_id and user_id = v.id;
+  perform public._release_event_points(p_event_id);
+  -- Ekipçe gelenlere ekip bonusu (katılım puanı yazıldıysa)
+  perform public._award_team_bonus(p_event_id);
+  -- Telefonun bildirdiği petek haritadaysa haritaya sayılır (petekteki kişi sayısı ve yoğunluk; kim olduğu görünmez)
+  if public._game_cell_given(p_cell_q, p_cell_r) and public._map_cell_ok(p_cell_q, p_cell_r) then
+    perform public._map_cleanup();
+    insert into public.map_signals (user_id, q, r, source, event_id, day)
+    values (v.id, p_cell_q, p_cell_r, 'event', p_event_id, public._map_day())
+    on conflict do nothing;
+  end if;
+
+  select count(*)::int into v_verified from public.event_registrations
+   where event_id = p_event_id and checked_in_at is not null;
+  -- Paket 27: doğrulanan sayısı eşiğe ulaşınca düzenleyene haber (etkinlik çekilişi; oyunluysa etkinlik oyunu)
+  if v_verified = v_needed and v_ev.created_by is not null then
+    perform public._notify(v_ev.created_by, 'system', 'Etkinlik çekilişini açabilirsin',
+      '“' || v_ev.title || '” etkinliğinde ' || v_needed || ' kişi katılımını doğruladı. Oyunlar > Çekiliş’ten etkinlik '
+        || 'çekilişini açabilirsin.'
+        || case when v_ev.with_games then ' Etkinlik başlayınca Etkinlikler sekmesinden etkinlik oyunu da açabilirsin.'
+                else '' end,
+      jsonb_build_object('event_id', p_event_id, 'route', '/cekilis'));
+  end if;
+  -- Etkinlikte açık bir oyun ya da çekiliş odası varsa kodu yeni doğrulanan katılımcıya da gider
+  declare
+    rr record;
+  begin
+    for rr in
+      select gr.id, gr.game_type, c.code from public.game_rooms gr join public.room_codes c on c.room_id = gr.id
+       where gr.event_id = p_event_id and gr.status = 'lobby'
+    loop
+      perform public._notify(v.id, 'system',
+        case when rr.game_type = 'raffle' then 'Etkinlik çekilişi açık' else 'Etkinlik oyunu açık' end,
+        '“' || v_ev.title || '” etkinliğinde ' ||
+          coalesce((select gt.title from public.game_types gt where gt.key = rr.game_type), rr.game_type) ||
+          ' odası açık. Oda kodu: ' || rr.code || ' · Kodu kopyalayıp Oyunlar > Kodla katıl’a yaz.',
+        jsonb_build_object('code', rr.code, 'room_id', rr.id, 'event_id', p_event_id, 'game', rr.game_type,
+                           'route', '/acik-odalar'));
+    end loop;
+  end;
+  select er.attend_points, er.attend_note into v_pts, v_note
+    from public.event_registrations er where er.event_id = p_event_id and er.user_id = v.id;
+  return jsonb_build_object('ok', true, 'already', false, 'points', coalesce(v_pts, 0), 'verified', v_verified,
+                            'needed', v_needed, 'released', v_verified >= v_needed, 'note', v_note);
+end $$;
+
+-- Etkinlik beğenisi (aç/kapat)
+create or replace function public.toggle_event_like(p_event_id uuid)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare v public.profiles;
+begin
+  v := public._require_user();
+  if not exists (select 1 from public.events where id = p_event_id and not is_cancelled) then
+    raise exception 'event_not_found';
+  end if;
+  delete from public.event_likes where event_id = p_event_id and user_id = v.id;
+  if found then return false; end if;
+  insert into public.event_likes (event_id, user_id) values (p_event_id, v.id);
+  return true;
+end $$;
+
+-- Etkinlik yorumu: GERÇEK AD ile görünür (uygulama yazmadan önce uyarır). Moderatör "PeopleHere" görünür.
+create or replace function public.add_event_comment(p_event_id uuid, p_body text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_body text := btrim(coalesce(p_body, ''));
+  v_id uuid;
+begin
+  v := public._require_writer(null);
+  if char_length(v_body) not between 1 and 300 then raise exception 'invalid_body'; end if;
+  if not exists (select 1 from public.events where id = p_event_id and not is_cancelled) then
+    raise exception 'event_not_found';
+  end if;
+  if (select count(*) from public.event_comments c
+       where c.user_id = v.id and c.created_at > now() - interval '1 minute') >= 10 then
+    raise exception 'rate_limited';
+  end if;
+  insert into public.event_comments (event_id, user_id, body) values (p_event_id, v.id, v_body)
+  returning id into v_id;
+  return v_id;
+end $$;
+
+drop function if exists public.list_event_comments(uuid);
+create or replace function public.list_event_comments(p_event_id uuid)
+returns table (
+  id uuid, event_id uuid, author_name text, is_official boolean, body text,
+  is_hidden boolean, created_at timestamptz, is_mine boolean, author_title text, sponsor_id uuid
+)
+language sql stable security definer set search_path = public as $$
+  with ct as materialized (select * from public._champion_titles())
+  select c.id, c.event_id,
+         case when pr.role = 'admin' then 'PeopleHere' else pr.full_name end,
+         (pr.role = 'admin'),
+         c.body, c.is_hidden, c.created_at, (c.user_id = auth.uid()),
+         public._title_join((select array_agg(t.label order by t.sort_order) from ct t where t.user_id = c.user_id)),
+         case when pr.role::text = 'sponsor' then pr.id end
+    from public.event_comments c
+    join public.profiles pr on pr.id = c.user_id
+   where public._is_active_user()
+     and c.event_id = p_event_id
+     and exists (select 1 from public.events e where e.id = p_event_id and not e.is_cancelled)
+     and (public.is_admin()
+          or (not c.is_hidden
+              and not exists (select 1 from public.user_blocks b
+                               where b.blocker_id = auth.uid() and b.blocked_id = c.user_id)))
+   order by c.created_at asc
+   limit 300;
+$$;
+
+create or replace function public.delete_my_event_comment(p_comment_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare v public.profiles;
+begin
+  v := public._require_user();
+  delete from public.event_comments where id = p_comment_id and user_id = v.id;
+  if not found then raise exception 'comment_not_found'; end if;
+end $$;
+
+-- Konuşma balonları: hangileri açık, hangisi seçili
+drop function if exists public.my_bubble_skins();
+create or replace function public.my_bubble_skins()
+returns table (key text, label text, game_type text, required_plays int, plays int, unlocked boolean, selected boolean)
+language sql stable security definer set search_path = public as $$
+  select b.key, b.label, b.game_type, b.required_plays,
+         coalesce(s.plays, 0),
+         (case when b.required_reward is not null then public._has_reward(p.id, b.required_reward)
+               else (b.required_plays = 0 or coalesce(s.plays, 0) >= b.required_plays) end),
+         (p.bubble_skin = b.key)
+    from public.bubble_skins b
+    join public.profiles p on p.id = auth.uid()
+    left join public.user_game_stats s on s.user_id = p.id and s.game_type = b.game_type
+   where public._is_active_user()
+   order by b.sort_order;
+$$;
+
+-- Balon seç: yalnızca kazandığın (oyunun en yüksek başarımına ulaştığın) balon seçilebilir
+create or replace function public.set_bubble_skin(p_skin text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_skin public.bubble_skins;
+begin
+  v := public._require_user();
+  select * into v_skin from public.bubble_skins where key = p_skin;
+  if not found then raise exception 'skin_not_found'; end if;
+  if v_skin.required_reward is not null then
+    if not public._has_reward(v.id, v_skin.required_reward) then raise exception 'skin_locked'; end if;
+  elsif v_skin.required_plays > 0
+     and coalesce((select s.plays from public.user_game_stats s
+                    where s.user_id = v.id and s.game_type = v_skin.game_type), 0) < v_skin.required_plays then
+    raise exception 'skin_locked';
+  end if;
+  update public.profiles set bubble_skin = v_skin.key where id = v.id;
+end $$;
+
+-- Oyuna özel sıralama (yalnızca görsel; para ya da hediye ödülü yoktur, çekiliş yoktur). Her ay sıfırdan başlar.
+-- Oyun puanı = o ay o oyundan hesaba yazılan puanların toplamı (oyuncu sayısı ve sıraya göre; hak sınırları geçerli).
+-- p_months_ago: 0 = bu ay (haftada bir güncellenir), 1 = geçen ay (kesin; ayın 1.'si ertesi ay ünvan alır).
+-- Tabloyu yenileyebildiği için "volatile"dır.
+drop function if exists public.get_game_leaderboard(text, int);
+drop function if exists public.get_game_leaderboard(text, int, int);
+drop function if exists public.get_game_leaderboard(text, int, int);
+create or replace function public.get_game_leaderboard(p_game text, p_limit int default 50, p_months_ago int default 0,
+                                                       p_city text default null)
+returns table (place bigint, full_name text, plays int, wins int, score numeric, level int, is_premium boolean, is_me boolean, title text)
+language plpgsql volatile security definer set search_path = public as $$
+#variable_conflict use_column
+declare
+  v_ago int := greatest(0, least(coalesce(p_months_ago, 0), 24));
+  v_lim int := greatest(1, least(coalesce(p_limit, 50), 200));
+begin
+  if not public._is_active_user() then return; end if;
+  -- Yalnızca gerçek oyunlar: rastgele bir ad gönderilip tabloya sahte kayıt açılamaz
+  if p_game is null or p_game = 'raffle'
+     or not exists (select 1 from public.game_types gt where gt.key = p_game) then
+    return;
+  end if;
+
+  if p_city is not null and not exists (select 1 from public.cities c where c.key = p_city) then return; end if;
+  if v_ago = 0 and public.setting_bool('rank_weekly_refresh') then
+    perform public._ensure_rank_snapshot('game:' || p_game || coalesce('@' || p_city, ''));
+    return query
+    with ct as materialized (select * from public._champion_titles())
+    select s.place::bigint, pr.full_name, s.plays, s.wins, s.score,
+           coalesce((select max(l.level) from public.levels l where l.min_points <= pr.points), 1),
+           (pr.premium_until is not null and pr.premium_until > now()),
+           (pr.id = auth.uid()),
+           public._title_join((select array_agg(c.label order by c.sort_order) from ct c where c.user_id = pr.id))
+      from public.rank_snapshots s
+      join public.profiles pr on pr.id = s.user_id
+     where s.kind = 'game:' || p_game || coalesce('@' || p_city, '') and pr.banned_at is null and pr.role = 'user'
+       and (s.place <= v_lim or pr.id = auth.uid())
+     order by s.place, pr.full_name;
+    return;
+  end if;
+
+  return query
+  with ct as materialized (select * from public._champion_titles()),
+  w as (
+    select date_trunc('month', (now() at time zone 'Europe/Istanbul') - make_interval(months => v_ago)) as local_start
+  ), b as (
+    select w.local_start at time zone 'Europe/Istanbul' as s,
+           (w.local_start + interval '1 month') at time zone 'Europe/Istanbul' as e
+      from w
+  ), m as (
+    select gl.user_id, sum(gl.points) as score, count(*)::int as plays,
+           sum(case when gl.won then 1 else 0 end)::int as wins
+      from public.game_play_log gl, b
+     where gl.game_type = p_game and gl.created_at >= b.s and gl.created_at < b.e and (p_city is null or gl.city = p_city)
+     group by gl.user_id
+  ), t as (
+    select dense_rank() over (order by m.score desc) as place, pr.id as uid, pr.full_name as fname,
+           m.plays, m.wins, m.score,
+           coalesce((select max(l.level) from public.levels l where l.min_points <= pr.points), 1) as lvl,
+           (pr.premium_until is not null and pr.premium_until > now()) as prem,
+           (pr.id = auth.uid()) as me
+      from m
+      join public.profiles pr on pr.id = m.user_id
+     where pr.banned_at is null and pr.role = 'user'
+  )
+  select t.place, t.fname, t.plays, t.wins, t.score, t.lvl, t.prem, t.me,
+         public._title_join((select array_agg(c.label order by c.sort_order) from ct c where c.user_id = t.uid))
+    from t
+   where t.place <= v_lim or t.me
+   order by t.place, t.fname;
+end $$;
+
+-- Sıralama ekranının üstündeki bilgi: tablo ne zaman güncellendi / ne zaman yenilenecek, ay ne zaman biter ve benim bu ayki puanım.
+-- (Puanlar hesaba anında yazılır; yalnızca sıralama tablosu haftada bir güncellenir.)
+drop function if exists public.ranking_info();
 create or replace function public.ranking_info()
 returns table (weekly boolean, as_of timestamptz, next_at timestamptz, month_start timestamptz, month_end timestamptz,
                my_points numeric, my_place int)
@@ -68,7 +496,7 @@ insert into public.app_settings (key, value, description) values
   ('pts_event_attend_10', '35', 'Puan: doğrulanmış katılım, 10–19 kişilik etkinlik'),
   ('pts_event_attend_20', '40', 'Puan: doğrulanmış katılım, 20–39 kişilik etkinlik'),
   ('pts_event_attend_40', '50', 'Puan: doğrulanmış katılım, 40 ve üstü kişilik etkinlik'),
-  ('pts_event_attend_official_bonus', '10', 'Puan: 41. Kat Sosyal (moderatör) etkinliklerinde her basamağa eklenen katılım puanı'),
+  ('pts_event_attend_official_bonus', '10', 'Puan: PeopleHere (moderatör) etkinliklerinde her basamağa eklenen katılım puanı'),
   ('pts_event_min_attendees', '4', 'Bir etkinlikten puan açılması için kodla ve konumla doğrulanması gereken en az katılımcı sayısı (etkinlik kontenjanı da en az bu kadar olmalı)'),
   ('event_checkin_location_required', 'true', 'Etkinlik katılımı kodun yanında konumla da doğrulansın mı? (telefon yalnızca bulunduğu bölge numarasını yollar)'),
   ('event_checkin_max_cell_distance', '1', 'Katılımcının bölgesi etkinliğin bölgesinden en çok kaç petek uzakta olabilir? (0 = aynı petek)'),
@@ -91,7 +519,7 @@ insert into public.app_settings (key, value, description) values
   ('event_duration_hours', '3', 'Etkinlik başladıktan kaç saat sonra kapanır? Kapanan etkinlik listeden kalkar; kayıt ve katılım kodu girişi biter.'),
   ('event_close_request_min_checkins', '1', 'Kodla doğrulanmış kaç katılımcıdan sonra düzenleyen etkinliği kendisi kapatamaz, moderatöre talep gönderir?'),
   ('pts_event_attend_category_daily', '1', 'Bir üye aynı gün (Türkiye saati) aynı kategorideki en çok kaç etkinlikten katılım puanı alır? (0 = sınırsız)'),
-  ('pts_event_attend_host_days', '2', 'Bir üye aynı üyenin düzenlediği etkinliklerden kaç günde bir katılım puanı alır? (0 = sınırsız; 41. Kat Özel etkinlikler hariç)'),
+  ('pts_event_attend_host_days', '2', 'Bir üye aynı üyenin düzenlediği etkinliklerden kaç günde bir katılım puanı alır? (0 = sınırsız; PeopleHere Özel etkinlikler hariç)'),
   ('contest_active', 'false', 'Aylık hediye programı açık mı? (Yarışma kuralları metni doldurulmadan AÇMA)'),
   ('contest_organizer', '""', 'Hediye programını düzenleyen kişi ya da şirketin adı (kurallar ekranında görünür)'),
   ('contest_contact', '""', 'Hediye programı için iletişim e-postası (kurallar ekranında görünür)'),
@@ -279,7 +707,7 @@ end $$;
 
 drop function if exists public.set_map_consent(boolean);
 
--- Oyuna girerken telefonun bulunduğu petek. Oyuncu odada değilse ya da Kocaeli dışındaysa sessizce sayılmaz
+-- Oyuna girerken telefonun bulunduğu petek. Oyuncu odada değilse ya da harita dışındaysa sessizce sayılmaz
 -- (false döner, oyun etkilenmez). Aynı odada bir üye bir kez bildirebilir.
 create or replace function public.map_report_game(p_room_id uuid, p_q int, p_r int)
 returns boolean language plpgsql security definer set search_path = public as $$
@@ -301,7 +729,7 @@ end $$;
 -- Supabase "stable" fonksiyonları salt okunur işlemde çalıştırır ve "cannot execute SELECT FOR UPDATE in a
 -- read-only transaction" hatası verir.
 drop function if exists public.search_places(text, int);
-create or replace function public.search_places(p_query text, p_limit int default 20)
+create or replace function public.search_places(p_query text, p_limit int default 20, p_city text default null)
 returns table (id text, name text, cat_label text, district text, address text, lat double precision, lon double precision)
 language plpgsql security definer set search_path = public as $$
 declare
@@ -313,13 +741,15 @@ begin
   if char_length(v_q) < 2 then return; end if;
   v_tokens := string_to_array(v_q, ' ');
   v_first := v_tokens[1];
+  -- Yalnızca bir şehrin yerleri (boş = kendi şehrim; arama metni: ad + ilçe + mahalle; trigram dizini kullanılır)
   return query
   select p.id, p.name, p.cat_label, p.district, p.address, p.lat, p.lon
     from public.places p
-   where not exists (
+   where p.city = coalesce(p_city, public._city_of(auth.uid()))
+     and p.search_text like '%' || replace(replace(replace(v_first, '\', '\\'), '%', '\%'), '_', '\_') || '%'
+     and not exists (
            select 1 from unnest(v_tokens) t
-            where (p.search_text || ' ' || public._tr_fold(p.district))
-                  not like '%' || replace(replace(replace(t, '\', '\\'), '%', '\%'), '_', '\_') || '%')
+            where p.search_text not like '%' || replace(replace(replace(t, '\', '\\'), '%', '\%'), '_', '\_') || '%')
    order by (p.search_text like replace(replace(replace(v_first, '\', '\\'), '%', '\%'), '_', '\_') || '%') desc,
             p.rank, p.confidence desc nulls last, p.name
    limit least(greatest(coalesce(p_limit, 20), 1), 30);
@@ -1594,7 +2024,9 @@ end $$;
 
 -- Geçen haftanın (pazartesi–pazar, Türkiye saati) kesinleşmiş sıralaması. p_game boşsa genel puan, doluysa o oyunun puanı.
 drop function if exists public.get_last_week_leaderboard(text, int);
-create or replace function public.get_last_week_leaderboard(p_game text default null, p_limit int default 10)
+drop function if exists public.get_last_week_leaderboard(text, int);
+create or replace function public.get_last_week_leaderboard(p_game text default null, p_limit int default 10,
+                                                            p_city text default null)
 returns table (place bigint, full_name text, score numeric, is_me boolean)
 language plpgsql stable security definer set search_path = public as $$
 #variable_conflict use_column
@@ -1612,10 +2044,11 @@ begin
     select x.user_id, sum(x.amt) as pts
       from (
         select pe.user_id, pe.amount as amt from public.point_events pe
-         where p_game is null and pe.created_at >= v_ws and pe.created_at < v_we
+         where p_game is null and pe.created_at >= v_ws and pe.created_at < v_we and (p_city is null or pe.city = p_city)
         union all
         select gl.user_id, gl.points from public.game_play_log gl
          where p_game is not null and gl.game_type = p_game and gl.created_at >= v_ws and gl.created_at < v_we
+           and (p_city is null or gl.city = p_city)
       ) x
      group by x.user_id
     having sum(x.amt) > 0
@@ -1862,7 +2295,7 @@ language sql stable security definer set search_path = public as $$
         join public.room_players rp on rp.room_id = r.id and rp.left_at is null
        where r.status in ('lobby', 'playing')
          and r.created_at > now() - interval '12 hours'
-         and (not gt.presence_required or r.host_seen_at > public._presence_cutoff())
+         and (not gt.presence_required or r.host_seen_at > public._presence_cutoff(r.remote))
       union all
       -- Bilgi Yarışması: maçtakiler ve rakip arayanlar
       select 'quiz', mp.user_id
@@ -2170,7 +2603,7 @@ returns table (id uuid, title text, starts_at timestamptz, category text, host_n
                ended boolean, my_stars int, can_rate boolean, avg_stars numeric, rating_count int)
 language sql stable security definer set search_path = public as $$
   select e.id, e.title, e.starts_at, e.category,
-         case when e.created_by is null or hp.role = 'admin' then '41. Kat Sosyal' else hp.full_name end,
+         case when e.created_by is null or hp.role = 'admin' then 'PeopleHere' else hp.full_name end,
          (r.checked_in_at is not null),
          now() >= coalesce(e.closed_at, public._event_end(e.starts_at, e.category)),
          (select er.stars from public.event_ratings er where er.event_id = e.id and er.user_id = auth.uid()),
@@ -2190,7 +2623,7 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 -- ---------------------------------------------------------------------
--- 5o) Etkinlik: düzenleyenin kapatması, paylaşım bekleme süresi, moderatör etiketi ve 41. Kat Özel seçimi
+-- 5o) Etkinlik: düzenleyenin kapatması, paylaşım bekleme süresi, moderatör etiketi ve PeopleHere Özel seçimi
 -- ---------------------------------------------------------------------
 
 -- Düzenleyen etkinliğini kapatır: başlangıçtan host_close_minutes_after (45) dakika sonra, en az pts_event_min_attendees (4)
@@ -2237,8 +2670,8 @@ begin
   if not found then raise exception 'event_not_found'; end if;
 end $$;
 
--- Moderatör: kendi etkinliğini 41. Kat Özel olarak mı (true) yoksa normal (Konser & Festival) olarak mı yayınlar.
--- 41. Kat Özel seçilirse herkese duyuru gider.
+-- Moderatör: kendi etkinliğini PeopleHere Özel olarak mı (true) yoksa normal (Konser & Festival) olarak mı yayınlar.
+-- PeopleHere Özel seçilirse herkese duyuru gider.
 create or replace function public.admin_set_event_official(p_event_id uuid, p_official boolean)
 returns void language plpgsql security definer set search_path = public as $$
 declare e public.events;
@@ -2254,7 +2687,7 @@ begin
         where a.kind = 'special_event' and a.created_at > now() - interval '30 days'
           and a.body = left('“' || e.title || '” Etkinlikler sekmesinde. Kaçırma!', 1000)) then
     insert into public.announcements (title, body, created_by, kind)
-    values ('Yeni 41. Kat Özel etkinlik', left('“' || e.title || '” Etkinlikler sekmesinde. Kaçırma!', 1000), auth.uid(),
+    values ('Yeni PeopleHere Özel etkinlik', left('“' || e.title || '” Etkinlikler sekmesinde. Kaçırma!', 1000), auth.uid(),
             'special_event');
   end if;
 end $$;
@@ -2510,7 +2943,7 @@ declare v_ids uuid[];
 begin
   select coalesce(array_agg(x.id), '{}') into v_ids
     from (select q.id from public.quiz_questions q
-           where q.is_active
+           where q.is_active and public._quiz_q_ok(q.category, p_users)
              and not exists (select 1 from public.quiz_seen s
                               where s.question_id = q.id and s.user_id = any (p_users)
                                 and s.seen_at > now() - interval '7 days')
@@ -2519,6 +2952,7 @@ begin
     v_ids := v_ids || coalesce((select array_agg(y.id)
                                   from (select q.id from public.quiz_questions q
                                          where q.is_active and not (q.id = any (v_ids))
+                                           and public._quiz_q_ok(q.category, p_users)
                                          order by random() limit p_n - coalesce(array_length(v_ids, 1), 0)) y), '{}');
   end if;
   return v_ids;
@@ -3573,6 +4007,7 @@ begin
     select coalesce(array_agg(x.id), '{}') into v_part
       from (select q.id from public.quiz_questions q
              where q.is_active and q.difficulty = d and not (q.id = any (v_ids))
+               and public._quiz_q_ok(q.category, array[p_user])
              order by (exists (select 1 from public.quiz_seen s where s.question_id = q.id and s.user_id = p_user
                                  and s.seen_at > now() - interval '7 days')), random()
              limit 4) x;
@@ -3580,6 +4015,7 @@ begin
       v_part := v_part || coalesce((select array_agg(y.id) from (
                   select q.id from public.quiz_questions q
                    where q.is_active and not (q.id = any (v_ids || v_part))
+                     and public._quiz_q_ok(q.category, array[p_user])
                    order by abs(q.difficulty - d), random()
                    limit 4 - coalesce(array_length(v_part, 1), 0)) y), '{}');
     end if;
@@ -4049,6 +4485,7 @@ begin
   select coalesce(array_agg(x.id), '{}') into v_new from (
     select q.id from public.quiz_questions q
      where q.is_active and (p_category is null or q.category = p_category) and not (q.id = any (m.question_ids))
+       and public._quiz_q_ok(q.category, v_users)
      order by (exists (select 1 from public.quiz_seen s where s.question_id = q.id and s.user_id = any (v_users)
                          and s.seen_at > now() - interval '7 days')),
               abs(q.difficulty - v_target), random()
@@ -4057,6 +4494,7 @@ begin
     select coalesce(array_agg(y.id), '{}') into v_more from (
       select q.id from public.quiz_questions q
        where q.is_active and not (q.id = any (m.question_ids || v_new))
+         and public._quiz_q_ok(q.category, v_users)
        order by (exists (select 1 from public.quiz_seen s where s.question_id = q.id and s.user_id = any (v_users)
                            and s.seen_at > now() - interval '7 days')), random()
        limit p_n - coalesce(array_length(v_new, 1), 0)) y;
@@ -4086,6 +4524,8 @@ begin
   select array_agg(z.c) into v_opts from (
     select q.category as c from public.quiz_questions q
      where q.is_active and not (q.id = any (m.question_ids))
+       and public._quiz_q_ok(q.category, (select array_agg(mp.user_id) from public.quiz_match_players mp
+                                           where mp.match_id = p_match))
      group by q.category having count(*) >= 2 order by random() limit 3) z;
   update public.quiz_matches set round = round + 1, vote_options = v_opts, round_category = null where id = p_match;
   if coalesce(array_length(v_opts, 1), 0) = 0 then
@@ -5468,7 +5908,7 @@ begin
   select * into g from public.quiz_side_games where id = p_id;
   select array_agg(z.c) into v_opts from (
     select q.category as c from public.quiz_questions q
-     where q.is_active and not (q.id = any (g.question_ids))
+     where q.is_active and not (q.id = any (g.question_ids)) and public._quiz_q_ok(q.category, array[g.user_id])
      group by q.category having count(*) >= 3 order by random() limit 3) z;
   update public.quiz_side_games
      set round = round + 1, vote_options = v_opts, votes = '{}'::jsonb, round_category = null where id = p_id;
@@ -5512,7 +5952,7 @@ begin
   for d in 1 .. 3 loop
     v_one := null;
     select q.id into v_one from public.quiz_questions q
-     where q.is_active and not (q.id = any (g.question_ids || v_new))
+     where q.is_active and not (q.id = any (g.question_ids || v_new)) and public._quiz_q_ok(q.category, array[g.user_id])
      order by (v_cat is not null and q.category <> v_cat),
               (exists (select 1 from public.quiz_seen s where s.question_id = q.id and s.user_id = g.user_id
                          and s.seen_at > now() - interval '7 days')),
@@ -6466,297 +6906,3 @@ begin
   perform public._audit('award_points', p_user_id,
     jsonb_build_object('amount', p_amount, 'reason', coalesce(nullif(btrim(p_reason), ''), 'Admin puanı')));
 end $$;
-
--- Çekiliş: odadaki oyuncular arasından rastgele bir kazanan seçer ve oda durumuna yazar
--- Paket 27: etkinlik çekilişini etkinliği açan kişi (odanın sahibi) de yapar; diğer çekilişleri yalnızca moderatör.
-create or replace function public.admin_draw_raffle(p_room_id uuid)
-returns jsonb language plpgsql security definer set search_path = public as $$
-declare
-  v public.profiles;
-  v_room public.game_rooms;
-  v_winner public.room_players;
-begin
-  v := public._require_user();
-  select * into v_room from public.game_rooms where id = p_room_id for update;
-  if not found then raise exception 'room_not_found'; end if;
-  if not (v.role = 'admin' or (v_room.event_id is not null and v_room.host_id = v.id)) then
-    raise exception 'forbidden';
-  end if;
-  if v_room.game_type <> 'raffle' then raise exception 'not_a_raffle'; end if;
-  if v_room.status = 'finished' then raise exception 'already_drawn'; end if;
-  if v_room.status <> 'lobby' then raise exception 'room_closed'; end if;
-
-  select rp.* into v_winner
-    from public.room_players rp
-    join public.profiles pr on pr.id = rp.user_id
-   where rp.room_id = p_room_id
-     and rp.user_id <> v_room.host_id
-     and pr.role = 'user'
-   order by random()
-   limit 1;
-  if not found then raise exception 'no_players'; end if;
-
-  update public.game_rooms
-     set state = state || jsonb_build_object(
-           'winner_user_id', v_winner.user_id,
-           'winner_name', v_winner.display_name,
-           'drawn_at', now()),
-         status = 'finished',
-         finished_at = now()
-   where id = p_room_id;
-
-  if v.role = 'admin' then
-    perform public._audit('draw_raffle', v_winner.user_id, jsonb_build_object('room_id', p_room_id));
-  end if;
-  perform public._notify(v_winner.user_id, 'system', 'Çekilişi kazandın!',
-    'Tebrikler! Katıldığın çekilişte kazanan sen oldun. Ödülün için çekilişi yapanla konuş.',
-    jsonb_build_object('room_id', p_room_id));
-  return jsonb_build_object('winner_user_id', v_winner.user_id, 'winner_name', v_winner.display_name);
-end $$;
-
--- ---------------------------------------------------------------------
--- 7) Başlangıç verileri (sonradan moderatör tarafından değiştirilebilir)
--- ---------------------------------------------------------------------
-
-insert into public.levels (level, name, min_points, reward_package, perk) values
-  (1, 'Yeni Komşu', 0, null, null),
-  (2, 'Mahalle Dostu', 250, null, 'event_min2'),
-  (3, 'Sokak Kâşifi', 1200, null, 'event_plus1'),
-  (4, 'Meydan Müdavimi', 3500, null, 'quiz_mult'),
-  (5, 'Şehrin Yıldızı', 8000, null, 'unlimited_lives')
-on conflict (level) do nothing;
--- Seviye eşikleri yükseldi (5. seviye ciddi emek istesin). Yalnızca eski varsayılan değerler değişir; moderatörün
--- sonradan verdiği eşiğe dokunulmaz. Yeni değerlerin hiçbiri eski değerlerle çakışmaz (tekil kural bozulmaz).
-update public.levels l set min_points = x.new_min
-  from (values (2, 100, 250), (3, 300, 1200), (4, 700, 3500), (5, 1500, 8000)) as x(lvl, old_min, new_min)
- where l.level = x.lvl and l.min_points = x.old_min;
--- Seviye ödülleri (boşsa doldurulur; moderatörün değiştirdiğine dokunulmaz)
-update public.levels l set perk = x.perk
-  from (values (2, 'event_min2'), (3, 'event_plus1'), (4, 'quiz_mult'), (5, 'unlimited_lives')) as x(lvl, perk)
- where l.level = x.lvl and l.perk is null;
--- Seviye adları şehir ve sosyallik temalı oldu (eski "Kat Görevlisi" adı moderatörün görünen adıyla karışıyordu).
--- Yalnızca eski varsayılan adlar değişir; moderatörün sonradan verdiği bir ad varsa ona dokunulmaz.
-update public.levels l set name = x.new_name
-  from (values (1, 'Yeni Kat', 'Yeni Komşu'), (2, 'Kat Sakini', 'Mahalle Dostu'), (3, 'Kat Görevlisi', 'Sokak Kâşifi'),
-               (4, 'Çatı Katı', 'Meydan Müdavimi'), (5, '41. Kat', 'Şehrin Yıldızı')) as x(lvl, old_name, new_name)
- where l.level = x.lvl and l.name = x.old_name;
--- Puanla premium kazanılmaz: eski sürümden kalan seviye ödülleri kaldırılır
-update public.levels set reward_package = null where reward_package is not null;
-
-insert into public.app_settings (key, value, description) values
-  ('post_requires_premium', 'false', 'Akışta yeni gönderi yazmak için abonelik gerekli mi? (Paket 31: herkes yazabilir; abone ayrıcalığı özel mesaj başlatmak)'),
-  ('games_require_premium', 'false', 'Oyun odalarına katılmak için abonelik gerekli mi? (varsayılan: hayır, herkes katılır)'),
-  ('event_fee_waived_for_premium', 'true', 'Aboneler moderatörün (41. Kat Sosyal) ücretli etkinliklerinden muaf mı?'),
-  ('free_monthly_event_quota', '1', 'Ücretsiz üyenin ayda açabileceği etkinlik sayısı (moderatör sınırsız)'),
-  ('free_monthly_game_quota', '3', 'Ücretsiz üyenin ayda başlatabileceği oyun sayısı, çekiliş hariç (moderatör sınırsız)'),
-  ('premium_monthly_event_quota', '4', 'Abonenin ayda açabileceği etkinlik sayısı (moderatör sınırsız)'),
-  ('level_quiz_mult_pct', '120', 'Seviye ödülü (quiz_mult): Bilgi Yarışması puanı ve puan sınırları çarpanı, yüzde (120 = 1.2 kat)'),
-  ('premium_monthly_game_quota', '10', 'Abonenin ayda başlatabileceği oyun sayısı, çekiliş hariç (moderatör sınırsız)'),
-  ('room_presence_grace_seconds', '45', 'Oyun ekranından uzaklaşan (uygulamayı kapatan, arka plana alan, bağlantısı kopan) oyuncu kaç saniye sonra oyundan atılır? Oda sahibi ayrılırsa oda kapanır.'),
-  ('vv_auto_reveal_seconds', '40', 'Vampir–Köylü Otomatik Oyun: roller gösterilirken en çok kaç saniye beklenir (herkes "gördüm" derse daha önce biter)'),
-  ('vv_auto_night_seconds', '45', 'Vampir–Köylü Otomatik Oyun: gece süresi (saniye)'),
-  ('vv_auto_discuss_seconds', '120', 'Vampir–Köylü Otomatik Oyun: sabah konuşma süresi (saniye); sonra oylama başlar'),
-  ('vv_auto_vote_seconds', '60', 'Vampir–Köylü Otomatik Oyun: oylama süresi (saniye)'),
-  ('vv_auto_result_seconds', '12', 'Vampir–Köylü Otomatik Oyun: oylama sonucunun ekranda kalma süresi (saniye)'),
-  ('vv_force_end_seconds', '60', 'Vampir–Köylü: üye oda sahibi geceyi ya da oylamayı bu kadar saniye dolmadan erken bitiremez (moderatör her zaman bitirebilir)'),
-  ('feed_archive_days', '365', 'Akış arşivi: haftalık sıfırlamadan sonra eski gönderiler kaç gün saklanır (resmi talepler için; en az 30)'),
-  ('feed_thread_max', '5', 'Zincir gönderi: bir zincirde en çok kaç parça olur (ilk gönderi dahil)'),
-  ('vv_whisper_limit', '3', 'Vampir–Köylü: bir oyuncunun bir oyunda gönderebileceği fısıltı sayısı (cevap da hak yer; 0 = kapalı)'),
-  ('premium_events_can_charge', 'true', 'Üye (ücretsiz ya da abone) açtığı etkinlik için ücret belirleyebilir mi? (ücret uygulamada tahsil edilmez, sadece bilgidir)'),
-  ('game_place_required', 'true', 'Yan yana oynanan bir oyun açılırken haritadan bölge (petek) seçmek ve adres tarifi yazmak zorunlu mu? Bilgi Yarışması ve çekiliş hariç.'),
-  ('game_join_max_cell_distance', '1', 'Yan yana oyunda odaya girenin bölgesi odanın bölgesinden en çok kaç petek uzakta olabilir? (0 = aynı petek, -1 = kontrol kapalı). Telefonun bildirdiği kaba bölge kontrol edilir.'),
-  ('game_location_required', 'true', 'Yan yana oynanan bir oyunu açarken ya da oyuna girerken telefonun bulunduğu bölge (bir kez) alınmak zorunda mı? Bilgi Yarışması ve çekiliş hariç. Konum sürekli izlenmez.'),
-  ('rank_weekly_refresh', 'true', 'Sıralama tabloları haftada bir (pazartesi 00:00, ay başında da) güncellensin mi? Kapalıysa tablolar anında güncellenir. Puanlar her durumda anında hesaba yazılır.'),
-  ('titles_enabled', 'true', 'Oyun şampiyonu ünvanları açık mı? Her oyunun geçen ayki 1.''si, içinde bulunulan ay boyunca "<Oyun> Şampiyonu" ünvanını taşır.'),
-  ('title_min_plays', '5', 'Ünvan için bir oyunda o ay puan getiren en az kaç oyun oynamış olmak gerekir?'),
-  ('title_source_months_ago', '1', 'Ünvanlar kaç ay önceki sıralamadan verilir? 1 = geçen ayın 1.''si (normal). 0 yalnızca DENEME içindir: ünvanlar bu ayın şimdiki sıralamasına göre görünür.'),
-  ('venue_rating_requires_visit', 'true', 'Mekâna puan/yorum vermek için o mekânın kodunu en az 1 kez kullanmış olmak gerekir mi?'),
-  ('sponsor_code_valid_hours', '24', 'Sponsorun oluşturduğu oyun hakkı kodu kaç saat geçerli?'),
-  ('sponsor_code_default_quota', '30', 'Sponsor hesabın ayda oluşturabileceği oyun hakkı kodu sayısı (moderatör her mekân için ayrıca değiştirebilir)'),
-  ('sponsor_credit_valid_days', '30', 'Sponsor kodundan kazanılan ek oyun hakkı kullanılmazsa kaç gün sonra sona erer? (Kullanılmamış hak varken yeni kod alınamaz.)')
-on conflict (key) do update set description = excluded.description;
-
--- Üyelik düzeni (bir kez uygulanır): ücretsiz üye ayda 1 etkinlik / 3 oyun, premium ayda 4 etkinlik / 10 oyun,
--- oyunlara herkes katılır. Sonradan değiştirdiğin değerleri şemayı tekrar çalıştırmak ezmez.
-do $$ begin
-  if not exists (select 1 from public.app_settings where key = 'seed_membership_v2') then
-    update public.app_settings set value = '4' where key = 'premium_monthly_event_quota';
-    update public.app_settings set value = '10' where key = 'premium_monthly_game_quota';
-    update public.app_settings set value = '1' where key = 'free_monthly_event_quota';
-    update public.app_settings set value = '3' where key = 'free_monthly_game_quota';
-    update public.app_settings set value = 'false' where key = 'games_require_premium';
-    insert into public.app_settings (key, value, description)
-    values ('seed_membership_v2', 'true', 'Teknik not: üyelik kotaları ilk kez bu düzene getirildi, silme');
-  end if;
-end $$;
-
-insert into public.game_types (key, title, description, min_players, max_players, enabled, sort_order) values
-  ('vampire_villager', 'Vampir–Köylü', 'Gizli roller, gece ve gündüz turları', 5, 30, false, 1),
-  ('find_killer', 'Katili Bul', 'İpuçları ve rollerle gizem çözme', 5, 30, false, 2),
-  ('quiz', 'Bilgi Yarışması', 'Herkes telefonundan cevaplar', 2, 100, false, 3),
-  ('taboo', 'Tabu', 'Yasaklı kelimelerle anlat', 4, 30, false, 4),
-  ('charades', 'Sessiz Sinema', 'Konuşmadan anlat, takımın bilsin', 4, 30, false, 5),
-  ('raffle', 'Çekiliş', 'Etkinlikte moderatör tarafından yapılır', 1, 500, false, 6)
-on conflict (key) do nothing;
-
--- Çekiliş yan yana oynanmaz ve hak harcamaz. Bilgi Yarışması uzaktan oynanır: yan yana kuralları yok, oyun hakkından yemez.
-update public.game_types set presence_required = false, uses_quota = false where key = 'raffle';
-update public.game_types set remote = true, uses_quota = false, presence_required = false,
-       description = 'Uzaktan oynanır: herkes kendi telefonundan cevaplar'
- where key = 'quiz';
-
--- Çekiliş ekranı hazır olduğu için çekiliş ilk kurulumda (bir kez) açılır.
--- Sonradan kapatırsan şemayı tekrar çalıştırmak onu yeniden açmaz.
-do $$ begin
-  if not exists (select 1 from public.app_settings where key = 'seed_raffle_enabled') then
-    update public.game_types set enabled = true where key = 'raffle';
-    insert into public.app_settings (key, value, description)
-    values ('seed_raffle_enabled', 'true', 'Teknik not: çekiliş ilk kurulumda bir kez açıldı, silme');
-  end if;
-end $$;
-
--- Vampir–Köylü ekranı hazır olduğu için oyun ilk kurulumda (bir kez) açılır.
--- Sonradan kapatırsan şemayı tekrar çalıştırmak onu yeniden açmaz.
-do $$ begin
-  if not exists (select 1 from public.app_settings where key = 'seed_vampire_enabled') then
-    update public.game_types set enabled = true where key = 'vampire_villager';
-    insert into public.app_settings (key, value, description)
-    values ('seed_vampire_enabled', 'true', 'Teknik not: Vampir–Köylü ilk kurulumda bir kez açıldı, silme');
-  end if;
-end $$;
-
--- Eski sürümde kurulmuş satırların açıklaması da güncellensin
-update public.game_types set description = 'Etkinlikte moderatör tarafından yapılır'
- where key = 'raffle' and description like '%admin%';
-
--- Harita ayarları (moderatör değiştirebilir; şemayı tekrar çalıştırmak değerleri ezmez)
-insert into public.app_settings (key, value, description) values
-  ('map_public', 'false', 'Harita herkese açık mı? Kapalıyken yalnızca moderatörler görür. KVKK metinleri hazır olmadan ve yeterli üye olmadan açma.'),
-  ('map_min_people', '5', 'Bir petek en az kaç FARKLI üye olunca renklenir? (gizlilik eşiği; deneme dışında 5’in altına indirme)'),
-  ('map_delay_minutes', '20', 'Yer ve oyun konumu haritaya en az kaç dakika sonra yansır?'),
-  ('map_window_days', '7', 'Artık kullanılmıyor: yoğunluk her ilçede haftada bir, map_district_reset tablosundaki günde sıfırlanır.'),
-  ('map_presence_public', 'true', 'Petekteki "son dakikalarda burada bildirim yapan kişi sayısı" üyelere açık mı? (moderatör her zaman görür)'),
-  ('map_level2_score', '12', 'Harita yoğunluğu: 2. seviye (Çok hareketli) için ağırlıklı puan (Buradayım/oyun/etkinlik/gönderi 1, Bilgi Yarışması 0,5)'),
-  ('map_level3_score', '25', 'Harita yoğunluğu: 3. seviye (En hareketli) için ağırlıklı puan'),
-  ('map_presence_minutes', '20', 'Petek kişi sayısı son kaç dakikadaki konum bildirimlerine bakar? (5–120)')
-on conflict (key) do update set description = excluded.description;
-
--- Puan dengesi v3 (bir kez uygulanır): etkinlikler oyunlardan daha çok puan getirir (etkinlik daha seyrek yapılır).
--- Katılım 30 (41. Kat Özel 40), etkinlik açma 15, gelen her katılımcı için düzenleyene 10 (ayda en çok 250).
--- Oyun puanları aynı kalır (1. sıra en çok 12). Harita 20 dakika gecikmeli güncellenir.
-do $$ begin
-  if not exists (select 1 from public.app_settings where key = 'seed_points_v3') then
-    update public.app_settings set value = '30' where key = 'pts_event_attend';
-    update public.app_settings set value = '40' where key = 'pts_event_attend_official';
-    update public.app_settings set value = '15' where key = 'pts_event_create';
-    update public.app_settings set value = '10' where key = 'pts_event_host_per_attendee';
-    update public.app_settings set value = '250' where key = 'pts_event_host_month_cap';
-    update public.app_settings set value = '20' where key = 'map_delay_minutes';
-    insert into public.app_settings (key, value, description)
-    values ('seed_points_v3', 'true', 'Teknik not: puan dengesi v3 ve 20 dk harita gecikmesi bir kez uygulandı, silme');
-  end if;
-end $$;
-
--- Puan dengesi v4 (Paket 21, bir kez uygulanır): kalabalık oyun ve kalabalık etkinlik daha çok puan getirir.
--- Oyun: 1. sıra en çok 24 (kalabalık çarpanı), ayda 15 oyun. Katılım: 4–9 kişi 30 · 10–19 35 · 20–39 40 · 40+ 50,
--- 41. Kat Özel her basamakta +10. Bilgi Yarışması ve düzenleyen puanı değişmez.
-do $$ begin
-  if not exists (select 1 from public.app_settings where key = 'seed_points_v4') then
-    update public.app_settings set value = '24' where key = 'pts_game_top_cap';
-    update public.app_settings set value = '15' where key = 'pts_game_month_cap';
-    update public.app_settings set value = '30' where key = 'pts_event_attend';
-    insert into public.app_settings (key, value, description)
-    values ('seed_points_v4', 'true', 'Teknik not: puan dengesi v4 (kalabalık çarpanı) bir kez uygulandı, silme');
-  end if;
-end $$;
-
--- Paket 24 (bir kez): Bilgi Yarışması günlük oyun limiti 25; aynı kişinin etkinliğinden katılım puanı 2 günde bir
-do $$ begin
-  if not exists (select 1 from public.app_settings where key = 'seed_p24') then
-    update public.app_settings set value = '25' where key = 'quiz_daily_games';
-    update public.app_settings set value = '2' where key = 'pts_event_attend_host_days';
-    insert into public.app_settings (key, value, description)
-    values ('seed_p24', 'true', 'Teknik not: Paket 24 ayarları (günlük 25 oyun, 2 gün kuralı) bir kez uygulandı, silme');
-  end if;
-end $$;
-
--- Paket 31 (bir kez): akışta herkes gönderi yazabilir (abone ayrıcalığı artık özel mesaj başlatmak)
-do $$ begin
-  if not exists (select 1 from public.app_settings where key = 'seed_p31') then
-    update public.app_settings set value = 'false' where key = 'post_requires_premium';
-    insert into public.app_settings (key, value, description)
-    values ('seed_p31', 'true', 'Teknik not: Paket 31 ayarı (akışta herkes yazar) bir kez uygulandı, silme');
-  end if;
-end $$;
-
--- Paket 28 (bir kez): Vampir–Köylü'den günde en çok 5 oyundan puan
-do $$ begin
-  if not exists (select 1 from public.app_settings where key = 'seed_p28') then
-    update public.app_settings set value = '5' where key = 'pts_game_daily_cap';
-    insert into public.app_settings (key, value, description)
-    values ('seed_p28', 'true', 'Teknik not: Paket 28 ayarı (günde 5 Vampir–Köylü oyunundan puan) bir kez uygulandı, silme');
-  end if;
-end $$;
-insert into public.app_settings (key, value, description) values
-  ('leader_monthly_event_quota', '8', 'Etkinlik Lideri onaylanan üyenin ayda açabileceği etkinlik sayısı (abone ya da ücretsiz hakkından büyükse geçerli)')
-on conflict (key) do update set description = excluded.description;
-
--- Harita yoğunluğu ve "Burada kim var" üyelere açılır (bir kez uygulanır; sonra değeri değiştirebilirsin)
-do $$ begin
-  if not exists (select 1 from public.app_settings where key = 'seed_map_open_v1') then
-    update public.app_settings set value = 'true' where key in ('map_public', 'map_presence_public');
-    insert into public.app_settings (key, value, description)
-    values ('seed_map_open_v1', 'true', 'Teknik not: harita üyelere bir kez açıldı, silme');
-  end if;
-end $$;
-
--- Moderatörün gönderi ve yorumları "Moderatör" adıyla görünür (rumuz yerine; eski "Kat Görevlisi" adı da değişir)
-update public.posts p set alias = 'Moderatör'
-  from public.post_authors a join public.profiles pr on pr.id = a.author_id
- where a.post_id = p.id and pr.role = 'admin' and not p.by_event and p.alias <> 'Moderatör';
-update public.comments c set alias = 'Moderatör'
-  from public.comment_authors a join public.profiles pr on pr.id = a.author_id
- where a.comment_id = c.id and pr.role = 'admin' and c.alias <> 'Moderatör';
-
--- Katılım kodu girişi etkinlik başlamadan 5 dakika önce açılır (bir kez uygulanır; sonra değeri değiştirebilirsin)
-do $$ begin
-  if not exists (select 1 from public.app_settings where key = 'seed_checkin_5min') then
-    update public.app_settings set value = '5' where key = 'event_checkin_open_minutes_before';
-    insert into public.app_settings (key, value, description)
-    values ('seed_checkin_5min', 'true', 'Teknik not: kod girişi 5 dakikaya bir kez çekildi, silme');
-  end if;
-end $$;
-insert into public.app_settings (key, value, description) values
-  ('game_invite_radius', '2', 'Oyun daveti: oda sahibi, odanın peteğine en çok kaç petek uzaklıkta son saatlerde görülen (davet almayı açmış) üyelere davet gönderebilir?'),
-  ('game_invite_hours', '3', 'Oyun daveti: "yakındaki" sayılmak için üyenin son kaç saatte o bölgede konum bildirmiş olması gerekir?'),
-  ('team_max_size', '8', 'Etkinlik ekibi en çok kaç kişi olabilir?'),
-  ('event_share_minutes_before', '60', 'Etkinlik akışta, başlamasına en çok kaç dakika kala paylaşılabilir? (yalnızca bu son süre içinde)'),
-  ('event_daily_join_limit', '2', 'Bir üye aynı gün en çok kaç etkinliğe katılabilir? (aynı kategoriden her gün en çok 1)'),
-  ('cell_feed_max_distance', '1', 'Petek akışını okumak ve yazmak için peteğe en çok kaç petek uzaklıkta olunmalı?'),
-  ('treasure_pts_kolay', '25', 'Hazine Avı: kolay hazinenin puanı'),
-  ('treasure_pts_orta', '60', 'Hazine Avı: orta hazinenin puanı'),
-  ('treasure_pts_zor', '120', 'Hazine Avı: zor hazinenin puanı'),
-  ('treasure_pts_imkansiz', '500', 'Hazine Avı: imkânsız hazinenin puanı'),
-  ('treasure_monthly_limit', '3', 'Hazine Avı: bir üye ayda en çok kaç hazine bulabilir?'),
-  ('treasure_month_max', '300', 'Hazine Avı: ayda en çok kaç hazine kodu gizlenebilir?'),
-  ('treasure_find_distance', '1', 'Hazine Avı: kodu girerken hazinenin peteğine en çok kaç petek uzaklıkta olunmalı?'),
-  ('concert_duration_hours', '2', 'Konser & Festival etkinliği başlangıçtan kaç saat sonra listeden kalkar?'),
-  ('pts_event_rate', '2', 'Etkinlik puanlama: puan veren kaç puan kazanır?'),
-  ('host_close_minutes_after', '45', 'Düzenleyen etkinliğini başlangıçtan en erken kaç dakika sonra kapatabilir?'),
-  ('pts_event_rate_month', '10', 'Etkinlik puanlama: puan veren ayda en çok kaç puanlamadan puan kazanır?'),
-  ('pts_event_rated_5', '4', 'Etkinlik puanlama: 5 yıldız alan düzenleyen kaç puan kazanır? (konser hariç)'),
-  ('pts_event_rated_4', '2', 'Etkinlik puanlama: 4 yıldız alan düzenleyen kaç puan kazanır? (konser hariç)'),
-  ('pts_event_rated_month_cap', '80', 'Etkinlik puanlama: düzenleyen puanlamalardan ayda en çok kaç puan kazanır?'),
-  ('concert_checkin_minutes_after', '15', 'Konser & Festival: kod girişi başlangıçtan en geç kaç dakika sonrasına kadar açık?')
-on conflict (key) do update set description = excluded.description;
-
--- Uygulama metinleri (Profil > Uygulama ve kayıt ekranında açılır). Değerleri Table Editor > app_settings'ten
--- düzenle: metin tırnak içinde yazılır, örn. "Bize destek@ornek.com adresinden ulaşabilirsin." Şemayı tekrar
--- çalıştırmak yazdığın metni ezmez.
-insert into public.app_settings (key, value, description) values
-  ('legal_terms', '"Kullanıcı sözleşmesi metni henüz eklenmedi."', 'Kullanıcı sözleşmesi metni (Profil > Uygulama)'),
-  ('legal_consent', '"Açık rıza metni henüz eklenmedi."', 'Açık rıza metni (Profil > Uygulama)'),
-  ('legal_kvkk', '"KVKK aydınlatma metni henüz eklenmedi."', 'KVKK aydınlatma metni (Profil > Uygulama)'),
-  ('signup_one_per_device', 'true', 'Her telefondan yalnızca 1 hesap açılabilsin mi? (Deneme için geçici olarak false yapılabilir; yayında true olmalı.)'),
-  ('support_contact', '"İletişim bilgisi henüz eklenmedi."', 'Bize ulaşın: e-posta, telefon ya da sosyal medya adresi. Şifresini ve kurtarma kelimelerini kaybeden ya da yasaklanan üyeler buradan ulaşır.')
-on conflict (key) do update set description = excluded.description;

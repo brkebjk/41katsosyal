@@ -47,7 +47,6 @@ import { SoundToggle } from '@/components/SoundToggle';
 import { InfoCard, useElapsedSeconds } from '@/components/VampireParts';
 import { G, GameButton, Glass, NextRoomButton, Pill, SkipRound, ToolButton } from '@/components/VampireStage';
 import { confirmAction, notify, showDialog } from '@/lib/dialog';
-import { crewTargetStatus, inviteToCrew, type CrewTarget } from '@/lib/crew';
 import { FRIEND_CONSEQUENCE, FRIEND_WARNING, sendRequestInRoom } from '@/lib/friends';
 import { HOW_TO_PLAY, VAMPIRE_RANK_ITEM } from '@/lib/gameInfo';
 import { vampireImages } from '@/lib/images';
@@ -187,18 +186,6 @@ function Game({ roomId }: { roomId: string }) {
   const [bounce, setBounce] = useState<{ to: string; nonce: number } | null>(null);
   const [sheet, setSheet] = useState<'role' | 'result' | 'players' | null>(null);
   const [card, setCard] = useState<string | null>(null);
-  /** Oyuncu penceresi açılınca: bu kişiyi klanıma davet edebilir miyim? (arkadaşsak) */
-  const [crewInfo, setCrewInfo] = useState<{ id: string; t: CrewTarget } | null>(null);
-  useEffect(() => {
-    if (!card) return;
-    let alive = true;
-    void crewTargetStatus(roomId, card).then((t) => {
-      if (alive && t) setCrewInfo({ id: card, t });
-    });
-    return () => {
-      alive = false;
-    };
-  }, [card, roomId]);
   const [kickSeen, setKickSeen] = useState<string | null>(null);
   const [topBottom, setTopBottom] = useState(56);
   const [resultClosed, setResultClosed] = useState(-1);
@@ -474,7 +461,8 @@ function Game({ roomId }: { roomId: string }) {
     avatar: p.avatar ?? null,
     is_alive: p.is_alive,
     left: p.left,
-    is_host: p.is_host,
+    // Uzaktan odalarda oda sahipliği yoktur: yıldız yalnızca yan yana odada
+    is_host: p.is_host && !view.remote,
     is_me: p.is_me,
     role: p.role as unknown as SkRole | null,
     team: null,
@@ -504,7 +492,7 @@ function Game({ roomId }: { roomId: string }) {
       label = (view.lobby_ready ?? []).includes(p.id)
         ? { text: '✓ Hazır', color: '#34D399' }
         : { text: '… bekliyor', color: 'rgba(255,255,255,0.6)' };
-    } else if (phase === 'lobby' && p.is_host) label = { text: '⭐ Oda sahibi', color: '#FFB703' };
+    } else if (phase === 'lobby' && p.is_host && !view.remote) label = { text: '⭐ Oda sahibi', color: '#FFB703' };
     const how = p.left ? 'left' : outHow.get(p.id) ?? 'night';
     const deadLabel = p.left ? 'Ayrıldı' : !p.is_alive ? (how === 'vote' ? 'Çıkarıldı' : 'Isırıldı') : null;
     const selectable = validFor(activeSlot, p) && (activeSlot !== 'vote' || phase === 'vote');
@@ -570,20 +558,8 @@ function Game({ roomId }: { roomId: string }) {
     setCard(p.id);
   }
 
-  function cardAction(key: 'kick' | 'friend' | 'voice' | 'crew', id: string) {
+  function cardAction(key: 'kick' | 'friend' | 'voice', id: string) {
     setCard(null);
-    if (key === 'crew') {
-      void act('crew', async () => {
-        const r = await inviteToCrew(id);
-        if (!r.error) {
-          void notify('Klan daveti gönderildi', `${plain(id)} kabul edince klanına katılır. Klanını Profil > Klanım’dan yönetebilirsin.`, {
-            icon: null,
-          });
-        }
-        return r;
-      });
-      return;
-    }
     if (key === 'kick') {
       void act('kick', () => kickStart(roomId, id));
     } else if (key === 'friend') {
@@ -765,7 +741,7 @@ function Game({ roomId }: { roomId: string }) {
               const code = view.code as string;
               const url = Linking.createURL('/kopekbaligi-katil', { queryParams: { kod: code } });
               void Share.share({
-                message: `41. Kat Sosyal'de Vampir–Köylü oynuyoruz, gel! 🧛\n${url}\nUygulamada Oyunlar > Kodla katıl: ${code}`,
+                message: `PeopleHere'de Vampir–Köylü oynuyoruz, gel! 🧛\n${url}\nUygulamada Oyunlar > Kodla katıl: ${code}`,
               }).catch(() => {});
             }}
           />
@@ -781,7 +757,7 @@ function Game({ roomId }: { roomId: string }) {
         ) : null}
         <Text style={styles.pText}>
           {view.match
-            ? 'Herkes rumuzuyla görünür. Her oyunun aylık puan hedefi var; yan yana oyun 7 kat puan verir.'
+            ? 'Herkes rumuzuyla görünür. Her oyunun aylık puan hedefi var; yan yana oyunun hedefi daha yüksektir.'
             : `${view.code ? `Oda ID ${view.code}. ` : ''}Puan aylık hedefe kadar yazılır.`}
         </Text>
         {!view.match && (me.is_host || me.is_admin) && present.length >= view.min_players ? (
@@ -1249,10 +1225,10 @@ function Game({ roomId }: { roomId: string }) {
     const handOver = me.is_host && me.is_player && (roomIsMatch || (roomIsRemote && !lobby) || (roomIsRematch && lobby));
     const copy = handOver
       ? lobby
-        ? { title: 'Odadan ayrıl', msg: 'Bekleme odasından çıkarsın; oda sahipliği başka bir oyuncuya geçer.', ok: 'Odadan ayrıl' }
+        ? { title: 'Odadan ayrıl', msg: 'Bekleme odasından çıkarsın. Odada kimse kalmazsa oda kapanır.', ok: 'Odadan ayrıl' }
         : {
             title: 'Oyundan ayrıl',
-            msg: 'Ayrılırsan elenirsin ve geri dönemezsin. Oyun sürer, oda sahipliği başka bir oyuncuya geçer.',
+            msg: 'Ayrılırsan elenirsin ve geri dönemezsin. Oyun diğer oyuncularla sürer.',
             ok: 'Oyundan ayrıl',
           }
       : me.is_host
@@ -1286,15 +1262,9 @@ function Game({ roomId }: { roomId: string }) {
     !me.left &&
     (phase === 'lobby' || me.is_alive) &&
     !cardPlayer.left;
-  const crewNow = cardPlayer && crewInfo?.id === cardPlayer.id ? crewInfo.t : null;
-  const cardOpts: { key: 'kick' | 'friend' | 'voice' | 'crew'; label: string; tone: CardButton['tone']; disabled?: boolean }[] = [
+  const cardOpts: { key: 'kick' | 'friend' | 'voice'; label: string; tone: CardButton['tone']; disabled?: boolean }[] = [
     ...(cardKick ? [{ key: 'kick' as const, label: `🚪 Atma oylaması başlat (${kk?.starts_left ?? 0} hak)`, tone: 'danger' as const }] : []),
-    // Arkadaşsanız arkadaş ekle yerine ekibe davet
-    ...(crewNow?.friend
-      ? crewNow.can_invite
-        ? [{ key: 'crew' as const, label: '👥 Klana davet et', tone: 'primary' as const, disabled: busy === 'crew' }]
-        : []
-      : [{ key: 'friend' as const, label: '➕ Arkadaş ekle', tone: 'primary' as const, disabled: busy === 'friend' }]),
+    { key: 'friend', label: '➕ Arkadaş ekle', tone: 'primary', disabled: busy === 'friend' },
     ...(view.remote ? [{ key: 'voice' as const, label: '🔊 Ses mesajını şikâyet et', tone: 'ghost' as const }] : []),
   ];
   // Dedektif: sabah olunca gecenin sonucu kendiliğinden açılır
@@ -1639,7 +1609,7 @@ function Game({ roomId }: { roomId: string }) {
                   : null
               }
               buttons={cardOpts}
-              onButton={(key) => cardAction(key as 'kick' | 'friend' | 'voice' | 'crew', cardPlayer.id)}
+              onButton={(key) => cardAction(key as 'kick' | 'friend' | 'voice', cardPlayer.id)}
               onClose={() => setCard(null)}
             />
           ) : null}

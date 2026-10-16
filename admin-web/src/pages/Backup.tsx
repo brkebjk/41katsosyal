@@ -11,7 +11,7 @@ type Backup = {
   tables: Record<string, unknown[]>;
 };
 type Sealed = {
-  format: '41kat-yedek-sifreli-v1';
+  format: 'peoplehere-yedek-sifreli-v1';
   created_at: string;
   project: string;
   counts: Record<string, number>;
@@ -27,7 +27,7 @@ const RESULT: Record<string, string> = {
   not_configured: 'Yedekleme işlevi sunucuda eksik kurulmuş.',
   forbidden: 'Bu işlem yalnızca moderatörler içindir.',
   web_panel_only: 'Yedekleme yalnızca web panelden yapılabilir. Çıkış yapıp yeniden gir.',
-  invalid_backup: 'Bu dosya geçerli bir 41. Kat yedeği değil.',
+  invalid_backup: 'Bu dosya geçerli bir PeopleHere yedeği değil.',
   wrong_project: 'Bu yedek başka bir projeye (başka bir Supabase veritabanına) ait; yüklenemez.',
   backup_has_no_members: 'Yedekte hiç üye yok; yüklenmedi.',
   invalid_request: 'İstek anlaşılamadı.',
@@ -62,7 +62,7 @@ async function seal(b: Backup, password: string): Promise<Sealed> {
     await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv as BufferSource }, key, new TextEncoder().encode(JSON.stringify(b))),
   );
   return {
-    format: '41kat-yedek-sifreli-v1',
+    format: 'peoplehere-yedek-sifreli-v1',
     created_at: b.created_at,
     project: b.project,
     counts: b.counts,
@@ -120,7 +120,7 @@ export function BackupPage({ onNotice }: { onNotice: (n: Notice) => void }) {
     if (pass.length < 10) return onNotice({ text: 'Şifre en az 10 karakter olmalı.', error: true });
     if (pass !== pass2) return onNotice({ text: 'Şifreler aynı değil.', error: true });
     setBusy('export');
-    const ok = await exportTo(pass, '41kat-yedek');
+    const ok = await exportTo(pass, 'peoplehere-yedek');
     setBusy(null);
     if (ok) {
       setLast(new Date().toISOString());
@@ -133,10 +133,10 @@ export function BackupPage({ onNotice }: { onNotice: (n: Notice) => void }) {
     if (!f) return;
     try {
       const s = JSON.parse(await f.text()) as Sealed;
-      if (s.format !== '41kat-yedek-sifreli-v1') throw new Error('format');
+      if (s.format !== 'peoplehere-yedek-sifreli-v1') throw new Error('format');
       setFile(s);
     } catch {
-      onNotice({ text: 'Bu dosya bir 41. Kat yedek dosyası değil.', error: true });
+      onNotice({ text: 'Bu dosya bir PeopleHere yedek dosyası değil.', error: true });
     }
   }
 
@@ -154,7 +154,7 @@ export function BackupPage({ onNotice }: { onNotice: (n: Notice) => void }) {
       return onNotice({ text: 'Şifre yanlış ya da dosya bozuk.', error: true });
     }
     // Önce şu anki durumun yedeği alınır (aynı şifreyle): geri yükleme beklenmedik sonuç verirse buna dönülebilir
-    const safe = await exportTo(rpass, '41kat-yedek-geri-yukleme-oncesi');
+    const safe = await exportTo(rpass, 'peoplehere-yedek-geri-yukleme-oncesi');
     if (!safe) {
       setBusy(null);
       return;

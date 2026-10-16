@@ -24,16 +24,16 @@ export type ImageSpec = {
 export const imageSpecs = {
   logo: {
     label: 'Logo',
-    size: '556x865',
+    size: '909x726',
     transparent: true,
-    usage: 'Giriş ekranı (altında SOSYAL yazısıyla)',
+    usage: 'Giriş ekranı (işaret ve PeopleHere yazısı; koyu zemin üstünde)',
     file: 'logo.png',
   },
   logoMark: {
     label: 'Logo işareti',
-    size: '558x849',
+    size: '491x496',
     transparent: true,
-    usage: 'Akış başlığı (yalnızca 41 ve kule, yazısız)',
+    usage: 'Akış başlığı ve sürüm bilgisi (yalnızca işaret, yazısız)',
     file: 'logo-isaret.png',
   },
   loginBackground: {
@@ -63,8 +63,8 @@ export type ImageKey = keyof typeof imageSpecs;
 
 /** Görsellerin en/boy oranı (genişlik / yükseklik). Ekranda boyutu verirken işe yarar. */
 export const imageAspect: Record<ImageKey, number> = {
-  logo: 556 / 865,
-  logoMark: 558 / 849,
+  logo: 909 / 726,
+  logoMark: 491 / 496,
   loginBackground: 944 / 1680,
   emptyFeed: 800 / 546,
   subscriptionBadge: 1,

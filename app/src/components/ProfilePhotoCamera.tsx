@@ -65,7 +65,7 @@ export function ProfilePhotoCamera({ onDone, onClose }: { onDone: (uri: string) 
         ) : (
           <>
             <Text style={styles.permHint}>
-              Kamera izni kapalı. Telefonun ayarlarından 41. Kat Sosyal için kamera iznini açabilirsin.
+              Kamera izni kapalı. Telefonun ayarlarından PeopleHere için kamera iznini açabilirsin.
             </Text>
             <PrimaryButton label="Ayarları aç" onPress={() => void Linking.openSettings()} />
           </>

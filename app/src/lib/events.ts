@@ -14,7 +14,7 @@ export type EventItem = {
   starts_at: string;
   capacity: number;
   fee_amount: number;
-  /** Moderatörün açtığı etkinliklerde "41. Kat Sosyal", üyenin açtığında üyenin gerçek adı */
+  /** Moderatörün açtığı etkinliklerde "PeopleHere", üyenin açtığında üyenin gerçek adı */
   host_name: string;
   /** Etkinliği açan üyenin geçerli oyun şampiyonu ünvanı (varsa); moderatör etkinliklerinde boştur */
   host_title: string | null;
@@ -23,7 +23,7 @@ export type EventItem = {
   is_registered: boolean;
   /** Ücretli etkinlikte benim için ücret alınmayacaksa true (abonelik muafiyeti) */
   fee_waived: boolean;
-  /** Moderatörün açtığı ("41. Kat Özel") etkinlik. Sunucu hesaplar; ad taklit edilemez. */
+  /** Moderatörün açtığı ("PeopleHere Özel") etkinlik. Sunucu hesaplar; ad taklit edilemez. */
   is_official: boolean;
   category: EventCategory;
   /** 0 = yaş sınırı yok, 16 / 18 / 21 */
@@ -190,9 +190,10 @@ export function pointsNoteText(note: string | null | undefined): string | null {
   return null;
 }
 
-export async function listEvents(): Promise<{ data: EventItem[]; error: string | null }> {
+/** city: hangi şehrin etkinlikleri (boş = kendi şehrim; başka şehir = ziyaret) */
+export async function listEvents(city?: string | null): Promise<{ data: EventItem[]; error: string | null }> {
   if (!supabase) return { data: [], error: BACKEND_MISSING };
-  const { data, error } = await supabase.rpc('list_events');
+  const { data, error } = await supabase.rpc('list_events', city ? { p_city: city } : {});
   if (error) return { data: [], error: eventError(error.message) };
   const rows = (data ?? []) as EventItem[];
   // numeric alanlar bazı durumlarda metin olarak gelebilir
@@ -265,7 +266,7 @@ export const EVENT_COMMENT_MAX = 300;
 export type EventComment = {
   id: string;
   event_id: string;
-  /** Üyelerde gerçek ad; moderatör yorumlarında "41. Kat Sosyal" */
+  /** Üyelerde gerçek ad; moderatör yorumlarında "PeopleHere" */
   author_name: string;
   is_official: boolean;
   body: string;
@@ -386,7 +387,7 @@ export function cleanEventCode(text: string): string {
 }
 
 /**
- * Etkinliğin görseli haritada gösterilir mi? Yalnızca Konser & Festival ve 41. Kat Özel etkinliklerde, görsel
+ * Etkinliğin görseli haritada gösterilir mi? Yalnızca Konser & Festival ve PeopleHere Özel etkinliklerde, görsel
  * moderatör onayındayken değil. (Etkinlikler sekmesindeki görsel bundan etkilenmez.)
  */
 export function showsImageOnMap(
@@ -474,7 +475,7 @@ export async function setEventTag(eventId: string, tag: string | null): Promise<
   return callRpcVoid('admin_set_event_tag', { p_event_id: eventId, p_tag: tag }, EVENT_TEXT);
 }
 
-/** Moderatör: etkinliği 41. Kat Özel mi yoksa normal olarak mı yayınlıyor. */
+/** Moderatör: etkinliği PeopleHere Özel mi yoksa normal olarak mı yayınlıyor. */
 export async function setEventOfficial(eventId: string, official: boolean): Promise<Result> {
   return callRpcVoid('admin_set_event_official', { p_event_id: eventId, p_official: official }, EVENT_TEXT);
 }

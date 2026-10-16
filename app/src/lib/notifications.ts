@@ -15,8 +15,6 @@ export type NotificationKind =
   | 'mention'
   | 'dm'
   | 'room_msg'
-  | 'crew_invite'
-  | 'crew_mention'
   | 'announcement';
 
 export type AppNotification = {
@@ -40,8 +38,6 @@ export const KIND_LABEL: Record<NotificationKind, string> = {
   mention: 'Bahsetme',
   dm: 'Özel mesaj',
   room_msg: 'Oda yazışması',
-  crew_invite: 'Klan daveti',
-  crew_mention: 'Klan sohbeti',
   announcement: 'Duyuru',
 };
 
@@ -56,7 +52,6 @@ const ROUTES = [
   '/acik-odalar',
   '/hazine',
   '/cekilis',
-  '/klan',
 ] as const;
 type SimpleRoute = Exclude<(typeof ROUTES)[number], '/acik-odalar' | '/akis'>;
 
@@ -75,7 +70,6 @@ export function notificationTarget(n: { kind: string; data?: Record<string, unkn
   }
   if (route === '/akis') {
     if (typeof data.dm === 'string') return { pathname: '/akis', params: { dm: data.dm, t: String(Date.now()) } };
-    if (data.crew === true) return { pathname: '/akis', params: { crew: '1', t: String(Date.now()) } };
     return data.mentions === true ? { pathname: '/akis', params: { m: String(Date.now()) } } : '/akis';
   }
   return route as SimpleRoute;

@@ -18,7 +18,7 @@ export const PREF_ITEMS: { key: NotifyPrefKey; title: string; subtitle: string; 
   {
     key: 'special_events',
     title: 'Özel etkinlikler ve hazineler',
-    subtitle: 'Yeni 41. Kat Özel etkinlik ve yeni hazine duyuruları',
+    subtitle: 'Yeni PeopleHere Özel etkinlik ve yeni hazine duyuruları',
     icon: 'sparkles',
   },
   { key: 'friend_request', title: 'Arkadaşlık istekleri', subtitle: 'Biri seni arkadaş olarak eklemek istediğinde', icon: 'person-add' },

@@ -9,6 +9,7 @@ import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AwakeDimmer } from '@/components/AwakeDimmer';
+import { CityGate } from '@/components/CityGate';
 import { DialogHost } from '@/components/DialogHost';
 import { FullScreenState } from '@/components/FullScreenState';
 import { PermissionOnboarding } from '@/components/PermissionOnboarding';
@@ -16,7 +17,8 @@ import { RecoveryPhraseSetup } from '@/components/RecoveryPhraseSetup';
 import { TextEditHost } from '@/components/TextEditHost';
 import { TopToastHost } from '@/components/TopToastHost';
 import { AuthProvider, useAuth } from '@/lib/auth';
-import { leaveLiveGames } from '@/lib/presence';
+import { loadCity, resetCity, useCity } from '@/lib/city';
+import { resumeOnStart } from '@/lib/presence';
 import { colors, isLight } from '@/theme';
 
 export default function RootLayout() {
@@ -47,11 +49,17 @@ export default function RootLayout() {
 function RootNavigator() {
   const { loading, isLoggedIn, profile, profileError, retryProfile, signOut, account, refreshAccount } = useAuth();
 
-  // Uygulama (yeniden) açılınca: içinde olduğu yan yana oyunlardan çıkarılır. Oyun sırasında uygulamayı
-  // kapatıp açmak oyundan ayrılmak sayılır.
+  // Uygulama (yeniden) açılınca: uzaktan oyundan çıkarılır; yan yana oyundaysa odaya geri döner ve sorulur.
   useEffect(() => {
-    if (isLoggedIn) void leaveLiveGames();
+    if (isLoggedIn) void resumeOnStart();
   }, [isLoggedIn]);
+
+  // Şehir: girişten sonra okunur; seçilmemişse şehir seçme ekranı açılır
+  const city = useCity();
+  useEffect(() => {
+    if (isLoggedIn && profile?.id) void loadCity();
+    else resetCity();
+  }, [isLoggedIn, profile?.id]);
 
   return (
     // Uygulama açıkken ekran kapanmaz; dokunulmayınca kararır
@@ -82,6 +90,7 @@ function RootNavigator() {
           <Stack.Screen name="hazine" />
           <Stack.Screen name="davet" />
           <Stack.Screen name="verilerim" />
+          <Stack.Screen name="sehir" />
           {/* Bilgi Yarışması: başlangıçta kapalı; ekran, hiçbir moda girilmemişken kaydırarak geri dönmeyi kendisi açar */}
           <Stack.Screen name="bilgi" options={{ gestureEnabled: false }} />
         </Stack.Protected>
@@ -101,6 +110,9 @@ function RootNavigator() {
       {isLoggedIn && !loading && account && !account.needs_recovery && profile?.id ? (
         <PermissionOnboarding key={profile.id} userId={profile.id} />
       ) : null}
+
+      {/* Kurtarma kelimelerinden sonra: şehir seçilmemişse şehir seçimi (bir kez; sonra yalnızca göçle değişir) */}
+      {isLoggedIn && !loading && account && !account.needs_recovery && city.loaded && !city.my ? <CityGate /> : null}
 
       {/* Üstten kayan bildirim (uygulama açıkken yeni bildirim/duyuru gelince) */}
       {isLoggedIn && !loading ? <TopToastHost /> : null}

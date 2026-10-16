@@ -55,10 +55,10 @@ const TEXT: Record<string, string> = {
   invalid_item: 'Bu öğe bulunamadı.',
   item_not_owned: 'Önce bu öğeyi davet puanınla almalısın.',
   item_used: 'Bu hakkı zaten kullandın.',
-  invalid_cell: 'Bu petek Kocaeli haritasında değil.',
+  invalid_cell: 'Bu petek haritada değil.',
   cell_already_named: 'Bu peteğin zaten özel bir adı var. Başka bir petek seç.',
   invalid_cell_name:
-    'Ad 3–40 karakter olmalı; yalnızca küçük harf ve rakam, kelimeler arasında tire (ör. mavi-kus-tepesi). Uygunsuz kelime, iletişim bilgisi ya da “41. Kat”, “Moderatör” içeremez.',
+    'Ad 3–40 karakter olmalı; yalnızca küçük harf ve rakam, kelimeler arasında tire (ör. mavi-kus-tepesi). Uygunsuz kelime, iletişim bilgisi ya da “PeopleHere”, “Moderatör” içeremez.',
   cell_name_taken: 'Bu ad başka bir peteğe verilmiş. Başka bir ad seç.',
   invite_too_late: 'Davet kodu yalnızca kayıttan sonraki 7 gün içinde girilebilir.',
   invite_already_used: 'Zaten bir davet kodu kullandın.',

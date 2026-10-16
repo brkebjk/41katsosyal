@@ -740,10 +740,10 @@ function ProfileScreen() {
           onPress={() => setOverlay('friends')}
         />
         <ListRow
-          icon="people-circle"
-          title="Klanım"
-          subtitle="Arkadaşlarınla klan kur, Klan Sıralaması'nda yarışın"
-          onPress={() => router.push('/klan')}
+          icon="location"
+          title="Şehrim"
+          subtitle="Şehrin ve göç etme"
+          onPress={() => router.push('/sehir')}
         />
         <ListRow
           icon="notifications"

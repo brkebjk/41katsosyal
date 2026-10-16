@@ -61,7 +61,6 @@ import { confirmAction, notify, showDialog } from '@/lib/dialog';
 import { SHARK_RANK_ITEM } from '@/lib/gameInfo';
 import { fmtPts } from '@/lib/labels';
 import { getMyGameResult, getPointRules, type MyGameResult, type PointRules } from '@/lib/ranking';
-import { crewTargetStatus, inviteToCrew, type CrewTarget } from '@/lib/crew';
 import { FRIEND_CONSEQUENCE, FRIEND_WARNING, sendRequestInRoom } from '@/lib/friends';
 import { joinRoomWithLocation, leaveRoom } from '@/lib/rooms';
 import type { Result } from '@/lib/rpc';
@@ -172,18 +171,6 @@ function Game({ roomId }: { roomId: string }) {
   const [sheet, setSheet] = useState<'role' | 'pick' | 'result' | 'players' | null>(null);
   /** Avatara ya da listedeki oyuncuya dokununca açılan küçük oyuncu penceresi (oyuncu kimliği) */
   const [card, setCard] = useState<string | null>(null);
-  /** Oyuncu penceresi açılınca: bu kişiyi klanıma davet edebilir miyim? (arkadaşsak) */
-  const [crewInfo, setCrewInfo] = useState<{ id: string; t: CrewTarget } | null>(null);
-  useEffect(() => {
-    if (!card) return;
-    let alive = true;
-    void crewTargetStatus(roomId, card).then((t) => {
-      if (alive && t) setCrewInfo({ id: card, t });
-    });
-    return () => {
-      alive = false;
-    };
-  }, [card, roomId]);
   /** Atma oylaması penceresine cevap verildi / kapatıldı (oylamanın anahtarı) */
   const [kickSeen, setKickSeen] = useState<string | null>(null);
   /** Üst şeridin alt kenarı: atma oylaması penceresi hemen altında açılır */
@@ -557,7 +544,7 @@ function Game({ roomId }: { roomId: string }) {
       label = (view.lobby_ready ?? []).includes(p.id)
         ? { text: '✓ Hazır', color: '#34D399' }
         : { text: '… bekliyor', color: light ? '#5B6472' : 'rgba(255,255,255,0.6)' };
-    } else if (phase === 'lobby' && p.is_host) label = { text: '⭐ Oda sahibi', color: '#FFB703' };
+    } else if (phase === 'lobby' && p.is_host && !view.remote) label = { text: '⭐ Oda sahibi', color: '#FFB703' };
     // Nasıl elendi: oyun akışı günlüğünden (kafes, zıpkın); geri kalanı gece avlananlardır
     const how = p.left ? 'left' : outHow.get(p.id) ?? 'night';
     const deadLabel = p.left
@@ -675,20 +662,8 @@ function Game({ roomId }: { roomId: string }) {
     setCard(p.id);
   }
 
-  function cardAction(key: 'kick' | 'friend' | 'voice' | 'crew', id: string) {
+  function cardAction(key: 'kick' | 'friend' | 'voice', id: string) {
     setCard(null);
-    if (key === 'crew') {
-      void act('crew', async () => {
-        const r = await inviteToCrew(id);
-        if (!r.error) {
-          void notify('Klan daveti gönderildi', `${plain(id)} kabul edince klanına katılır. Klanını Profil > Klanım’dan yönetebilirsin.`, {
-            icon: null,
-          });
-        }
-        return r;
-      });
-      return;
-    }
     if (key === 'kick') {
       void act('kick', () => kickStart(roomId, id));
     } else if (key === 'friend') {
@@ -882,7 +857,7 @@ function Game({ roomId }: { roomId: string }) {
               const code = view.code as string;
               const url = Linking.createURL('/kopekbaligi-katil', { queryParams: { kod: code } });
               void Share.share({
-                message: `41. Kat Sosyal'de Köpekbalığı Kafesi oynuyoruz, gel! 🦈\n${url}\nUygulamada Oyunlar > Kodla katıl: ${code}`,
+                message: `PeopleHere'de Köpekbalığı Kafesi oynuyoruz, gel! 🦈\n${url}\nUygulamada Oyunlar > Kodla katıl: ${code}`,
               }).catch(() => {});
             }}
             testID="sk-invite-link"
@@ -899,7 +874,7 @@ function Game({ roomId }: { roomId: string }) {
           />
         ) : null}
         {view.match ? (
-          <Text style={styles.pText}>Herkes rumuzuyla görünür. Her oyunun aylık puan hedefi var; yan yana oyun 7 kat puan verir.</Text>
+          <Text style={styles.pText}>Herkes rumuzuyla görünür. Her oyunun aylık puan hedefi var; yan yana oyunun hedefi daha yüksektir.</Text>
         ) : (
           <Text style={styles.pText}>
             {`${view.code ? `Oda ID ${view.code}. ` : ''}Puan aylık hedefe kadar yazılır.`}
@@ -1512,10 +1487,10 @@ function Game({ roomId }: { roomId: string }) {
     const handOver = me.is_host && me.is_player && (roomIsMatch || (roomIsRemote && !lobby) || (roomIsRematch && lobby));
     const copy = handOver
       ? lobby
-        ? { title: 'Odadan ayrıl', msg: 'Bekleme odasından çıkarsın; oda sahipliği başka bir oyuncuya geçer.', ok: 'Odadan ayrıl' }
+        ? { title: 'Odadan ayrıl', msg: 'Bekleme odasından çıkarsın. Odada kimse kalmazsa oda kapanır.', ok: 'Odadan ayrıl' }
         : {
             title: 'Oyundan ayrıl',
-            msg: 'Ayrılırsan elenirsin ve geri dönemezsin. Oyun sürer, oda sahipliği başka bir oyuncuya geçer (başka gerçek oyuncu yoksa oda kapanır).',
+            msg: 'Ayrılırsan elenirsin ve geri dönemezsin. Oyun diğer oyuncularla sürer (başka gerçek oyuncu yoksa oda kapanır).',
             ok: 'Oyundan ayrıl',
           }
       : me.is_host
@@ -1544,15 +1519,9 @@ function Game({ roomId }: { roomId: string }) {
   const cardKick =
     !!cardPlayer && !!kk && kk.open && !kk.poll && kk.starts_left > 0 && me.is_player && !me.left &&
     (phase === 'lobby' || me.is_alive) && !cardPlayer.left;
-  const crewNow = cardPlayer && crewInfo?.id === cardPlayer.id ? crewInfo.t : null;
-  const cardOpts: { key: 'kick' | 'friend' | 'voice' | 'crew'; label: string; tone: CardButton['tone']; disabled?: boolean }[] = [
+  const cardOpts: { key: 'kick' | 'friend' | 'voice'; label: string; tone: CardButton['tone']; disabled?: boolean }[] = [
     ...(cardKick ? [{ key: 'kick' as const, label: `🚪 Atma oylaması başlat (${kk?.starts_left ?? 0} hak)`, tone: 'danger' as const }] : []),
-    // Arkadaşsanız arkadaş ekle yerine ekibe davet
-    ...(crewNow?.friend
-      ? crewNow.can_invite
-        ? [{ key: 'crew' as const, label: '👥 Klana davet et', tone: 'primary' as const, disabled: busy === 'crew' }]
-        : []
-      : [{ key: 'friend' as const, label: '➕ Arkadaş ekle', tone: 'primary' as const, disabled: busy === 'friend' }]),
+    { key: 'friend', label: '➕ Arkadaş ekle', tone: 'primary', disabled: busy === 'friend' },
     ...(view.remote ? [{ key: 'voice' as const, label: '🔊 Ses mesajını şikâyet et', tone: 'ghost' as const }] : []),
   ];
   // Plaj başlayınca bu gecenin sonucun varsa (Oşinograf, Kaplan, Cankurtaran, kilit) görsel kart kendiliğinden açılır
@@ -1947,7 +1916,7 @@ function Game({ roomId }: { roomId: string }) {
                   : null
               }
               buttons={cardOpts}
-              onButton={(key) => cardAction(key as 'kick' | 'friend' | 'voice' | 'crew', cardPlayer.id)}
+              onButton={(key) => cardAction(key as 'kick' | 'friend' | 'voice', cardPlayer.id)}
               onClose={() => setCard(null)}
             />
           ) : null}

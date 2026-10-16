@@ -550,6 +550,18 @@ export function shortName(name: string): string {
   return name.replace(/#\d+\s*$/, '').trim() || name;
 }
 
+/** Odada aynı lakaplı (kodu farklı) iki oyuncu varsa onların kutucuğunda rumuz kodla birlikte yazılır */
+function sameStemIds(seats: readonly Seat[]): Set<string> {
+  const count = new Map<string, number>();
+  for (const x of seats) {
+    const k = shortName(x.p.name).toLocaleLowerCase('tr-TR');
+    count.set(k, (count.get(k) ?? 0) + 1);
+  }
+  return new Set(
+    seats.filter((x) => (count.get(shortName(x.p.name).toLocaleLowerCase('tr-TR')) ?? 0) > 1).map((x) => x.p.id),
+  );
+}
+
 /** Bu oyuncuyu ilgilendiren olay (avlandı, vuruldu, kafeste, kurtarıldı…): avatar büyür, üstünde simge ve kelime çıkar */
 export type SeatEvent = { icon: string; text: string; color: string };
 
@@ -687,6 +699,7 @@ export function SeatGrid({
     if (prev !== undefined && prev < ch) ch = prev;
     else stickyH.set(k, ch);
   }
+  const fullName = sameStemIds(seats);
   // Tabeladaki okun yönü: oy verenin kutucuğundan oy verilenin kutucuğuna (eksik son satır sağa yaslanır)
   const center = new Map<string, { x: number; y: number }>();
   items.forEach((s, i) => {
@@ -729,6 +742,7 @@ export function SeatGrid({
                 accent={accent}
                 light={!!light}
                 arrow={angleOf(s.p.id, s.sign?.target)}
+                full={fullName.has(s.p.id)}
                 onPress={onPress}
                 onLongPress={onLongPress}
                 onAlert={onAlert}
@@ -799,11 +813,14 @@ function SeatTile({
   accent,
   light,
   arrow,
+  full = false,
   onPress,
   onLongPress,
   onAlert,
 }: {
   seat: Seat;
+  /** Rumuz kodla birlikte yazılsın (odada aynı lakaptan iki kişi var) */
+  full?: boolean;
   width: number;
   height: number;
   selected: boolean;
@@ -907,7 +924,7 @@ function SeatTile({
               style={[styles.stripText, { fontSize: smallFont }, dead && styles.nameDead]}
               numberOfLines={1}
             >
-              {p.is_me ? `${shortName(p.name)} (sen)` : shortName(p.name)}
+              {`${full ? p.name : shortName(p.name)}${p.is_me ? ' (sen)' : ''}`}
             </Text>
           </View>
         </View>
