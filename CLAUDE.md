@@ -58,9 +58,9 @@ peoplehere.app.
 - Supabase şeması GitHub Actions ile otomatik uygulanıyor.
 
 ## Bekleyen işler
-- Expo/EAS kurulumu: Project ID `app.json`'a eklendi (`extra.eas.projectId`, `updates.url`; slug `peoplehere`).
-  Kalan: GitHub secrets EXPO_TOKEN, EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY. Gerçek derleme (iOS için
-  Apple Developer hesabı) henüz yok.
+- Expo/EAS: Project ID `app.json`'da (slug `peoplehere`), GitHub secrets eklendi; `uygulama-guncelleme.yml` app/
+  değişince iOS ve Android için `production` dalına EAS Update gönderiyor (çalışıyor). Gerçek derleme (iOS için Apple
+  Developer hesabı) henüz yok; güncellemeler ancak gerçek derlemeye ulaşır, Expo Go'ya değil.
 - Supabase'te pg_net eklentisinin açık olduğu doğrulanmalı (telefona bildirim için).
 - Bazı oyun kutuları hâlâ "çok yakında"; İngilizce ve "uygulamayı değerlendir" yakında durumunda.
 

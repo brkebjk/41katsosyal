@@ -19,8 +19,6 @@
    (Gelmezse sorun değil: Supabase'de pg_net eklentisinin açık olması da gerekiyor, aşağıdaki D-2.)
 
 ## D. Bir kez yapılacaklar (sen)
-1. GitHub > depo > Settings > Secrets and variables > Actions > **New repository secret** ile şu üçünü ekle:
-   - `EXPO_TOKEN`: expo.dev > Account settings > Access tokens > yeni anahtar.
-   - `EXPO_PUBLIC_SUPABASE_URL` ve `EXPO_PUBLIC_SUPABASE_ANON_KEY`: değerleri bilgisayarındaki `app/.env` dosyasında.
+1. GitHub gizli anahtarları eklendi; uzaktan güncelleme çalışıyor (GitHub > Actions > "Uygulama güncellemesini gönder" yeşil).
 2. Supabase > Database > Extensions: **pg_net** açık mı bak, kapalıysa aç.
 3. Anahtarları sohbete yapıştırma.
