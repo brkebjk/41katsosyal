@@ -61,6 +61,10 @@ peoplehere.app.
 - Expo/EAS: Project ID `app.json`'da (slug `peoplehere`), GitHub secrets eklendi; `uygulama-guncelleme.yml` app/
   değişince iOS ve Android için `production` dalına EAS Update gönderiyor (çalışıyor). Gerçek derleme (iOS için Apple
   Developer hesabı) henüz yok; güncellemeler ancak gerçek derlemeye ulaşır, Expo Go'ya değil.
+- GEÇİCİ web önizleme (yalnızca geliştirme): `.github/workflows/web-onizleme.yml` app/ değişince web paketini EAS
+  Hosting'e yükler (web paketleri yalnızca iş akışında `--no-save` kurulur). Web'de yalnızca moderatör girer, kayıt
+  kapalı (`src/components/WebPreviewGate.web.tsx`; telefonda `WebPreviewGate.tsx` boş). MARKETE ÇIKARKEN SİLİNECEK:
+  iş akışı, iki WebPreviewGate dosyası, `_layout.tsx`'teki `<WebPreviewGate />` satırı ve expo.dev'deki Hosting yayını.
 - Supabase'te pg_net eklentisinin açık olduğu doğrulanmalı (telefona bildirim için).
 - Bazı oyun kutuları hâlâ "çok yakında"; İngilizce ve "uygulamayı değerlendir" yakında durumunda.
 

@@ -1,24 +1,19 @@
-# Görev Test Rehberi – Küçük temizlikler ve Expo proje kimliği
+# Görev Test Rehberi – Web önizleme (yalnızca geliştirme)
 
-## A. Güncelle
-1. Proje klasöründe: `git pull origin claude/kind-goodall-dy5z7y`
-2. `cd app`, sonra `npx expo start -c --tunnel`
+Uygulama her güncellendiğinde web hâli de kendiliğinden yayınlanır. Telefondaki uygulamada hiçbir değişiklik yok.
 
-## B. Ne değişti
-1. Var olmayan "KURULUM_REHBERI.md" dosyasına yönlendiren yazılar düzeltildi. Bu yazılar yalnızca sunucu bağlantısı
-   yokken (giriş ekranı, Akış) ya da harita üyelere kapalıyken (yalnızca moderatöre, Harita ekranının bilgi bölümünde) görünür.
-   Harita için yazı artık: "web panelde Sistem > Ayarlar’dan map_public ayarını aç".
-2. `tools/OKUBENI.md`: mekân listelerinin toplu yeniden üretilmediği, yalnızca değişen satırların düzeltildiği yazıldı.
-3. Yanlışlıkla depoya girmiş Python önbellek dosyası kaldırıldı.
-4. Expo proje kimliği (Project ID) uygulama ayarına eklendi. Telefona bildirim ve uzaktan güncelleme için gerekiyordu.
+## A. Web önizlemeyi aç
+1. Adres: aşağıdaki sohbet mesajında (GitHub > Actions > "Web önizlemeyi yayınla" > son çalıştırmanın özetinde de yazar).
+2. **Yalnızca moderatör hesabıyla** giriş yapılır. Başka bir hesapla girilirse "Web sürümü yalnızca geliştirme içindir"
+   yazar ve oturum kapanır.
+3. Dikkat: bir hesap aynı anda tek cihazda açık kalır. Web'de moderatör hesabınla girince telefondaki oturumun kapanır.
+   Telefonda başka (üye) hesabıyla test ediyorsan sorun yok.
+4. Web'de kayıt kapalı: "Kayıt ol"a basınca "Web sürümünde kayıt kapalıdır" yazar.
+5. Web'de çalışmayanlar: sesli sohbet, satın alma, konumla şehir seçimi, rehberden davet, kamera. Bunlar telefonda denenir.
 
-## C. Kontrol
-1. Uygulama her zamanki gibi açılıyor ve çalışıyor.
-2. Profil > Bildirim ve konum: **Telefona anlık bildirim** açıkken, bildirim izni verdiysen, başka bir hesaptan sana
-   arkadaşlık isteği gönder. Telefona "Yeni bir arkadaşlık isteğin var" bildirimi gelmeli.
-   (Gelmezse sorun değil: Supabase'de pg_net eklentisinin açık olması da gerekiyor, aşağıdaki D-2.)
+## B. Telefonda kontrol
+1. `git pull origin claude/kind-goodall-dy5z7y`, sonra `cd app` ve `npx expo start -c --tunnel`
+2. Uygulama her zamanki gibi açılıyor ve çalışıyor (web kuralları telefonu etkilemez).
 
-## D. Bir kez yapılacaklar (sen)
-1. GitHub gizli anahtarları eklendi; uzaktan güncelleme çalışıyor (GitHub > Actions > "Uygulama güncellemesini gönder" yeşil).
-2. Supabase > Database > Extensions: **pg_net** açık mı bak, kapalıysa aç.
-3. Anahtarları sohbete yapıştırma.
+## C. Markete çıkarken
+Bana "web önizlemeyi kaldır" yazman yeterli; web'e ait her şey silinir ve yayın kaldırılır.

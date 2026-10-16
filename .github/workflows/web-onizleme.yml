@@ -1,0 +1,79 @@
+name: Web önizlemeyi yayınla
+
+# GEÇİCİ (yalnızca geliştirme): app/ değişince uygulamanın web hâli EAS Hosting'e (expo.dev) yüklenir.
+# Web'de yalnızca moderatör hesapları giriş yapabilir (app/src/components/WebPreviewGate.web.tsx).
+# Web paketleri (react-native-web, @expo/metro-runtime) yalnızca burada kurulur; projeye ve telefondaki uygulamaya girmez.
+# Markete çıkarken: bu dosya, WebPreviewGate.tsx / WebPreviewGate.web.tsx ve _layout.tsx'teki <WebPreviewGate /> satırı
+# silinir; expo.dev > proje > Hosting'den yayın kaldırılır.
+# Gerekenler: EXPO_TOKEN, EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY (yoksa hata vermeden atlanır).
+
+on:
+  push:
+    branches: [claude/kind-goodall-dy5z7y]
+    paths:
+      - app/**
+      - .github/workflows/web-onizleme.yml
+  workflow_dispatch:
+
+concurrency:
+  group: web-onizleme
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  yayinla:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Hazır mı
+        id: hazir
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          SB_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ] || [ -z "$SB_URL" ]; then
+            echo "::notice::Web önizleme atlandı (EXPO_TOKEN ya da EXPO_PUBLIC_SUPABASE_URL eksik)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.hazir.outputs.ok == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Paketleri kur
+        if: steps.hazir.outputs.ok == 'true'
+        run: |
+          npm ci --no-audit --no-fund
+          # Web paketleri: SDK'nın beklediği sürümlerle, projeye kaydedilmeden
+          WEB=$(node -e "const b=require('expo/bundledNativeModules.json');process.stdout.write(['react-native-web','@expo/metro-runtime'].map(p=>p+'@'+b[p]).join(' '))")
+          npm install --no-save --no-audit --no-fund $WEB
+
+      - name: Web paketini derle ve yayınla
+        if: steps.hazir.outputs.ok == 'true'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          set -o pipefail
+          fail() {
+            # Hata yazısı çalıştırma özetinde de görünsün (gizli anahtarlar GitHub tarafından otomatik gizlenir)
+            tail -n 15 web.log | sed -e 's/\x1b\[[0-9;]*m//g' -e '/^[[:space:]]*$/d' | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          }
+          npx expo export --platform web --output-dir dist 2>&1 | tee web.log || fail
+          npx --yes eas-cli@latest deploy --prod --export-dir dist --non-interactive 2>&1 | tee web.log || fail
+          URL=$(sed -e 's/\x1b\[[0-9;]*m//g' web.log | grep -oE 'https://[A-Za-z0-9.-]+\.expo\.app' | head -n 1)
+          echo "::notice::Web önizleme adresi: ${URL:-expo.dev > proje > Hosting}"

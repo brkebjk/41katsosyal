@@ -16,6 +16,7 @@ import { PermissionOnboarding } from '@/components/PermissionOnboarding';
 import { RecoveryPhraseSetup } from '@/components/RecoveryPhraseSetup';
 import { TextEditHost } from '@/components/TextEditHost';
 import { TopToastHost } from '@/components/TopToastHost';
+import { WebPreviewGate } from '@/components/WebPreviewGate';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { loadCity, resetCity, setCityAdmin, useCity } from '@/lib/city';
 import { installCrashReporting, reportError, setCrashScreen } from '@/lib/crash';
@@ -164,6 +165,8 @@ function RootNavigator() {
       <DialogHost />
       {/* GEÇİCİ: moderatörün yazı düzenleme penceresi (yazı düzeltmeleri de buradan yüklenir) */}
       <TextEditHost />
+      {/* GEÇİCİ: web önizleme yalnızca moderatörlere açık (telefonda hiçbir şey yapmaz) */}
+      <WebPreviewGate />
     </View>
     </AwakeDimmer>
   );
