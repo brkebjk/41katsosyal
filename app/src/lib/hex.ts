@@ -233,6 +233,21 @@ export function isLandIn(city: CityKey, q: number, r: number): boolean {
   return cityOfR(r) === city && cityData(city).land.has(key(q, r));
 }
 
+/**
+ * Petek, kendi şehrinin karasına en çok `n` petek uzaklıkta mı? (kıyıda, vapurda ya da il sınırının hemen dışında
+ * olan da o şehirde sayılır)
+ */
+export function nearLand(c: Cell, n: number): boolean {
+  const city = cityOfR(c.r);
+  if (!city) return false;
+  for (let dq = -n; dq <= n; dq++) {
+    for (let dr = Math.max(-n, -dq - n); dr <= Math.min(n, -dq + n); dr++) {
+      if (isLandIn(city, c.q + dq, c.r + dr)) return true;
+    }
+  }
+  return false;
+}
+
 function hoodIndex(q: number, r: number): { file: MapFile; h: number } | null {
   const city = cityOfR(r);
   if (!city) return null;

@@ -35,12 +35,14 @@ type Row = {
   city: string | null;
   city_next: string | null;
   city_next_at: string | null;
+  /** Bekleyen üye: haritalarımızın dışından (henüz olmayan bir şehirden) girdi; şehri yok, yalnızca ziyaret eder */
+  waiting_since: string | null;
 };
 
 const COLUMNS =
-  'id, full_name, admin_real_name, alias, role, points, premium_until, muted_until, banned_at, ban_reason, created_at, identity_verified_at, photo_path, photo_status, last_seen_at, city, city_next, city_next_at';
+  'id, full_name, admin_real_name, alias, role, points, premium_until, muted_until, banned_at, ban_reason, created_at, identity_verified_at, photo_path, photo_status, last_seen_at, city, city_next, city_next_at, waiting_since';
 
-type Filter = 'all' | 'online' | 'verified' | 'subscribed' | 'muted' | 'banned' | 'staff';
+type Filter = 'all' | 'online' | 'verified' | 'subscribed' | 'muted' | 'banned' | 'staff' | 'waiting';
 
 /** Son 10 dakikada uygulamadan sinyal gelen üye çevrimiçi sayılır */
 const ONLINE_MS = 10 * 60_000;
@@ -53,6 +55,7 @@ const CITIES: { value: string; label: string }[] = [
   { value: 'izmir', label: 'İzmir' },
 ];
 const cityLabel = (c: string | null) => CITIES.find((x) => x.value === c)?.label ?? 'Seçilmedi';
+const isWaiting = (r: Row) => !r.city && !!r.waiting_since;
 
 const ROLE: Record<Row['role'], string> = { user: 'Üye', admin: 'Moderatör', sponsor: 'Mekân hesabı' };
 const PACKAGES: { value: PackageType; label: string }[] = [
@@ -95,6 +98,7 @@ export function MembersPage({
     if (filter === 'muted') req = req.gt('muted_until', now);
     if (filter === 'banned') req = req.not('banned_at', 'is', null);
     if (filter === 'staff') req = req.in('role', ['admin', 'sponsor']);
+    if (filter === 'waiting') req = req.is('city', null).not('waiting_since', 'is', null);
     const { data, error } = await req
       .order(filter === 'online' ? 'last_seen_at' : 'created_at', { ascending: false })
       .limit(filter === 'online' ? 500 : 100);
@@ -168,6 +172,7 @@ export function MembersPage({
           { value: 'muted', label: 'Susturulmuş' },
           { value: 'banned', label: 'Askıda' },
           { value: 'staff', label: 'Moderatör / Mekân' },
+          { value: 'waiting', label: 'Bekleyen üyeler' },
         ]}
       />
       <div className="split">
@@ -193,6 +198,7 @@ export function MembersPage({
                   {[
                     r.alias,
                     ROLE[r.role],
+                    isWaiting(r) ? 'bekleyen üye' : null,
                     isActive(r.premium_until) ? 'abone' : null,
                     isActive(r.muted_until) ? 'susturulmuş' : null,
                     r.banned_at ? 'askıda' : null,
@@ -288,7 +294,9 @@ function MemberDetail({ m, onNotice, onChanged }: { m: Row; onNotice: (n: Notice
         </dd>
         <dt>Şehir</dt>
         <dd>
-          {cityLabel(m.city)}
+          {isWaiting(m)
+            ? `Bekleyen üye: haritalarımızın dışından girdi (${when(m.waiting_since)}), yalnızca ziyaret edebilir. Bir şehre taşırsan normal üye olur.`
+            : cityLabel(m.city)}
           {m.city_next ? ` · göç listesinde: ${cityLabel(m.city_next)}${m.city_next_at ? ` (${when(m.city_next_at)})` : ''}` : ''}
         </dd>
         <dt>Abonelik</dt>

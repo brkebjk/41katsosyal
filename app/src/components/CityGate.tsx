@@ -6,20 +6,28 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/AppText';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { useAuth } from '@/lib/auth';
-import { CITY_KEYS, CITY_NAMES, setMyCity, type CityKey } from '@/lib/city';
-import { cellOf, cityOfR, isLand, type Cell } from '@/lib/hex';
+import { becomeWaitingMember, CITY_KEYS, CITY_NAMES, setMyCity, type CityKey } from '@/lib/city';
+import { cellOf, cityOfR, isLand, nearLand, type Cell } from '@/lib/hex';
 import { locationFailText, requestOneTimeLocation } from '@/lib/map';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 type Found =
   | { state: 'locating' }
   | { state: 'failed'; reason: 'declined' | 'denied' | 'timeout' | 'unavailable' | 'mocked' }
-  | { state: 'ready'; city: CityKey; cell: Cell; inside: boolean };
+  | { state: 'ready'; city: CityKey; cell: Cell; inside: boolean }
+  /** Haritalarımızın dışında (henüz olmayan bir şehirde): yalnızca ziyaret; `near` en yakın şehrimiz */
+  | { state: 'outside'; near: CityKey | null };
+
+/** Karaya en çok bu kadar petek uzaktaysa (kıyı, vapur, il sınırının hemen dışı) o şehirde sayılır (~2-3 km) */
+const NEAR_CELLS = 4;
 
 /**
- * Girişten sonra şehri olmayan üyeye bir kez: konuma bir kez bakılır, üye yalnızca bulunduğu şehri seçebilir (diğer
- * şehirler listede görünür ama seçilemez; oraya sonra göçle geçilir). Haritaların dışındaysa en yakın şehir gelir.
- * Sunucuya yalnızca peteğin numarası gider; sunucu da şehrin bu petekle uyuştuğuna bakar. Moderatör her şehri seçebilir.
+ * Girişten sonra şehri olmayan üyeye: konuma bir kez bakılır, üye yalnızca bulunduğu şehri seçebilir (diğer
+ * şehirler listede görünür ama seçilemez; oraya sonra göçle geçilir). Sunucuya yalnızca peteğin numarası gider; sunucu
+ * da şehrin bu petekle uyuştuğuna bakar. Moderatör her şehri seçebilir.
+ * Haritalarımızın dışındaysa (henüz olmayan bir şehirde): “Üzgünüz, yakında senin şehrindeyiz” yazar, şehirlerden biri
+ * seçilip yalnızca haritasına ziyaretçi olarak bakılır; üye bekleyen üye olarak ayrılır (moderatör panelinde görünür).
+ * Uygulama her açılışta yeniden bakar: şehirlerimizden birine gelindiyse üyelik o şehirde başlar.
  */
 export function CityGate() {
   const insets = useSafeAreaInsets();
@@ -40,18 +48,35 @@ export function CityGate() {
     }
     const cell = cellOf(fix.lon, fix.lat);
     const city = cityOfR(cell.r);
-    if (!city) {
-      setFound({ state: 'failed', reason: 'unavailable' });
+    const inside = !!city && (isLand(cell.q, cell.r) || nearLand(cell, NEAR_CELLS));
+    if (city && (inside || isModerator)) {
+      setFound({ state: 'ready', city, cell, inside });
+      setPicked(city);
       return;
     }
-    setFound({ state: 'ready', city, cell, inside: isLand(cell.q, cell.r) });
-    setPicked(city);
-  }, []);
+    if (!city && isModerator) {
+      // Moderatör haritaların çok dışında: her şehri seçebilir
+      setFound({ state: 'ready', city: 'kocaeli', cell, inside: false });
+      setPicked('kocaeli');
+      return;
+    }
+    setFound({ state: 'outside', near: city });
+    setPicked(city ?? CITY_KEYS[0]);
+  }, [isModerator]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- açılışta konuma bir kez bakılır
     void locate();
   }, [locate]);
+
+  async function visitAsWaiting() {
+    if (!picked || busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await becomeWaitingMember(picked);
+    setBusy(false);
+    if (res.error) setError(res.error);
+  }
 
   async function confirm() {
     if (found.state !== 'ready' || !picked || busy) return;
@@ -63,6 +88,71 @@ export function CityGate() {
   }
 
   const here = found.state === 'ready' ? found.city : null;
+
+  if (found.state === 'outside') {
+    return (
+      <View style={styles.root} accessibilityViewIsModal testID="city-gate-outside">
+        <ScrollView
+          style={styles.shell}
+          contentContainerStyle={[styles.body, { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.lg }]}
+        >
+          <View style={styles.iconCircle}>
+            <Ionicons name="map-outline" size={34} color={colors.primary} />
+          </View>
+          <Text style={styles.title} accessibilityRole="header">
+            Üzgünüz
+          </Text>
+          <View style={styles.card}>
+            <Text style={styles.leadStrong}>Bulunduğun şehir henüz haritalarımızda yok. Yakında senin şehrindeyiz!</Text>
+            <Text style={styles.small}>
+              O zamana kadar şehirlerimizin haritalarına ziyaretçi olarak bakabilirsin. Bu şehirlerden birine geldiğinde
+              uygulamayı açman yeter; üyeliğin o şehirde başlar.
+            </Text>
+          </View>
+
+          <Text style={styles.section}>Şehirlerimiz</Text>
+          <View style={styles.list}>
+            {CITY_KEYS.map((c) => {
+              const on = picked === c;
+              return (
+                <Pressable
+                  key={c}
+                  onPress={() => setPicked(c)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on }}
+                  style={({ pressed }) => [styles.row, on && styles.rowOn, pressed && styles.pressed]}
+                  testID={`city-visit-${c}`}
+                >
+                  <Ionicons name={on ? 'radio-button-on' : 'radio-button-off'} size={20} color={on ? colors.primary : colors.textMuted} />
+                  <View style={styles.rowText}>
+                    <Text style={styles.rowLabel}>{CITY_NAMES[c]}</Text>
+                    <Text style={styles.rowSubMuted}>
+                      {found.near === c ? 'Sana en yakın şehrimiz · yalnızca ziyaret' : 'Yalnızca ziyaret'}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {error ? (
+            <Text style={styles.error} accessibilityLiveRegion="polite">
+              {error}
+            </Text>
+          ) : null}
+          {picked ? (
+            <PrimaryButton
+              label={`${CITY_NAMES[picked]} haritasını ziyaret et`}
+              onPress={() => void visitAsWaiting()}
+              loading={busy}
+              testID="city-visit-confirm"
+            />
+          ) : null}
+          <PrimaryButton label="Konumumu tekrar dene" variant="ghost" onPress={() => void locate()} testID="city-retry" />
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root} accessibilityViewIsModal testID="city-gate">
@@ -193,6 +283,7 @@ const styles = StyleSheet.create({
   },
   title: { color: colors.text, fontFamily: fonts.black, fontSize: fontSizes.xl, textAlign: 'center' },
   lead: { color: colors.text, fontSize: fontSizes.sm, lineHeight: 20, textAlign: 'center' },
+  leadStrong: { color: colors.text, fontFamily: fonts.extra, fontSize: fontSizes.md, lineHeight: 22, textAlign: 'center' },
   card: {
     gap: spacing.md,
     padding: spacing.lg,

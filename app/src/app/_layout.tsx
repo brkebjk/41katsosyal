@@ -120,7 +120,8 @@ function RootNavigator() {
       ) : null}
 
       {/* Kurtarma kelimelerinden sonra: şehir seçilmemişse şehir seçimi (bir kez; sonra yalnızca göçle değişir) */}
-      {ready && city.loaded && !city.my ? <CityGate /> : null}
+      {/* Bekleyen üye bir şehrin haritasına bakarken açılmaz (uygulama yeniden açılınca konuma yeniden bakılır) */}
+      {ready && city.loaded && !city.my && !(city.waiting && city.visiting) ? <CityGate /> : null}
 
       {/* Şehir seçildikten sonra bir kez: uygulama eğitimi (sekmelerin içinde çizilir, bkz. (tabs)/_layout) */}
 

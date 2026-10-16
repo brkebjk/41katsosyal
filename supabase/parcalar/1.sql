@@ -2023,6 +2023,9 @@ alter table public.profiles add column if not exists city text references public
 alter table public.profiles add column if not exists city_next text references public.cities (key);
 alter table public.profiles add column if not exists city_next_at timestamptz;
 alter table public.profiles add column if not exists city_set_at timestamptz;
+-- Bekleyen üye: haritalarımızın dışından (henüz olmayan bir şehirden) giren üye. Şehri yoktur, yalnızca haritalara
+-- ziyaretçi olarak bakar; o şehre gelindiğinde ya da moderatör bir şehre taşıyınca normal üye olur. Konumu saklanmaz.
+alter table public.profiles add column if not exists waiting_since timestamptz;
 
 alter table public.posts add column if not exists city text;
 alter table public.events add column if not exists city text;
@@ -2062,6 +2065,16 @@ returns text language sql stable security definer set search_path = public as $$
     from public.profiles p where p.id = p_user;
 $$;
 
+-- Şehri olmayan üye (bekleyen üye) oyunlara, etkinliklere, akışa ve mesajlara giremez; yalnızca haritalara bakar.
+-- Moderatör ve sunucunun kendi işleri (giriş yapan kişi yok) serbesttir.
+create or replace function public._require_city()
+returns void language plpgsql stable security definer set search_path = public as $$
+begin
+  if auth.uid() is not null and public._city_of(auth.uid()) is null and not public.is_admin() then
+    raise exception 'city_required';
+  end if;
+end $$;
+
 -- Bilgi Yarışması: Kocaeli soruları yalnızca bütün oyuncuları Kocaeli'de yaşayan oyunlarda sorulur
 create or replace function public._quiz_q_ok(p_category text, p_users uuid[])
 returns boolean language sql stable security definer set search_path = public as $$
@@ -2077,6 +2090,11 @@ returns trigger language plpgsql security definer set search_path = public as $$
 begin
   if tg_table_name in ('point_events', 'game_play_log') then
     if new.city is null then new.city := public._city_of(new.user_id); end if;
+    -- Bekleyen üye (şehri yok) puan almaz; moderatörün elle verdiği puan, moderatör ve test botları hariç
+    if tg_table_name = 'point_events' and new.city is null and new.created_by is null
+       and not exists (select 1 from public.profiles p where p.id = new.user_id and (p.role = 'admin' or p.is_bot)) then
+      return null;
+    end if;
   elsif tg_table_name = 'events' then
     new.city := coalesce(public._cell_city(new.cell_r), new.city, public._city_of(new.created_by));
   elsif tg_table_name = 'game_rooms' then
@@ -3302,6 +3320,7 @@ declare
   v_body text := btrim(coalesce(p_body, ''));
   v_id uuid;
 begin
+  perform public._require_city();
   v := public._require_writer(null); -- yorum yazmak herkese açık (susturulmamış olmak yeter)
   if char_length(v_body) not between 1 and 300 then raise exception 'invalid_body'; end if;
   if public._has_contact_info(v_body) then raise exception 'contact_not_allowed'; end if;
@@ -3329,6 +3348,7 @@ create or replace function public.toggle_like(p_post_id uuid)
 returns boolean language plpgsql security definer set search_path = public as $$
 declare v public.profiles;
 begin
+  perform public._require_city();
   v := public._require_user();
   if not exists (select 1 from public.posts where id = p_post_id and not is_hidden and thread_root is null
                   and public._post_live(created_at, event_id)) then
@@ -3452,6 +3472,7 @@ declare
   v_alias text;
   v_avatar int;
 begin
+  perform public._require_city();
   perform public._require_writer(null);
   select pa.author_id, p.alias, p.avatar_index into v_author, v_alias, v_avatar
     from public.post_authors pa join public.posts p on p.id = pa.post_id
@@ -3467,6 +3488,7 @@ declare
   v_alias text;
   v_avatar int;
 begin
+  perform public._require_city();
   perform public._require_writer(null);
   select ca.author_id, c.alias, c.avatar_index into v_author, v_alias, v_avatar
     from public.comment_authors ca join public.comments c on c.id = ca.comment_id
@@ -3481,6 +3503,7 @@ returns text language plpgsql security definer set search_path = public as $$
 declare
   t public.profiles;
 begin
+  perform public._require_city();
   perform public._require_writer(null);
   select pr.* into t
     from public.event_comments c join public.profiles pr on pr.id = c.user_id
@@ -3498,6 +3521,7 @@ declare
   v_code text := upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
   v_target uuid;
 begin
+  perform public._require_city();
   perform public._require_writer(null);
   if char_length(v_code) <> 6 then raise exception 'code_not_found'; end if;
   select id into v_target from public.profiles where friend_code = v_code and banned_at is null;
@@ -3724,6 +3748,7 @@ declare
   v_ev public.events;
   v_waived boolean;
 begin
+  perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
   -- Etkinlik satırı kilitlenir: kontenjanın son yerine iki kişi aynı anda yazılamasın
@@ -3829,6 +3854,7 @@ declare
   v_allowed double precision;
   v_code text := upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
 begin
+  perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
   delete from public.room_join_failures where failed_at < now() - interval '1 hour';
@@ -3948,6 +3974,7 @@ returns uuid language plpgsql security definer set search_path = public as $$
 declare
   v_code text;
 begin
+  perform public._require_city();
   perform public._require_user();
   select c.code into v_code
     from public.game_rooms r join public.room_codes c on c.room_id = r.id
@@ -4073,6 +4100,7 @@ declare
   v_premium boolean;
   v_limit int;
 begin
+  perform public._require_city();
   v := public._require_writer(null);
   v_premium := v.premium_until is not null and v.premium_until > now();
   v_limit := public._event_quota(v);
@@ -4493,6 +4521,7 @@ declare
   v_need int := greatest(1, public.setting_int('pts_event_min_attendees', 4));
   a record;
 begin
+  perform public._require_city();
   v := public._require_writer(null);
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
   p_remote := coalesce(p_remote, false);
@@ -4857,6 +4886,7 @@ declare
   v public.profiles;
   v_old text;
 begin
+  perform public._require_city();
   v := public._require_user();
   if p_kind not in ('laugh', 'plus', 'minus') then raise exception 'invalid_kind'; end if;
   if not exists (select 1 from public.posts where id = p_post_id and not is_hidden and thread_root is null
@@ -4911,6 +4941,7 @@ declare
   v_min int := greatest(5, least(public.setting_int('event_share_minutes_before', 60), 1440));
   v_id uuid;
 begin
+  perform public._require_city();
   v := public._require_writer(null);
   select * into e from public.events where id = p_event_id and not is_cancelled for update;
   if not found then raise exception 'event_not_found'; end if;

@@ -1,30 +1,27 @@
-# Görev Test Rehberi – Yeni eğitim, admin her şehirde, yollar, açılış görünümleri
+# Görev Test Rehberi – Bekleyen üye, ziyaret görünümleri
 
-## A. Supabase artık kendiliğinden güncellenir (bir kez kurulum)
-1. Supabase > projen > üstte **Connect** > **Session pooler** sekmesi > **URI** satırını kopyala.
-2. İçindeki `[YOUR-PASSWORD]` yerine veritabanı şifreni yaz. Şifrende `@ # / ? %` gibi işaretler varsa önce **Project Settings > Database > Reset database password** ile yalnızca harf ve rakamdan oluşan yeni bir şifre al.
-3. GitHub > `41katsosyal` reposu > **Settings** > **Secrets and variables** > **Actions** > **New repository secret**.
-   - Name: `SUPABASE_DB_URL`
-   - Secret: 2. adımdaki adres
-4. Repo > **Actions** sekmesi > **Supabase şemasını uygula** > kırmızı çalıştırmayı aç > **Re-run all jobs**. Yeşil olursa kurulum bitti.
-5. Bundan sonra her teslimde SQL kendiliğinden uygulanır. 1-4 parçalarını çalıştırmana gerek yok. Kırmızı görürsen bana söyle.
-6. Şifreyi ya da adresi sohbete yapıştırma.
+## A. Supabase
+SQL kendiliğinden uygulanır (GitHub > Actions > **Supabase şemasını uygula**, yaklaşık 3 dakika). Elle bir şey çalıştırma.
+Kırmızı görürsen bana söyle. Şifreyi ya da bağlantı adresini sohbete yapıştırma.
 
-## B. Uygulama eğitimi (yeni hesapla ya da eğitimi görmemiş hesapla)
-1. İzinler ve şehir seçiminden sonra eğitim kendiliğinden başlar. Sekmelere dokunman gerekmez, sekmeler kendisi açılır.
-2. Her adımda yalnızca anlatılan alan açık kalır, geri kalan her yer kararır. Alanın açıklaması yazar.
-3. **Devam** ile sıradaki alan gelir (16 adım: sekmeler, Akış, Etkinlik, Harita, Oyun, Profil).
-4. Sağ alttaki küçük **Geç**: eğitim biter, yalnızca hoş geldin ekranı açılır.
-5. Hoş geldin ekranında **Yarışma kuralları**, **Ödül programı** ve **Başla** var.
-
-## C. Admin (moderatör) hesabı
-1. Başka şehri ziyaret et: kısıt yok. Petek menüsünün tamamı açılır.
-2. Akış ve Etkinlikler baktığın şehrin içeriğini gösterir. Oraya gönderi yazabilir, etkinlik açabilirsin.
-3. Üye hesabında değişiklik yok: ziyarette yalnızca harita görünür.
-
-## D. Harita
-1. Kaydırmayı bırakınca yollar 1 saniye sonra görünür.
-2. Ziyaret görünümleri:
+## B. Ziyaret görünümleri
+1. Haritada üstteki şehir düğmesinden ya da ⟳ (Şehrim) ekranından başka bir şehri ziyaret et.
+2. Harita her seferinde o şehrin açılış görünümüyle gelir:
    - İstanbul: Marmara'dan Karadeniz'e bütün Boğaz hattı,
-   - İzmir: Karşıyaka ve altındaki ilçeler (Bayraklı, Bornova, Konak, Karabağlar, Balçova, Buca),
+   - İzmir: Karşıyaka ve altındaki ilçeler,
    - Kocaeli: Derince ve körfez.
+3. Kendi şehrine dönünce harita bulunduğun peteğe gider.
+
+## C. Bekleyen üye (haritalarımızın dışından giren üye)
+Denemek için yeni bir hesapla İstanbul, Kocaeli ve İzmir dışındayken gir.
+1. Şehir seçimi yerine **Üzgünüz** ekranı açılır: "Bulunduğun şehir henüz haritalarımızda yok. Yakında senin şehrindeyiz!"
+2. Şehirlerden birini seç, **… haritasını ziyaret et**. Yalnızca haritaya ziyaretçi olarak bakılır.
+3. Sekme çubuğunda yalnızca **Harita** ve **Profil** görünür. Profilin üstünde "Bekleyen üyesin" yazar.
+4. Bekleyen üye oyun oynayamaz, etkinliğe giremez, akışa yazamaz, mesaj ve arkadaşlık isteği gönderemez, puan alamaz.
+5. Uygulama her açılışta konuma yeniden bakar. Üç şehrimizden birindeyse normal şehir seçimi açılır, üyelik orada başlar.
+6. Kıyıda, vapurda ya da il sınırının 2-3 km dışında olan da o şehirde sayılır.
+
+## D. Moderatör paneli (web)
+1. **Üyeler** > **Bekleyen üyeler** sekmesi: yalnızca bekleyen üyeler listelenir. Listede "bekleyen üye" yazar.
+2. Üyenin ayrıntısında, Şehir satırında ne zaman girdiği görünür.
+3. **Hemen taşı** ile bir şehre taşırsan normal üye olur.

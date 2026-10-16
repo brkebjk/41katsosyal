@@ -32,6 +32,7 @@ import { TourTarget } from '@/components/TourTarget';
 import type { AppTextKey } from '@/lib/account';
 import { getPlayCounts, progressFor, totalEarned, TOTAL_ACHIEVEMENTS } from '@/lib/achievements';
 import { useAuth } from '@/lib/auth';
+import { useCity } from '@/lib/city';
 import { takeIdentityVerifyRequest } from '@/lib/identity';
 import { confirmAction, notify, showDialog } from '@/lib/dialog';
 import { eventGaugeAction } from '@/lib/eventQuota';
@@ -114,6 +115,7 @@ function ProfileScreen() {
   const [pointsOpen, setPointsOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const notices = useNotices();
+  const city = useCity();
 
   // Seviye listesi ve hak sayıları bir kez okunur
   useEffect(() => {
@@ -450,6 +452,18 @@ function ProfileScreen() {
           action="Moderatör paneline git"
           onPress={() => router.push('/moderator')}
           testID="banner-moderator"
+        />
+      ) : null}
+
+      {/* Bekleyen üye: haritalarımızın dışından girdi; şehirlerimize yalnızca ziyaretçi olarak bakar */}
+      {city.loaded && !city.my ? (
+        <NoticeBanner
+          icon="map-outline"
+          title="Bekleyen üyesin"
+          text="Bulunduğun şehir henüz haritalarımızda yok. Yakında senin şehrindeyiz! Şimdilik şehirlerimizin haritalarına ziyaretçi olarak bakabilirsin."
+          action="Şehirlere bak"
+          onPress={() => router.push('/sehir')}
+          testID="banner-waiting"
         />
       ) : null}
 

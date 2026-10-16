@@ -114,12 +114,14 @@ export default function CityScreen() {
           <View style={styles.flex}>
             <Text style={styles.label}>Şehrin</Text>
             <Text style={styles.cityName} testID="city-current">
-              {city.my ? CITY_NAMES[city.my] : 'Seçilmedi'}
+              {city.my ? CITY_NAMES[city.my] : 'Bekleyen üyesin'}
             </Text>
           </View>
         </View>
         <Text style={styles.note}>
-          Haritan, akışın, etkinliklerin ve yan yana odaların bu şehre göre gelir. Uzaktan oyunlar bütün illere açıktır.
+          {city.my
+            ? 'Haritan, akışın, etkinliklerin ve yan yana odaların bu şehre göre gelir. Uzaktan oyunlar bütün illere açıktır.'
+            : 'Üzgünüz, bulunduğun şehir henüz haritalarımızda yok. Yakında senin şehrindeyiz! Şehirlerimizden birine geldiğinde uygulamayı yeniden açman yeter; üyeliğin o şehirde başlar.'}
         </Text>
       </View>
 
@@ -197,8 +199,9 @@ export default function CityScreen() {
       <View style={styles.card}>
         <Text style={styles.section}>Ziyaret et</Text>
         <Text style={styles.note}>
-          Diğer şehirlerin yalnızca haritasına bakabilirsin. Bir peteğe dokununca özetini görürsün; etkinliklere, oyunlara,
-          akışa ve diğer içeriklere yalnızca kendi şehrinde girebilirsin.
+          {city.my
+            ? 'Diğer şehirlerin yalnızca haritasına bakabilirsin. Bir peteğe dokununca özetini görürsün; etkinliklere, oyunlara, akışa ve diğer içeriklere yalnızca kendi şehrinde girebilirsin.'
+            : 'Şehirlerimizin yalnızca haritasına bakabilirsin. Bir peteğe dokununca özetini görürsün.'}
         </Text>
         <View style={styles.list}>
           {others.map((c) => (

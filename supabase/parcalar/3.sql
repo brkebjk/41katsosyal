@@ -1,6 +1,21 @@
 -- PARÇA 3 / 4 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+create or replace function public.admin_award_points(p_user_id uuid, p_amount int, p_reason text, p_room_id uuid default null)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform public._require_admin();
+  if p_amount is null or p_amount = 0 or abs(p_amount) > 10000 then raise exception 'invalid_amount'; end if;
+  if not exists (select 1 from public.profiles where id = p_user_id) then raise exception 'user_not_found'; end if;
+  if exists (select 1 from public.profiles where id = p_user_id and role::text = 'sponsor') then
+    raise exception 'sponsor_not_allowed'; -- sponsor hesaplar puan almaz
+  end if;
+  insert into public.point_events (user_id, amount, reason, room_id, created_by)
+  values (p_user_id, p_amount, coalesce(nullif(btrim(p_reason), ''), 'Admin puanı'), p_room_id, auth.uid());
+  perform public._audit('award_points', p_user_id,
+    jsonb_build_object('amount', p_amount, 'reason', coalesce(nullif(btrim(p_reason), ''), 'Admin puanı')));
+end $$;
+
 -- Çekiliş: odadaki oyuncular arasından rastgele bir kazanan seçer ve oda durumuna yazar
 -- Paket 27: etkinlik çekilişini etkinliği açan kişi (odanın sahibi) de yapar; diğer çekilişleri yalnızca moderatör.
 create or replace function public.admin_draw_raffle(p_room_id uuid)
@@ -4081,6 +4096,7 @@ declare
   v_fid uuid;
   v_n int;
 begin
+  perform public._require_city();
   v := public._require_user();
   if char_length(q) not between 2 and 60 then raise exception 'dm_target_not_found'; end if;
   if q ~ '#[0-9]{1,5}$' then
@@ -7366,6 +7382,7 @@ declare
   v public.profiles;
   t public.profiles;
 begin
+  perform public._require_city();
   v := public._require_user();
   if not exists (select 1 from public.room_players where room_id = p_room_id and user_id = v.id) then
     raise exception 'not_in_room';
@@ -7788,6 +7805,7 @@ declare
   v_room uuid;
   v_live uuid;
 begin
+  perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
   if p_game not in ('shark_cage', 'vampire_villager')
@@ -7813,6 +7831,7 @@ end $$;
 create or replace function public.sk_match_join()
 returns jsonb language plpgsql security definer set search_path = public as $$
 begin
+  perform public._require_city();
   return public.match_join('shark_cage');
 end $$;
 
@@ -8356,8 +8375,3 @@ begin
    where id = p_room_id;
   perform public._room_lobby_tick(p_room_id);
 end $$;
-
-insert into public.app_settings (key, value, description) values
-  ('rematch_seconds', '45', 'Oyun bitince açılan yeni el bekleme odasında "Hazırım" geri sayımı, saniye'),
-  ('match_solo_room_seconds', '45', 'Uzaktan eşleşme: açık oda bulunamazsa kaç saniye sonra oda açılır (kişi orada tek başına bekleyebilir)')
-on conflict (key) do nothing;

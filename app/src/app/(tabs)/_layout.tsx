@@ -86,6 +86,9 @@ export default function TabsLayout() {
   const userId = profile?.id ?? null;
   const city = useCity();
   const permissionsDone = usePermissionsDone();
+  // Bekleyen üye (haritalarımızın dışından girdi, şehri yok): yalnızca Harita (ziyaret) ve Profil sekmeleri görünür
+  const noCity = city.loaded && !city.my;
+  const hideForWaiting = noCity ? { href: null } : null;
   const tourReady = permissionsDone && !!account && !account.needs_recovery && city.loaded && !!city.my;
 
   // Çevrimiçi sinyali: uygulama açıkken 5 dakikada bir ve uygulamaya dönünce (yalnızca moderatör görür)
@@ -198,16 +201,19 @@ export default function TabsLayout() {
         sceneStyle: { backgroundColor: colors.bg },
       }}
     >
-      <Tabs.Screen name="akis" options={{ title: 'Akış', tabBarIcon: tabIcon('chatbubbles', 'chatbubbles-outline') }} />
+      <Tabs.Screen
+        name="akis"
+        options={{ title: 'Akış', tabBarIcon: tabIcon('chatbubbles', 'chatbubbles-outline'), ...hideForWaiting }}
+      />
       <Tabs.Screen
         name="events"
-        options={{ title: 'Etkinlik', tabBarIcon: tabIcon('calendar', 'calendar-outline', 'events') }}
+        options={{ title: 'Etkinlik', tabBarIcon: tabIcon('calendar', 'calendar-outline', 'events'), ...hideForWaiting }}
       />
       {/* Sıra: Akış · Etkinlik · Harita · Oyun · Profil. Uygulama yine Harita (index) ile açılır. */}
       <Tabs.Screen name="index" options={{ title: 'Harita', tabBarIcon: MapTabIcon }} />
       <Tabs.Screen
         name="games"
-        options={{ title: 'Oyun', tabBarIcon: tabIcon('game-controller', 'game-controller-outline') }}
+        options={{ title: 'Oyun', tabBarIcon: tabIcon('game-controller', 'game-controller-outline'), ...hideForWaiting }}
       />
       {/* Eski “/map” adresi: yalnızca yönlendirir, sekmede görünmez */}
       <Tabs.Screen name="map" options={{ href: null }} />

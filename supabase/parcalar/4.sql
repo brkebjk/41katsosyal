@@ -1,6 +1,11 @@
 -- PARÇA 4 / 4 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+insert into public.app_settings (key, value, description) values
+  ('rematch_seconds', '45', 'Oyun bitince açılan yeni el bekleme odasında "Hazırım" geri sayımı, saniye'),
+  ('match_solo_room_seconds', '45', 'Uzaktan eşleşme: açık oda bulunamazsa kaç saniye sonra oda açılır (kişi orada tek başına bekleyebilir)')
+on conflict (key) do nothing;
+
 -- ---- Ses şikâyeti yaptırımları ------------------------------------------------------------------------------------
 -- Moderatör ses mesajı şikâyetini "sonuçlandı" (haklı) ya da "reddedildi" (haksız) diye kapatır:
 --   Haklı: konuşanın mikrofonu 7 gün kapanır; ikinci ve sonraki ihlallerde 30 gün.
@@ -285,6 +290,7 @@ begin
     'next_at', v.city_next_at,
     'move_at', public._next_month_start(),
     'instant', v.role = 'admin',
+    'waiting', v.city is null and v.waiting_since is not null,
     'cities', (select jsonb_agg(jsonb_build_object('key', c.key, 'name', c.name) order by c.sort_order)
                  from public.cities c));
 end $$;
@@ -302,7 +308,19 @@ begin
   if v.role <> 'admin' and (p_q is null or p_r is null or public._cell_city(p_r) is distinct from p_city) then
     raise exception 'city_not_here';
   end if;
-  update public.profiles set city = p_city, city_next = null, city_next_at = null, city_set_at = now() where id = v.id;
+  update public.profiles set city = p_city, city_next = null, city_next_at = null, city_set_at = now(), waiting_since = null
+   where id = v.id;
+end $$;
+
+-- Haritalarımızın dışından giren üye bekleyen üye olarak ayrılır (bir kez; konumu saklanmaz, yalnızca zaman)
+create or replace function public.set_waiting_member()
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+begin
+  v := public._require_user();
+  if v.city is not null or v.role = 'admin' then return; end if;
+  update public.profiles set waiting_since = coalesce(waiting_since, now()) where id = v.id;
 end $$;
 
 create or replace function public.request_city_move(p_city text, p_confirm text)
@@ -346,7 +364,8 @@ begin
   if not exists (select 1 from public.cities where key = p_city) then raise exception 'invalid_city'; end if;
   select public._city_of(id) into v_old from public.profiles where id = p_user;
   if not found then raise exception 'user_not_found'; end if;
-  update public.profiles set city = p_city, city_next = null, city_next_at = null, city_set_at = now() where id = p_user;
+  update public.profiles set city = p_city, city_next = null, city_next_at = null, city_set_at = now(), waiting_since = null
+   where id = p_user;
   perform public._audit('set_city', p_user, jsonb_build_object('from', v_old, 'to', p_city));
 end $$;
 
@@ -427,6 +446,7 @@ grant execute on function public.my_remote_caps() to authenticated;
 grant execute on function public.my_game_goals() to authenticated;
 grant execute on function public.my_city() to authenticated;
 grant execute on function public.set_my_city(text, int, int) to authenticated;
+grant execute on function public.set_waiting_member() to authenticated;
 grant execute on function public.request_city_move(text, text) to authenticated;
 grant execute on function public.cancel_city_move() to authenticated;
 grant execute on function public.admin_set_city(uuid, text) to authenticated;

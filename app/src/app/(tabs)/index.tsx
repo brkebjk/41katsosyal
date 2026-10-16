@@ -231,6 +231,8 @@ function MapScreen({ resetKey }: { resetKey: number }) {
     setSeenCity(viewCity);
     setSelected(null);
     setPreview((p) => (p && cityOfR(p.r) === viewCity ? p : null));
+    // Başka şehrin peteğine odak kalmasın (yoksa harita o şehrin açılış görünümü yerine rastgele bir yere açılıyordu)
+    setFocus((f) => (f && cityOfR(f.cell.r) === viewCity ? f : null));
     setPointers(null);
     setEventPopup(null);
     setSheet(null);

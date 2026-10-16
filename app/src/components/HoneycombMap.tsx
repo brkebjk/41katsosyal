@@ -25,6 +25,7 @@ import { cellName } from '@/lib/cellNames';
 import {
   cellAtLocal,
   cellCenter,
+  cityOfR,
   cityGeo,
   HEX_INSET,
   HEX_SIZE,
@@ -484,6 +485,8 @@ export function HoneycombMap({
   const focusFar = focus?.farPx;
   useEffect(() => {
     if (focusKey === undefined || focusQ === undefined || focusR === undefined) return;
+    // Başka şehrin peteği bu haritada gösterilemez
+    if (cityOfR(focusR) !== live.g.key) return;
     const id = requestAnimationFrame(() => {
       const { w, h } = live;
       if (w <= 0 || h <= 0) return;
@@ -530,7 +533,8 @@ export function HoneycombMap({
     live.update({ w: width, h });
     setSize({ w: width, h });
     if (!live.view) {
-      const v = focus
+      const v =
+        focus && cityOfR(focus.cell.r) === g.key
         ? focusView(g, focus.cell, width, h, live.topInset, live.bottomInset, null, focus.farPx)
         : homeView(g, width, h, live.topInset, live.bottomInset);
       live.update({ view: v });

@@ -27,6 +27,8 @@ export type CityState = {
   visiting: CityKey | null;
   /** Moderatör: her şehirde her şeyi yapabilir (ziyarette kısıt yok; akış ve etkinlikler baktığı şehrin) */
   admin: boolean;
+  /** Bekleyen üye: haritalarımızın dışından girdi; şehri yok, yalnızca haritalara ziyaretçi olarak bakar */
+  waiting: boolean;
 };
 
 let state: CityState = {
@@ -38,6 +40,7 @@ let state: CityState = {
   instant: false,
   visiting: null,
   admin: false,
+  waiting: false,
 };
 const listeners = new Set<() => void>();
 function emit(patch: Partial<CityState>) {
@@ -59,7 +62,14 @@ const TEXT: Record<string, string> = {
   city_not_here: 'Yalnızca bulunduğun şehri seçebilirsin. Konumunu yeniden alıp tekrar dene.',
 };
 
-type Raw = { city: string | null; next: string | null; next_at: string | null; move_at: string | null; instant: boolean };
+type Raw = {
+  city: string | null;
+  next: string | null;
+  next_at: string | null;
+  move_at: string | null;
+  instant: boolean;
+  waiting?: boolean;
+};
 
 /** Şehrimi sunucudan okur (göç zamanı geldiyse sunucu göçü tamamlar) */
 export async function loadCity(): Promise<void> {
@@ -73,6 +83,7 @@ export async function loadCity(): Promise<void> {
     nextAt: data.next_at,
     moveAt: data.move_at,
     instant: !!data.instant,
+    waiting: !my && !!data.waiting,
     // Ziyaret ettiğim şehir kendi şehrimse ziyaret biter
     visiting: state.visiting && state.visiting !== my ? state.visiting : null,
   });
@@ -80,13 +91,32 @@ export async function loadCity(): Promise<void> {
 
 /** Oturum kapanınca */
 export function resetCity(): void {
-  emit({ loaded: false, my: null, next: null, nextAt: null, moveAt: null, instant: false, visiting: null, admin: false });
+  emit({
+    loaded: false,
+    my: null,
+    next: null,
+    nextAt: null,
+    moveAt: null,
+    instant: false,
+    visiting: null,
+    admin: false,
+    waiting: false,
+  });
 }
 
 /** İlk şehir seçimi: `cell` telefonun bir kez aldığı konumun peteği (sunucu şehrin bu petekle uyuştuğuna bakar) */
 export async function setMyCity(city: CityKey, cell: { q: number; r: number } | null): Promise<Result> {
   const res = await callRpcVoid('set_my_city', { p_city: city, p_q: cell?.q ?? null, p_r: cell?.r ?? null }, TEXT);
   if (!res.error) await loadCity();
+  return res;
+}
+
+/** Haritalarımızın dışından giren üye bekleyen üye olarak ayrılır; seçtiği şehrin haritasına ziyaretçi olarak bakar */
+export async function becomeWaitingMember(visit: CityKey): Promise<Result> {
+  const res = await callRpcVoid('set_waiting_member', {}, TEXT);
+  if (res.error) return res;
+  await loadCity();
+  emit({ visiting: visit });
   return res;
 }
 

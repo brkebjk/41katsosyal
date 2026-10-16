@@ -147,6 +147,7 @@ declare
   v_pts int;
   v_note text;
 begin
+  perform public._require_city();
   v := public._require_user();
   select * into v_ev from public.events where id = p_event_id and not is_cancelled;
   if not found then raise exception 'event_not_found'; end if;
@@ -267,6 +268,7 @@ declare
   v_body text := btrim(coalesce(p_body, ''));
   v_id uuid;
 begin
+  perform public._require_city();
   v := public._require_writer(null);
   if char_length(v_body) not between 1 and 300 then raise exception 'invalid_body'; end if;
   if not exists (select 1 from public.events where id = p_event_id and not is_cancelled) then
@@ -639,6 +641,7 @@ declare
   v public.profiles;
   v_last timestamptz;
 begin
+  perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
   if p_q is null or p_r is null or not public._map_cell_ok(p_q, p_r) then raise exception 'invalid_cell'; end if;
@@ -1575,6 +1578,7 @@ declare
   v_sent int := 0;
   x record;
 begin
+  perform public._require_city();
   r := public._room_for_invite(p_room_id);
   select * into h from public.profiles where id = auth.uid();
   perform 1 from public.game_rooms where id = r.id for update;
@@ -1873,6 +1877,7 @@ declare
   v_size int;
   v_id uuid;
 begin
+  perform public._require_city();
   v := public._require_writer(null);
   e := public._team_event(p_event_id);
   if p_to is null or p_to = v.id then raise exception 'invalid_target'; end if;
@@ -2388,6 +2393,7 @@ declare
   v_pts int;
   a record;
 begin
+  perform public._require_city();
   v := public._require_user();
   if v.role <> 'user' then raise exception 'forbidden'; end if;
   if p_my_q is null or p_my_r is null then raise exception 'location_required'; end if;
@@ -3354,6 +3360,7 @@ declare
   v_limit int := greatest(1, public.setting_int('quiz_daily_games', 25));
   v_min_wait int := least(30, greatest(0, public.setting_int('quiz_search_min_seconds', 10)));
 begin
+  perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
   if not exists (select 1 from public.game_types where key = 'quiz' and enabled) then raise exception 'game_not_available'; end if;
@@ -4149,6 +4156,7 @@ declare
   v_orders jsonb;
   v_id uuid;
 begin
+  perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
   if not exists (select 1 from public.game_types where key = 'quiz' and enabled) then raise exception 'game_not_available'; end if;
@@ -5137,6 +5145,7 @@ declare
   v_id uuid;
   i int;
 begin
+  perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
   if not exists (select 1 from public.game_types where key = 'quiz' and enabled) then raise exception 'game_not_available'; end if;
@@ -5185,6 +5194,7 @@ declare
   v_color text;
   v_fails int;
 begin
+  perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
   perform pg_advisory_xact_lock(hashtext('quiz_user:' || v.id::text));
@@ -6056,6 +6066,7 @@ declare
   v_n1 text := left(btrim(regexp_replace(coalesce(p_name1, ''), '\s+', ' ', 'g')), 14);
   v_n2 text := left(btrim(regexp_replace(coalesce(p_name2, ''), '\s+', ' ', 'g')), 14);
 begin
+  perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
   if not exists (select 1 from public.game_types where key = 'quiz' and enabled) then raise exception 'game_not_available'; end if;
@@ -6579,6 +6590,7 @@ declare
   v_week date := public.current_alias_week();
   t public.dm_threads;
 begin
+  perform public._require_city();
   v := public._require_writer(null);
   if v.role::text <> 'user' then raise exception 'dm_not_allowed'; end if;
   if p_post is not null then
@@ -6723,6 +6735,7 @@ declare
   v_other_read timestamptz;
   v_id uuid;
 begin
+  perform public._require_city();
   v := public._require_writer(null);
   select * into t from public.dm_threads where id = p_thread and (user_a = v.id or user_b = v.id) for update;
   if not found or not public._dm_open(t) then raise exception 'dm_closed'; end if;
@@ -6891,18 +6904,3 @@ language sql stable security definer set search_path = public as $$
   select s.game_type, s.plays from public.user_game_stats s
    where s.user_id = auth.uid() and public._is_active_user();
 $$;
-
-create or replace function public.admin_award_points(p_user_id uuid, p_amount int, p_reason text, p_room_id uuid default null)
-returns void language plpgsql security definer set search_path = public as $$
-begin
-  perform public._require_admin();
-  if p_amount is null or p_amount = 0 or abs(p_amount) > 10000 then raise exception 'invalid_amount'; end if;
-  if not exists (select 1 from public.profiles where id = p_user_id) then raise exception 'user_not_found'; end if;
-  if exists (select 1 from public.profiles where id = p_user_id and role::text = 'sponsor') then
-    raise exception 'sponsor_not_allowed'; -- sponsor hesaplar puan almaz
-  end if;
-  insert into public.point_events (user_id, amount, reason, room_id, created_by)
-  values (p_user_id, p_amount, coalesce(nullif(btrim(p_reason), ''), 'Admin puanı'), p_room_id, auth.uid());
-  perform public._audit('award_points', p_user_id,
-    jsonb_build_object('amount', p_amount, 'reason', coalesce(nullif(btrim(p_reason), ''), 'Admin puanı')));
-end $$;
