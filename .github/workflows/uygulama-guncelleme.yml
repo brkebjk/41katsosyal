@@ -66,4 +66,9 @@ jobs:
           EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: ${{ secrets.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY }}
           MESAJ: ${{ github.event.head_commit.message }}
         run: |
-          npx --yes eas-cli@latest update --branch production --message "$(printf '%s' "${MESAJ:-Güncelleme}" | head -c 200)" --non-interactive
+          set -o pipefail
+          if ! npx --yes eas-cli@latest update --branch production --message "$(printf '%s' "${MESAJ:-Güncelleme}" | head -c 200)" --non-interactive 2>&1 | tee eas.log; then
+            # Hata yazısı çalıştırma özetinde de görünsün (gizli anahtarlar GitHub tarafından otomatik gizlenir)
+            tail -n 15 eas.log | sed -e 's/\x1b\[[0-9;]*m//g' -e '/^[[:space:]]*$/d' | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
