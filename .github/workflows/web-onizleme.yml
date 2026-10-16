@@ -75,5 +75,8 @@ jobs:
           }
           npx expo export --platform web --output-dir dist 2>&1 | tee web.log || fail
           npx --yes eas-cli@latest deploy --prod --export-dir dist --non-interactive 2>&1 | tee web.log || fail
-          URL=$(sed -e 's/\x1b\[[0-9;]*m//g' web.log | grep -oE 'https://[A-Za-z0-9.-]+\.expo\.app' | head -n 1)
+          # Sabit adres (her yayında aynı); bulunamazsa bu yayına özel adres
+          URLS=$(sed -e 's/\x1b\[[0-9;]*m//g' web.log | grep -oE 'https://[A-Za-z0-9.-]+\.expo\.app' | sort -u)
+          URL=$(printf '%s\n' "$URLS" | grep -v -- '--' | head -n 1)
+          [ -n "$URL" ] || URL=$(printf '%s\n' "$URLS" | head -n 1)
           echo "::notice::Web önizleme adresi: ${URL:-expo.dev > proje > Hosting}"
