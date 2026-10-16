@@ -655,8 +655,8 @@ function FeedScreen() {
         <View style={styles.devBanner}>
           <Ionicons name="construct-outline" size={18} color={colors.primary} />
           <Text style={styles.devBannerText}>
-            Sunucu bağlantısı henüz kurulmadı. KURULUM_REHBERI.md dosyasındaki adımları tamamlayınca burası canlı akışla
-            dolacak.
+            Sunucu bağlantısı henüz kurulmadı. app/.env dosyasına Supabase adresi ve anahtarı girilince burası canlı
+            akışla dolacak.
           </Text>
         </View>
       ) : null}

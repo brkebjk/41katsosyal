@@ -40,8 +40,8 @@ export default function LoginScreen() {
           <Ionicons name="construct-outline" size={18} color={colors.primary} />
           <View style={styles.devTextWrap}>
             <Text style={styles.devText}>
-              Sunucu bağlantısı henüz kurulmadı, bu yüzden giriş yapılamaz. KURULUM_REHBERI.md dosyasındaki
-              Bölüm 2&apos;yi tamamlayınca burası çalışacak.
+              Sunucu bağlantısı henüz kurulmadı, bu yüzden giriş yapılamaz. app/.env dosyasına Supabase adresi ve
+              anahtarı girilince burası çalışacak.
             </Text>
             {__DEV__ ? (
               <Text style={styles.devLink} onPress={enterPreview} accessibilityRole="button">

@@ -7,7 +7,7 @@
 //
 // Ne ölçer? `expo export` ile üretilen JavaScript paketi (Hermes) + görseller + yazı tipleri.
 // Bu, uygulamanın KENDİ parçasıdır. Mağazadan inen dosya ayrıca telefonun/React Native'in hazır
-// parçalarını (yaklaşık 25-35 MB, bkz. BOYUT_TAKIBI.md) ve sıkıştırmayı içerir; o kısım burada ölçülemez.
+// parçalarını (yaklaşık 25-35 MB) ve sıkıştırmayı içerir; o kısım burada ölçülemez.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';

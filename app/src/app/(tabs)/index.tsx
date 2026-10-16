@@ -1592,7 +1592,7 @@ function InfoModal({ visible, onClose, status }: { visible: boolean; onClose: ()
                   icon="shield-checkmark-outline"
                   tone="accent"
                   title="Harita henüz üyelere kapalı"
-                  subtitle="Sen moderatör olduğun için görüyorsun. Üyelere açmak için KURULUM_REHBERI.md’deki harita bölümüne bak."
+                  subtitle="Sen moderatör olduğun için görüyorsun. Üyelere açmak için web panelde Sistem > Ayarlar’dan “map_public” ayarını aç."
                 />
               ) : null}
             </Panel>
