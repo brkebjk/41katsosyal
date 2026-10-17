@@ -23843,4 +23843,26 @@ revoke execute on function public.app_look(text) from public, anon;
 grant execute on function public.app_look(text) to authenticated;
 
 
+-- ---------------------------------------------------------------------
+-- Uygulama eğitimi ve hoş geldin ekranı: her hesapta bir kez (telefondan bağımsız). Yalnızca görüldüğü an saklanır.
+-- ---------------------------------------------------------------------
+alter table public.profiles add column if not exists tour_done_at timestamptz;
+
+create or replace function public.my_tour_done()
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((select p.tour_done_at is not null from public.profiles p where p.id = auth.uid()), false);
+$$;
+
+create or replace function public.mark_tour_done()
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'not_authenticated'; end if;
+  update public.profiles set tour_done_at = coalesce(tour_done_at, now()) where id = auth.uid();
+end $$;
+revoke execute on function public.my_tour_done() from public, anon;
+revoke execute on function public.mark_tour_done() from public, anon;
+grant execute on function public.my_tour_done() to authenticated;
+grant execute on function public.mark_tour_done() to authenticated;
+
+
 notify pgrst, 'reload schema';

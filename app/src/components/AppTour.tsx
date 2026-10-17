@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, type Href } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/AppText';
@@ -11,9 +11,7 @@ import { imageAspect } from '@/lib/images';
 import { isTourDone, markTourDone } from '@/lib/onboarding';
 import { currentTab } from '@/lib/tabReset';
 import { setActiveTourId, setTourRunning, useTourRect, type TourRect } from '@/lib/tour';
-import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
-
-type IconName = React.ComponentProps<typeof Ionicons>['name'];
+import { colors, fonts, spacing } from '@/theme';
 
 type Step = {
   /** Sekmenin adresteki adı ve açılacak adres */
@@ -21,154 +19,96 @@ type Step = {
   path: Href;
   /** Anlatılan alan (TourTarget) ya da sekme çubuğu */
   target: string;
-  icon: IconName;
   title: string;
   text: string;
 };
 
 const TABBAR = '__tabbar';
 
-/**
- * Eğitim 7 adımdır. Diğer alanlar, eğitimden sonra o sekme ilk açıldığında kısa ipucu olarak anlatılır (bkz. TIPS).
- */
+/** Kısa eğitim: her adım tek alanı gösterir (başlıca özellikler; ayrıntılar ekranların kendi bilgi düğmelerinde) */
 const STEPS: Step[] = [
   {
     tab: 'index',
     path: '/',
     target: TABBAR,
-    icon: 'apps',
-    title: 'Sekmeler',
-    text: 'Uygulamanın beş bölümü: Akış, Etkinlik, Harita, Oyun ve Profil. Kısaca hepsini gezelim.',
+    title: 'Beş bölüm',
+    text: 'Akış, Etkinlik, Harita, Oyun ve Profil. Hızlıca gezelim.',
   },
   {
     tab: 'index',
     path: '/',
     target: 'map-legend',
-    icon: 'color-palette',
     title: 'Şehrin haritası',
-    text: 'Petek renkleri şehrin nerede hareketli olduğunu gösterir: turkuaz etkinlik, mor oyun, mercan mekân. Bir peteğe dokun, “İNCELE” ile menüsünü aç: petek akışı, Burada kim var?, Oyun arayanlar.',
+    text: 'Renkli petekler şehrin hareketini gösterir: turkuaz etkinlik, mor oyun, mercan mekân. Bir peteğe dokun, İNCELE ile içine bak.',
   },
   {
     tab: 'index',
     path: '/',
     target: 'map-controls',
-    icon: 'sync',
     title: 'Harita düğmeleri',
-    text: 'Mor ⟳ Göç et ve başka şehre bak, sarı büyüteç bir oyunun ya da etkinliğin olduğu petekleri gösterir. Altta yakınlaştır, uzaklaştır, tüm şehir ve Konumum.',
+    text: 'Başka şehre bak, oyun ve etkinlik olan petekleri bul, yakınlaş, Konumum ile kendi peteğine dön.',
   },
   {
     tab: 'akis',
     path: '/akis',
     target: 'feed-composer',
-    icon: 'create',
     title: 'Akış',
-    text: 'Şehrine rumuzunla yaz; istersen yakınındaki bir mekânı ekle. Gönderiler bir hafta akışta kalır. @#kod yazarak birini etiketleyebilirsin.',
+    text: 'Şehrine rumuzunla yaz. Gönderiler bir hafta kalır; @#kod ile birini etiketleyebilirsin.',
   },
   {
     tab: 'events',
     path: '/events',
     target: 'events-categories',
-    icon: 'calendar',
     title: 'Etkinlikler',
-    text: 'Şehrindeki yüz yüze buluşmalar kategorilere ayrılır. Bir kategoriye dokununca etkinlikleri açılır; katılabilir, “Haritada gör” ile yerini bulabilirsin.',
+    text: 'Şehrindeki yüz yüze buluşmalar. Katıl, etkinlikte söylenen kodu yaz, puanını kap.',
   },
   {
     tab: 'games',
     path: '/games',
     target: 'games-tiles',
-    icon: 'game-controller',
     title: 'Oyunlar',
-    text: 'Köpekbalığı Kafesi, Vampir–Köylü, Bilgi Yarışması, Hazine Avı ve çekilişler. Yan yana ya da uzaktan oynar, puan toplarsın. Halka bu ay kalan puan hedefini gösterir.',
+    text: 'Yan yana ya da uzaktan oyna, puan topla, ayın ödül podyumuna çık.',
   },
   {
     tab: 'profile',
     path: '/profile',
     target: 'profile-menu',
-    icon: 'person',
     title: 'Profil',
-    text: 'Arkadaşlarım, Şehrim (göç ve ziyaret), Bildirim tercihleri. Aşağıda Hesabım, Kişisel Verilerim, sözleşmeler ve yarışma kuralları var.',
+    text: 'Arkadaşların, şehrin, bildirim ayarların ve hesabın burada.',
   },
 ];
 
-export type Tip = { target: string; icon: IconName; title: string; text: string };
-
-/** Eğitimden sonra sekme ilk açıldığında bir kez gösterilen kısa ipuçları (sekme adına göre) */
-export const TIPS: Record<string, Tip[]> = {
-  index: [
-    {
-      target: 'map-city',
-      icon: 'location',
-      title: 'Şehir düğmesi',
-      text: 'Dokununca başka bir şehrin haritasına ziyaretçi olarak bakarsın. Ziyarette o şehrin etkinliklerine de katılabilirsin.',
-    },
-    {
-      target: 'map-search',
-      icon: 'search',
-      title: 'Arama',
-      text: 'Bir yerin ya da peteğin adını yaz; harita o peteğe gider.',
-    },
-    {
-      target: 'map-filters',
-      icon: 'funnel',
-      title: 'Filtreler',
-      text: 'Bugünü, bu haftayı ya da yalnızca bir türü göster. Şehrin Temposu şehrin şu an ne kadar hareketli olduğunu söyler.',
-    },
-  ],
-  akis: [
-    {
-      target: 'feed-header',
-      icon: 'options',
-      title: 'Akışın düğmeleri',
-      text: 'Huni ile akışı süzersin (kendi gönderilerin, seni etiketleyenler ya da bir ilçe). Sağda özel mesajların ve arkadaşların.',
-    },
-  ],
-  events: [
-    {
-      target: 'events-gauge',
-      icon: 'speedometer',
-      title: 'Etkinlik hakkın',
-      text: 'Bu ay kaç etkinlik açabileceğini gösterir. Dokununca hakkını nasıl artıracağını görürsün.',
-    },
-    {
-      target: 'events-actions',
-      icon: 'enter',
-      title: 'Oluştur ve Katılım Doğrula',
-      text: 'Oluştur ile kendi etkinliğini açarsın. Etkinlikte düzenleyenin söylediği kodu Katılım Doğrula’dan yazınca puan kazanırsın.',
-    },
-  ],
-  games: [
-    {
-      target: 'games-podium',
-      icon: 'trophy',
-      title: 'Aylık Ödül Podyumu',
-      text: 'Bu ayın ilk üçü. Buradan sıralamaya, oyun sıralamalarına ve ödüllere ulaşırsın.',
-    },
-    {
-      target: 'games-actions',
-      icon: 'add-circle',
-      title: 'Oda Oluştur ve Katıl',
-      text: 'Oyun seçip oda açarsın ya da arkadaşının verdiği kodla odasına katılırsın.',
-    },
-  ],
-  profile: [
-    {
-      target: 'profile-hero',
-      icon: 'id-card',
-      title: 'Kimliğin',
-      text: 'Profil resmin, adın, bu haftaki rumuzun, seviyen ve puanın. Puanına dokununca nasıl kazandığını görürsün.',
-    },
-  ],
-};
-
 /** Alanın çevresindeki boşluk (px) */
 const PAD = 6;
-/** Kart için gereken en az yükseklik (px); alanın üstünde ya da altında bu kadar yer yoksa kart ekranın altına konur */
-const CARD_MIN_H = 190;
+/** Yazının (ok dahil) kapladığı yaklaşık yükseklik: alanın üstünde mi altında mı duracağına karar vermek için */
+const TEXT_H = 210;
+
+/** Alanı gösteren, aşağı yukarı hafifçe zıplayan büyük ok */
+function BouncingArrow({ dir, x }: { dir: 'up' | 'down'; x: number }) {
+  const [v] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(v, { toValue: 1, duration: 520, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(v, { toValue: 0, duration: 520, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [v]);
+  const shift = v.interpolate({ inputRange: [0, 1], outputRange: [0, dir === 'down' ? 10 : -10] });
+  return (
+    <Animated.View style={[styles.arrow, { left: x - 26, transform: [{ translateY: shift }] }]}>
+      <Ionicons name={dir === 'down' ? 'arrow-down' : 'arrow-up'} size={52} color={colors.primary} />
+    </Animated.View>
+  );
+}
 
 /**
- * Uygulama eğitimi (ilk girişte, izin ekranları ve şehir seçiminden sonra bir kez): sekmeler kendiliğinden açılır,
- * anlatılan alan dışındaki her yer kararır, açıklama yazar; Devam ile sıradaki alana geçilir. Sağ alttaki Geç
- * eğitimi bitirir ve hoş geldin ekranını açar. Hoş geldin ekranında yarışma kuralları ve ödül programı düğmeleri var.
+ * Uygulama eğitimi: ilk girişte, izin ekranları ve şehir seçiminden sonra, HER HESAPTA BİR KEZ (hesapta saklanır).
+ * Sekmeler kendiliğinden açılır; anlatılan alan dışındaki her yer kararır, alanın üstünde ya da altında kutusuz büyük
+ * yazı ve alanı gösteren ok durur. Ekrana dokunmak ya da Devam bir sonraki alana geçirir; Geç eğitimi bitirir. Sonda hoş
+ * geldin ekranı açılır (yarışma kuralları ve ödül programı düğmeleriyle).
  */
 export function AppTour({ userId, tabBarHeight }: { userId: string; tabBarHeight: number }) {
   const insets = useSafeAreaInsets();
@@ -186,6 +126,8 @@ export function AppTour({ userId, tabBarHeight }: { userId: string; tabBarHeight
       if (!alive) return;
       setIndex(0);
       setPhase(done ? 'done' : 'steps');
+      // Başlar başlamaz hesaba işlenir: yarıda kalsa ya da uygulama kapansa da bir daha çıkmaz
+      if (!done) void markTourDone(userId);
     });
     return () => {
       alive = false;
@@ -205,7 +147,7 @@ export function AppTour({ userId, tabBarHeight }: { userId: string; tabBarHeight
 
   useEffect(() => () => setActiveTourId(null), []);
 
-  // Eğitim sürerken sekme ipuçları gösterilmez
+  // Eğitim sürerken açılış sekmesi ve şehir görseli beklenir
   useEffect(() => {
     setTourRunning(phase !== 'done');
     return () => setTourRunning(false);
@@ -213,8 +155,7 @@ export function AppTour({ userId, tabBarHeight }: { userId: string; tabBarHeight
 
   if (phase === 'checking' || phase === 'done') return null;
 
-  async function finish(go?: '/kurallar' | '/oduller') {
-    await markTourDone(userId);
+  function finish(go?: '/kurallar' | '/oduller') {
     setPhase('done');
     if (go) router.push(go);
   }
@@ -244,9 +185,9 @@ export function AppTour({ userId, tabBarHeight }: { userId: string; tabBarHeight
             oyna, puan topla; her ay şehrinin ve bütün illerin sıralamasında yerini al.
           </Text>
           <View style={styles.welcomeButtons}>
-            <PrimaryButton label="Yarışma kuralları" variant="ghost" onPress={() => void finish('/kurallar')} testID="tour-rules" />
-            <PrimaryButton label="Ödül programı" variant="ghost" onPress={() => void finish('/oduller')} testID="tour-prizes" />
-            <PrimaryButton label="Başla" onPress={() => void finish()} testID="tour-start" />
+            <PrimaryButton label="Yarışma kuralları" variant="ghost" onPress={() => finish('/kurallar')} testID="tour-rules" />
+            <PrimaryButton label="Ödül programı" variant="ghost" onPress={() => finish('/oduller')} testID="tour-prizes" />
+            <PrimaryButton label="Başla" onPress={() => finish()} testID="tour-start" />
           </View>
         </ScrollView>
       </View>
@@ -267,16 +208,23 @@ export function AppTour({ userId, tabBarHeight }: { userId: string; tabBarHeight
     if (x2 > x && y2 > y) hole = { x, y, w: x2 - x, h: y2 - y };
   }
 
-  // Kart: alanın altında ya da üstünde, hangisinde yer varsa; ikisinde de yoksa ekranın altında
-  const skipRow = insets.bottom + 44;
-  const top = insets.top + spacing.sm;
-  let cardStyle: { top?: number; bottom?: number } = { bottom: skipRow + spacing.sm };
+  // Yazı: alanın altında ya da üstünde (hangisinde yer çoksa); ok alana doğru bakar. Alan yoksa ortada.
+  const topBar = insets.top + 48;
+  const bottomSafe = insets.bottom + spacing.md;
+  let place: 'below' | 'above' | 'center' = 'center';
   if (hole) {
-    const below = H - (hole.y + hole.h) - skipRow;
-    const above = hole.y - top;
-    if (below >= CARD_MIN_H) cardStyle = { top: hole.y + hole.h + spacing.md };
-    else if (above >= CARD_MIN_H) cardStyle = { bottom: H - hole.y + spacing.md };
+    const below = H - (hole.y + hole.h) - bottomSafe;
+    const above = hole.y - topBar;
+    if (below >= TEXT_H || below >= above) place = 'below';
+    else place = 'above';
   }
+  const arrowX = hole ? Math.min(W - 40, Math.max(40, hole.x + hole.w / 2)) : W / 2;
+  const textPos =
+    place === 'below' && hole
+      ? { top: Math.min(hole.y + hole.h + 4, H - bottomSafe - 160) }
+      : place === 'above' && hole
+        ? { bottom: Math.min(H - hole.y + 4, H - topBar - 160) }
+        : { top: H * 0.35 };
 
   const dim = (s: { left: number; top: number; width: number; height: number }) => (
     <View pointerEvents="none" style={[styles.dim, s]} />
@@ -293,8 +241,8 @@ export function AppTour({ userId, tabBarHeight }: { userId: string; tabBarHeight
       }
       testID="tour"
     >
-      {/* Dokunuşlar alttaki ekrana geçmez; anlatılan alanın dışı kararır */}
-      <View style={styles.block} />
+      {/* Ekrana dokunmak sıradaki alana geçirir; dokunuşlar alttaki ekrana geçmez */}
+      <Pressable style={styles.block} onPress={next} accessibilityLabel="Devam" testID="tour-tap" />
       {hole ? (
         <>
           {dim({ left: 0, top: 0, width: W, height: hole.y })}
@@ -310,29 +258,45 @@ export function AppTour({ userId, tabBarHeight }: { userId: string; tabBarHeight
         dim({ left: 0, top: 0, width: W, height: H })
       )}
 
-      <View style={[styles.card, cardStyle]} testID="tour-card">
-        <View style={styles.cardHead}>
-          <Ionicons name={step.icon} size={20} color={colors.primary} />
-          <Text style={styles.cardTitle} accessibilityRole="header">
-            {step.title}
-          </Text>
-          <Text style={styles.stepNo}>{`${index + 1} / ${STEPS.length}`}</Text>
-        </View>
-        <Text style={styles.cardText}>{step.text}</Text>
-        <PrimaryButton label={index + 1 < STEPS.length ? 'Devam' : 'Bitir'} onPress={next} testID="tour-next" />
+      {/* Kutusuz büyük yazı ve alanı gösteren ok */}
+      <View pointerEvents="box-none" style={[styles.textWrap, textPos]} testID="tour-card">
+        {place === 'below' ? <BouncingArrow dir="up" x={arrowX - spacing.lg} /> : null}
+        <Text style={styles.title} accessibilityRole="header">
+          {step.title}
+        </Text>
+        <Text style={styles.text}>{step.text}</Text>
+        <Pressable
+          onPress={next}
+          accessibilityRole="button"
+          hitSlop={8}
+          testID="tour-next"
+          style={({ pressed }) => [styles.next, pressed && styles.pressed]}
+        >
+          <Text style={styles.nextText}>{index + 1 < STEPS.length ? 'Devam' : 'Bitir'}</Text>
+          <Ionicons name="arrow-forward" size={18} color="#04211F" />
+        </Pressable>
+        {place === 'above' ? <BouncingArrow dir="down" x={arrowX - spacing.lg} /> : null}
       </View>
 
-      <Pressable
-        onPress={() => setPhase('welcome')}
-        accessibilityRole="button"
-        accessibilityLabel="Eğitimi geç"
-        hitSlop={10}
-        testID="tour-skip"
-        style={({ pressed }) => [styles.skip, { bottom: insets.bottom + 10 }, pressed && styles.pressed]}
-      >
-        <Text style={styles.skipText}>Geç</Text>
-        <Ionicons name="play-skip-forward" size={13} color="#FFFFFF" />
-      </Pressable>
+      {/* Üst şerit: adım noktaları ve Geç */}
+      <View style={[styles.topBar, { top: insets.top + spacing.sm }]} pointerEvents="box-none">
+        <View style={styles.dots} accessibilityLabel={`${index + 1} / ${STEPS.length}`}>
+          {STEPS.map((s, i) => (
+            <View key={`${s.target}-${i}`} style={[styles.dot, i === index && styles.dotOn, i < index && styles.dotPast]} />
+          ))}
+        </View>
+        <Pressable
+          onPress={() => setPhase('welcome')}
+          accessibilityRole="button"
+          accessibilityLabel="Eğitimi geç"
+          hitSlop={10}
+          testID="tour-skip"
+          style={({ pressed }) => [styles.skip, pressed && styles.pressed]}
+        >
+          <Text style={styles.skipText}>Geç</Text>
+          <Ionicons name="play-skip-forward" size={13} color="#FFFFFF" />
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -340,26 +304,62 @@ export function AppTour({ userId, tabBarHeight }: { userId: string; tabBarHeight
 const styles = StyleSheet.create({
   cover: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 90, elevation: 90 },
   block: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-  dim: { position: 'absolute', backgroundColor: 'rgba(3, 8, 16, 0.72)' },
-  ring: { position: 'absolute', borderRadius: 14, borderWidth: 2, borderColor: colors.primary },
-  card: {
+  dim: { position: 'absolute', backgroundColor: 'rgba(3, 8, 16, 0.84)' },
+  ring: {
     position: 'absolute',
-    left: spacing.md,
-    right: spacing.md,
-    gap: spacing.sm,
-    padding: spacing.lg,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 2.5,
+    borderColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOpacity: 0.9,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
   },
-  cardHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  cardTitle: { flex: 1, color: colors.text, fontFamily: fonts.black, fontSize: fontSizes.md },
-  cardText: { color: colors.text, fontSize: fontSizes.sm, lineHeight: 20 },
-  stepNo: { color: colors.textMuted, fontSize: fontSizes.xs, fontFamily: fonts.semi },
-  skip: {
+  textWrap: { position: 'absolute', left: spacing.lg, right: spacing.lg, gap: spacing.sm },
+  arrow: { position: 'relative', width: 52, height: 56, alignItems: 'center', justifyContent: 'center' },
+  title: {
+    color: '#FFFFFF',
+    fontFamily: fonts.black,
+    fontSize: 30,
+    lineHeight: 36,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowRadius: 8,
+    textShadowOffset: { width: 0, height: 2 },
+  },
+  text: {
+    color: '#FFFFFF',
+    fontFamily: fonts.semi,
+    fontSize: 17,
+    lineHeight: 25,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowRadius: 6,
+    textShadowOffset: { width: 0, height: 1 },
+  },
+  next: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: spacing.xs,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: colors.primary,
+  },
+  nextText: { color: '#04211F', fontFamily: fonts.black, fontSize: 15 },
+  topBar: {
     position: 'absolute',
+    left: spacing.lg,
     right: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dots: { flexDirection: 'row', gap: 5 },
+  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.3)' },
+  dotOn: { width: 20, backgroundColor: colors.primary },
+  dotPast: { backgroundColor: 'rgba(255,255,255,0.7)' },
+  skip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -368,7 +368,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: 'rgba(255, 255, 255, 0.16)',
   },
-  skipText: { color: '#FFFFFF', fontSize: fontSizes.xs, fontFamily: fonts.semi },
+  skipText: { color: '#FFFFFF', fontSize: 13, fontFamily: fonts.semi },
   pressed: { opacity: 0.7 },
   full: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 96, elevation: 96, backgroundColor: colors.bg },
   welcome: { gap: spacing.lg, paddingHorizontal: spacing.lg, alignItems: 'stretch' },
@@ -379,7 +379,7 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     backgroundColor: '#05101C',
   },
-  welcomeTitle: { color: colors.text, fontFamily: fonts.black, fontSize: fontSizes.xl, textAlign: 'center' },
-  welcomeText: { color: colors.text, fontSize: fontSizes.sm, lineHeight: 21, textAlign: 'center' },
+  welcomeTitle: { color: colors.text, fontFamily: fonts.black, fontSize: 24, textAlign: 'center' },
+  welcomeText: { color: colors.text, fontSize: 14, lineHeight: 21, textAlign: 'center' },
   welcomeButtons: { gap: spacing.sm },
 });

@@ -27,3 +27,10 @@
    ödüller açılır.
 2. Davet ayarı ve çekiliş kutusu küçüldü; "Kurallar" ve "Puanlar" OYUNLAR başlığının yanında.
 3. Oyun kutuları ekranda daha yukarıdan başlar (açılışta 4 oyun görünür).
+
+## E. Uygulama eğitimi ve hoş geldin (her hesapta 1 kez)
+1. Yeni hesapla gir: izin ekranları ve şehir seçiminden sonra eğitim başlar.
+2. Anlatılan alan dışı kararır; kutu yok: büyük yazı, zıplayan ok ve alanın çevresinde parlayan çerçeve. Ekrana dokun
+   ya da **Devam** ile ilerle; sağ üstte **Geç** var. 7 kısa adım, sonda hoş geldin ekranı.
+3. Eğitim bir kez çıkar; ikinci kez başlamamalı. Sekmelerde ayrıca ipucu kartı çıkmaz.
+4. Aynı hesapla başka telefondan (ya da uygulamayı silip yükleyip) gir: eğitim ve hoş geldin bir daha çıkmamalı.

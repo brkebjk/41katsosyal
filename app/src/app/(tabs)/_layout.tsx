@@ -1,11 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, Tabs } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { AppState, StyleSheet, View, type ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppTour } from '@/components/AppTour';
-import { TabTips } from '@/components/TabTips';
 import { CitySplash } from '@/components/CitySplash';
 import { featureOn, loadLook, resetLook, useLook } from '@/lib/look';
 import { HexClusterIcon } from '@/components/HexClusterIcon';
@@ -228,6 +227,9 @@ export default function TabsLayout() {
   // Uygulama eğitimi: izin ekranları ve şehir seçimi bittikten sonra bir kez (sekmelerin üstünde; başka bir ekran
   // açılınca o ekranın altında kalır)
   const showTour = tourReady && !!profile?.id && profile.role !== 'sponsor';
+  // Eğitim bir kez başlayınca (şehir yeniden okunsa da) yerinde kalır; yeniden kurulup baştan başlamaz
+  const [tourUser, setTourUser] = useState<string | null>(null);
+  if (showTour && profile && tourUser !== profile.id) setTourUser(profile.id);
   return (
     <View style={styles.flex}>
     <Tabs
@@ -276,11 +278,9 @@ export default function TabsLayout() {
         }}
       />
     </Tabs>
-      {showTour && profile ? <AppTour key={profile.id} userId={profile.id} tabBarHeight={58 + bottom} /> : null}
+      {tourUser && profile?.id === tourUser ? <AppTour key={tourUser} userId={tourUser} tabBarHeight={58 + bottom} /> : null}
       {/* Şehir açılış görseli (yönetim panelinden): uygulama açılınca bir kez, eğitim sırasında değil */}
       {!(showTour && tourRunning) ? <CitySplash /> : null}
-      {/* Eğitimden sonra: sekme ilk açıldığında kısa ipuçları */}
-      {showTour && profile ? <TabTips key={`tips-${profile.id}`} userId={profile.id} tabBarHeight={58 + bottom} /> : null}
     </View>
   );
 }
