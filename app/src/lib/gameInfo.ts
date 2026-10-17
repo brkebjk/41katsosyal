@@ -119,7 +119,7 @@ export const SHARK_RANK_ITEM: InfoItem = {
 export const OKEY_RANK_ITEM: InfoItem = {
   icon: 'grid',
   lead: 'Okey ve 101’de sıra.',
-  text: 'Okey’de oyun sonunda kalan puanı en yüksek, 101’de toplam cezası en düşük olan 1. sıradadır. Masada 4 koltuk sayılır; eşlide eşler aynı sırayı paylaşır. Masadan ayrılan son sıraya düşer ve puan almaz.',
+  text: 'Okey’de oyun sonunda kalan puanı en yüksek, 101’de toplam cezası en düşük olan 1. sıradadır. Masada 4 koltuk sayılır; eşlide eşler aynı sırayı paylaşır ve kazanan eşler tavan puanı bölüşür. 101’de 3 elli oyun 1,5 kat puan verir. Masadan ayrılan son sıraya düşer ve puan almaz.',
 };
 
 /** Bilgi Yarışması hakkında kısa bilgi (oyun kutusuna dokununca). */
@@ -446,7 +446,7 @@ const OKEY_TILES: RuleLine[] = [
   {
     icon: 'swap-horizontal',
     lead: 'Sıra.',
-    text: 'Sıra sağa döner. Sırası gelen ortadan çeker ya da solundakinin attığı son taşı (yandan) alır, sonra sağına bir taş atar.',
+    text: 'Sıra sağa döner. Sırası gelen ortadan çeker ya da solundakinin attığı son taşı (yandan) alır, sonra sağına bir taş atar. Taşı ıstakada istediğin yere sürükleyerek çekebilirsin; çekilen taş geri bırakılmaz. Okey taşına dokununca ters döner (rakip görmesin), bir daha dokununca düzelir.',
   },
 ];
 
@@ -483,7 +483,7 @@ export const OKEY_RULES: Record<'okey' | 'okey101', RuleLine[]> = {
     {
       icon: 'podium',
       lead: 'PeopleHere puanı.',
-      text: 'Masadaki sıraya göre 1. 4, 2. 3, 3. 2, 4. 1 puan (eşitler paylaşır). Aylık hedef diğer oyunlar gibi; hedef dolsa da oynamaya devam edersin, yalnızca puan yazılmaz. Masadan ayrılan puan almaz.',
+      text: 'Tekli masada sıraya göre 1. 4, 2. 3, 3. 2, 4. 1 puan (eşitler paylaşır). Eşli masada kazanan eşler tavan puanı paylaşır (2’şer), kaybedenler 1’er puan alır. Aylık hedef diğer oyunlar gibi; hedef dolsa da oynamaya devam edersin, yalnızca puan yazılmaz. Masadan ayrılan puan almaz.',
     },
   ],
   okey101: [
@@ -512,7 +512,7 @@ export const OKEY_RULES: Record<'okey' | 'okey101', RuleLine[]> = {
     {
       icon: 'arrow-undo',
       lead: 'Yandan almak.',
-      text: 'Elini açmadıysan yandan aldığın taşla aynı turda açmalısın; açamazsan “Geri koy”a basarsın, ortadan çekilir.',
+      text: 'Elini açmadıysan yandan aldığın taşla aynı turda açmalısın (taş açtığın perlerin içinde olur). Alınan taş geri bırakılmaz; açamazsan süren dolunca taş geri konur.',
     },
     {
       icon: 'trophy',
@@ -527,7 +527,7 @@ export const OKEY_RULES: Record<'okey' | 'okey101', RuleLine[]> = {
     {
       icon: 'warning',
       lead: 'Cezalı masa.',
-      text: 'İşlek taş (yerdeki bir pere işlenebilen taş) atmak, okey atmak ve yandan aldığın taşı geri koymak 101 cezadır. Cezasız masada ceza yazılmaz.',
+      text: 'İşlek taş (yerdeki bir pere işlenebilen taş) atmak, okey atmak ve yandan aldığın taşla açamamak 101 cezadır. Cezasız masada ceza yazılmaz.',
     },
     { icon: 'hourglass', lead: 'Ortada taş biterse.', text: 'El biter, herkes elinde kalanı yazar.' },
     { icon: 'flag', lead: 'Oyun sonu.', text: 'Seçilen el sayısı (1, 3, 5 ya da 7) oynanır; toplam cezası en düşük olan kazanır.' },
@@ -541,7 +541,7 @@ export const OKEY_RULES: Record<'okey' | 'okey101', RuleLine[]> = {
     {
       icon: 'podium',
       lead: 'PeopleHere puanı.',
-      text: 'Masadaki sıraya göre 1. 4, 2. 3, 3. 2, 4. 1 puan (eşitler paylaşır). Aylık hedef diğer oyunlar gibi; hedef dolsa da oynamaya devam edersin, yalnızca puan yazılmaz. Masadan ayrılan puan almaz.',
+      text: 'Tekli masada sıraya göre 1. 4, 2. 3, 3. 2, 4. 1 puan (eşitler paylaşır). Eşli masada kazanan eşler tavan puanı paylaşır (2’şer), kaybedenler 1’er puan alır. 3 ve daha çok elli oyun 1,5 kat puan verir. Aylık hedef diğer oyunlar gibi; hedef dolsa da oynamaya devam edersin, yalnızca puan yazılmaz. Masadan ayrılan puan almaz.',
     },
   ],
 };

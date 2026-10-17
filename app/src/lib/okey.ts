@@ -34,6 +34,21 @@ export type OkeyPlayer = {
   bot: boolean;
   left: boolean;
   tiles: number;
+  /** Rumuz (Lakap#numara; deneme oyuncusunda boş) */
+  alias: string | null;
+  /** Bu oyuncuyu engelledin */
+  blocked: boolean;
+};
+
+/** Oda sohbeti mesajı. age: kaç saniye önce yazıldı (sunucu saatiyle) */
+export type OkeyChat = {
+  id: string;
+  seat: number | null;
+  from: string;
+  name: string;
+  body: string;
+  mine: boolean;
+  age: number;
 };
 
 export type OkeyMeld = {
@@ -125,12 +140,9 @@ export type OkeyView = {
     okey: boolean;
     elden: boolean;
     pairs: boolean;
-    groups: OkeyMeld[] | null;
     tile: number | null;
     mult: number;
   } | null;
-  /** El sonunda herkesin ıstakasında kalanlar */
-  reveal: Record<string, number[]> | null;
   end_age: number | null;
   pause_secs: number;
   winner: number[] | null;
@@ -139,6 +151,8 @@ export type OkeyView = {
   need: { run: number; pair: number } | null;
   /** Kendi ıstakan: 30 yuva (2 sıra × 15), boş yuva null */
   rack: (number | null)[] | null;
+  /** Oda sohbeti (son 30 mesaj; engellediklerinin mesajları gelmez) */
+  chat: OkeyChat[] | null;
 };
 
 export const RACK_COLS = 15;
@@ -151,8 +165,7 @@ const TEXT: Record<string, string> = {
   already_drew: 'Bu tur zaten taş aldın.',
   draw_first: 'Önce ortadan ya da yandan bir taş al.',
   pile_empty: 'Yanda alınacak taş yok.',
-  side_must_open:
-    'Yandan aldığın taşla bu tur elini açmalısın. Açamıyorsan “Geri koy”a bas (cezalı masada 101 ceza), sonra ortadan çekilir.',
+  side_must_open: 'Yandan aldığın taşla önce elini açmalısın.',
   tile_not_in_hand: 'Bu taş ıstakanda değil.',
   wrong_tile_count: 'Taş sayısı tutmuyor. Bitirmek için 14 taşı dizip 15. taşı ortaya atmalısın.',
   invalid_finish: 'Bu dizilişle bitemezsin: 14 taşın hepsi perlere (ya da 7 çifte) dizilmiş olmalı.',
@@ -182,6 +195,12 @@ const TEXT: Record<string, string> = {
   wrong_game: 'Bu hamle bu oyunda yok.',
   invalid_slots: 'Istaka kaydedilemedi.',
   invalid_transition: 'Masa bu duruma geçemez.',
+  muted: 'Bir süre mesaj yazamazsın.',
+  invalid_body: 'Mesaj 1–120 karakter olmalı.',
+  links_not_allowed: 'Mesajda bağlantı paylaşılamaz.',
+  rate_limited: 'Biraz yavaş: mesajlar arasında kısa bir süre bekle.',
+  chat_limit: 'Bu masada daha fazla mesaj yazamazsın.',
+  player_not_found: 'Bu oyuncu bulunamadı.',
 };
 
 export const OK_ROOM_GONE = 'Bu masa artık yok.';
@@ -216,6 +235,15 @@ export const okArrange = (roomId: string, slots: (number | null)[]): Promise<Res
 export async function okRematch(roomId: string): Promise<{ data: string | null; error: string | null }> {
   return callRpc<string>('ok_rematch', { p_room_id: roomId }, TEXT);
 }
+/** Masaya yaz (oda sohbeti) */
+export const okSay = (roomId: string, body: string): Promise<Result> =>
+  callRpcVoid('ok_say', { p_room_id: roomId, p_body: body }, TEXT);
+/** Masadaki bir oyuncuyu engelle */
+export const okBlock = (roomId: string, playerId: string): Promise<Result> =>
+  callRpcVoid('ok_block', { p_room_id: roomId, p_player_id: playerId }, TEXT);
+
+/** Sohbetteki hazır kısa mesajlar */
+export const OK_QUICK = ['Merhaba', 'İyi oyunlar', 'Bol şans', 'Tebrikler', 'Hadi sıra sende', 'Güzel hamle', 'Teşekkürler', 'Görüşürüz'];
 
 // ---------------------------------------------------------------------------
 // Taşlar
@@ -623,6 +651,27 @@ export function arrangeRuns(tiles: number[], okc: number, okn: number, wrap: boo
   }
   rest.sort((a, b) => sortKey(a, okc, okn) - sortKey(b, okc, okn));
   return layout(groups, rest);
+}
+
+/**
+ * 101, elini açmamışken yandan alma: bu taşla (taş perlerin içinde olmak şartıyla) bu tur açabilir misin?
+ * Yalnızca uyarı içindir; kesin karar sunucunundur.
+ */
+export function canOpenWith(tiles: number[], t: number, okc: number, okn: number, need: { run: number; pair: number }): boolean {
+  const all = [...tiles, t];
+  let rest = [...all];
+  const groups: number[][] = [];
+  for (let pass = 0; pass < 3; pass++) {
+    const g = bestGroups(rest, okc, okn, false);
+    if (!g.length) break;
+    groups.push(...g);
+    const used = new Set(g.flat());
+    rest = rest.filter((x) => !used.has(x));
+  }
+  const value = groups.reduce((a, g) => a + (splitChunk(g, okc, okn, false, false) ?? []).reduce((b, m) => b + m.value, 0), 0);
+  if (value >= need.run && groups.some((g) => g.includes(t))) return true;
+  const pr = validChunks(arrangePairs(all, okc, okn), okc, okn, false, true);
+  return pr.pairCount >= need.pair && pr.groups.some((g) => g.includes(t));
 }
 
 /** Çift diz: aynı taşları yan yana, okeyleri tek kalanların yanına koyar */

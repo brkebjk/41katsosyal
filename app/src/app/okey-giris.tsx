@@ -35,14 +35,14 @@ function modes(game: 'okey' | 'okey101'): IntroRole[] {
   const list: IntroRole[] = [
     row('tekli', 'Tekli', T_GAME, 'person', 'Herkes kendi için oynar.'),
     row('esli', 'Eşli', T_GAME, 'people', 'Karşılıklı oturanlar eştir (1–3 ve 2–4).', game === 'okey'
-      ? 'Puan takımındır: biri bitince rakip takım puan kaybeder.'
-      : 'Biri bitince eşi ceza yazmaz; takımın cezası iki kişinin toplamıdır. Katlamalıda eşin açışı barajı yükseltmez.'),
+      ? 'Puan takımındır: biri bitince rakip takım puan kaybeder. Kazanan eşler tavan puanı paylaşır.'
+      : 'Biri bitince eşi ceza yazmaz; takımın cezası iki kişinin toplamıdır. Katlamalıda eşin açışı barajı yükseltmez. Kazanan eşler tavan puanı paylaşır.'),
   ];
   if (game === 'okey101') {
     list.push(
       row('katlamasiz', 'Katlamasız', T_OPEN, 'remove', 'Herkes 101 (ya da 5 çift) ile açar.'),
       row('katlamali', 'Katlamalı', T_OPEN, 'trending-up', 'Sonra açan, rakiplerin en yüksek açışını en az 1 geçmeli.', 'Seri ve çift ayrı sayılır: 112 ile açıldıysa sonraki en az 113, 6 çiftle açıldıysa en az 7 çift.'),
-      row('cezali', 'Cezalı', T_PEN, 'warning', 'İşlek taş atmak, okey atmak ve yandan alınan taşı geri koymak 101 ceza.'),
+      row('cezali', 'Cezalı', T_PEN, 'warning', 'İşlek taş atmak, okey atmak ve yandan aldığın taşla açamamak 101 ceza.'),
       row('cezasiz', 'Cezasız', T_PEN, 'happy', 'Bu hamlelere ceza yazılmaz.'),
     );
   }
@@ -51,7 +51,7 @@ function modes(game: 'okey' | 'okey101'): IntroRole[] {
     row('yardimsiz', 'Yardımsız', T_HELP, 'eye-off', 'İpucu yok: okeyi ve perleri sen bulursun.'),
     game === 'okey'
       ? row('puan', '10 ya da 20 puan', T_LEN, 'flag', 'Herkes bu puanla başlar; biri 0’a inince oyun biter.')
-      : row('el', '1, 3, 5 ya da 7 el', T_LEN, 'flag', 'Seçilen el sayısı oynanır; toplam cezası en düşük kazanır.'),
+      : row('el', '1, 3, 5 ya da 7 el', T_LEN, 'flag', 'Seçilen el sayısı oynanır; toplam cezası en düşük kazanır.', '3 ve daha çok elli oyun 1,5 kat puan verir.'),
   );
   return list;
 }

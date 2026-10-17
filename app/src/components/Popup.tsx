@@ -15,6 +15,7 @@ import { Text } from '@/components/AppText';
 import { DialogHost } from '@/components/DialogHost';
 import { KeyboardLift } from '@/components/KeyboardLift';
 import { CloseX } from '@/components/CloseX';
+import { MODAL_ORIENTATIONS } from '@/lib/orientation';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -70,7 +71,7 @@ export function Popup({ title, subtitle, icon, onClose, children, footer, testID
   const { height } = useWindowDimensions();
   const swipe = useEdgeSwipeClose(onClose);
   return (
-    <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
+    <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={onClose} supportedOrientations={MODAL_ORIENTATIONS}>
       <View style={styles.flex} {...swipe.handlers}>
       <KeyboardLift style={styles.root} inModal>
         <Pressable style={styles.backdrop} onPress={onClose} accessibilityRole="button" accessibilityLabel="Kapat" />

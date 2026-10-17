@@ -6,6 +6,7 @@ import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '@/components/AppText';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { formatDate } from '@/lib/labels';
+import { MODAL_ORIENTATIONS } from '@/lib/orientation';
 import { brand, colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 type Props = {
@@ -26,7 +27,7 @@ const pad2 = (n: number) => String(n).padStart(2, '0');
  */
 export function MemberCardModal({ visible, onClose, name, subscriptionUntil, perkLine }: Props) {
   return (
-    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose} supportedOrientations={MODAL_ORIENTATIONS}>
       <View style={styles.root}>
         <Pressable
           style={styles.backdrop}

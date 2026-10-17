@@ -1,6 +1,9 @@
 -- PARÇA 3 / 4 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+create trigger user_vv_stats_rewards after insert or update on public.user_vv_stats
+  for each row execute function public._rewards_trigger();
+
 -- Başarımlar ekranı: oyun sayıları, Vampir görev sayaçları, bulunan hazine ve kazanılan ödüller (yalnızca kendin)
 create or replace function public.my_achievement_stats()
 returns jsonb language sql stable security definer set search_path = public as $$
@@ -7406,6 +7409,8 @@ create table if not exists public.sk_queue (
 alter table public.sk_queue enable row level security;
 -- Paket: eşleştirme iki oyunda (Köpekbalığı Kafesi, Vampir–Köylü); kişi aynı anda tek oyun için arar
 alter table public.sk_queue add column if not exists game_type text not null default 'shark_cage';
+-- Okey ve 101: uzaktan masa seçenekleri (_ok_match_opts); yalnızca aynı seçenekteki kişiler eşleşir
+alter table public.sk_queue add column if not exists opts jsonb;
 
 -- Sıradakiyle eşleştirmeyi dener. Döner: kişinin girdiği eşleştirme odası (yoksa boş).
 create or replace function public._sk_match_try(p_user uuid)
@@ -7503,14 +7508,43 @@ returns int language sql stable security definer set search_path = public as $$
     from public.sk_queue q where q.user_id = p_user;
 $$;
 
--- Eşleşmek için sıraya gir (oyun: shark_cage | vampire_villager).
+-- Okey ve 101 uzaktan masa seçenekleri (arama ekranında seçilir; yalnızca aynı seçenekleri seçenler eşleşir).
+-- Okey: eşli/tek, yardımlı/yardımsız. 101: ayrıca cezalı/cezasız ve el sayısı (1 ya da 3). Diğer oyunlarda boş.
+create or replace function public._ok_match_opts(p_game text, p_opts jsonb)
+returns jsonb language plpgsql immutable as $$
+declare
+  o jsonb;
+  k text;
+  val jsonb;
+begin
+  if p_game not in ('okey', 'okey101') then return null; end if;
+  o := case when p_game = 'okey' then '{"pairs": false, "helper": true}'::jsonb
+            else '{"pairs": false, "helper": true, "penalty": true, "hands": 3}'::jsonb end;
+  if p_opts is null or p_opts = 'null'::jsonb then return o; end if;
+  if jsonb_typeof(p_opts) <> 'object' then raise exception 'invalid_options'; end if;
+  for k, val in select key, value from jsonb_each(p_opts) loop
+    if k in ('pairs', 'helper') or (p_game = 'okey101' and k = 'penalty') then
+      if jsonb_typeof(val) <> 'boolean' then raise exception 'invalid_options'; end if;
+    elsif p_game = 'okey101' and k = 'hands' then
+      if val not in ('1'::jsonb, '3'::jsonb) then raise exception 'invalid_options'; end if;
+    else
+      raise exception 'invalid_options';
+    end if;
+    o := o || jsonb_build_object(k, val);
+  end loop;
+  return o;
+end $$;
+
+-- Eşleşmek için sıraya gir (oyun: shark_cage | vampire_villager | okey | okey101; p_opts yalnızca Okey ve 101).
 -- Döner: { room (eşleştiyse), waiting (sıradaki kişi), solo_left (oda açılmasına kalan sn) }
-create or replace function public.match_join(p_game text)
+drop function if exists public.match_join(text);
+create or replace function public.match_join(p_game text, p_opts jsonb default null)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
   v public.profiles;
   v_room uuid;
   v_live uuid;
+  v_opts jsonb;
 begin
   perform public._require_feature('uzaktan');
   perform public._require_city();
@@ -7525,14 +7559,18 @@ begin
      and not exists (select 1 from public.game_rooms r where r.id = v_live and coalesce((r.config->>'match')::boolean, false)) then
     raise exception 'already_in_game';
   end if;
-  -- Başka oyuna geçen kişinin arama süresi baştan başlar (45 sn kuralı)
-  insert into public.sk_queue (user_id, game_type) values (v.id, p_game)
+  v_opts := public._ok_match_opts(p_game, p_opts);
+  -- Başka oyuna (ya da başka masa seçeneklerine) geçen kişinin arama süresi baştan başlar (45 sn kuralı)
+  insert into public.sk_queue (user_id, game_type, opts) values (v.id, p_game, v_opts)
   on conflict (user_id) do update
-    set last_seen = now(), game_type = excluded.game_type,
-        joined_at = case when public.sk_queue.game_type = excluded.game_type then public.sk_queue.joined_at else now() end;
+    set last_seen = now(), game_type = excluded.game_type, opts = excluded.opts,
+        joined_at = case when public.sk_queue.game_type = excluded.game_type
+                          and public.sk_queue.opts is not distinct from excluded.opts
+                         then public.sk_queue.joined_at else now() end;
   v_room := public._sk_match_try(v.id);
   return jsonb_build_object('room', v_room,
-                            'waiting', (select count(*) from public.sk_queue where game_type = p_game),
+                            'waiting', (select count(*) from public.sk_queue
+                                         where game_type = p_game and opts is not distinct from v_opts),
                             'solo_left', public._match_solo_left(v.id));
 end $$;
 
@@ -7556,8 +7594,9 @@ begin
   v_room := public._sk_match_try(v.id);
   return jsonb_build_object('room', v_room,
                             'waiting', (select count(*) from public.sk_queue q
-                                         where q.game_type = coalesce((select game_type from public.sk_queue where user_id = v.id),
-                                                                      'shark_cage')),
+                                         left join public.sk_queue m on m.user_id = v.id
+                                         where q.game_type = coalesce(m.game_type, 'shark_cage')
+                                           and q.opts is not distinct from m.opts),
                             'searching', exists (select 1 from public.sk_queue where user_id = v.id),
                             'solo_left', public._match_solo_left(v.id));
 end $$;
@@ -7591,12 +7630,22 @@ create or replace function public.admin_queue_test_bots(p_count int default 3, p
 returns int language plpgsql security definer set search_path = public as $$
 declare
   n int;
+  v public.profiles;
 begin
-  perform public._require_user();
+  v := public._require_user();
   perform public._require_admin();
   if p_game not in ('shark_cage', 'vampire_villager', 'okey', 'okey101') then raise exception 'game_not_available'; end if;
-  insert into public.sk_queue (user_id, game_type)
-  select p.id, p_game from public.profiles p
+  -- Okey ve 101: deneme oyuncuları moderatörün aradığı masa seçenekleriyle sıraya girer (başka seçenekle bekleyenler çıkar)
+  if p_game in ('okey', 'okey101') then
+    delete from public.sk_queue q using public.profiles p
+     where p.id = q.user_id and p.is_bot and q.game_type = p_game
+       and q.opts is distinct from coalesce((select m.opts from public.sk_queue m where m.user_id = v.id and m.game_type = p_game),
+                                            public._ok_match_opts(p_game, null));
+  end if;
+  insert into public.sk_queue (user_id, game_type, opts)
+  select p.id, p_game, coalesce((select q.opts from public.sk_queue q where q.user_id = v.id and q.game_type = p_game),
+                                public._ok_match_opts(p_game, null))
+    from public.profiles p
    where p.is_bot
      and not exists (select 1 from public.sk_queue q where q.user_id = p.id)
      and not exists (select 1 from public.room_players rp join public.game_rooms r on r.id = rp.room_id
@@ -8088,56 +8137,4 @@ end $$;
 insert into public.app_settings (key, value, description) values
   ('rematch_seconds', '45', 'Oyun bitince açılan yeni el bekleme odasında "Hazırım" geri sayımı, saniye'),
   ('match_solo_room_seconds', '45', 'Uzaktan eşleşme: açık oda bulunamazsa kaç saniye sonra oda açılır (kişi orada tek başına bekleyebilir)')
-on conflict (key) do nothing;
-
--- ---- Ses şikâyeti yaptırımları ------------------------------------------------------------------------------------
--- Moderatör ses mesajı şikâyetini "sonuçlandı" (haklı) ya da "reddedildi" (haksız) diye kapatır:
---   Haklı: konuşanın mikrofonu 7 gün kapanır; ikinci ve sonraki ihlallerde 30 gün.
---   Haksız: şikâyet edenin haksız şikâyet sayısı artar; her 3 haksız şikâyette 30 gün ses şikâyeti yapamaz ve 7 gün
---   mikrofon kullanamaz. (Sayılar ayarlardan değiştirilebilir.)
-create or replace function public._voice_report_verdict(p_report_id uuid, p_just boolean)
-returns void language plpgsql security definer set search_path = public as $$
-declare
-  rp public.reports;
-  v_speaker uuid;
-  v_n int;
-begin
-  select * into rp from public.reports where id = p_report_id;
-  if not found or rp.target_type <> 'sk_voice' then return; end if;
-  if p_just then
-    select c.user_id into v_speaker from public.sk_voice_clips c where c.id = rp.target_id;
-    if v_speaker is null then return; end if;
-    update public.profiles
-       set voice_strikes = voice_strikes + 1,
-           mic_banned_until = greatest(coalesce(mic_banned_until, now()), now())
-             + make_interval(days => case when voice_strikes >= 1 then public.setting_int('voice_ban_days_repeat', 30)
-                                          else public.setting_int('voice_ban_days_first', 7) end)
-     where id = v_speaker
-     returning voice_strikes into v_n;
-    perform public._notify(v_speaker, 'system', 'Mikrofonun kapatıldı',
-      'Oyunda gönderdiğin bir ses mesajı kurallara aykırı bulundu. Bir süre bas-konuş kullanamazsın.', '{}'::jsonb);
-  else
-    update public.profiles set unjust_reports = unjust_reports + 1 where id = rp.reporter_id
-     returning unjust_reports into v_n;
-    if v_n % greatest(1, public.setting_int('unjust_report_limit', 3)) = 0 then
-      update public.profiles
-         set report_banned_until = now() + make_interval(days => public.setting_int('report_ban_days', 30)),
-             mic_banned_until = greatest(coalesce(mic_banned_until, now()), now())
-               + make_interval(days => public.setting_int('unjust_mic_ban_days', 7))
-       where id = rp.reporter_id;
-      perform public._notify(rp.reporter_id, 'system', 'Şikâyet hakkın kapatıldı',
-        'Yaptığın ses şikâyetleri birkaç kez haksız bulundu. Bir süre ses şikâyeti yapamaz ve bas-konuş kullanamazsın.',
-        '{}'::jsonb);
-    end if;
-  end if;
-end $$;
-
-insert into public.app_settings (key, value, description) values
-  ('voice_ban_days_first', '7', 'Haklı bulunan ilk ses şikâyetinde konuşanın mikrofon yasağı (gün)'),
-  ('voice_ban_days_repeat', '30', 'Haklı bulunan sonraki ses şikâyetlerinde mikrofon yasağı (gün)'),
-  ('unjust_report_limit', '3', 'Kaç haksız ses şikâyetinde şikâyet edene yaptırım uygulanır'),
-  ('report_ban_days', '30', 'Haksız şikâyet yaptırımı: ses şikâyeti yasağı (gün)'),
-  ('unjust_mic_ban_days', '7', 'Haksız şikâyet yaptırımı: mikrofon yasağı (gün)'),
-  ('kick_poll_seconds', '30', 'Oyuncu atma oylamasının süresi (sn)'),
-  ('kick_poll_per_player', '2', 'Bir oyuncu bir odada en çok kaç atma oylaması başlatabilir')
 on conflict (key) do nothing;

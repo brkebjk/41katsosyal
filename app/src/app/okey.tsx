@@ -1,11 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   AppState,
   BackHandler,
   Platform,
@@ -13,17 +14,23 @@ import {
   ScrollView,
   Share,
   StyleSheet,
+  TextInput,
   Vibration,
   View,
   useWindowDimensions,
+  type GestureResponderEvent,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ActionSheet, type MenuAnchor } from '@/components/ActionSheet';
 import { Text } from '@/components/AppText';
+import { goToDm } from '@/components/DirectMessages';
 import { InviteSheet } from '@/components/InviteSheet';
 import {
   DeckTile,
   DigitTiles,
+  DragSource,
+  GRID_PAD,
   HPlate,
   MeldRow,
   ModePill,
@@ -35,28 +42,40 @@ import {
   SeatChip,
   TableGrid,
   TileBack,
+  TileFaceDown,
   VPlate,
+  moveInRack,
+  packMelds,
+  rackSlotAt,
   rackTileSize,
   type DropZone,
   type TileSize,
 } from '@/components/OkeyParts';
 import { Popup } from '@/components/Popup';
 import { useElapsedSeconds, usePhaseStart } from '@/components/VampireParts';
-import { confirmAction, showDialog } from '@/lib/dialog';
+import { confirmAction, notify, notifyReportSent, showDialog } from '@/lib/dialog';
+import { openDm } from '@/lib/dm';
+import { REPORT_REASONS } from '@/lib/feed';
+import { FRIEND_CONSEQUENCE, FRIEND_WARNING, sendRequestInRoom } from '@/lib/friends';
 import { OKEY_RULES } from '@/lib/gameInfo';
+import { reportTarget } from '@/lib/invites';
 import { fmtPts } from '@/lib/labels';
+import { anchorOf } from '@/lib/menuAnchor';
 import {
   arrangePairs,
   arrangeRuns,
   canAddTo,
+  canOpenWith,
   canSwap,
   finishGroups,
   getOkeyView,
   isIsler,
   isWild,
+  OK_QUICK,
   OK_ROOM_GONE,
   okAdd,
   okArrange,
+  okBlock,
   okDiscard,
   okDraw,
   okFinish,
@@ -64,7 +83,7 @@ import {
   okOpen,
   okRematch,
   okReady,
-  okReturn,
+  okSay,
   okSetOptions,
   okShow,
   okSit,
@@ -77,9 +96,11 @@ import {
   teamOf,
   tileName,
   validChunks,
+  type OkeyChat,
   type OkeyLog,
   type OkeyMeld,
   type OkeyOpts,
+  type OkeyPlayer,
   type OkeyView,
 } from '@/lib/okey';
 import { lockLandscape, lockPortrait } from '@/lib/orientation';
@@ -219,6 +240,22 @@ function OkeyTable({ roomId }: { roomId: string }) {
   /** Yatay masada yerdeki perler (taş üstüne bırakılınca işlenir) */
   const meldRefs = useRef(new Map<number, View>());
   const meldRects = useRef(new Map<number, { x: number; y: number; w: number; h: number }>());
+  /** Istaka (desteden / yandan sürüklenen taş hangi yuvaya bırakıldı) */
+  const rackBox = useRef<View | null>(null);
+  const rackRect = useRef<{ x: number; y: number } | null>(null);
+  /** Sürüklenen deste / yandan taşının çizildiği katman */
+  const floatLayer = useRef<View | null>(null);
+  const floatOrigin = useRef({ x: 0, y: 0 });
+  const [extDrag, setExtDrag] = useState<{ src: 'deck' | 'side'; tile: number | null } | null>(null);
+  const [extHover, setExtHover] = useState<number | null>(null);
+  const [extPos] = useState(() => new Animated.ValueXY({ x: 0, y: 0 }));
+  /** Ters çevrilmiş okey taşları (yalnızca bu telefonda) */
+  const [flipped, setFlipped] = useState<Set<number>>(() => new Set());
+  const lastHand = useRef<number | null>(null);
+  /** Oda sohbeti ve oyuncu menüsü */
+  const [chatOpen, setChatOpen] = useState(false);
+  const [seenTs, setSeenTs] = useState(0);
+  const [menu, setMenu] = useState<{ p: OkeyPlayer; anchor: MenuAnchor; step: 'menu' | 'report' } | null>(null);
 
   const say = useCallback((text: string, tone: 'info' | 'danger' = 'danger') => {
     setToast({ text, tone });
@@ -230,6 +267,11 @@ function OkeyTable({ roomId }: { roomId: string }) {
   const applyView = useCallback((v: OkeyView, sentAt: number) => {
     hasView.current = true;
     setLoadError(null);
+    // Yeni elde okey değişir: ters çevrilenler düzelir
+    if (v.hand !== lastHand.current) {
+      lastHand.current = v.hand;
+      setFlipped((f) => (f.size ? new Set() : f));
+    }
     if (v.rack) {
       const merged = mergeRack(rackRef.current, v.rack);
       rackRef.current = merged;
@@ -338,6 +380,17 @@ function OkeyTable({ roomId }: { roomId: string }) {
     else lockPortrait();
   }, [wantLand]);
   useEffect(() => () => lockPortrait(), []);
+  // Masadan profil / mesaj ekranına geçilince dikey; geri dönünce masa yeniden yatay
+  const wantLandRef = useRef(wantLand);
+  useEffect(() => {
+    wantLandRef.current = wantLand;
+  });
+  useFocusEffect(
+    useCallback(() => {
+      if (wantLandRef.current) lockLandscape();
+      return () => lockPortrait();
+    }, []),
+  );
 
   const stayAwake = live && view !== null;
   useEffect(() => {
@@ -432,6 +485,9 @@ function OkeyTable({ roomId }: { roomId: string }) {
         zoneRects.current[k] = { x, y, w, h };
       });
     }
+    rackBox.current?.measureInWindow((x, y) => {
+      rackRect.current = { x, y };
+    });
     meldRects.current.clear();
     meldRefs.current.forEach((ref, id) => {
       ref.measureInWindow((x, y, w, h) => {
@@ -499,40 +555,88 @@ function OkeyTable({ roomId }: { roomId: string }) {
   }, [helper, rack, v, is101, chunkInfo, myOpened, tiles, melds, okc, okn]);
 
   // ---- Hamleler ----
-  const draw = () => {
+  /** Çekilen / yandan alınan yeni taşı sürüklenip bırakıldığı yuvaya taşır */
+  const placeNew = (before: Set<number>, slot: number) => {
+    const cur = rackRef.current;
+    if (!cur || slot < 0) return;
+    const nt = cur.find((t) => notNull(t) && !before.has(t));
+    if (nt === undefined || nt === null) return;
+    const idx = cur.indexOf(nt);
+    if (idx >= 0 && idx !== slot) changeRack(moveInRack(cur, idx, slot));
+  };
+
+  const draw = (slot = -1) => {
     if (!v || !myTurn) return say(v?.phase === 'play' ? 'Sıra sende değil.' : 'Şu an taş alınmaz.');
     if (drew) {
       if (!is101 && selected !== null) return void finishWith(selected);
       return say(is101 ? 'Bu tur taşını aldın. Şimdi bir taş at.' : 'Bu tur taşını aldın. Bitirmek için atacağın taşı ortaya sürükle.', 'info');
     }
-    void act('draw', () => okDraw(roomId));
+    const before = new Set(tiles);
+    void act('draw', () => okDraw(roomId)).then((ok) => {
+      if (ok) placeNew(before, slot);
+    });
   };
 
-  const take = () => {
+  const take = async (slot = -1) => {
     if (!v || !myTurn) return say('Sıra sende değil.');
     if (drew) return say('Bu tur taşını aldın.', 'info');
     if (!leftPile.length) return say('Yanda alınacak taş yok.', 'info');
-    if (is101 && !myOpened) {
-      void confirmAction(
+    // 101: elini açmamışken yandan alınan taşla bu tur açılmalı (taş açılan perlerin içinde). Geri koymak yoktur.
+    if (is101 && !myOpened && v.need && !canOpenWith(tiles, leftPile[leftPile.length - 1], okc, okn, v.need)) {
+      const ok = await confirmAction(
         'Yandan al',
-        'Elini açmadın: yandan aldığın taşla bu tur elini açmak zorundasın. Açamazsan taşı geri koyarsın' +
+        'Elini açmadın: yandan aldığın taşla bu tur elini açmak zorundasın (taş açtığın perlerin içinde olmalı). Bu taşla ' +
+          'açamayacak gibi görünüyorsun. Açamazsan süre bitince taş geri konur' +
           (v.opts.penalty ? ' ve 101 ceza yazılır.' : '.'),
-        'Al',
-        false,
+        'Yine de al',
+        true,
         { icon: 'hand-left-outline' },
-      ).then((ok) => {
-        if (ok) void act('take', () => okTake(roomId));
-      });
-      return;
+      );
+      if (!ok) return;
     }
-    void act('take', () => okTake(roomId));
+    const before = new Set(tiles);
+    if (await act('take', () => okTake(roomId))) placeNew(before, slot);
+  };
+
+  /** Desteden / yandan taşı sürükleyerek çekme: bırakılan yuvaya yerleşir (çekilen taş geri bırakılmaz) */
+  const extStart = (src: 'deck' | 'side'): boolean => {
+    if (!v || v.phase !== 'play' || mySeat === null) return false;
+    if (!myTurn) {
+      say('Sıra sende değil.');
+      return false;
+    }
+    if (drew || busy) return false;
+    if (src === 'side' && !leftPile.length) return false;
+    measureZones();
+    setExtDrag({ src, tile: src === 'side' ? leftPile[leftPile.length - 1] : null });
+    return true;
+  };
+  const extSlot = (px: number, py: number, sz: TileSize): number => {
+    const r = rackRect.current;
+    return r ? rackSlotAt(px - r.x, py - r.y, sz) : -1;
+  };
+  const extMove = (px: number, py: number, sz: TileSize) => {
+    extPos.setValue({ x: px - floatOrigin.current.x - sz.w * 0.6, y: py - floatOrigin.current.y - sz.h * 1.1 });
+    const i = extSlot(px, py, sz);
+    setExtHover((h) => (h === i ? h : i));
+  };
+  const extEnd = (src: 'deck' | 'side', px: number, py: number, sz: TileSize) => {
+    const slot = extSlot(px, py, sz);
+    setExtDrag(null);
+    setExtHover(null);
+    if (src === 'deck') draw(slot);
+    else void take(slot);
+  };
+  const extCancel = () => {
+    setExtDrag(null);
+    setExtHover(null);
   };
 
   const discard = async (t: number) => {
     if (!v || !myTurn) return say('Sıra sende değil.');
     if (!drew) return say('Önce ortadan ya da yandan bir taş al.');
     if (is101 && v.side !== null && !myOpened) {
-      return say('Yandan aldığın taşla elini açmalısın; açamıyorsan “Geri koy”a bas.');
+      return say('Yandan aldığın taşla önce elini açmalısın.');
     }
     if (is101 && v.opts.penalty && helper && tiles.length > 1) {
       const wild = isWild(t, okc, okn);
@@ -643,6 +747,91 @@ function OkeyTable({ roomId }: { roomId: string }) {
     setSelected(null);
   };
 
+  const flip = (t: number) =>
+    setFlipped((f) => {
+      const n = new Set(f);
+      if (n.has(t)) n.delete(t);
+      else n.add(t);
+      return n;
+    });
+
+  // ---- Oyuncu menüsü (rumuza dokununca; akıştaki menü gibi) ----
+  const openMenu = (p: OkeyPlayer | undefined, e: GestureResponderEvent) => {
+    if (!p || p.is_me) return;
+    setMenu({ p, anchor: anchorOf(e), step: 'menu' });
+  };
+  const friendRequest = async (p: OkeyPlayer) => {
+    setMenu(null);
+    const ok = await confirmAction(
+      'Arkadaşlık isteği gönder',
+      `İstek ${p.name} kişisine gidecek. ${FRIEND_CONSEQUENCE}`,
+      'İsteği gönder',
+      false,
+      { icon: 'person-add', tone: 'friend', warning: FRIEND_WARNING },
+    );
+    if (!ok) return;
+    const r = await sendRequestInRoom(roomId, p.id);
+    if (r.error) return say(r.error);
+    void notify(
+      r.outcome === 'accepted' ? 'Artık arkadaşsınız' : 'İstek gönderildi',
+      r.outcome === 'accepted' ? `${p.name} ile artık arkadaşsınız.` : `${p.name} kabul edince arkadaş olursunuz.`,
+      { icon: null },
+    );
+  };
+  const reportPlayer = async (p: OkeyPlayer, reason: string) => {
+    setMenu(null);
+    const res = await reportTarget('room', roomId, `Oyuncu ${p.alias ?? p.name}: ${reason}`.slice(0, 300));
+    if (res.error) return say(res.error);
+    await notifyReportSent();
+  };
+  const blockPlayer = async (p: OkeyPlayer) => {
+    setMenu(null);
+    const ok = await confirmAction(
+      'Bu kişiyi engelle',
+      `${p.name} engellensin mi? Masadaki mesajlarını görmezsin, uzaktan masada bir daha eşleşmezsiniz; akışta da engellenir.`,
+      'Engelle',
+      true,
+      { icon: 'remove-circle-outline' },
+    );
+    if (!ok) return;
+    const res = await okBlock(roomId, p.id);
+    if (res.error) return say(res.error);
+    say('Oyuncu engellendi.', 'info');
+    void load();
+  };
+  const goProfile = (p: OkeyPlayer) => {
+    setMenu(null);
+    if (p.alias) router.push({ pathname: '/rumuz', params: { alias: p.alias } });
+  };
+  const messagePlayer = async (p: OkeyPlayer) => {
+    setMenu(null);
+    if (!p.alias) return;
+    const res = await openDm({ alias: p.alias });
+    if (res.error || !res.id) return say(res.error ?? 'Mesaj açılamadı.');
+    goToDm(res.id);
+  };
+
+  // ---- Oda sohbeti ----
+  const openChat = () => {
+    setChatOpen(true);
+    setSeenTs(Date.now());
+  };
+  const closeChat = () => {
+    setChatOpen(false);
+    setSeenTs(Date.now());
+  };
+  const sendChat = async (body: string): Promise<boolean> => {
+    const t = body.trim();
+    if (!t) return false;
+    const r = await okSay(roomId, t);
+    if (r.error) {
+      say(r.error);
+      return false;
+    }
+    void load();
+    return true;
+  };
+
   // ---- Ekranlar ----
   if (!roomId) {
     return <Shell><Center text="Masa bulunamadı." onBack={goToGames} /></Shell>;
@@ -660,6 +849,28 @@ function OkeyTable({ roomId }: { roomId: string }) {
 
   const title = v.game === 'okey' ? 'Okey' : '101 Okey';
   const nameOf = (s: number | null | undefined) => v.players.find((p) => p.seat === s)?.name ?? '—';
+  // Sohbet: bekleme odasında ve oyunda masadakiler yazar
+  const chat = v.chat ?? [];
+  const canChat = v.me.is_player && (v.status === 'lobby' || v.status === 'playing');
+  const unread = chatOpen ? 0 : chat.filter((m) => !m.mine && viewAt - m.age * 1000 > seenTs).length;
+  const chatBtn = (small: boolean) =>
+    canChat ? (
+      <Pressable
+        onPress={openChat}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={unread ? `Masa sohbeti, ${unread} yeni mesaj` : 'Masa sohbeti'}
+        style={small ? styles.hBtnS : styles.hBtn}
+        testID="ok-chat"
+      >
+        <Ionicons name="chatbubble-ellipses" size={small ? 17 : 20} color="#FFFFFF" />
+        {unread ? (
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{unread > 9 ? '9+' : unread}</Text>
+          </View>
+        ) : null}
+      </Pressable>
+    ) : null;
   const header = (
     <View style={styles.header}>
       <Pressable onPress={() => void leaveGame()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Masadan çık" style={styles.hBtn} testID="ok-leave">
@@ -684,6 +895,7 @@ function OkeyTable({ roomId }: { roomId: string }) {
       <Pressable onPress={() => setSheet('rules')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Kurallar" style={styles.hBtn} testID="ok-rules">
         <Ionicons name="help-circle-outline" size={22} color={OK.text} />
       </Pressable>
+      {chatBtn(false)}
     </View>
   );
 
@@ -704,6 +916,42 @@ function OkeyTable({ roomId }: { roomId: string }) {
       ) : null}
       {sheet === 'scores' ? <ScoreSheet v={v} onClose={() => setSheet(null)} /> : null}
       {sheet === 'invite' ? <InviteSheet roomId={roomId} onClose={() => setSheet(null)} /> : null}
+      {menu && menu.step === 'menu' ? (
+        <ActionSheet
+          title={menu.p.name}
+          subtitle={menu.p.bot ? 'Deneme oyuncusu: bu seçenekler gerçek üyelerde çalışır.' : undefined}
+          anchor={menu.anchor}
+          onClose={() => setMenu(null)}
+          options={
+            menu.p.bot
+              ? []
+              : [
+                  { label: 'Arkadaşlık isteği gönder', icon: 'person-add-outline', onPress: () => void friendRequest(menu.p) },
+                  { label: 'Şikayet et', icon: 'flag-outline', onPress: () => setMenu({ ...menu, step: 'report' }) },
+                  menu.p.blocked
+                    ? { label: 'Engellendi', icon: 'remove-circle', onPress: () => setMenu(null) }
+                    : { label: 'Bu kişiyi engelle', icon: 'remove-circle-outline', destructive: true, onPress: () => void blockPlayer(menu.p) },
+                  // Oyun sürerken masadan ayrılmamak için profil ve mesaj oyun bitince açılır
+                  ...(menu.p.alias && v.status !== 'playing'
+                    ? [
+                        { label: 'Profile git', icon: 'person-circle-outline' as const, onPress: () => goProfile(menu.p) },
+                        { label: 'Özel mesaj gönder', icon: 'chatbubbles-outline' as const, onPress: () => void messagePlayer(menu.p) },
+                      ]
+                    : []),
+                ]
+          }
+        />
+      ) : null}
+      {menu && menu.step === 'report' ? (
+        <ActionSheet
+          title="Neden şikayet ediyorsun?"
+          subtitle={`${menu.p.name} moderatörlere bildirilir.`}
+          anchor={menu.anchor}
+          onClose={() => setMenu(null)}
+          options={REPORT_REASONS.map((r) => ({ label: r, icon: 'flag-outline' as const, onPress: () => void reportPlayer(menu.p, r) }))}
+        />
+      ) : null}
+      {chatOpen && canChat ? <ChatPanel chat={chat} land={land} width={width} edge={insets} onSend={sendChat} onClose={closeChat} /> : null}
       {sheet === 'melds' ? (
         <MeldSheet
           v={v}
@@ -785,6 +1033,7 @@ function OkeyTable({ roomId }: { roomId: string }) {
     const p = playerAt(s);
     if (!p) return <View />;
     return (
+      <Pressable onPress={(e) => openMenu(p, e)} disabled={p.is_me} accessibilityRole="button" accessibilityLabel={`${p.name}: oyuncu menüsü`}>
       <SeatChip
         name={p.name}
         avatar={p.avatar}
@@ -797,6 +1046,7 @@ function OkeyTable({ roomId }: { roomId: string }) {
         compact={!v.remote}
         opened={is101 ? openedLabel(s) : null}
       />
+      </Pressable>
     );
   };
   const rightSeat = seatAt(1);
@@ -810,13 +1060,21 @@ function OkeyTable({ roomId }: { roomId: string }) {
   const need = v.need;
 
   const actions: ReactNode[] = [];
+  // Yatay masada düğmeler kartının iki yanına dağılır (Seri aç solda, Çift aç sağda)
+  const actsL: ReactNode[] = [];
+  const actsR: ReactNode[] = [];
+  const push = (side: 'L' | 'R', ...nodes: ReactNode[]) => {
+    actions.push(...nodes);
+    (side === 'L' ? actsL : actsR).push(...nodes);
+  };
   if (v.phase === 'play' && myTurn) {
     if (!is101) {
       if (firstTurn && hasTwin) {
-        actions.push(<ActBtn key="show" label="Göstergeyi göster" icon="eye-outline" onPress={() => void act('show', () => okShow(roomId))} busy={busy === 'show'} small={land} />);
+        push('L', <ActBtn key="show" label="Göstergeyi göster" icon="eye-outline" onPress={() => void act('show', () => okShow(roomId))} busy={busy === 'show'} small={land} />);
       }
       if (drew) {
-        actions.push(
+        push(
+          'R',
           <ActBtn
             key="finish"
             label="Bitir"
@@ -832,7 +1090,8 @@ function OkeyTable({ roomId }: { roomId: string }) {
       if (!myOpened) {
         const runLabel = helper && runsInfo && need ? `Seri aç ${runsInfo.value}/${need.run}` : 'Seri aç';
         const pairLabel = helper && prsInfo && need ? `Çift aç ${prsInfo.pairCount}/${need.pair}` : 'Çift aç';
-        actions.push(
+        push(
+          'L',
           <ActBtn
             key="open"
             label={runLabel}
@@ -842,6 +1101,9 @@ function OkeyTable({ roomId }: { roomId: string }) {
             busy={busy === 'open'}
             small={land}
           />,
+        );
+        push(
+          'R',
           <ActBtn
             key="pairs"
             label={pairLabel}
@@ -852,13 +1114,8 @@ function OkeyTable({ roomId }: { roomId: string }) {
             small={land}
           />,
         );
-        if (v.side !== null) {
-          actions.push(
-            <ActBtn key="return" label="Geri koy" icon="arrow-undo-outline" danger onPress={() => void act('return', () => okReturn(roomId))} busy={busy === 'return'} small={land} />,
-          );
-        }
       } else {
-        actions.push(<ActBtn key="lay" label="Per indir" icon="layers-outline" onPress={layMelds} busy={busy === 'lay'} small={land} />);
+        push('L', <ActBtn key="lay" label="Per indir" icon="layers-outline" onPress={layMelds} busy={busy === 'lay'} small={land} />);
         if (!land) {
           actions.push(<ActBtn key="add" label="İşle" icon="git-merge-outline" onPress={() => (selected === null ? say('İşlemek için ıstakadan bir taş seç.', 'info') : setSheet('melds'))} />);
         }
@@ -878,7 +1135,7 @@ function OkeyTable({ roomId }: { roomId: string }) {
         ? !drew
           ? 'Sıra sende: ortadan çek ya da yandan al'
           : is101 && v.side !== null && !myOpened
-            ? 'Yandan aldığın taşla elini aç (ya da geri koy)'
+            ? 'Yandan aldığın taşla elini aç'
             : is101
               ? 'Aç, işle ya da bir taş at'
               : 'Bir taş at ya da bitir'
@@ -900,18 +1157,21 @@ function OkeyTable({ roomId }: { roomId: string }) {
         onLayout={measureZones}
         collapsable={false}
       >
-        <Pressable
-          onPress={draw}
-          accessibilityRole="button"
+        <DragSource
+          onTap={() => draw()}
+          onDragStart={() => extStart('deck')}
+          onDragMove={(x, y) => extMove(x, y, size)}
+          onDragEnd={(x, y) => extEnd('deck', x, y, size)}
+          onDragCancel={extCancel}
           accessibilityLabel={`Ortadan çek, ${v.deck_n ?? 0} taş`}
           testID="ok-deck"
-          style={({ pressed }) => [styles.deck, myTurn && !drew && styles.zoneActive, hoverZone === 'deck' && styles.zoneHot, pressed && { opacity: 0.85 }]}
+          style={[styles.deck, myTurn && !drew && styles.zoneActive, hoverZone === 'deck' && styles.zoneHot]}
         >
           <TileBack size={sz} count={v.deck_n} />
           <Text style={[styles.zoneLabel, myTurn && !drew && styles.zoneLabelOn]}>
             {!is101 && myTurn && drew ? 'Bitir' : 'Ortadan çek'}
           </Text>
-        </Pressable>
+        </DragSource>
       </View>
       {v.ind !== null ? (
         <View style={styles.ind}>
@@ -934,17 +1194,17 @@ function OkeyTable({ roomId }: { roomId: string }) {
     </Text>
   ) : null;
   const takePile = (sz: TileSize) => (
-    <Pile
-      tiles={leftPile}
-      okc={okc}
-      okn={okn}
-      size={sz}
-      helper={helper}
-      label="Yandan al"
-      active={myTurn && !drew && leftPile.length > 0}
-      onPress={take}
+    <DragSource
+      onTap={() => void take()}
+      onDragStart={() => extStart('side')}
+      onDragMove={(x, y) => extMove(x, y, size)}
+      onDragEnd={(x, y) => extEnd('side', x, y, size)}
+      onDragCancel={extCancel}
+      accessibilityLabel="Yandan al"
       testID="ok-take"
-    />
+    >
+      <Pile tiles={extDrag?.src === 'side' ? leftPile.slice(0, -1) : leftPile} okc={okc} okn={okn} size={sz} helper={helper} label="Yandan al" active={myTurn && !drew && leftPile.length > 0} />
+    </DragSource>
   );
   const discardZone = (sz: TileSize) => (
     <View
@@ -1002,24 +1262,39 @@ function OkeyTable({ roomId }: { roomId: string }) {
   );
   const rackView = (w: number) =>
     rack && v.phase === 'play' ? (
-      <OkRack
-        slots={rack}
-        okc={okc}
-        okn={okn}
-        helper={helper}
-        width={w}
-        selected={selected}
-        marks={marks}
-        onSelect={setSelected}
-        onChange={changeRack}
-        zoneAt={zoneAt}
-        onHoverZone={setHoverZone}
-        onDrop={onDrop}
-        testID="ok-rack"
-      />
+      <View ref={rackBox} collapsable={false} onLayout={measureZones} style={styles.selfCenter}>
+        <OkRack
+          slots={rack}
+          okc={okc}
+          okn={okn}
+          helper={helper}
+          width={w}
+          selected={selected}
+          marks={marks}
+          onSelect={setSelected}
+          onChange={changeRack}
+          zoneAt={zoneAt}
+          onHoverZone={setHoverZone}
+          onDrop={onDrop}
+          flipped={flipped}
+          onFlip={flip}
+          extHover={extHover}
+          testID="ok-rack"
+        />
+      </View>
     ) : !v.me.is_player && v.phase === 'play' ? (
       <Text style={styles.watch}>Bu masayı izliyorsun.</Text>
     ) : null;
+  // ---- Yatay masa ölçüleri (ıstaka taşı ekran yüksekliğinin üçte birini geçmez) ----
+  const W = width - insets.left - insets.right;
+  const H = height - insets.top - insets.bottom;
+  const topH = 40;
+  const twByW = Math.floor((W - Math.max(44, Math.min(64, Math.round(W * 0.06))) * 2 - 20) / 15);
+  const twByH = Math.floor((H * 0.31 - 25) / 2 / 1.3);
+  const tw = Math.max(20, Math.min(56, twByW, twByH));
+  const rTile: TileSize = { w: tw, h: Math.round(tw * 1.3) };
+  const dragSize = land ? rTile : size;
+  const floatSize: TileSize = { w: Math.round(dragSize.w * 1.15), h: Math.round(dragSize.h * 1.15) };
   const overlays = (
     <>
       {v.phase === 'hand_end' ? (
@@ -1051,6 +1326,28 @@ function OkeyTable({ roomId }: { roomId: string }) {
           onBack={goToGames}
         />
       ) : null}
+      {/* Desteden / yandan sürüklenen taş */}
+      <View
+        ref={floatLayer}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+        collapsable={false}
+        onLayout={() =>
+          floatLayer.current?.measureInWindow((x, y) => {
+            floatOrigin.current = { x, y };
+          })
+        }
+      >
+        {extDrag ? (
+          <Animated.View style={[styles.float, { transform: [{ translateX: extPos.x }, { translateY: extPos.y }] }]}>
+            {extDrag.tile !== null ? (
+              <OkTile t={extDrag.tile} okc={okc} okn={okn} size={floatSize} helper={helper} />
+            ) : (
+              <TileFaceDown size={floatSize} />
+            )}
+          </Animated.View>
+        ) : null}
+      </View>
       {toast ? <Toast {...toast} top={land ? 8 : 70} /> : null}
       {sheets}
     </>
@@ -1058,38 +1355,39 @@ function OkeyTable({ roomId }: { roomId: string }) {
 
   // ---- Yatay düzen (101 Okey Plus düzeni; oyun sırasında ekran yana döner) ----
   if (land) {
-    const W = width - insets.left - insets.right;
-    const H = height - insets.top - insets.bottom;
-    const topH = 40;
-    const sideBtnW = Math.max(44, Math.min(70, Math.round(W * 0.06)));
+    const sideBtnW = Math.max(44, Math.min(64, Math.round(W * 0.06)));
     const colW = Math.max(sideBtnW + 18, 78);
-    const rackW = W - colW * 2 - 8;
-    // Istaka taşı: genişliğe göre, ıstaka ekran yüksekliğinin üçte birini geçmez
-    const twByW = Math.floor((rackW - 12) / 15);
-    const twByH = Math.floor((H * 0.31 - 25) / 2 / 1.3);
-    const tw = Math.max(20, Math.min(56, twByW, twByH));
-    const rTile: TileSize = { w: tw, h: Math.round(tw * 1.3) };
     const rackH = rTile.h * 2 + 8 + 12 + 5;
     const midH = Math.max(120, H - topH - rackH);
     const pileT: TileSize = { w: Math.round(tw * 0.72), h: Math.round(tw * 0.72 * 1.3) };
+    // Yandan al / Taş at kutuları büyük: taşı sürükleyip bırakmak kolay olsun
+    const takeW = Math.min(colW - 14, Math.round(tw * 1.08));
+    const takeT: TileSize = { w: takeW, h: Math.round(takeW * 1.3) };
     const modeT: TileSize = { w: Math.round(tw * (is101 ? 0.82 : 1.05)), h: Math.round(tw * (is101 ? 0.82 : 1.05) * 1.3) };
-    const gT: TileSize = { w: Math.max(13, Math.min(22, Math.round(tw * 0.5))), h: Math.max(17, Math.min(28, Math.round(tw * 0.5 * 1.3))) };
+    // Perler: kare boyutu en çok bu kadar (sığmazsa küçülür)
+    const maxCell = Math.max(13, Math.min(26, Math.round(tw * 0.68)));
     const myRowH = 34;
     const tableH = midH - myRowH - 4;
     const modeW = Math.max(is101 ? 78 : 130, modeT.w * 2 + 14);
     const pairsW = is101 ? Math.max(70, Math.round(W * 0.1)) : 0;
-    const gridW = is101 ? W - colW * 2 - modeW - pairsW - 20 : 0;
-    const vPlateH = Math.max(70, midH - (pileT.h + 6) * 2 - 10);
-    const plateFor = (s: number): { name: string; avatar: number | null; sub: string | null; turnFrac: number | null; team: 1 | 2 | null; left: boolean; bot: boolean } => {
+    const boardsW = is101 ? W - colW * 2 - modeW - pairsW - 20 : 0;
+    const halfW = Math.floor((boardsW - 4) / 2);
+    const plateW = Math.min(170, Math.round(W * 0.2));
+    const vPlateH = Math.max(60, midH - (pileT.h + 6) - (takeT.h + 10) - 10);
+    const bottomSeat = mySeat ?? 1;
+    const penOf = (s: number) => (is101 ? v.pen?.[String(s)] ?? 0 : 0);
+    const plateFor = (s: number) => {
       const p = playerAt(s);
       return {
         name: p?.name ?? '—',
         avatar: p?.avatar ?? null,
-        sub: p ? `${p.tiles} taş${scoreOf(s) ? ` · ${scoreOf(s)}` : ''}` : null,
+        // Ceza yazılınca adın altında kırmızı
+        alert: penOf(s) > 0 ? `${penOf(s)} ceza` : null,
         turnFrac: v.phase === 'play' && v.turn === s ? turnFrac : null,
         team: v.opts.pairs ? (teamOf(s) as 1 | 2) : null,
         left: !!p && (p.left || (v.auto ?? []).includes(s)),
         bot: !!p?.bot,
+        onPress: p && !p.is_me ? (e: GestureResponderEvent) => openMenu(p, e) : undefined,
       };
     };
     const openedDigits = (s: number, vertical = false) => {
@@ -1105,9 +1403,13 @@ function OkeyTable({ roomId }: { roomId: string }) {
       );
     };
     const corner = (tilesList: number[]) => <Pile tiles={tilesList} okc={okc} okn={okn} size={pileT} helper={helper} label="" compact />;
+    // Orta ikiye bölünür: solda sen ve karşındaki, sağda yanlardaki oyuncular (her oyuncunun perleri yeni satırdan)
     const runMelds = melds.filter((m) => m.kind !== 'pair');
     const pairMelds = melds.filter((m) => m.kind === 'pair');
-    const meldView = (m: OkeyMeld) => {
+    const ofSeats = (list: OkeyMeld[], seats: number[]) =>
+      list.filter((m) => seats.includes(m.seat)).sort((a, b) => seats.indexOf(a.seat) - seats.indexOf(b.seat) || a.id - b.id);
+    const seatOrder = [bottomSeat, topSeat, leftSeat, rightSeat];
+    const meldView = (m: OkeyMeld, cell: TileSize, at: { col: number; row: number }) => {
       const fits = selected !== null && helper && !!myOpened && myTurn && drew && (canAddTo(m, selected, okc, okn).length > 0 || canSwap(m, selected, okc, okn));
       const hot = hoverZone === `meld:${m.id}`;
       return (
@@ -1119,19 +1421,33 @@ function OkeyTable({ roomId }: { roomId: string }) {
           }}
           onLayout={measureZones}
           collapsable={false}
-          style={styles.pMeldWrap}
+          style={[styles.pMeldAt, { left: GRID_PAD + at.col * cell.w, top: GRID_PAD + at.row * cell.h }]}
         >
           <Pressable
             onPress={() => (selected !== null ? void onMeldPress(m) : setSheet('melds'))}
             accessibilityRole="button"
             accessibilityLabel="Yerdeki per"
-            style={[styles.pMeld, fits && styles.pMeldFits, hot && styles.pMeldHot]}
+            style={styles.pMeld}
           >
             {m.tiles.map((t) => (
-              <OkTile key={t} t={t} okc={okc} okn={okn} size={gT} helper={helper} />
+              <OkTile key={t} t={t} okc={okc} okn={okn} size={cell} helper={helper} />
             ))}
+            {fits || hot ? <View pointerEvents="none" style={[styles.pMeldRing, hot ? styles.pMeldHot : styles.pMeldFits]} /> : null}
           </Pressable>
         </View>
+      );
+    };
+    const board = (list: OkeyMeld[], bw: number, key: string, empty?: string) => {
+      const pk = packMelds(list, bw, tableH, maxCell);
+      const cell: TileSize = { w: pk.cw, h: pk.ch };
+      return (
+        <TableGrid key={key} width={bw} height={tableH} cellW={pk.cw} cellH={pk.ch}>
+          {list.map((m) => {
+            const at = pk.pos.get(m.id);
+            return at ? meldView(m, cell, at) : null;
+          })}
+          {!list.length && empty ? <Text style={styles.pPairsHint}>{empty}</Text> : null}
+        </TableGrid>
       );
     };
     const modeCol = (
@@ -1154,16 +1470,19 @@ function OkeyTable({ roomId }: { roomId: string }) {
             onLayout={measureZones}
             collapsable={false}
           >
-            <Pressable
-              onPress={draw}
-              accessibilityRole="button"
+            <DragSource
+              onTap={() => draw()}
+              onDragStart={() => extStart('deck')}
+              onDragMove={(x, y) => extMove(x, y, rTile)}
+              onDragEnd={(x, y) => extEnd('deck', x, y, rTile)}
+              onDragCancel={extCancel}
               accessibilityLabel={`Ortadan çek, ${v.deck_n ?? 0} taş`}
               testID="ok-deck"
-              style={({ pressed }) => [styles.pDeck, myTurn && !drew && styles.zoneActive, hoverZone === 'deck' && styles.zoneHot, pressed && { opacity: 0.85 }]}
+              style={[styles.pDeck, myTurn && !drew && styles.zoneActive, hoverZone === 'deck' && styles.zoneHot]}
             >
               <DeckTile size={modeT} count={v.deck_n} />
               <Text style={[styles.pTiny, myTurn && !drew && styles.zoneLabelOn]}>{!is101 && myTurn && drew ? 'Bitir' : 'Çek'}</Text>
-            </Pressable>
+            </DragSource>
           </View>
         </View>
         {helper ? <Text style={styles.pOkey}>Okey: {tileName(okc * 26 + okn - 1, null, null)}</Text> : null}
@@ -1173,174 +1492,196 @@ function OkeyTable({ roomId }: { roomId: string }) {
     const pT = plateFor(topSeat);
     const pL = plateFor(leftSeat);
     const pR = plateFor(rightSeat);
-    const hint = v.phase !== 'play' ? '' : myTurn ? turnText.replace('Sıra sende: ', '') : `${nameOf(v.turn)} oynuyor`;
-    return (
-      <Shell land>
-        {/* Üst: çık / masa adı · karşıdaki oyuncu · puan tablosu ve kurallar */}
-        <View style={[styles.pTop, { height: topH }]}>
-          <View style={styles.pTopSide}>
-            <Pressable onPress={() => void leaveGame()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Masadan çık" style={styles.hBtnS} testID="ok-leave">
-              <Ionicons name="close" size={18} color="#FFFFFF" />
-            </Pressable>
-            <Text style={styles.pTitle} numberOfLines={1}>
-              {title}
-              {v.hand ? (is101 ? ` · El ${v.hand}/${v.opts.hands ?? 3}` : ` · El ${v.hand}`) : ''}
-              {v.test ? ' · Deneme' : ''}
+    const hint = v.phase !== 'play' ? '' : myTurn ? turnText.replace('Sıra sende: ', '') : `${nameOf(v.turn)} oynuyor · ${turnLeft} sn`;
+    // Kartının yanındaki kırmızı kutu: elinin toplamı (seri dizdiysen perlerin toplamı, çift dizdiysen çift sayısı)
+    const pairView = !!chunkInfo && (myOpened ? myOpened.kind === 'pair' : chunkInfo.prs.pairCount > chunkInfo.runs.melds.length);
+    const handTotal = is101 && helper && chunkInfo && rack ? (pairView ? `${chunkInfo.prs.pairCount} çift` : String(chunkInfo.runs.value)) : null;
+    // Sohbet baloncukları: yeni mesaj yazanın kartının yanında birkaç saniye
+    const bubbleOf = (s: number) => {
+      const m = [...chat].reverse().find((x) => x.seat === s);
+      if (!m) return null;
+      return m.age + (nowMs - viewAt) / 1000 < 5 ? m.body : null;
+    };
+    const say1 = (s: number, pos: object, align: 'center' | 'flex-start' | 'flex-end') => {
+      const b = bubbleOf(s);
+      return b ? (
+        <View key={`say${s}`} pointerEvents="none" style={[styles.sayWrap, pos, { alignItems: align }]}>
+          <View style={styles.say}>
+            <Text style={styles.sayText} numberOfLines={3}>
+              {b}
             </Text>
           </View>
-          <View style={styles.pTopMid}>
-            <HPlate {...pT} width={Math.min(220, W * 0.26)} />
-            {is101 ? openedDigits(topSeat) : null}
-          </View>
-          <View style={[styles.pTopSide, styles.pTopRight]}>
-            <Pressable onPress={() => setSheet('scores')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Puan tablosu" style={styles.hBtnS} testID="ok-scores">
-              <Ionicons name="podium-outline" size={17} color={OK.gold} />
-            </Pressable>
-            <Pressable onPress={() => setSheet('rules')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Kurallar" style={styles.hBtnS} testID="ok-rules">
-              <Ionicons name="help-circle-outline" size={19} color="#FFFFFF" />
-            </Pressable>
-          </View>
         </View>
-
-        {/* Orta: solda / sağda köşe yığınları ve dikey oyuncu kartları, ortada masa */}
-        <View style={[styles.pMid, { height: midH }]}>
-          <View style={[styles.pCol, { width: colW }]}>
-            {corner(v.disc?.[String(topSeat)] ?? [])}
-            <View style={[styles.pColMid, styles.pColRow]}>
-              <VPlate {...pL} height={vPlateH} side="left" />
-              {is101 ? openedDigits(leftSeat, true) : null}
+      ) : null;
+    };
+    return (
+      <Shell land>
+        <View style={styles.flex}>
+          {/* Üst: çık / masa adı · karşıdaki oyuncu · ortayı gör, puan tablosu, kurallar, sohbet */}
+          <View style={[styles.pTop, { height: topH }]}>
+            <View style={styles.pTopSide}>
+              <Pressable onPress={() => void leaveGame()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Masadan çık" style={styles.hBtnS} testID="ok-leave">
+                <Ionicons name="close" size={18} color="#FFFFFF" />
+              </Pressable>
+              <Text style={styles.pTitle} numberOfLines={1}>
+                {title}
+                {v.hand ? (is101 ? ` · El ${v.hand}/${v.opts.hands ?? 3}` : ` · El ${v.hand}`) : ''}
+                {v.test ? ' · Deneme' : ''}
+              </Text>
             </View>
-            <Pile
-              tiles={leftPile}
-              okc={okc}
-              okn={okn}
-              size={pileT}
-              helper={helper}
-              label="Yandan al"
-              active={myTurn && !drew && leftPile.length > 0}
-              onPress={take}
-              testID="ok-take"
-              compact
-            />
+            <View style={styles.pTopMid}>
+              <HPlate {...pT} width={Math.min(220, W * 0.26)} />
+              {is101 ? openedDigits(topSeat) : null}
+            </View>
+            <View style={[styles.pTopSide, styles.pTopRight]}>
+              {is101 ? (
+                <Pressable onPress={() => setSheet('melds')} hitSlop={6} accessibilityRole="button" accessibilityLabel="Ortayı gör" testID="ok-melds" style={styles.pExpand}>
+                  <Ionicons name="expand-outline" size={14} color="#CFE6F5" />
+                  <Text style={styles.pExpandText}>Ortayı gör</Text>
+                </Pressable>
+              ) : null}
+              <Pressable onPress={() => setSheet('scores')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Puan tablosu" style={styles.hBtnS} testID="ok-scores">
+                <Ionicons name="podium-outline" size={17} color={OK.gold} />
+              </Pressable>
+              <Pressable onPress={() => setSheet('rules')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Kurallar" style={styles.hBtnS} testID="ok-rules">
+                <Ionicons name="help-circle-outline" size={19} color="#FFFFFF" />
+              </Pressable>
+              {chatBtn(true)}
+            </View>
           </View>
 
-          <View style={styles.pCenter}>
-            <View style={[styles.pTable, { height: tableH }]} onLayout={measureZones}>
-              {is101 ? (
-                <TableGrid width={gridW} height={tableH} cell={gT.w + 2}>
-                  <View style={[styles.pMelds, { height: tableH - 6 }]}>{runMelds.map(meldView)}</View>
-                  <Pressable onPress={() => setSheet('melds')} hitSlop={6} accessibilityRole="button" accessibilityLabel="Ortayı gör" testID="ok-melds" style={styles.pExpand}>
-                    <Ionicons name="expand-outline" size={14} color="#CFE6F5" />
-                    <Text style={styles.pExpandText}>Ortayı gör</Text>
-                  </Pressable>
-                  {feed ? (
-                    <Text style={styles.pFeed} numberOfLines={1}>
-                      {feed}
-                    </Text>
-                  ) : null}
-                </TableGrid>
-              ) : null}
-              {modeCol}
-              {is101 ? (
-                <TableGrid width={pairsW} height={tableH} cell={gT.w + 2}>
-                  <View style={[styles.pMelds, { height: tableH - 6 }]}>{pairMelds.map(meldView)}</View>
-                  {!pairMelds.length ? <Text style={styles.pPairsHint}>Çiftler</Text> : null}
-                </TableGrid>
-              ) : null}
-              {!is101 && feed ? (
-                <Text style={[styles.pFeed, styles.pFeedOkey]} numberOfLines={2}>
-                  {feed}
-                </Text>
-              ) : null}
-            </View>
-            {/* Sen: açtığın değer, kartın, süren */}
-            <View style={[styles.pMe, { height: myRowH }]}>
-              <View style={styles.pMeLeft}>
-                {actions.length ? (
-                  <ScrollView horizontal style={styles.pActScroll} contentContainerStyle={styles.pActs} showsHorizontalScrollIndicator={false}>
-                    {actions}
-                  </ScrollView>
-                ) : null}
-                {is101 && mySeat !== null ? openedDigits(mySeat) : null}
+          {/* Orta: solda / sağda köşe yığınları ve dikey oyuncu kartları, ortada masa */}
+          <View style={[styles.pMid, { height: midH }]}>
+            <View style={[styles.pCol, { width: colW }]}>
+              {corner(v.disc?.[String(topSeat)] ?? [])}
+              <View style={[styles.pColMid, styles.pColRow]}>
+                <VPlate {...pL} height={vPlateH} side="left" />
+                {is101 ? openedDigits(leftSeat, true) : null}
               </View>
-              {p0 ? <HPlate {...p0} turnFrac={null} width={Math.min(190, W * 0.22)} /> : null}
-              <View style={styles.pMeRight}>
-                {myTurn ? (
-                  <View style={[styles.pBubble, turnLeft <= 5 && styles.pBubbleLow]}>
-                    <Text style={styles.pBubbleText}>{turnLeft}</Text>
+              <DragSource
+                onTap={() => void take()}
+                onDragStart={() => extStart('side')}
+                onDragMove={(x, y) => extMove(x, y, rTile)}
+                onDragEnd={(x, y) => extEnd('side', x, y, rTile)}
+                onDragCancel={extCancel}
+                accessibilityLabel="Yandan al"
+                testID="ok-take"
+              >
+                <Pile
+                  tiles={extDrag?.src === 'side' ? leftPile.slice(0, -1) : leftPile}
+                  okc={okc}
+                  okn={okn}
+                  size={takeT}
+                  helper={helper}
+                  label="Yandan al"
+                  active={myTurn && !drew && leftPile.length > 0}
+                  compact
+                />
+              </DragSource>
+            </View>
+
+            <View style={styles.pCenter}>
+              <View style={[styles.pTable, { height: tableH }]} onLayout={measureZones}>
+                {is101 ? (
+                  <View style={styles.pBoards}>
+                    {board(ofSeats(runMelds, seatOrder.slice(0, 2)), halfW, 'b1')}
+                    {board(ofSeats(runMelds, seatOrder.slice(2)), halfW, 'b2')}
                   </View>
                 ) : null}
-                <Text style={[styles.pHint, myTurn && styles.pHintMe]} numberOfLines={2}>
-                  {hint}
-                  {!myTurn && v.phase === 'play' ? ` · ${turnLeft} sn` : ''}
-                  {is101 && mySeat !== null && v.pen?.[String(mySeat)] ? ` · ceza ${v.pen[String(mySeat)]}` : ''}
-                </Text>
+                {modeCol}
+                {is101 ? board(ofSeats(pairMelds, seatOrder), pairsW, 'bp', 'Çiftler') : null}
+              </View>
+              {/* Sen: açtığın değer ve Seri aç (solda), kartın (süre çubuğu üstünde), elinin toplamı ve Çift aç (sağda) */}
+              <View style={[styles.pMe, { height: myRowH }]}>
+                <View style={styles.pMeLeft}>
+                  {is101 && mySeat !== null ? openedDigits(mySeat) : null}
+                  {actsL}
+                </View>
+                {p0 ? <HPlate {...p0} width={plateW} /> : null}
+                <View style={styles.pMeRight}>
+                  {handTotal !== null ? (
+                    <View style={styles.pBubble} accessibilityLabel={`Elinin toplamı ${handTotal}`}>
+                      <Text style={styles.pBubbleText}>{handTotal}</Text>
+                    </View>
+                  ) : null}
+                  {actsR}
+                  {!actsR.length ? (
+                    <Text style={[styles.pHint, myTurn && styles.pHintMe, !!feed && styles.pFeedText]} numberOfLines={2}>
+                      {feed ?? hint}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            </View>
+
+            <View style={[styles.pCol, { width: colW }]}>
+              {corner(v.disc?.[String(rightSeat)] ?? [])}
+              <View style={[styles.pColMid, styles.pColRow]}>
+                {is101 ? openedDigits(rightSeat, true) : null}
+                <VPlate {...pR} height={vPlateH} side="right" />
+              </View>
+              <View
+                ref={(r) => {
+                  zones.current.discard = r;
+                }}
+                onLayout={measureZones}
+                collapsable={false}
+              >
+                <Pile
+                  tiles={myPile}
+                  okc={okc}
+                  okn={okn}
+                  size={takeT}
+                  helper={helper}
+                  label="Taş at"
+                  active={myTurn && drew}
+                  hot={hoverZone === 'discard'}
+                  onPress={() => (selected !== null ? void discard(selected) : myTurn && drew ? say('Atacağın taşı seç ya da buraya sürükle.', 'info') : undefined)}
+                  testID="ok-discard"
+                  compact
+                />
               </View>
             </View>
           </View>
 
-          <View style={[styles.pCol, { width: colW }]}>
-            {corner(v.disc?.[String(rightSeat)] ?? [])}
-            <View style={[styles.pColMid, styles.pColRow]}>
-              {is101 ? openedDigits(rightSeat, true) : null}
-              <VPlate {...pR} height={vPlateH} side="right" />
-            </View>
-            <View
-              ref={(r) => {
-                zones.current.discard = r;
-              }}
-              onLayout={measureZones}
-              collapsable={false}
-            >
-              <Pile
-                tiles={myPile}
-                okc={okc}
-                okn={okn}
-                size={pileT}
-                helper={helper}
-                label="Taş at"
-                active={myTurn && drew}
-                hot={hoverZone === 'discard'}
-                onPress={() => (selected !== null ? void discard(selected) : myTurn && drew ? say('Atacağın taşı seç ya da buraya sürükle.', 'info') : undefined)}
-                testID="ok-discard"
-                compact
-              />
-            </View>
-          </View>
-        </View>
-
-        {/* Alt: Çift diz · ıstaka · Seri diz */}
-        <View style={[styles.pBottom, { height: rackH }]}>
-          <View style={[styles.pBtnCol, { width: colW }]}>
-            {helper ? <PlusSideButton kind="pairs" width={sideBtnW} height={rackH - 6} onPress={() => arrange('pairs')} disabled={!tiles.length} /> : null}
-          </View>
-          <View style={styles.pRackBox}>
+          {/* Alt: Çift diz · ıstaka · Seri diz (düğmeler ıstakaya bitişik) */}
+          <View style={[styles.pBottom, { height: rackH }]}>
+            {helper && rack && v.phase === 'play' ? <PlusSideButton kind="pairs" width={sideBtnW} height={rackH - 6} onPress={() => arrange('pairs')} disabled={!tiles.length} /> : null}
             {rack && v.phase === 'play' ? (
-              <OkRack
-                slots={rack}
-                okc={okc}
-                okn={okn}
-                helper={helper}
-                width={rTile.w * 15 + 12}
-                tile={rTile}
-                skin="gold"
-                engrave="PEOPLEHERE"
-                selected={selected}
-                marks={marks}
-                onSelect={setSelected}
-                onChange={changeRack}
-                zoneAt={zoneAt}
-                onHoverZone={setHoverZone}
-                onDrop={onDrop}
-                testID="ok-rack"
-              />
+              <View ref={rackBox} collapsable={false} onLayout={measureZones}>
+                <OkRack
+                  slots={rack}
+                  okc={okc}
+                  okn={okn}
+                  helper={helper}
+                  width={rTile.w * 15 + 12}
+                  tile={rTile}
+                  skin="gold"
+                  engrave="PEOPLEHERE"
+                  selected={selected}
+                  marks={marks}
+                  onSelect={setSelected}
+                  onChange={changeRack}
+                  zoneAt={zoneAt}
+                  onHoverZone={setHoverZone}
+                  onDrop={onDrop}
+                  flipped={flipped}
+                  onFlip={flip}
+                  extHover={extHover}
+                  testID="ok-rack"
+                />
+              </View>
             ) : !v.me.is_player && v.phase === 'play' ? (
               <Text style={styles.watch}>Bu masayı izliyorsun.</Text>
             ) : null}
+            {helper && rack && v.phase === 'play' ? <PlusSideButton kind="runs" width={sideBtnW} height={rackH - 6} onPress={() => arrange('runs')} disabled={!tiles.length} /> : null}
           </View>
-          <View style={[styles.pBtnCol, { width: colW }]}>
-            {helper ? <PlusSideButton kind="runs" width={sideBtnW} height={rackH - 6} onPress={() => arrange('runs')} disabled={!tiles.length} /> : null}
-          </View>
+
+          {/* Sohbet baloncukları */}
+          {say1(topSeat, { top: topH + 2, left: W / 2 - 110, width: 220 }, 'center')}
+          {say1(leftSeat, { top: topH + midH * 0.3, left: colW + 4, width: 200 }, 'flex-start')}
+          {say1(rightSeat, { top: topH + midH * 0.3, right: colW + 4, width: 200 }, 'flex-end')}
+          {say1(bottomSeat, { top: topH + midH - myRowH - 48, left: W / 2 - 110, width: 220 }, 'center')}
         </View>
         {overlays}
       </Shell>
@@ -1460,6 +1801,106 @@ function ActBtn({
         {label}
       </Text>
     </Pressable>
+  );
+}
+
+/**
+ * Masa sohbeti (odaya özel): üstte yazma yeri ve hazır kısa mesajlar (klavye açılınca da görünür kalsın), altında
+ * mesajlar (en yenisi üstte). Yatay masada sağdan açılan panel, dikeyde tam ekran.
+ */
+function ChatPanel({
+  chat,
+  land,
+  width,
+  edge,
+  onSend,
+  onClose,
+}: {
+  chat: OkeyChat[];
+  land: boolean;
+  width: number;
+  /** Ekran kenarı (çentik) boşlukları */
+  edge: { top: number; right: number; bottom: number };
+  onSend: (body: string) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const send = async (body: string) => {
+    if (sending || !body.trim()) return;
+    setSending(true);
+    const ok = await onSend(body);
+    setSending(false);
+    if (ok && body === text) setText('');
+  };
+  const list = [...chat].reverse();
+  return (
+    <View style={styles.chatRoot}>
+      <Pressable style={styles.chatBackdrop} onPress={onClose} accessibilityLabel="Sohbeti kapat" />
+      <View
+        style={[
+          styles.chatPanel,
+          land
+            ? { width: Math.min(360, Math.round(width * 0.46)) + edge.right, paddingRight: 10 + edge.right, paddingTop: 10 + edge.top, paddingBottom: 10 + edge.bottom }
+            : styles.chatPanelFull,
+        ]}
+      >
+        <View style={styles.chatHead}>
+          <Ionicons name="chatbubble-ellipses" size={18} color={OK.glow} />
+          <Text style={styles.chatTitle}>Masa sohbeti</Text>
+          <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel="Kapat" style={styles.hBtnS}>
+            <Ionicons name="close" size={18} color="#FFFFFF" />
+          </Pressable>
+        </View>
+        <View style={styles.chatInputRow}>
+          <TextInput
+            value={text}
+            onChangeText={setText}
+            placeholder="Masaya yaz…"
+            placeholderTextColor="rgba(255,255,255,0.45)"
+            maxLength={120}
+            style={styles.chatInput}
+            onSubmitEditing={() => void send(text)}
+            returnKeyType="send"
+            accessibilityLabel="Masaya yaz"
+            testID="ok-chat-input"
+          />
+          <Pressable
+            onPress={() => void send(text)}
+            disabled={!text.trim() || sending}
+            accessibilityRole="button"
+            accessibilityLabel="Gönder"
+            style={[styles.chatSend, (!text.trim() || sending) && { opacity: 0.45 }]}
+          >
+            {sending ? <ActivityIndicator size="small" color="#04211F" /> : <Ionicons name="send" size={17} color="#04211F" />}
+          </Pressable>
+        </View>
+        <View style={styles.quickRow}>
+          {OK_QUICK.map((q) => (
+            <Pressable
+              key={q}
+              onPress={() => void send(q)}
+              disabled={sending}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.quick, pressed && { opacity: 0.75 }]}
+            >
+              <Text style={styles.quickText}>{q}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <ScrollView style={styles.flex} contentContainerStyle={styles.chatList} keyboardShouldPersistTaps="handled">
+          {!list.length ? <Text style={styles.chatEmpty}>Henüz mesaj yok. Masadakilere bir şey yaz.</Text> : null}
+          {list.map((m) => (
+            <View key={m.id} style={[styles.msg, m.mine && styles.msgMine]}>
+              <Text style={styles.msgName} numberOfLines={1}>
+                {m.mine ? 'Sen' : m.name}
+              </Text>
+              <Text style={styles.msgBody}>{m.body}</Text>
+            </View>
+          ))}
+        </ScrollView>
+      </View>
+    </View>
   );
 }
 
@@ -1712,32 +2153,16 @@ function HandEnd({ v, wide, left, busy, onReady }: { v: OkeyView; wide: boolean;
   const is101 = v.game === 'okey101';
   const nameOf = (s: number | null) => v.players.find((p) => p.seat === s)?.name ?? '—';
   const h = (v.hist ?? [])[(v.hist ?? []).length - 1];
-  const okc = v.okc ?? 0;
-  const okn = v.okn ?? 1;
   const ready = v.me.seat !== null && (v.ready ?? []).includes(v.me.seat);
-  const tiny: TileSize = { w: 18, h: 26 };
   return (
     <View style={styles.overlay}>
       <ScrollView contentContainerStyle={[styles.overlayCard, wide && styles.overlayWide]}>
         <Text style={styles.ovTitle}>El {v.hand} bitti</Text>
         <Text style={styles.ovSub}>{finText(v, nameOf)}</Text>
-        {v.fin?.groups && !is101 ? (
-          <View style={styles.finGroups}>
-            {v.fin.groups.map((g, i) => (
-              <View key={i} style={styles.finGroup}>
-                {g.tiles.map((t) => (
-                  <OkTile key={t} t={t} okc={okc} okn={okn} size={tiny} helper />
-                ))}
-              </View>
-            ))}
-          </View>
-        ) : null}
         <View style={wide ? styles.ovGrid : styles.ovList}>
         {[1, 2, 3, 4].map((s) => {
           const d = h?.d?.[String(s)] ?? 0;
           const ind = h?.ind?.[String(s)];
-          // Okey'de bitenin taşları yukarıda perleriyle görünür
-          const rem = !is101 && v.fin?.seat === s ? [] : v.reveal?.[String(s)] ?? [];
           const opened = v.opened?.[String(s)];
           return (
             <View key={s} style={[styles.ovRow, wide && styles.ovRowWide]}>
@@ -1762,13 +2187,6 @@ function HandEnd({ v, wide, left, busy, onReady }: { v: OkeyView; wide: boolean;
                         : `Elinde ${h?.rem?.[String(s)] ?? 0}${opened.kind === 'pair' ? ' × 2 (çift açtı)' : ''}${(h?.mult ?? 1) > 1 ? ` × ${h?.mult}` : ''}`}
                   {h?.pen?.[String(s)] ? ` · ceza ${h.pen[String(s)]}` : ''}
                 </Text>
-              ) : null}
-              {rem.length ? (
-                <View style={styles.remRow}>
-                  {rem.map((t) => (
-                    <OkTile key={t} t={t} okc={okc} okn={okn} size={tiny} helper />
-                  ))}
-                </View>
               ) : null}
             </View>
           );
@@ -1923,14 +2341,14 @@ const styles = StyleSheet.create({
   pCenter: { flex: 1 },
   pTable: { flexDirection: 'row', alignItems: 'stretch', justifyContent: 'center', gap: 6, paddingHorizontal: 4 },
   pMelds: { flexDirection: 'column', flexWrap: 'wrap', alignContent: 'flex-start', padding: 3, gap: 3, columnGap: 6 },
-  pMeldWrap: { alignSelf: 'flex-start' },
-  pMeld: { flexDirection: 'row', borderRadius: 4, borderWidth: 1.5, borderColor: 'transparent' },
+  pBoards: { flexDirection: 'row', gap: 4 },
+  pMeldAt: { position: 'absolute' },
+  pMeld: { flexDirection: 'row' },
+  pMeldRing: { position: 'absolute', left: -1, right: -1, top: -1, bottom: -1, borderRadius: 4, borderWidth: 1.5 },
   pMeldFits: { borderColor: '#4ADE80' },
   pMeldHot: { borderColor: OK.gold, backgroundColor: 'rgba(255,201,60,0.25)' },
+  pFeedText: { color: OK.gold },
   pExpand: {
-    position: 'absolute',
-    right: 4,
-    top: 4,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
@@ -1940,8 +2358,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(8,22,36,0.8)',
   },
   pExpandText: { color: '#CFE6F5', fontFamily: fonts.extra, fontSize: 10 },
-  pFeed: { position: 'absolute', left: 6, bottom: 4, right: 6, color: OK.gold, fontFamily: fonts.semi, fontSize: 11 },
-  pFeedOkey: { position: 'relative', alignSelf: 'center', maxWidth: 220, textAlign: 'center' },
   pPairsHint: { position: 'absolute', top: 6, left: 0, right: 0, textAlign: 'center', color: 'rgba(207,230,245,0.45)', fontFamily: fonts.extra, fontSize: 10 },
   pMode: { alignItems: 'stretch', justifyContent: 'center', gap: 4 },
   pIndRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-end', gap: 6, marginTop: 2 },
@@ -1973,9 +2389,63 @@ const styles = StyleSheet.create({
   pBubbleText: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 15 },
   pHint: { flex: 1, color: '#CFE6F5', fontFamily: fonts.semi, fontSize: 11 },
   pHintMe: { color: '#FFFFFF', fontFamily: fonts.extra },
-  pBottom: { flexDirection: 'row', alignItems: 'center' },
-  pBtnCol: { alignItems: 'center', justifyContent: 'center' },
-  pRackBox: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  pBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  float: { position: 'absolute', left: 0, top: 0, zIndex: 80, elevation: 20, shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 6, shadowOffset: { width: 0, height: 4 } },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 3,
+    backgroundColor: OK.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 9.5 },
+  sayWrap: { position: 'absolute', zIndex: 30, elevation: 9 },
+  say: {
+    maxWidth: '100%',
+    paddingVertical: 5,
+    paddingHorizontal: 9,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  sayText: { color: '#0B2730', fontFamily: fonts.extra, fontSize: 12 },
+  chatRoot: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, flexDirection: 'row', zIndex: 70, elevation: 16 },
+  chatBackdrop: { flex: 1, backgroundColor: 'rgba(3,14,18,0.45)' },
+  chatPanel: { backgroundColor: '#0B2730', borderLeftWidth: 1, borderLeftColor: 'rgba(34,211,197,0.35)', padding: 10, gap: 8 },
+  chatPanelFull: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, paddingTop: 50 },
+  chatHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  chatTitle: { flex: 1, color: OK.text, fontFamily: fonts.black, fontSize: 15 },
+  chatInputRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  chatInput: {
+    flex: 1,
+    height: 38,
+    borderRadius: 19,
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(156,201,194,0.35)',
+    color: '#FFFFFF',
+    fontFamily: fonts.semi,
+    fontSize: 14,
+  },
+  chatSend: { width: 38, height: 38, borderRadius: 19, backgroundColor: OK.glow, alignItems: 'center', justifyContent: 'center' },
+  quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  quick: { paddingVertical: 5, paddingHorizontal: 10, borderRadius: 99, backgroundColor: 'rgba(34,211,197,0.16)', borderWidth: 1, borderColor: 'rgba(34,211,197,0.45)' },
+  quickText: { color: OK.text, fontFamily: fonts.extra, fontSize: 12 },
+  chatList: { gap: 6, paddingBottom: 12 },
+  chatEmpty: { color: OK.muted, fontFamily: fonts.semi, fontSize: 12.5, textAlign: 'center', paddingVertical: 12 },
+  msg: { alignSelf: 'flex-start', maxWidth: '92%', padding: 8, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.08)' },
+  msgMine: { alignSelf: 'flex-end', backgroundColor: 'rgba(34,211,197,0.2)' },
+  msgName: { color: OK.gold, fontFamily: fonts.extra, fontSize: 11 },
+  msgBody: { color: '#FFFFFF', fontFamily: fonts.semi, fontSize: 13.5 },
   turnTrack: { height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.12)', overflow: 'hidden' },
   turnFill: { height: 5, backgroundColor: OK.muted },
   turnFillMe: { backgroundColor: OK.glow },
@@ -1998,7 +2468,7 @@ const styles = StyleSheet.create({
   },
   actPrimary: { backgroundColor: OK.glow, borderColor: OK.glow },
   actDanger: { backgroundColor: 'rgba(255,84,112,0.85)', borderColor: OK.danger },
-  actSmall: { paddingVertical: 7, paddingHorizontal: 10 },
+  actSmall: { paddingVertical: 7, paddingHorizontal: 10, flexShrink: 1 },
   actText: { fontFamily: fonts.extra, fontSize: 13 },
   actTextSmall: { fontSize: 11.5 },
   rackWrap: { paddingHorizontal: 6, paddingBottom: 4, gap: 4 },
@@ -2103,9 +2573,6 @@ const styles = StyleSheet.create({
   ovLoss: { color: '#FF8FA3' },
   ovTotal: { color: OK.gold, fontFamily: fonts.black, fontSize: 14, minWidth: 64, textAlign: 'right' },
   ovDetail: { color: OK.muted, fontFamily: fonts.semi, fontSize: 11.5 },
-  remRow: { flexDirection: 'row', flexWrap: 'wrap' },
-  finGroups: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
-  finGroup: { flexDirection: 'row' },
   endRow: { padding: 10, borderRadius: 12, backgroundColor: 'rgba(14,74,74,0.6)' },
   endWin: { borderWidth: 1.5, borderColor: OK.gold },
   endRank: { color: OK.gold, fontFamily: fonts.black, fontSize: 16, width: 22 },

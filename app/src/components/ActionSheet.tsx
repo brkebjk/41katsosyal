@@ -4,6 +4,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } f
 import { Text } from '@/components/AppText';
 import { DialogHost } from '@/components/DialogHost';
 import { Sheet } from '@/components/Sheet';
+import { MODAL_ORIENTATIONS } from '@/lib/orientation';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 import type { MenuAnchor } from '@/lib/menuAnchor';
@@ -75,7 +76,7 @@ function BubbleMenu({ title, subtitle, options, onClose, anchor }: Props & { anc
   const maxH = below ? winH - anchor.y - TAIL - 24 : anchor.y - TAIL - 40;
   const tail = <View style={[styles.tail, below ? styles.tailUp : styles.tailDown, { marginLeft: tailLeft }]} />;
   return (
-    <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
+    <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={onClose} supportedOrientations={MODAL_ORIENTATIONS}>
       <Pressable
         style={styles.bubbleBackdrop}
         onPress={onClose}

@@ -1,6 +1,24 @@
 -- PARÇA 2 / 4 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+-- Kod başkasına sızdıysa yenilenir (eski kod geçersiz olur; kod denemeleri sıfırlanır)
+create or replace function public.regenerate_event_code(p_event_id uuid)
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  v_code text := public._random_code(6);
+begin
+  v := public._require_user();
+  if not exists (select 1 from public.events where id = p_event_id and not is_cancelled) then
+    raise exception 'event_not_found';
+  end if;
+  if not public._is_event_host(p_event_id, v.id) then raise exception 'forbidden'; end if;
+  insert into public.event_codes (event_id, code) values (p_event_id, v_code)
+  on conflict (event_id) do update set code = excluded.code;
+  delete from public.event_code_failures where event_id = p_event_id;
+  return v_code;
+end $$;
+
 -- Katılım puanı, etkinlikte doğrulanan kişi sayısına göre (kalabalık etkinlik daha çok puan getirir):
 -- 4–9 kişi pts_event_attend (30) · 10–19 pts_event_attend_10 (35) · 20–39 pts_event_attend_20 (40) · 40+ pts_event_attend_40 (50).
 -- PeopleHere Özel (moderatör) etkinliklerde her basamağa pts_event_attend_official_bonus (10) eklenir.
@@ -6899,5 +6917,3 @@ drop trigger if exists user_game_stats_rewards on public.user_game_stats;
 create trigger user_game_stats_rewards after insert or update on public.user_game_stats
   for each row execute function public._rewards_trigger();
 drop trigger if exists user_vv_stats_rewards on public.user_vv_stats;
-create trigger user_vv_stats_rewards after insert or update on public.user_vv_stats
-  for each row execute function public._rewards_trigger();

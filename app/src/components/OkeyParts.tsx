@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { memo, useRef, useState, type ReactNode } from 'react';
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 
 import { Text } from '@/components/AppText';
@@ -88,6 +88,37 @@ export const OkTile = memo(function OkTile({
   );
 });
 
+/** Tek kapalı taş (ters çevrilmiş okey, sürüklenen deste taşı) */
+export function TileFaceDown({ size }: { size: TileSize }) {
+  return (
+    <View style={[tileStyles.tile, tileStyles.faceDown, { width: size.w - 2, height: size.h - 2, borderRadius: Math.max(3, size.w * 0.14) }]}>
+      <View style={[tileStyles.faceDownMark, { width: size.w * 0.42, height: size.w * 0.42, borderRadius: size.w * 0.21 }]} />
+    </View>
+  );
+}
+
+/** Okey taşı: dokununca havalanıp ters döner (rakip görmesin); bir daha dokununca düzelir */
+function FlipTile({ flipped, ...p }: React.ComponentProps<typeof OkTile> & { flipped: boolean }) {
+  const [a] = useState(() => new Animated.Value(flipped ? 1 : 0));
+  useEffect(() => {
+    Animated.timing(a, { toValue: flipped ? 1 : 0, duration: 300, useNativeDriver: true }).start();
+  }, [flipped, a]);
+  const scaleX = a.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1, 0.05, 1] });
+  const lift = a.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, -12, 0] });
+  const front = a.interpolate({ inputRange: [0, 0.49, 0.51, 1], outputRange: [1, 1, 0, 0] });
+  const back = a.interpolate({ inputRange: [0, 0.49, 0.51, 1], outputRange: [0, 0, 1, 1] });
+  return (
+    <Animated.View style={{ transform: [{ translateY: lift }, { scaleX }] }}>
+      <Animated.View style={{ opacity: front }}>
+        <OkTile {...p} />
+      </Animated.View>
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: back }]}>
+        <TileFaceDown size={p.size} />
+      </Animated.View>
+    </Animated.View>
+  );
+}
+
 /** Kapalı taş (deste) */
 export function TileBack({ size, count }: { size: TileSize; count?: number | null }) {
   return (
@@ -143,6 +174,8 @@ const tileStyles = StyleSheet.create({
     justifyContent: 'center',
   },
   backCount: { color: '#FFFFFF', fontFamily: fonts.black, fontSize: 15 },
+  faceDown: { backgroundColor: '#1E7F78', borderColor: '#5FE0D4', borderBottomColor: '#0D4F4A', justifyContent: 'center', paddingTop: 0 },
+  faceDownMark: { borderWidth: 1.5, borderColor: 'rgba(234,251,248,0.55)' },
 });
 
 /** Taş boyutu: ıstaka genişliğine göre (15 sütun) */
@@ -154,6 +187,17 @@ export function rackTileSize(width: number): TileSize {
 
 const RACK_PAD = 6;
 const ROW_GAP = 8;
+
+/** Istakanın sol üst köşesine göre (x, y) noktasındaki yuva; ıstaka dışıysa -1 (deste / yandan sürüklerken de) */
+export function rackSlotAt(x: number, y: number, size: TileSize): number {
+  const px = x - RACK_PAD;
+  const py = y - RACK_PAD;
+  if (px < 0 || py < -8) return -1;
+  const col = Math.floor(px / size.w);
+  const row = Math.floor(Math.max(0, py) / (size.h + ROW_GAP));
+  if (col < 0 || col >= RACK_COLS || row < 0 || row >= RACK_ROWS) return -1;
+  return row * RACK_COLS + col;
+}
 
 /**
  * Taşı ıstakada `from` yuvasından `to` yuvasına taşır. Hedef doluysa aynı sırada sağa (yer yoksa sola) kaydırarak
@@ -206,7 +250,8 @@ export type DropZone = 'discard' | 'deck' | `meld:${number}`;
 
 /**
  * Istaka: 2 sıra × 15 yuva. Taşa dokun: seçilir (bir daha dokun: bırakılır); seçiliyken boş yuvaya dokun: oraya taşınır.
- * Taşı sürükle: ıstakada yerini değiştir, "Taş at" alanına bırak: atılır, ortaya bırak (Okey): bitirilir.
+ * Okey taşına dokun: ters döner (bir daha dokun: düzelir). Taşı sürükle: ıstakada yerini değiştir, "Taş at" alanına
+ * bırak: atılır, ortaya bırak (Okey): bitirilir.
  */
 export function OkRack({
   slots,
@@ -225,6 +270,9 @@ export function OkRack({
   tile,
   skin = 'wood',
   engrave,
+  flipped,
+  onFlip,
+  extHover = null,
 }: {
   slots: (number | null)[];
   okc: number;
@@ -245,6 +293,11 @@ export function OkRack({
   skin?: 'wood' | 'gold';
   /** Istakaya kazınmış soluk yazı */
   engrave?: string;
+  /** Ters çevrilmiş okey taşları */
+  flipped?: Set<number>;
+  onFlip?: (t: number) => void;
+  /** Desteden / yandan sürüklenen taşın bırakılacağı yuva (vurgulanır) */
+  extHover?: number | null;
 }) {
   const size = tile ?? rackTileSize(width);
   const box = useRef({ x: 0, y: 0 });
@@ -255,15 +308,7 @@ export function OkRack({
   const hoverZone = useRef<DropZone | null>(null);
   const rackW = size.w * RACK_COLS + RACK_PAD * 2;
 
-  const slotAt = (pageX: number, pageY: number): number => {
-    const x = pageX - box.current.x - RACK_PAD;
-    const y = pageY - box.current.y - RACK_PAD;
-    if (x < 0 || y < -8) return -1;
-    const col = Math.floor(x / size.w);
-    const row = Math.floor(Math.max(0, y) / (size.h + ROW_GAP));
-    if (col < 0 || col >= RACK_COLS || row < 0 || row >= RACK_ROWS) return -1;
-    return row * RACK_COLS + col;
-  };
+  const slotAt = (pageX: number, pageY: number): number => rackSlotAt(pageX - box.current.x, pageY - box.current.y, size);
 
   const setZone = (z: DropZone | null) => {
     if (hoverZone.current !== z) {
@@ -306,7 +351,8 @@ export function OkRack({
     if (!d) return;
     if (!d.moved) {
       const t = d.from >= 0 ? slots[d.from] : null;
-      if (t !== null && t !== undefined) onSelect(t === selected ? null : t);
+      if (t !== null && t !== undefined && onFlip && isWild(t, okc, okn)) onFlip(t);
+      else if (t !== null && t !== undefined) onSelect(t === selected ? null : t);
       else if (selected !== null && d.from >= 0) {
         const from = slots.indexOf(selected);
         if (from >= 0) onChange(moveInRack(slots, from, d.from));
@@ -361,17 +407,30 @@ export function OkRack({
               const i = r * RACK_COLS + c;
               const t = slots[i];
               return (
-                <View key={c} style={[rackStyles.slot, { width: size.w, height: size.h }, hover === i && rackStyles.slotHover]}>
+                <View key={c} style={[rackStyles.slot, { width: size.w, height: size.h }, (hover === i || extHover === i) && rackStyles.slotHover]}>
                   {t !== null && t !== undefined && t !== dragTile ? (
-                    <OkTile
-                      t={t}
-                      okc={okc}
-                      okn={okn}
-                      size={size}
-                      helper={helper}
-                      selected={t === selected}
-                      mark={marks?.get(t) ?? null}
-                    />
+                    onFlip && isWild(t, okc, okn) ? (
+                      <FlipTile
+                        t={t}
+                        okc={okc}
+                        okn={okn}
+                        size={size}
+                        helper={helper}
+                        selected={t === selected}
+                        mark={marks?.get(t) ?? null}
+                        flipped={!!flipped?.has(t)}
+                      />
+                    ) : (
+                      <OkTile
+                        t={t}
+                        okc={okc}
+                        okn={okn}
+                        size={size}
+                        helper={helper}
+                        selected={t === selected}
+                        mark={marks?.get(t) ?? null}
+                      />
+                    )
                   ) : null}
                 </View>
               );
@@ -384,7 +443,11 @@ export function OkRack({
       </LinearGradient>
       {dragTile !== null ? (
         <Animated.View pointerEvents="none" style={[rackStyles.float, { transform: [{ translateX: pos.x }, { translateY: pos.y }] }]}>
-          <OkTile t={dragTile} okc={okc} okn={okn} size={{ w: size.w * 1.2, h: size.h * 1.2 }} helper={helper} />
+          {flipped?.has(dragTile) ? (
+            <TileFaceDown size={{ w: size.w * 1.2, h: size.h * 1.2 }} />
+          ) : (
+            <OkTile t={dragTile} okc={okc} okn={okn} size={{ w: size.w * 1.2, h: size.h * 1.2 }} helper={helper} />
+          )}
         </Animated.View>
       ) : null}
     </View>
@@ -703,21 +766,29 @@ export function DigitTiles({ text, h = 18, vertical = false }: { text: string; h
 type PlateProps = {
   name: string;
   avatar: number | null;
-  /** Kısa bilgi (taş sayısı, puan) */
-  sub: string | null;
+  /** Kırmızı uyarı (ör. "101 ceza"); yalnızca ceza yazılınca adın altında */
+  alert: string | null;
   /** Sıra bu oyuncudaysa kalan sürenin oranı (0–1); değilse null */
   turnFrac: number | null;
   team: 1 | 2 | null;
   left: boolean;
   bot: boolean;
+  /** Karta dokununca (oyuncu menüsü) */
+  onPress?: (e: GestureResponderEvent) => void;
 };
 
 const teamColor = (t: 1 | 2) => (t === 1 ? '#22D3C5' : '#FF9F6B');
 
 /** Yatay oyuncu kartı (karşıdaki oyuncu ve sen): avatar + ad; sıra ondaysa üstünde süre çubuğu */
-export function HPlate({ name, avatar, sub, turnFrac, team, left, bot, width }: PlateProps & { width: number }) {
+export function HPlate({ name, avatar, alert, turnFrac, team, left, bot, width, onPress }: PlateProps & { width: number }) {
   return (
-    <View style={[plusStyles.hWrap, { width }, left && plusStyles.left]}>
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={onPress ? `${name}: oyuncu menüsü` : name}
+      style={({ pressed }) => [plusStyles.hWrap, { width }, left && plusStyles.left, pressed && { opacity: 0.8 }]}
+    >
       {turnFrac !== null ? (
         <View style={plusStyles.hBar}>
           <View style={[plusStyles.hBarFill, { width: `${Math.round(turnFrac * 100)}%` }, turnFrac < 0.2 && plusStyles.barLow]} />
@@ -736,23 +807,29 @@ export function HPlate({ name, avatar, sub, turnFrac, team, left, bot, width }: 
             {bot ? <Ionicons name="hardware-chip-outline" size={11} color={OK.muted} /> : null}
             {left ? <Ionicons name="cloud-offline-outline" size={11} color={OK.danger} /> : null}
           </View>
-          {sub ? (
-            <Text style={plusStyles.hSub} numberOfLines={1}>
-              {sub}
+          {alert ? (
+            <Text style={plusStyles.alert} numberOfLines={1}>
+              {alert}
             </Text>
           ) : null}
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
 /** Dikey oyuncu kartı (sol ve sağ oyuncu): üstte avatar, ad yukarıdan aşağı; sıra ondaysa yanında süre çubuğu */
-export function VPlate({ name, avatar, sub, turnFrac, team, left, bot, height, side }: PlateProps & { height: number; side: 'left' | 'right' }) {
+export function VPlate({ name, avatar, alert, turnFrac, team, left, bot, height, side, onPress }: PlateProps & { height: number; side: 'left' | 'right' }) {
   const W = 40;
   const textLen = Math.max(40, height - W - 8);
   return (
-    <View style={[plusStyles.vRow, side === 'right' && plusStyles.vRowRight, left && plusStyles.left]}>
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={onPress ? `${name}: oyuncu menüsü` : name}
+      style={({ pressed }) => [plusStyles.vRow, side === 'right' && plusStyles.vRowRight, left && plusStyles.left, pressed && { opacity: 0.8 }]}
+    >
       <View style={[plusStyles.vPlate, { height, width: W }, turnFrac !== null && plusStyles.plateTurn]}>
         <View style={plusStyles.vAva}>
           <Avatar index={avatar ?? 1} size={W - 6} />
@@ -764,9 +841,9 @@ export function VPlate({ name, avatar, sub, turnFrac, team, left, bot, height, s
             {name}
             {bot ? ' ·bot' : ''}
           </Text>
-          {sub ? (
-            <Text style={plusStyles.vSub} numberOfLines={1}>
-              {sub}
+          {alert ? (
+            <Text style={[plusStyles.alert, plusStyles.alertV]} numberOfLines={1}>
+              {alert}
             </Text>
           ) : null}
         </View>
@@ -776,7 +853,7 @@ export function VPlate({ name, avatar, sub, turnFrac, team, left, bot, height, s
           <View style={[plusStyles.vBarFill, { height: `${Math.round(turnFrac * 100)}%` }, turnFrac < 0.2 && plusStyles.barLow]} />
         </View>
       ) : null}
-    </View>
+    </Pressable>
   );
 }
 
@@ -820,20 +897,146 @@ export function PlusSideButton({
   );
 }
 
-/** Ortadaki koyu, kareli per tablosu */
-export function TableGrid({ width, height, cell = 18, children }: { width: number; height: number; cell?: number; children?: ReactNode }) {
-  const cols = Math.ceil(width / cell);
-  const rows = Math.ceil(height / cell);
+/** Ortadaki koyu, kareli per tablosu. Kareler taş boyutundadır (cellW × cellH); taşlar karelere oturur. */
+export function TableGrid({
+  width,
+  height,
+  cellW,
+  cellH,
+  pad = GRID_PAD,
+  children,
+}: {
+  width: number;
+  height: number;
+  cellW: number;
+  cellH: number;
+  pad?: number;
+  children?: ReactNode;
+}) {
+  const cols = Math.ceil((width - pad) / cellW) + 1;
+  const rows = Math.ceil((height - pad) / cellH) + 1;
   return (
     <View style={[plusStyles.grid, { width, height }]}>
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         {Array.from({ length: cols }, (_, i) => (
-          <View key={`c${i}`} style={[plusStyles.gridLineV, { left: i * cell }]} />
+          <View key={`c${i}`} style={[plusStyles.gridLineV, { left: pad + i * cellW }]} />
         ))}
         {Array.from({ length: rows }, (_, i) => (
-          <View key={`r${i}`} style={[plusStyles.gridLineH, { top: i * cell }]} />
+          <View key={`r${i}`} style={[plusStyles.gridLineH, { top: pad + i * cellH }]} />
         ))}
       </View>
+      {children}
+    </View>
+  );
+}
+
+/** Per tablosunun kenar boşluğu (kareler bu kadar içeriden başlar) */
+export const GRID_PAD = 3;
+
+/**
+ * Perleri tabloya kare kare yerleştirir: her per tek satırda, aralarında bir boş kare; her oyuncunun perleri yeni
+ * satırdan başlar. Sığmazsa kareler (taşlar) küçülür. Döner: kare boyutu ve her perin (sütun, satır) yeri.
+ */
+export function packMelds(
+  melds: OkeyMeld[],
+  width: number,
+  height: number,
+  maxW: number,
+  minW = 11,
+): { cw: number; ch: number; pos: Map<number, { col: number; row: number }> } {
+  const inner = (n: number) => Math.max(0, n - GRID_PAD * 2);
+  for (let w = Math.max(minW, maxW); w >= minW; w--) {
+    const h = Math.round(w * 1.3);
+    const cols = Math.floor(inner(width) / w);
+    const rows = Math.floor(inner(height) / h);
+    const pos = new Map<number, { col: number; row: number }>();
+    let col = 0;
+    let row = 0;
+    let owner: number | null = null;
+    let ok = cols > 0 && rows > 0;
+    for (const m of melds) {
+      if (!ok) break;
+      const n = m.tiles.length;
+      if (col > 0 && (col + n > cols || (owner !== null && owner !== m.seat))) {
+        row++;
+        col = 0;
+      }
+      owner = m.seat;
+      if (n > cols || row >= rows) {
+        ok = false;
+        break;
+      }
+      pos.set(m.id, { col, row });
+      col += n + 1;
+    }
+    if (ok || w === minW) return { cw: w, ch: h, pos };
+  }
+  return { cw: minW, ch: Math.round(minW * 1.3), pos: new Map() };
+}
+
+/**
+ * Sürüklenebilen kaynak (deste, yandan al): dokununca `onTap`, sürükleyince `onDragStart` (izin verirse true döner),
+ * `onDragMove`, bırakınca `onDragEnd` (sayfa koordinatlarıyla).
+ */
+export function DragSource({
+  onTap,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  onDragCancel,
+  children,
+  style,
+  testID,
+  accessibilityLabel,
+}: {
+  onTap: () => void;
+  onDragStart: () => boolean;
+  onDragMove: (pageX: number, pageY: number) => void;
+  onDragEnd: (pageX: number, pageY: number) => void;
+  onDragCancel: () => void;
+  children: ReactNode;
+  style?: object;
+  testID?: string;
+  accessibilityLabel?: string;
+}) {
+  const st = useRef<{ sx: number; sy: number; moved: boolean; on: boolean } | null>(null);
+  return (
+    <View
+      style={style}
+      onStartShouldSetResponder={() => true}
+      onMoveShouldSetResponder={() => true}
+      onResponderTerminationRequest={() => false}
+      onResponderGrant={(e) => {
+        st.current = { sx: e.nativeEvent.pageX, sy: e.nativeEvent.pageY, moved: false, on: false };
+      }}
+      onResponderMove={(e) => {
+        const d = st.current;
+        if (!d) return;
+        const { pageX, pageY } = e.nativeEvent;
+        if (!d.moved) {
+          if (Math.hypot(pageX - d.sx, pageY - d.sy) < 8) return;
+          d.moved = true;
+          d.on = onDragStart();
+        }
+        if (d.on) onDragMove(pageX, pageY);
+      }}
+      onResponderRelease={(e) => {
+        const d = st.current;
+        st.current = null;
+        if (!d) return;
+        if (!d.moved) onTap();
+        else if (d.on) onDragEnd(e.nativeEvent.pageX, e.nativeEvent.pageY);
+      }}
+      onResponderTerminate={() => {
+        const d = st.current;
+        st.current = null;
+        if (d?.on) onDragCancel();
+      }}
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      testID={testID}
+    >
       {children}
     </View>
   );
@@ -889,7 +1092,8 @@ const plusStyles = StyleSheet.create({
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   team: { width: 8, height: 8, borderRadius: 4 },
   hName: { color: '#FFFFFF', fontFamily: fonts.extra, fontSize: 12.5, flexShrink: 1 },
-  hSub: { color: '#9FC3DA', fontFamily: fonts.semi, fontSize: 10 },
+  alert: { color: '#FF4D5E', fontFamily: fonts.extra, fontSize: 10.5 },
+  alertV: { fontSize: 9.5 },
   vRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   vRowRight: { flexDirection: 'row-reverse' },
   vPlate: {
@@ -905,7 +1109,6 @@ const plusStyles = StyleSheet.create({
   vTeam: { position: 'absolute', right: 2, bottom: 2, width: 9, height: 9, borderRadius: 5, borderWidth: 1, borderColor: '#FFFFFF' },
   vTextBox: { position: 'absolute', height: 28, justifyContent: 'center', transform: [{ rotate: '90deg' }] },
   vName: { color: '#FFFFFF', fontFamily: fonts.extra, fontSize: 12 },
-  vSub: { color: '#9FC3DA', fontFamily: fonts.semi, fontSize: 9.5 },
   vBar: { width: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.18)', overflow: 'hidden', justifyContent: 'flex-end' },
   vBarFill: { width: 5, backgroundColor: '#7BE07B' },
   sideBtnWrap: { borderRadius: 12, overflow: 'hidden', borderWidth: 2, borderColor: '#5B8FD8' },

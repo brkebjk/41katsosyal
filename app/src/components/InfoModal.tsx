@@ -5,6 +5,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } f
 import { Text } from '@/components/AppText';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import type { InfoItem } from '@/lib/gameInfo';
+import { MODAL_ORIENTATIONS } from '@/lib/orientation';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -42,7 +43,7 @@ export function InfoModal({
 }: Props) {
   const { height } = useWindowDimensions();
   return (
-    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose} supportedOrientations={MODAL_ORIENTATIONS}>
       <View style={styles.root}>
         <Pressable
           style={styles.backdrop}

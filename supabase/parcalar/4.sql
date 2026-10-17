@@ -1,6 +1,58 @@
 -- PARÇA 4 / 4 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+-- ---- Ses şikâyeti yaptırımları ------------------------------------------------------------------------------------
+-- Moderatör ses mesajı şikâyetini "sonuçlandı" (haklı) ya da "reddedildi" (haksız) diye kapatır:
+--   Haklı: konuşanın mikrofonu 7 gün kapanır; ikinci ve sonraki ihlallerde 30 gün.
+--   Haksız: şikâyet edenin haksız şikâyet sayısı artar; her 3 haksız şikâyette 30 gün ses şikâyeti yapamaz ve 7 gün
+--   mikrofon kullanamaz. (Sayılar ayarlardan değiştirilebilir.)
+create or replace function public._voice_report_verdict(p_report_id uuid, p_just boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  rp public.reports;
+  v_speaker uuid;
+  v_n int;
+begin
+  select * into rp from public.reports where id = p_report_id;
+  if not found or rp.target_type <> 'sk_voice' then return; end if;
+  if p_just then
+    select c.user_id into v_speaker from public.sk_voice_clips c where c.id = rp.target_id;
+    if v_speaker is null then return; end if;
+    update public.profiles
+       set voice_strikes = voice_strikes + 1,
+           mic_banned_until = greatest(coalesce(mic_banned_until, now()), now())
+             + make_interval(days => case when voice_strikes >= 1 then public.setting_int('voice_ban_days_repeat', 30)
+                                          else public.setting_int('voice_ban_days_first', 7) end)
+     where id = v_speaker
+     returning voice_strikes into v_n;
+    perform public._notify(v_speaker, 'system', 'Mikrofonun kapatıldı',
+      'Oyunda gönderdiğin bir ses mesajı kurallara aykırı bulundu. Bir süre bas-konuş kullanamazsın.', '{}'::jsonb);
+  else
+    update public.profiles set unjust_reports = unjust_reports + 1 where id = rp.reporter_id
+     returning unjust_reports into v_n;
+    if v_n % greatest(1, public.setting_int('unjust_report_limit', 3)) = 0 then
+      update public.profiles
+         set report_banned_until = now() + make_interval(days => public.setting_int('report_ban_days', 30)),
+             mic_banned_until = greatest(coalesce(mic_banned_until, now()), now())
+               + make_interval(days => public.setting_int('unjust_mic_ban_days', 7))
+       where id = rp.reporter_id;
+      perform public._notify(rp.reporter_id, 'system', 'Şikâyet hakkın kapatıldı',
+        'Yaptığın ses şikâyetleri birkaç kez haksız bulundu. Bir süre ses şikâyeti yapamaz ve bas-konuş kullanamazsın.',
+        '{}'::jsonb);
+    end if;
+  end if;
+end $$;
+
+insert into public.app_settings (key, value, description) values
+  ('voice_ban_days_first', '7', 'Haklı bulunan ilk ses şikâyetinde konuşanın mikrofon yasağı (gün)'),
+  ('voice_ban_days_repeat', '30', 'Haklı bulunan sonraki ses şikâyetlerinde mikrofon yasağı (gün)'),
+  ('unjust_report_limit', '3', 'Kaç haksız ses şikâyetinde şikâyet edene yaptırım uygulanır'),
+  ('report_ban_days', '30', 'Haksız şikâyet yaptırımı: ses şikâyeti yasağı (gün)'),
+  ('unjust_mic_ban_days', '7', 'Haksız şikâyet yaptırımı: mikrofon yasağı (gün)'),
+  ('kick_poll_seconds', '30', 'Oyuncu atma oylamasının süresi (sn)'),
+  ('kick_poll_per_player', '2', 'Bir oyuncu bir odada en çok kaç atma oylaması başlatabilir')
+on conflict (key) do nothing;
+
 -- ---- Oyuncu atma oylaması (iki oyunda, yan yana ve uzaktan) ----------------------------------------------------------
 -- Yalnızca bekleme odasında ve tartışmada (Köpekbalığı plajı, Vampir–Köylü sabahı) başlatılır. Aynı anda tek oylama
 -- açık olur; kişi başı odada en çok 2 oylama. 30 sn içinde oy verebilecek oyuncuların (yaşayan, odada olan, atılmak
@@ -400,7 +452,7 @@ grant execute on function public.sk_match_poll() to authenticated;
 grant execute on function public.sk_match_cancel() to authenticated;
 grant execute on function public.sk_lobby_ready(uuid, boolean) to authenticated;
 grant execute on function public.admin_queue_test_bots(int, text) to authenticated;
-grant execute on function public.match_join(text) to authenticated;
+grant execute on function public.match_join(text, jsonb) to authenticated;
 grant execute on function public.admin_get_voice_clip(uuid) to authenticated;
 grant execute on function public.get_room_code(uuid) to authenticated;
 grant execute on function public.leave_all_rooms(boolean) to authenticated;
@@ -1860,6 +1912,25 @@ create table if not exists public.okey_racks (
 alter table public.okey_racks enable row level security;
 revoke all on public.okey_racks from anon, authenticated;
 
+-- Oda sohbeti: masadakiler odaya özel yazışır (hızlı mesajlar da buradan). Mesajlar 1 günde silinir; odası bildirilmişse
+-- moderatör baksın diye en çok 14 gün kalır. Telefon tabloyu doğrudan okuyamaz (ok_view verir); moderatör okur.
+create table if not exists public.okey_chat (
+  id uuid primary key default gen_random_uuid(),
+  room_id uuid not null references public.game_rooms (id) on delete cascade,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  seat int,
+  name text not null,
+  body text not null check (char_length(body) between 1 and 120),
+  created_at timestamptz not null default now()
+);
+create index if not exists okey_chat_room_idx on public.okey_chat (room_id, created_at);
+create index if not exists okey_chat_created_idx on public.okey_chat (created_at);
+alter table public.okey_chat enable row level security;
+revoke all on public.okey_chat from anon, authenticated;
+grant select on public.okey_chat to authenticated;
+drop policy if exists okey_chat_admin_select on public.okey_chat;
+create policy okey_chat_admin_select on public.okey_chat for select to authenticated using (public.is_admin());
+
 -- ---- Taş yardımcıları -----------------------------------------------------------------------------------------------
 create or replace function public._ok_tc(p_t int, p_okc int)
 returns int language sql immutable as $$ select case when p_t >= 104 then p_okc else p_t / 26 end $$;
@@ -2397,10 +2468,9 @@ begin
            'fin', jsonb_build_object('seat', p_fin, 'okey', coalesce((p_flags->>'okey')::boolean, false),
                                      'elden', coalesce((p_flags->>'elden')::boolean, false),
                                      'pairs', coalesce((p_flags->>'pairs')::boolean, false),
-                                     'groups', p_flags->'groups', 'tile', p_flags->'tile', 'mult', mult),
-           -- El sonu herkesin eli açılır (taş sayıları ve toplamları)
-           'reveal', (select jsonb_object_agg(k.seat::text, to_jsonb(public._ok_hand(p_room_id, k.seat)))
-                        from public.okey_racks k where k.room_id = p_room_id),
+                                     'tile', p_flags->'tile', 'mult', mult),
+           -- El sonunda kimsenin eli gösterilmez (yalnızca puanlar)
+           'reveal', null,
            'ready', coalesce((select jsonb_agg(rp.seat) from public.room_players rp join public.profiles p on p.id = rp.user_id
                                where rp.room_id = p_room_id and (p.is_bot or rp.left_at is not null)), '[]'::jsonb),
            'hist', coalesce(state->'hist', '[]'::jsonb) || jsonb_build_array(jsonb_build_object(
@@ -2878,6 +2948,8 @@ begin
     'players', (select coalesce(jsonb_agg(jsonb_build_object(
                   'seat', rp.seat, 'id', rp.user_id, 'name', rp.display_name, 'avatar', p.avatar_index,
                   'is_me', rp.user_id = v.id, 'bot', p.is_bot, 'left', rp.left_at is not null,
+                  'alias', case when not p.is_bot then p.alias end,
+                  'blocked', exists (select 1 from public.user_blocks b where b.blocker_id = v.id and b.blocked_id = rp.user_id),
                   'tiles', (select count(*)::int from public.okey_racks k, unnest(k.slots) x
                              where k.room_id = rp.room_id and k.seat = rp.seat and x is not null)) order by rp.seat), '[]'::jsonb)
                   from public.room_players rp join public.profiles p on p.id = rp.user_id
@@ -2888,13 +2960,22 @@ begin
     'drew', st->'drew', 'side', st->'side', 'ind', st->'ind', 'okc', st->'okc', 'okn', st->'okn', 'deck_n', st->'deck_n',
     'disc', st->'disc', 'melds', st->'melds', 'opened', st->'opened', 'first', st->'first', 'shown', st->'shown',
     'pen', st->'pen', 'scores', st->'scores', 'hist', st->'hist', 'auto', st->'auto', 'log', st->'log', 'evn', st->'evn',
-    'ready', st->'ready', 'fin', st->'fin', 'reveal', case when st->>'phase' in ('hand_end', 'ended') then st->'reveal' end,
+    'ready', st->'ready', 'fin', case when jsonb_typeof(st->'fin') = 'object' then (st->'fin') - 'groups' end,
     'end_age', case when st->>'end_at' is not null then round(extract(epoch from now() - (st->>'end_at')::timestamptz), 2) end,
     'pause_secs', greatest(5, public.setting_int('ok_hand_pause_seconds', 20)),
     'winner', st->'winner', 'next_room', st->'next_room',
     'need', case when s is not null and r.game_type = 'okey101' and r.status = 'playing'
                  then jsonb_build_object('run', public._ok_need(r, s, false), 'pair', public._ok_need(r, s, true)) end,
-    'rack', case when v_rack is not null then to_jsonb(v_rack) end);
+    'rack', case when v_rack is not null then to_jsonb(v_rack) end,
+    -- Oda sohbeti (son 30 mesaj; engellediğin kişininkiler görünmez). age: kaç saniye önce yazıldı
+    'chat', (select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'seat', c.seat, 'from', c.user_id, 'name', c.name,
+                                                          'body', c.body, 'mine', c.user_id = v.id,
+                                                          'age', round(extract(epoch from now() - c.created_at), 1))
+                                       order by c.created_at), '[]'::jsonb)
+               from (select x.* from public.okey_chat x
+                      where x.room_id = p_room_id
+                        and not exists (select 1 from public.user_blocks b where b.blocker_id = v.id and b.blocked_id = x.user_id)
+                      order by x.created_at desc limit 30) c));
 end $$;
 
 -- Hamle denetimi: oda kilitlenir, sıra sende olmalı. Döner: koltuk numaran.
@@ -3376,23 +3457,36 @@ begin
   return v_new;
 end $$;
 
--- Uzaktan eşleşme: sırada 4 kişi olunca masa kurulur ve oyun hemen başlar (herkes rumuzuyla, koltuklar rastgele)
+-- Uzaktan eşleşme: aynı masa seçeneklerini seçen 4 kişi olunca masa kurulur ve oyun hemen başlar (herkes rumuzuyla,
+-- koltuklar rastgele). Birbirini engellemiş iki kişi aynı masaya düşmez.
 create or replace function public._ok_match_try(p_user uuid, p_game text)
 returns uuid language plpgsql security definer set search_path = public as $$
 declare
   v_room uuid;
   v_code text;
   v_try int := 0;
-  v_ids uuid[];
+  v_ids uuid[] := '{}'::uuid[];
+  v_opts jsonb;
+  w record;
 begin
-  v_ids := array(select q.user_id from public.sk_queue q where q.game_type = p_game order by q.joined_at limit 4);
+  select q.opts into v_opts from public.sk_queue q where q.user_id = p_user and q.game_type = p_game;
+  v_opts := coalesce(v_opts, public._ok_match_opts(p_game, null));
+  -- Sıradakiler geliş sırasıyla
+  for w in select q.user_id from public.sk_queue q
+            where q.game_type = p_game and q.opts is not distinct from v_opts
+            order by q.joined_at loop
+    if not exists (select 1 from public.user_blocks b
+                    where (b.blocker_id = w.user_id and b.blocked_id = any(v_ids))
+                       or (b.blocked_id = w.user_id and b.blocker_id = any(v_ids))) then
+      v_ids := v_ids || w.user_id;
+      exit when array_length(v_ids, 1) = 4;
+    end if;
+  end loop;
   if coalesce(array_length(v_ids, 1), 0) < 4 then return null; end if;
   insert into public.game_rooms (game_type, host_id, config, remote, state)
   values (p_game, v_ids[1],
-          jsonb_build_object('match', true, 'ok', case when p_game = 'okey'
-                                                        then jsonb_build_object('pairs', false, 'helper', true, 'target', 10)
-                                                        else jsonb_build_object('pairs', false, 'helper', true, 'penalty', true,
-                                                                                'fold', false, 'hands', 3) end),
+          jsonb_build_object('match', true, 'ok', v_opts || case when p_game = 'okey' then '{"target": 10}'::jsonb
+                                                                 else '{"fold": false}'::jsonb end),
           true, '{}'::jsonb)
   returning id into v_room;
   loop
@@ -3415,6 +3509,74 @@ begin
   delete from public.sk_queue where user_id = any(v_ids);
   perform public._ok_begin(v_room);
   return case when p_user = any(v_ids) then v_room end;
+end $$;
+
+-- ---- Oda sohbeti ve oyuncu engelleme --------------------------------------------------------------------------------
+create or replace function public._ok_chat_sweep()
+returns void language sql security definer set search_path = public as $$
+  delete from public.okey_chat c
+   where c.created_at < now() - interval '14 days'
+      or (c.created_at < now() - interval '1 day'
+          and not exists (select 1 from public.reports x where x.target_type = 'room' and x.target_id = c.room_id));
+$$;
+
+-- Masaya yaz: 120 karakter, bağlantı yok, küfür yıldızlanır, 1,5 sn arayla, kişi başı odada en çok 80 mesaj.
+-- Bekleme odasında, oyunda ve oyun bittikten sonra 10 dakika masadakiler yazar.
+create or replace function public.ok_say(p_room_id uuid, p_body text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+  v_body text := btrim(regexp_replace(coalesce(p_body, ''), '\s+', ' ', 'g'));
+  v_name text;
+  v_seat int;
+begin
+  v := public._require_user();
+  if v.muted_until is not null and v.muted_until > now() then raise exception 'muted'; end if;
+  if char_length(v_body) not between 1 and 120 then raise exception 'invalid_body'; end if;
+  if public._has_link(v_body) then raise exception 'links_not_allowed'; end if;
+  select * into r from public.game_rooms where id = p_room_id;
+  if not found or r.game_type not in ('okey', 'okey101') then raise exception 'room_not_found'; end if;
+  if not (r.status in ('lobby', 'playing')
+          or (r.status = 'finished' and r.finished_at > now() - interval '10 minutes')) then
+    raise exception 'wrong_phase';
+  end if;
+  select rp.display_name, rp.seat into v_name, v_seat
+    from public.room_players rp where rp.room_id = p_room_id and rp.user_id = v.id and rp.left_at is null;
+  if v_name is null then raise exception 'not_in_room'; end if;
+  if exists (select 1 from public.okey_chat where room_id = p_room_id and user_id = v.id
+              and created_at > now() - interval '1500 milliseconds') then
+    raise exception 'rate_limited';
+  end if;
+  if (select count(*) from public.okey_chat where room_id = p_room_id and user_id = v.id) >= 80 then
+    raise exception 'chat_limit';
+  end if;
+  perform public._ok_chat_sweep();
+  insert into public.okey_chat (room_id, user_id, seat, name, body)
+  values (p_room_id, v.id, v_seat, v_name, left(public._mask_profanity(v_body), 120));
+end $$;
+
+-- Masadaki bir oyuncuyu engelle: mesajları sana görünmez, uzaktan masada bir daha eşleşmezsiniz (akışta da engellenir)
+create or replace function public.ok_block(p_room_id uuid, p_player_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  t public.profiles;
+begin
+  v := public._require_user();
+  if not exists (select 1 from public.room_players rp join public.game_rooms r on r.id = rp.room_id
+                  where rp.room_id = p_room_id and rp.user_id = v.id and r.game_type in ('okey', 'okey101')) then
+    raise exception 'not_in_room';
+  end if;
+  if p_player_id is null or p_player_id = v.id
+     or not exists (select 1 from public.room_players where room_id = p_room_id and user_id = p_player_id) then
+    raise exception 'player_not_found';
+  end if;
+  select * into t from public.profiles where id = p_player_id;
+  if not found or t.is_bot then raise exception 'player_not_found'; end if;
+  insert into public.user_blocks (blocker_id, blocked_id, blocked_alias)
+  values (v.id, t.id, t.alias)
+  on conflict (blocker_id, blocked_id) do nothing;
 end $$;
 
 revoke execute on function public._ok_meld(int[], int, int, boolean, boolean) from public, anon, authenticated;
@@ -3446,6 +3608,8 @@ revoke execute on function public._ok_turn(uuid, uuid) from public, anon, authen
 revoke execute on function public._ok_seat(uuid, uuid) from public, anon, authenticated;
 revoke execute on function public._ok_match_try(uuid, text) from public, anon, authenticated;
 revoke execute on function public._ok_cleanup() from public, anon, authenticated;
+revoke execute on function public._ok_chat_sweep() from public, anon, authenticated;
+revoke execute on function public._ok_match_opts(text, jsonb) from public, anon, authenticated;
 revoke execute on function public.ok_view(uuid) from public, anon;
 revoke execute on function public.ok_set_options(uuid, jsonb) from public, anon;
 revoke execute on function public.ok_sit(uuid, int) from public, anon;
@@ -3463,6 +3627,8 @@ revoke execute on function public.ok_swap(uuid, int, int) from public, anon;
 revoke execute on function public.ok_arrange(uuid, jsonb) from public, anon;
 revoke execute on function public.ok_ready(uuid) from public, anon;
 revoke execute on function public.ok_rematch(uuid) from public, anon;
+revoke execute on function public.ok_say(uuid, text) from public, anon;
+revoke execute on function public.ok_block(uuid, uuid) from public, anon;
 grant execute on function public.ok_view(uuid) to authenticated;
 grant execute on function public.ok_set_options(uuid, jsonb) to authenticated;
 grant execute on function public.ok_sit(uuid, int) to authenticated;
@@ -3480,6 +3646,8 @@ grant execute on function public.ok_swap(uuid, int, int) to authenticated;
 grant execute on function public.ok_arrange(uuid, jsonb) to authenticated;
 grant execute on function public.ok_ready(uuid) to authenticated;
 grant execute on function public.ok_rematch(uuid) to authenticated;
+grant execute on function public.ok_say(uuid, text) to authenticated;
+grant execute on function public.ok_block(uuid, uuid) to authenticated;
 
 
 notify pgrst, 'reload schema';

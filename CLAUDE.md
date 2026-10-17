@@ -59,10 +59,15 @@ peoplehere.app.
 - Okey ve 101 Okey: motor `schema.sql` sonunda (`ok_*` fonksiyonları; deste ve ıstakalar kimsenin okuyamadığı
   `okey_hidden`/`okey_racks` tablolarında, `game_rooms.state` yalnızca açık bilgi). Ekranlar `okey.tsx` (bekleme odası,
   masa, el sonu), `okey-giris.tsx`, `okey-ara.tsx`, parçalar `OkeyParts.tsx`, istemci `lib/okey.ts`, kurallar
-  `gameInfo.ts` OKEY_RULES. Sıra 1→2→3→4 (soldan al, sağa at). Puan `room_players.score` → `_game_results` (4 koltuk).
+  `gameInfo.ts` OKEY_RULES. Sıra 1→2→3→4 (soldan al, sağa at). Puan `room_players.score` → `_game_results` (4 koltuk;
+  eşlide kazanan eşler tavanı paylaşır, 101'de 3+ el ×1,5). El sonunda kimsenin eli gösterilmez (yalnızca puan).
+  Oda sohbeti `okey_chat` + `ok_say` (1 günde silinir, odası bildirilmişse 14 gün), engelleme `ok_block`. Uzaktan masa
+  seçenekleri `sk_queue.opts` + `match_join(p_game, p_opts)` (`_ok_match_opts`); yalnızca aynı seçenektekiler ve
+  birbirini engellememiş kişiler eşleşir. Desteden/yandan taş ıstakaya sürüklenerek çekilir; okey taşına dokununca ters döner.
 - Ekran yönü: `app.json` orientation `default` + `expo-screen-orientation` (başlangıç PORTRAIT_UP); uygulama
   `_layout.tsx`'te dikeye kilitlenir (`lib/orientation.ts`). Yalnızca Okey masası (oynanış, el sonu, oyun sonu) yataya
-  kilitlenir ve `width > height` ise yatay düzen çizilir; bekleme odası dikey.
+  kilitlenir ve `width > height` ise yatay düzen çizilir; bekleme odası dikey. iOS'ta yatay ekranda açılan Modal
+  `supportedOrientations={MODAL_ORIENTATIONS}` (lib/orientation) almazsa uygulama kapanır.
 
 ## Bekleyen işler
 - Expo/EAS: Project ID `app.json`'da (slug `peoplehere`), GitHub secrets eklendi; `uygulama-guncelleme.yml` app/

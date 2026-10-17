@@ -26,6 +26,7 @@ import {
   setTextEditMode,
   subscribeTextEdit,
 } from '@/lib/textEdit';
+import { MODAL_ORIENTATIONS } from '@/lib/orientation';
 import { colors, fonts, fontSizes, radii, spacing } from '@/theme';
 
 export function TextEditHost() {
@@ -82,7 +83,7 @@ function Editor({ source, current }: { source: string; current: string | null })
   }
 
   return (
-    <Modal transparent animationType="fade" visible onRequestClose={closeTextEditor} statusBarTranslucent>
+    <Modal transparent animationType="fade" visible onRequestClose={closeTextEditor} statusBarTranslucent supportedOrientations={MODAL_ORIENTATIONS}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.root}>
         <Pressable style={styles.backdrop} onPress={closeTextEditor} accessibilityLabel="Kapat" />
         <View style={styles.card}>

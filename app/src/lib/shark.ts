@@ -222,6 +222,7 @@ export type SkView = {
 export type SkClip = { id: string; from: string; channel: 'all' | 'shark'; at: string; ms: number };
 
 const TEXT: Record<string, string> = {
+  invalid_options: 'Masa seçenekleri geçersiz.',
   wrong_phase: 'Oyun bu aşamadan çoktan geçmiş. Ekran yenileniyor.',
   you_left: 'Bu oyundan çıkarıldın, geri dönemezsin.',
   not_in_room: 'Bu oyunda oyuncu değilsin.',
@@ -312,8 +313,10 @@ export type MatchState = {
 /** Eşleşmek için sıraya gir (iki oyunda: Köpekbalığı Kafesi ve Vampir–Köylü) */
 export async function matchJoin(
   game: 'shark_cage' | 'vampire_villager' | 'okey' | 'okey101' = 'shark_cage',
+  /** Yalnızca Okey ve 101: uzaktan masa seçenekleri (aynı seçenekleri seçenler eşleşir) */
+  opts?: Record<string, boolean | number>,
 ): Promise<{ data: MatchState | null; error: string | null }> {
-  return callRpc<MatchState>('match_join', { p_game: game }, TEXT);
+  return callRpc<MatchState>('match_join', opts ? { p_game: game, p_opts: opts } : { p_game: game }, TEXT);
 }
 /** Arama sürerken birkaç saniyede bir: eşleştim mi, sırada kaç kişi var */
 export async function matchPoll(): Promise<MatchState | null> {

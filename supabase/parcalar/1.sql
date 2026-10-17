@@ -2720,13 +2720,19 @@ declare
   r public.game_rooms;
   v_cap int;
   v_winner text;
+  v_esli boolean;
+  v_mult numeric;
 begin
   select * into r from public.game_rooms where id = p_room_id;
   if not found or r.game_type = 'raffle' then return; end if;
   -- Okey ve 101: masadaki 4 koltuk sayılır (oyundan ayrılan en sona yazılır ve puan almaz; moderatör de sırada
   -- yer alır ama puan almaz). Sıra room_players.score'a göre (Okey: kalan puan, 101: eksi ceza toplamı); eşler eşittir.
+  -- Eşli masada kazanan iki eş tavan puanı paylaşır (yarısını alır), kaybedenler çeyreğini (en az 1).
+  -- 101'de 3 ve daha çok elli oyun 1,5 kat puan verir.
   if r.game_type in ('okey', 'okey101') then
     if coalesce(r.state->>'phase', '') <> 'ended' then return; end if;
+    v_esli := coalesce((public._ok_opts(r)->>'pairs')::boolean, false);
+    v_mult := case when r.game_type = 'okey101' and coalesce((public._ok_opts(r)->>'hands')::int, 3) >= 3 then 1.5 else 1 end;
     return query
     with p as (
       select rp.user_id as uid, pr.role::text as prole, rp.left_at as lft,
@@ -2742,8 +2748,10 @@ begin
         from p
     )
     select q.uid, q.rnk, (q.rnk + (q.tied - 1) / 2.0)::numeric, q.n,
-           greatest(1, round(public._game_top_points(q.n, public.setting_int('pts_game_top_cap', 12))
-                             * (q.n - (q.rnk + (q.tied - 1) / 2.0) + 1) / q.n * 2) / 2.0)::numeric,
+           (round(v_mult * greatest(1, round(public._game_top_points(q.n, public.setting_int('pts_game_top_cap', 12))
+                                             * case when v_esli then case when q.rnk = 1 then 0.5 else 0.25 end
+                                                    else (q.n - (q.rnk + (q.tied - 1) / 2.0) + 1) / q.n end
+                                             * 2) / 2.0) * 2) / 2.0)::numeric,
            q.rnk = 1
       from q
      where q.prole = 'user' and q.lft is null;
@@ -6740,22 +6748,4 @@ begin
   if not exists (select 1 from public.events where id = p_event_id) then raise exception 'event_not_found'; end if;
   if not public._is_event_host(p_event_id, v.id) then raise exception 'forbidden'; end if;
   return (select c.code from public.event_codes c where c.event_id = p_event_id);
-end $$;
-
--- Kod başkasına sızdıysa yenilenir (eski kod geçersiz olur; kod denemeleri sıfırlanır)
-create or replace function public.regenerate_event_code(p_event_id uuid)
-returns text language plpgsql security definer set search_path = public as $$
-declare
-  v public.profiles;
-  v_code text := public._random_code(6);
-begin
-  v := public._require_user();
-  if not exists (select 1 from public.events where id = p_event_id and not is_cancelled) then
-    raise exception 'event_not_found';
-  end if;
-  if not public._is_event_host(p_event_id, v.id) then raise exception 'forbidden'; end if;
-  insert into public.event_codes (event_id, code) values (p_event_id, v_code)
-  on conflict (event_id) do update set code = excluded.code;
-  delete from public.event_code_failures where event_id = p_event_id;
-  return v_code;
 end $$;
