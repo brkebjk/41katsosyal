@@ -5,6 +5,7 @@ on:
     branches: [claude/kind-goodall-dy5z7y]
     paths:
       - supabase/schema.sql
+      - supabase/places_*.csv
       - .github/workflows/supabase-sema.yml
   workflow_dispatch:
 
@@ -47,3 +48,39 @@ jobs:
             -c "set statement_timeout = 0" \
             -f supabase/schema.sql
           echo "Şema başarıyla uygulandı."
+
+      # Mekân listeleri (haritada yer araması): sunucudaki sayı CSV'dekiyle aynı değilse o şehrin listesi CSV'den yeniden
+      # yüklenir (tek işlemde: hata olursa eski liste kalır). Sayılar çalıştırma özetinde görünür.
+      - name: Mekân listelerini eşitle
+        id: yerler
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGCONNECT_TIMEOUT: "20"
+        run: |
+          reload=0
+          for c in kocaeli istanbul izmir; do
+            f="supabase/places_$c.csv"
+            want=$(python3 -c "import csv,sys; print(sum(1 for _ in csv.reader(open(sys.argv[1], encoding='utf-8', newline=''))) - 1)" "$f")
+            have=$(psql "$SUPABASE_DB_URL" -X -tA -c "select count(*) from public.places where city = '$c'")
+            echo "::notice::Mekân listesi $c: sunucuda $have, dosyada $want"
+            if [ "$have" != "$want" ]; then
+              psql "$SUPABASE_DB_URL" -X -q -v ON_ERROR_STOP=1 -1 \
+                -c "set local statement_timeout = 0" \
+                -c "delete from public.places where city = '$c'" \
+                -c "\\copy public.places (id, name, search_text, cat, cat_label, district, hood, address, lat, lon, q, r, rank, confidence, city) from '$f' with (format csv, header true)"
+              echo "::notice::Mekân listesi $c yeniden yüklendi ($want yer)"
+              reload=1
+            fi
+          done
+          echo "reload=$reload" >> "$GITHUB_OUTPUT"
+
+      # Liste yeniden yüklendiyse şemadaki yer düzeltmeleri (Boğaz kıyısı, çıkarılan ilçeler) yeniden uygulanır
+      - name: Yer düzeltmelerini yeniden uygula
+        if: steps.yerler.outputs.reload == '1'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGCONNECT_TIMEOUT: "20"
+        run: |
+          psql "$SUPABASE_DB_URL" -X -q -v ON_ERROR_STOP=1 \
+            -c "set statement_timeout = 0" \
+            -f supabase/schema.sql

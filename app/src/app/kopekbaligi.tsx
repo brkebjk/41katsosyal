@@ -331,7 +331,6 @@ function Game({ roomId }: { roomId: string }) {
     view && view.status === 'playing' && view.phase_limit !== null
       ? Math.max(0, view.phase_limit - (viewAt + elapsed * 1000 - (phaseStart ?? viewAt - view.phase_age * 1000)) / 1000)
       : -1;
-  const remainSec = Math.ceil(remain);
   // Süre bitince sıradaki aşama bir sonraki yoklama beklenmeden okunur
   const dueKey = remain === 0 && view ? `${view.phase}:${view.round}` : null;
   useEffect(() => {
@@ -339,12 +338,6 @@ function Game({ roomId }: { roomId: string }) {
     const t = setTimeout(() => void load(), 400);
     return () => clearTimeout(t);
   }, [dueKey, load]);
-  const lastClock = useRef(-1);
-  useEffect(() => {
-    if (remainSec < 1 || remainSec > 5 || lastClock.current === remainSec) return;
-    lastClock.current = remainSec;
-    playSound('vv_clock', 0.7);
-  }, [remainSec]);
   // Zıpkın atıldı: ses + titreşim
   const spearKey = view?.day_event ? `${view.day_event.round}:${view.day_event.kind}:${view.day_event.id}` : null;
   const lastSpear = useRef<string | null>(null);
