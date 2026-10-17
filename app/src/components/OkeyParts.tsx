@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { memo, useRef, useState } from 'react';
+import { memo, useRef, useState, type ReactNode } from 'react';
 import { Animated, Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 
 import { Text } from '@/components/AppText';
@@ -16,9 +16,13 @@ export const OK = {
   felt: ['#0E4A4A', '#0A3236', '#071F26'] as [string, string, string],
   feltEdge: '#1B6B66',
   wood: ['#9A6534', '#7A4A22', '#5C3618'] as [string, string, string],
+  gold3: ['#F6BE4A', '#E7A12C', '#CF8618'] as [string, string, string],
+  sea: ['#1E7397', '#155E80', '#0D4563'] as [string, string, string],
+  plate: 'rgba(8,22,36,0.88)',
+  grid: '#0C2537',
   woodLip: '#3E230E',
-  tile: '#FFF8E8',
-  tileEdge: '#D8C69F',
+  tile: '#FBFBF7',
+  tileEdge: '#BDBDB4',
   gold: '#FFC93C',
   glow: '#22D3C5',
   text: '#EAFBF8',
@@ -72,12 +76,7 @@ export const OkTile = memo(function OkTile({
       ) : (
         <>
           <Text style={[tileStyles.num, { color, fontSize: fs, lineHeight: Math.round(fs * 1.15) }]}>{num}</Text>
-          <View
-            style={[
-              tileStyles.pip,
-              { borderColor: color, width: size.w * 0.3, height: size.w * 0.3, borderRadius: size.w * 0.15 },
-            ]}
-          />
+          <View style={[tileStyles.pip, { width: size.w * 0.3, height: size.w * 0.3, borderRadius: size.w * 0.15 }]} />
         </>
       )}
       {helper && wild ? (
@@ -109,7 +108,7 @@ const tileStyles = StyleSheet.create({
     borderBottomWidth: 3,
     borderBottomColor: OK.tileEdge,
     borderWidth: 1,
-    borderColor: '#EADCB8',
+    borderColor: '#E3E3DC',
     alignItems: 'center',
     justifyContent: 'flex-start',
     paddingTop: 2,
@@ -122,7 +121,7 @@ const tileStyles = StyleSheet.create({
   wild: { backgroundColor: '#FFF1C4' },
   dim: { opacity: 0.45 },
   num: { fontFamily: fonts.black, textAlign: 'center' },
-  pip: { borderWidth: 2, marginTop: 1 },
+  pip: { marginTop: 1, backgroundColor: '#D3D3CC', borderWidth: 1, borderColor: '#B5B5AD' },
   fakeIcon: { marginTop: 4 },
   wildBadge: {
     position: 'absolute',
@@ -202,7 +201,8 @@ export function moveInRack(slots: (number | null)[], from: number, to: number): 
   return s;
 }
 
-export type DropZone = 'discard' | 'deck';
+/** Bırakma yerleri: taş at, deste (Okey'de bitir), yerdeki per (101'de işle) */
+export type DropZone = 'discard' | 'deck' | `meld:${number}`;
 
 /**
  * Istaka: 2 sıra × 15 yuva. Taşa dokun: seçilir (bir daha dokun: bırakılır); seçiliyken boş yuvaya dokun: oraya taşınır.
@@ -222,6 +222,9 @@ export function OkRack({
   onHoverZone,
   onDrop,
   testID,
+  tile,
+  skin = 'wood',
+  engrave,
 }: {
   slots: (number | null)[];
   okc: number;
@@ -236,8 +239,14 @@ export function OkRack({
   onHoverZone?: (z: DropZone | null) => void;
   onDrop: (zone: DropZone, tile: number) => void;
   testID?: string;
+  /** Taş boyutu (verilmezse genişlikten) */
+  tile?: TileSize;
+  /** Ahşap ya da altın sarısı ıstaka */
+  skin?: 'wood' | 'gold';
+  /** Istakaya kazınmış soluk yazı */
+  engrave?: string;
 }) {
-  const size = rackTileSize(width);
+  const size = tile ?? rackTileSize(width);
   const box = useRef({ x: 0, y: 0 });
   const drag = useRef<{ from: number; tile: number; sx: number; sy: number; moved: boolean } | null>(null);
   const [pos] = useState(() => new Animated.ValueXY({ x: 0, y: 0 }));
@@ -334,7 +343,18 @@ export function OkRack({
       testID={testID}
       accessibilityLabel="Istaka"
     >
-      <LinearGradient colors={OK.wood} style={[rackStyles.wood, { padding: RACK_PAD }]} pointerEvents="none">
+      <LinearGradient
+        colors={skin === 'gold' ? OK.gold3 : OK.wood}
+        style={[rackStyles.wood, skin === 'gold' && rackStyles.goldEdge, { padding: RACK_PAD }]}
+        pointerEvents="none"
+      >
+        {engrave ? (
+          <View style={rackStyles.engraveWrap}>
+            <Text style={[rackStyles.engrave, { fontSize: Math.round(size.h * 0.5) }]} numberOfLines={1}>
+              {engrave}
+            </Text>
+          </View>
+        ) : null}
         {Array.from({ length: RACK_ROWS }, (_, r) => (
           <View key={r} style={[rackStyles.row, { height: size.h, marginBottom: r < RACK_ROWS - 1 ? ROW_GAP : 0 }]}>
             {Array.from({ length: RACK_COLS }, (_, c) => {
@@ -384,6 +404,9 @@ const rackStyles = StyleSheet.create({
   slot: { alignItems: 'center', justifyContent: 'flex-end' },
   slotHover: { backgroundColor: 'rgba(34,211,197,0.35)', borderRadius: 4 },
   lip: { position: 'absolute', left: 4, right: 4, height: 4, borderRadius: 2, backgroundColor: 'rgba(40,20,5,0.55)' },
+  goldEdge: { borderColor: '#FFD98A', borderBottomColor: '#8A5509' },
+  engraveWrap: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+  engrave: { color: 'rgba(120,70,5,0.28)', fontFamily: fonts.black, letterSpacing: 6 },
   float: { position: 'absolute', left: 0, top: 0, zIndex: 50, elevation: 12, shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 6, shadowOffset: { width: 0, height: 4 } },
 });
 
@@ -399,6 +422,7 @@ export function Pile({
   hot = false,
   onPress,
   testID,
+  compact = false,
 }: {
   tiles: number[];
   okc: number;
@@ -412,6 +436,8 @@ export function Pile({
   hot?: boolean;
   onPress?: () => void;
   testID?: string;
+  /** Dar yer (yatay masa): az boşluk, küçük yazı */
+  compact?: boolean;
 }) {
   const top = tiles.length ? tiles[tiles.length - 1] : null;
   return (
@@ -419,27 +445,35 @@ export function Pile({
       onPress={onPress}
       disabled={!onPress}
       accessibilityRole={onPress ? 'button' : undefined}
-      accessibilityLabel={label}
+      accessibilityLabel={label || 'Atılan taşlar'}
       testID={testID}
-      style={({ pressed }) => [pileStyles.wrap, active && pileStyles.active, hot && pileStyles.hot, pressed && { opacity: 0.8 }]}
+      style={({ pressed }) => [pileStyles.wrap, compact && pileStyles.wrapCompact, active && pileStyles.active, hot && pileStyles.hot, pressed && { opacity: 0.8 }]}
     >
-      <View style={[pileStyles.spot, { width: size.w + 8, height: size.h + 8 }]}>
-        {top !== null ? <OkTile t={top} okc={okc} okn={okn} size={size} helper={helper} /> : null}
+      <View style={[pileStyles.spot, { width: size.w + (compact ? 2 : 8), height: size.h + (compact ? 2 : 8) }]}>
+        {top !== null ? (
+          <OkTile t={top} okc={okc} okn={okn} size={size} helper={helper} />
+        ) : compact && label ? (
+          // Dar yerde yazı boş yuvanın içinde durur
+          <Text style={[pileStyles.inLabel, active && pileStyles.labelActive]}>{label.replace(' ', '\n')}</Text>
+        ) : null}
         {tiles.length > 1 ? (
           <View style={pileStyles.count}>
             <Text style={pileStyles.countText}>{tiles.length}</Text>
           </View>
         ) : null}
       </View>
-      <Text style={[pileStyles.label, active && pileStyles.labelActive]} numberOfLines={1}>
-        {label}
-      </Text>
+      {label && !compact ? (
+        <Text style={[pileStyles.label, active && pileStyles.labelActive]} numberOfLines={1}>
+          {label}
+        </Text>
+      ) : null}
     </Pressable>
   );
 }
 
 const pileStyles = StyleSheet.create({
   wrap: { alignItems: 'center', padding: 4, borderRadius: 10, borderWidth: 1.5, borderColor: 'transparent' },
+  wrapCompact: { padding: 1, borderRadius: 7 },
   active: { borderColor: OK.glow, backgroundColor: 'rgba(34,211,197,0.12)' },
   hot: { borderColor: OK.gold, backgroundColor: 'rgba(255,201,60,0.18)' },
   spot: {
@@ -467,6 +501,7 @@ const pileStyles = StyleSheet.create({
   countText: { color: OK.text, fontFamily: fonts.extra, fontSize: 10 },
   label: { color: OK.muted, fontFamily: fonts.semi, fontSize: 11, marginTop: 3, maxWidth: 96 },
   labelActive: { color: OK.glow, fontFamily: fonts.extra },
+  inLabel: { color: OK.muted, fontFamily: fonts.extra, fontSize: 8.5, textAlign: 'center', lineHeight: 10 },
 });
 
 /** Masadaki oyuncu etiketi (uzaktan oyunda avatarlı) */
@@ -623,4 +658,271 @@ export function OkeyIntroBackdrop({ wood = false }: { wood?: boolean }) {
 
 const introStyles = StyleSheet.create({
   deco: { position: 'absolute', opacity: 0.16 },
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Yatay masa (101 Okey Plus düzeni): oyuncu kartları, deste, mod etiketleri, per tablosu, Çift diz / Seri diz
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Deste: beyaz taş, ortasında kalan taş sayısı */
+export function DeckTile({ size, count }: { size: TileSize; count: number | null }) {
+  return (
+    <View style={[tileStyles.tile, plusStyles.deck, { width: size.w - 2, height: size.h - 2, borderRadius: Math.max(3, size.w * 0.14) }]}>
+      <View style={[plusStyles.deckCircle, { width: size.w * 0.62, height: size.w * 0.62, borderRadius: size.w * 0.31 }]}>
+        <Text style={[plusStyles.deckCount, { fontSize: Math.round(size.w * 0.34) }]}>{count ?? 0}</Text>
+      </View>
+    </View>
+  );
+}
+
+/** Masa ayarı etiketi (Tek, Yardımlı, Katlamasız, 1 El) */
+export function ModePill({ text, on = false }: { text: string; on?: boolean }) {
+  return (
+    <View style={[plusStyles.pill, on && plusStyles.pillOn]}>
+      <Text style={plusStyles.pillText} numberOfLines={1}>
+        {text}
+      </Text>
+    </View>
+  );
+}
+
+/** Açış değeri: küçük taşlar üstünde rakamlar (ör. 1 5 6) */
+export function DigitTiles({ text, h = 18, vertical = false }: { text: string; h?: number; vertical?: boolean }) {
+  const colors = ['#D7263D', '#1E6FD9', '#D7263D', '#1B2430'];
+  return (
+    <View style={[plusStyles.digits, vertical && plusStyles.digitsV]}>
+      {text.split('').map((d, i) => (
+        <View key={i} style={[plusStyles.digit, { height: h, minWidth: Math.round(h * 0.72) }]}>
+          <Text style={[plusStyles.digitText, { color: colors[i % colors.length], fontSize: Math.round(h * 0.62) }]}>{d}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+type PlateProps = {
+  name: string;
+  avatar: number | null;
+  /** Kısa bilgi (taş sayısı, puan) */
+  sub: string | null;
+  /** Sıra bu oyuncudaysa kalan sürenin oranı (0–1); değilse null */
+  turnFrac: number | null;
+  team: 1 | 2 | null;
+  left: boolean;
+  bot: boolean;
+};
+
+const teamColor = (t: 1 | 2) => (t === 1 ? '#22D3C5' : '#FF9F6B');
+
+/** Yatay oyuncu kartı (karşıdaki oyuncu ve sen): avatar + ad; sıra ondaysa üstünde süre çubuğu */
+export function HPlate({ name, avatar, sub, turnFrac, team, left, bot, width }: PlateProps & { width: number }) {
+  return (
+    <View style={[plusStyles.hWrap, { width }, left && plusStyles.left]}>
+      {turnFrac !== null ? (
+        <View style={plusStyles.hBar}>
+          <View style={[plusStyles.hBarFill, { width: `${Math.round(turnFrac * 100)}%` }, turnFrac < 0.2 && plusStyles.barLow]} />
+        </View>
+      ) : null}
+      <View style={[plusStyles.hPlate, turnFrac !== null && plusStyles.plateTurn]}>
+        <View style={plusStyles.hAva}>
+          <Avatar index={avatar ?? 1} size={28} />
+        </View>
+        <View style={plusStyles.flex}>
+          <View style={plusStyles.nameRow}>
+            {team ? <View style={[plusStyles.team, { backgroundColor: teamColor(team) }]} /> : null}
+            <Text style={plusStyles.hName} numberOfLines={1}>
+              {name}
+            </Text>
+            {bot ? <Ionicons name="hardware-chip-outline" size={11} color={OK.muted} /> : null}
+            {left ? <Ionicons name="cloud-offline-outline" size={11} color={OK.danger} /> : null}
+          </View>
+          {sub ? (
+            <Text style={plusStyles.hSub} numberOfLines={1}>
+              {sub}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/** Dikey oyuncu kartı (sol ve sağ oyuncu): üstte avatar, ad yukarıdan aşağı; sıra ondaysa yanında süre çubuğu */
+export function VPlate({ name, avatar, sub, turnFrac, team, left, bot, height, side }: PlateProps & { height: number; side: 'left' | 'right' }) {
+  const W = 40;
+  const textLen = Math.max(40, height - W - 8);
+  return (
+    <View style={[plusStyles.vRow, side === 'right' && plusStyles.vRowRight, left && plusStyles.left]}>
+      <View style={[plusStyles.vPlate, { height, width: W }, turnFrac !== null && plusStyles.plateTurn]}>
+        <View style={plusStyles.vAva}>
+          <Avatar index={avatar ?? 1} size={W - 6} />
+          {team ? <View style={[plusStyles.vTeam, { backgroundColor: teamColor(team) }]} /> : null}
+        </View>
+        {/* Ad: yukarıdan aşağı okunur */}
+        <View style={[plusStyles.vTextBox, { width: textLen, top: W + 4 + textLen / 2 - 14, left: W / 2 - textLen / 2 }]}>
+          <Text style={plusStyles.vName} numberOfLines={1}>
+            {name}
+            {bot ? ' ·bot' : ''}
+          </Text>
+          {sub ? (
+            <Text style={plusStyles.vSub} numberOfLines={1}>
+              {sub}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+      {turnFrac !== null ? (
+        <View style={[plusStyles.vBar, { height }]}>
+          <View style={[plusStyles.vBarFill, { height: `${Math.round(turnFrac * 100)}%` }, turnFrac < 0.2 && plusStyles.barLow]} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/** Istakanın yanındaki büyük düğme: Çift diz (sol) / Seri diz (sağ) */
+export function PlusSideButton({
+  kind,
+  width,
+  height,
+  onPress,
+  disabled = false,
+}: {
+  kind: 'pairs' | 'runs';
+  width: number;
+  height: number;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  const icon = kind === 'pairs' ? ['5', '5'] : ['1', '2', '3'];
+  const tw = Math.max(9, Math.floor((width - 12) / icon.length));
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={kind === 'pairs' ? 'Çift diz' : 'Seri diz'}
+      testID={kind === 'pairs' ? 'ok-arrange-pairs' : 'ok-arrange-runs'}
+      style={({ pressed }) => [plusStyles.sideBtnWrap, { width, height }, disabled && { opacity: 0.4 }, pressed && { opacity: 0.8 }]}
+    >
+      <LinearGradient colors={['#2B5DA8', '#1A3F7A', '#10295A']} style={plusStyles.sideBtn}>
+        <View style={plusStyles.sideIcon}>
+          {icon.map((d, i) => (
+            <View key={i} style={[plusStyles.sideTile, { width: tw, height: Math.round(tw * 1.3), transform: [{ rotate: `${(i - (icon.length - 1) / 2) * 8}deg` }] }]}>
+              <Text style={[plusStyles.sideTileText, { fontSize: Math.round(tw * 0.75), color: i % 2 ? '#D7263D' : '#D7263D' }]}>{d}</Text>
+            </View>
+          ))}
+        </View>
+        <Text style={[plusStyles.sideText, { fontSize: Math.max(11, Math.round(width * 0.3)) }]}>{kind === 'pairs' ? 'ÇİFT' : 'SERİ'}</Text>
+        <Text style={[plusStyles.sideText, { fontSize: Math.max(11, Math.round(width * 0.3)) }]}>DİZ</Text>
+      </LinearGradient>
+    </Pressable>
+  );
+}
+
+/** Ortadaki koyu, kareli per tablosu */
+export function TableGrid({ width, height, cell = 18, children }: { width: number; height: number; cell?: number; children?: ReactNode }) {
+  const cols = Math.ceil(width / cell);
+  const rows = Math.ceil(height / cell);
+  return (
+    <View style={[plusStyles.grid, { width, height }]}>
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        {Array.from({ length: cols }, (_, i) => (
+          <View key={`c${i}`} style={[plusStyles.gridLineV, { left: i * cell }]} />
+        ))}
+        {Array.from({ length: rows }, (_, i) => (
+          <View key={`r${i}`} style={[plusStyles.gridLineH, { top: i * cell }]} />
+        ))}
+      </View>
+      {children}
+    </View>
+  );
+}
+
+const plusStyles = StyleSheet.create({
+  flex: { flex: 1 },
+  left: { opacity: 0.55 },
+  deck: { justifyContent: 'center', paddingTop: 0 },
+  deckCircle: { backgroundColor: '#E4E4DE', borderWidth: 1, borderColor: '#B9B9B0', alignItems: 'center', justifyContent: 'center' },
+  deckCount: { color: '#1B2430', fontFamily: fonts.black },
+  pill: {
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+    backgroundColor: 'rgba(10,32,52,0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(120,180,220,0.35)',
+    alignItems: 'center',
+  },
+  pillOn: { backgroundColor: '#1F7A4D', borderColor: '#4ADE80' },
+  pillText: { color: '#EAF4FF', fontFamily: fonts.extra, fontSize: 10.5 },
+  digits: { flexDirection: 'row', gap: 1 },
+  digitsV: { flexDirection: 'column' },
+  digit: {
+    backgroundColor: '#FBFBF7',
+    borderRadius: 3,
+    borderBottomWidth: 2,
+    borderBottomColor: '#BDBDB4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 1,
+  },
+  digitText: { fontFamily: fonts.black },
+  hWrap: { alignItems: 'stretch' },
+  hBar: { height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.18)', overflow: 'hidden', marginBottom: 2, marginHorizontal: 6 },
+  hBarFill: { height: 5, backgroundColor: '#F7E27A' },
+  barLow: { backgroundColor: OK.danger },
+  hPlate: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 3,
+    paddingLeft: 3,
+    paddingRight: 8,
+    borderRadius: 8,
+    backgroundColor: OK.plate,
+    borderWidth: 1,
+    borderColor: 'rgba(120,180,220,0.3)',
+  },
+  plateTurn: { borderColor: '#F7E27A', borderWidth: 1.5 },
+  hAva: { borderRadius: 5, overflow: 'hidden' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  team: { width: 8, height: 8, borderRadius: 4 },
+  hName: { color: '#FFFFFF', fontFamily: fonts.extra, fontSize: 12.5, flexShrink: 1 },
+  hSub: { color: '#9FC3DA', fontFamily: fonts.semi, fontSize: 10 },
+  vRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  vRowRight: { flexDirection: 'row-reverse' },
+  vPlate: {
+    borderRadius: 8,
+    backgroundColor: OK.plate,
+    borderWidth: 1,
+    borderColor: 'rgba(120,180,220,0.3)',
+    alignItems: 'center',
+    paddingTop: 3,
+    overflow: 'hidden',
+  },
+  vAva: { borderRadius: 5, overflow: 'hidden' },
+  vTeam: { position: 'absolute', right: 2, bottom: 2, width: 9, height: 9, borderRadius: 5, borderWidth: 1, borderColor: '#FFFFFF' },
+  vTextBox: { position: 'absolute', height: 28, justifyContent: 'center', transform: [{ rotate: '90deg' }] },
+  vName: { color: '#FFFFFF', fontFamily: fonts.extra, fontSize: 12 },
+  vSub: { color: '#9FC3DA', fontFamily: fonts.semi, fontSize: 9.5 },
+  vBar: { width: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.18)', overflow: 'hidden', justifyContent: 'flex-end' },
+  vBarFill: { width: 5, backgroundColor: '#7BE07B' },
+  sideBtnWrap: { borderRadius: 12, overflow: 'hidden', borderWidth: 2, borderColor: '#5B8FD8' },
+  sideBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 1, paddingHorizontal: 3 },
+  sideIcon: { flexDirection: 'row', marginBottom: 4 },
+  sideTile: {
+    backgroundColor: '#FBFBF7',
+    borderRadius: 3,
+    borderBottomWidth: 2,
+    borderBottomColor: '#BDBDB4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: -1,
+  },
+  sideTileText: { fontFamily: fonts.black },
+  sideText: { color: '#FFFFFF', fontFamily: fonts.black, letterSpacing: 0.5, lineHeight: undefined },
+  grid: { backgroundColor: OK.grid, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(120,180,220,0.18)' },
+  gridLineV: { position: 'absolute', top: 0, bottom: 0, width: StyleSheet.hairlineWidth, backgroundColor: 'rgba(120,180,220,0.14)' },
+  gridLineH: { position: 'absolute', left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(120,180,220,0.14)' },
 });
