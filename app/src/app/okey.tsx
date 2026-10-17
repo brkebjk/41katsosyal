@@ -16,7 +16,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/AppText';
 import { InviteSheet } from '@/components/InviteSheet';
@@ -74,6 +74,7 @@ import {
   type OkeyOpts,
   type OkeyView,
 } from '@/lib/okey';
+import { lockLandscape, lockPortrait } from '@/lib/orientation';
 import { getMyGameResult, type MyGameResult } from '@/lib/ranking';
 import { leaveRoom } from '@/lib/rooms';
 import { isBackendReady } from '@/lib/supabase';
@@ -177,7 +178,10 @@ export default function OkeyScreen() {
 }
 
 function OkeyTable({ roomId }: { roomId: string }) {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  /** Yatay düzen: oyun sırasında ekran yana döner (kilit kurulamazsa telefonun o anki yönüne göre) */
+  const land = width > height;
   const [view, setView] = useState<OkeyView | null>(null);
   const [viewAt, setViewAt] = useState(() => Date.now());
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -313,6 +317,14 @@ function OkeyTable({ roomId }: { roomId: string }) {
       active = false;
     };
   }, [ended, wasPlayer, roomId]);
+
+  // Oyun masası (oynanış, el sonu, oyun sonu) yatay; bekleme odası dikey. Ekrandan çıkınca dikeye döner.
+  const wantLand = view !== null && (view.status === 'playing' || view.status === 'finished') && !gone;
+  useEffect(() => {
+    if (wantLand) lockLandscape();
+    else lockPortrait();
+  }, [wantLand]);
+  useEffect(() => () => lockPortrait(), []);
 
   const stayAwake = live && view !== null;
   useEffect(() => {
@@ -836,162 +848,151 @@ function OkeyTable({ roomId }: { roomId: string }) {
               : 'Bir taş at ya da bitir'
         : `Sıra: ${nameOf(v.turn)}`;
 
-  return (
-    <Shell>
-      {header}
-      <LinearGradient colors={OK.felt} style={styles.table} onLayout={measureZones}>
-        {/* Üst sıra: karşıdaki oyuncu ve iki yığın */}
-        <View style={styles.tRow}>
-          <Pile tiles={v.disc?.[String(topSeat)] ?? []} okc={okc} okn={okn} size={otherSize} helper={helper} label={`${nameOf(topSeat)} attı`} />
-          <View style={styles.tCenter}>{chip(topSeat)}</View>
-          <Pile tiles={v.disc?.[String(rightSeat)] ?? []} okc={okc} okn={okn} size={otherSize} helper={helper} label={`${nameOf(rightSeat)} attı`} />
-        </View>
-        {/* Orta: solda / sağda oyuncular, ortada deste ve gösterge */}
-        <View style={styles.tRowMid}>
-          <View style={styles.side}>{chip(leftSeat)}</View>
-          <View style={styles.middle}>
-            <View style={styles.deckRow}>
-              <View
-                ref={(r) => {
-                  zones.current.deck = r;
-                }}
-                onLayout={measureZones}
-                collapsable={false}
-              >
-              <Pressable
-                onPress={draw}
-                accessibilityRole="button"
-                accessibilityLabel={`Ortadan çek, ${v.deck_n ?? 0} taş`}
-                testID="ok-deck"
-                style={({ pressed }) => [styles.deck, myTurn && !drew && styles.zoneActive, hoverZone === 'deck' && styles.zoneHot, pressed && { opacity: 0.85 }]}
-              >
-                <TileBack size={pileSize} count={v.deck_n} />
-                <Text style={[styles.zoneLabel, myTurn && !drew && styles.zoneLabelOn]}>
-                  {!is101 && myTurn && drew ? 'Bitir' : 'Ortadan çek'}
-                </Text>
-              </Pressable>
-              </View>
-              {v.ind !== null ? (
-                <View style={styles.ind}>
-                  <OkTile t={v.ind} okc={okc} okn={okn} size={pileSize} />
-                  <Text style={styles.zoneLabel}>Gösterge</Text>
-                  {helper ? <Text style={styles.okeyLine}>Okey: {tileName(okc * 26 + okn - 1, null, null)}</Text> : null}
-                </View>
-              ) : null}
-            </View>
-          </View>
-          <View style={styles.side}>{chip(rightSeat)}</View>
-        </View>
-        {/* Alt sıra: yandan al (soldaki oyuncunun attığı), ortayı gör, taş at */}
-        <View style={styles.tRow}>
-          <Pile
-            tiles={leftPile}
-            okc={okc}
-            okn={okn}
-            size={pileSize}
-            helper={helper}
-            label="Yandan al"
-            active={myTurn && !drew && leftPile.length > 0}
-            onPress={take}
-            testID="ok-take"
-          />
-          <View style={styles.tCenter}>
-            {is101 ? (
-              <Pressable onPress={() => setSheet('melds')} accessibilityRole="button" testID="ok-melds" style={({ pressed }) => [styles.midBtn, pressed && { opacity: 0.8 }]}>
-                <Ionicons name="eye-outline" size={16} color={OK.text} />
-                <Text style={styles.midBtnText}>Ortayı gör{melds.length ? ` (${melds.length})` : ''}</Text>
-              </Pressable>
-            ) : null}
-            {feed ? (
-              <Text style={styles.feed} numberOfLines={2}>
-                {feed}
-              </Text>
-            ) : null}
-          </View>
-          <View
-            ref={(r) => {
-              zones.current.discard = r;
-            }}
-            onLayout={measureZones}
-            collapsable={false}
-          >
-            <Pile
-              tiles={myPile}
-              okc={okc}
-              okn={okn}
-              size={pileSize}
-              helper={helper}
-              label="Taş at"
-              active={myTurn && drew}
-              hot={hoverZone === 'discard'}
-              onPress={() => (selected !== null ? void discard(selected) : myTurn && drew ? say('Atacağın taşı seç ya da buraya sürükle.', 'info') : undefined)}
-              testID="ok-discard"
-            />
-          </View>
-        </View>
-      </LinearGradient>
-
-      {/* Sıra çubuğu */}
-      {v.phase === 'play' ? (
-        <View style={styles.turnBar}>
-          <View style={styles.turnTrack}>
-            <View style={[styles.turnFill, { width: `${turnFrac * 100}%` }, myTurn && styles.turnFillMe, turnLeft <= 5 && styles.turnFillLow]} />
-          </View>
-          <Text style={[styles.turnText, myTurn && styles.turnTextMe]} numberOfLines={1}>
-            {turnText} · {turnLeft} sn
-          </Text>
-        </View>
-      ) : null}
-
-      {/* Eylemler */}
-      {actions.length ? (
-        <ScrollView
-          horizontal
-          style={styles.actionsScroll}
-          contentContainerStyle={styles.actions}
-          showsHorizontalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
+  // ---- Masa parçaları (dikey ve yatay düzende ortak) ----
+  const topPile = (sz: TileSize) => (
+    <Pile tiles={v.disc?.[String(topSeat)] ?? []} okc={okc} okn={okn} size={sz} helper={helper} label={`${nameOf(topSeat)} attı`} />
+  );
+  const rightPile = (sz: TileSize) => (
+    <Pile tiles={v.disc?.[String(rightSeat)] ?? []} okc={okc} okn={okn} size={sz} helper={helper} label={`${nameOf(rightSeat)} attı`} />
+  );
+  const deckZone = (sz: TileSize) => (
+    <View style={styles.deckRow}>
+      <View
+        ref={(r) => {
+          zones.current.deck = r;
+        }}
+        onLayout={measureZones}
+        collapsable={false}
+      >
+        <Pressable
+          onPress={draw}
+          accessibilityRole="button"
+          accessibilityLabel={`Ortadan çek, ${v.deck_n ?? 0} taş`}
+          testID="ok-deck"
+          style={({ pressed }) => [styles.deck, myTurn && !drew && styles.zoneActive, hoverZone === 'deck' && styles.zoneHot, pressed && { opacity: 0.85 }]}
         >
-          {actions}
-        </ScrollView>
-      ) : (
-        <View style={styles.actionsEmpty} />
-      )}
-
-      {/* Istaka */}
-      {rack && v.phase === 'play' ? (
-        <View style={styles.rackWrap}>
-          <OkRack
-            slots={rack}
-            okc={okc}
-            okn={okn}
-            helper={helper}
-            width={width - 12}
-            selected={selected}
-            marks={marks}
-            onSelect={setSelected}
-            onChange={changeRack}
-            zoneAt={zoneAt}
-            onHoverZone={setHoverZone}
-            onDrop={onDrop}
-            testID="ok-rack"
-          />
-          <Text style={styles.meLine} numberOfLines={1}>
-            {mySeat !== null ? `${nameOf(mySeat)} · ${scoreOf(mySeat) ?? ''}` : ''}
-            {is101 && myOpened ? ` · ${openedLabel(mySeat as number)}` : ''}
-            {is101 && mySeat !== null && v.pen?.[String(mySeat)] ? ` · bu el ${v.pen[String(mySeat)]} ceza` : ''}
+          <TileBack size={sz} count={v.deck_n} />
+          <Text style={[styles.zoneLabel, myTurn && !drew && styles.zoneLabelOn]}>
+            {!is101 && myTurn && drew ? 'Bitir' : 'Ortadan çek'}
           </Text>
+        </Pressable>
+      </View>
+      {v.ind !== null ? (
+        <View style={styles.ind}>
+          <OkTile t={v.ind} okc={okc} okn={okn} size={sz} />
+          <Text style={styles.zoneLabel}>Gösterge</Text>
+          {helper ? <Text style={styles.okeyLine}>Okey: {tileName(okc * 26 + okn - 1, null, null)}</Text> : null}
         </View>
-      ) : !v.me.is_player && v.phase === 'play' ? (
-        <Text style={styles.watch}>Bu masayı izliyorsun.</Text>
       ) : null}
-
+    </View>
+  );
+  const meldsBtn = is101 ? (
+    <Pressable onPress={() => setSheet('melds')} accessibilityRole="button" testID="ok-melds" style={({ pressed }) => [styles.midBtn, pressed && { opacity: 0.8 }]}>
+      <Ionicons name="eye-outline" size={16} color={OK.text} />
+      <Text style={styles.midBtnText}>Ortayı gör{melds.length ? ` (${melds.length})` : ''}</Text>
+    </Pressable>
+  ) : null;
+  const feedText = feed ? (
+    <Text style={styles.feed} numberOfLines={2}>
+      {feed}
+    </Text>
+  ) : null;
+  const takePile = (sz: TileSize) => (
+    <Pile
+      tiles={leftPile}
+      okc={okc}
+      okn={okn}
+      size={sz}
+      helper={helper}
+      label="Yandan al"
+      active={myTurn && !drew && leftPile.length > 0}
+      onPress={take}
+      testID="ok-take"
+    />
+  );
+  const discardZone = (sz: TileSize) => (
+    <View
+      ref={(r) => {
+        zones.current.discard = r;
+      }}
+      onLayout={measureZones}
+      collapsable={false}
+    >
+      <Pile
+        tiles={myPile}
+        okc={okc}
+        okn={okn}
+        size={sz}
+        helper={helper}
+        label="Taş at"
+        active={myTurn && drew}
+        hot={hoverZone === 'discard'}
+        onPress={() => (selected !== null ? void discard(selected) : myTurn && drew ? say('Atacağın taşı seç ya da buraya sürükle.', 'info') : undefined)}
+        testID="ok-discard"
+      />
+    </View>
+  );
+  const turnBar = (compact: boolean) =>
+    v.phase === 'play' ? (
+      <View style={compact ? styles.turnBarL : styles.turnBar}>
+        <View style={styles.turnTrack}>
+          <View style={[styles.turnFill, { width: `${turnFrac * 100}%` }, myTurn && styles.turnFillMe, turnLeft <= 5 && styles.turnFillLow]} />
+        </View>
+        <Text style={[styles.turnText, myTurn && styles.turnTextMe]} numberOfLines={compact ? 2 : 1}>
+          {turnText} · {turnLeft} sn
+        </Text>
+      </View>
+    ) : null;
+  const actionsRow = (grow: boolean) =>
+    actions.length ? (
+      <ScrollView
+        horizontal
+        style={grow ? styles.actionsScrollL : styles.actionsScroll}
+        contentContainerStyle={styles.actions}
+        showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {actions}
+      </ScrollView>
+    ) : (
+      <View style={grow ? styles.flex : styles.actionsEmpty} />
+    );
+  const meLine = (
+    <Text style={styles.meLine} numberOfLines={1}>
+      {mySeat !== null ? `${nameOf(mySeat)} · ${scoreOf(mySeat) ?? ''}` : ''}
+      {is101 && myOpened ? ` · ${openedLabel(mySeat as number)}` : ''}
+      {is101 && mySeat !== null && v.pen?.[String(mySeat)] ? ` · bu el ${v.pen[String(mySeat)]} ceza` : ''}
+    </Text>
+  );
+  const rackView = (w: number) =>
+    rack && v.phase === 'play' ? (
+      <OkRack
+        slots={rack}
+        okc={okc}
+        okn={okn}
+        helper={helper}
+        width={w}
+        selected={selected}
+        marks={marks}
+        onSelect={setSelected}
+        onChange={changeRack}
+        zoneAt={zoneAt}
+        onHoverZone={setHoverZone}
+        onDrop={onDrop}
+        testID="ok-rack"
+      />
+    ) : !v.me.is_player && v.phase === 'play' ? (
+      <Text style={styles.watch}>Bu masayı izliyorsun.</Text>
+    ) : null;
+  const overlays = (
+    <>
       {v.phase === 'hand_end' ? (
-        <HandEnd v={v} left={pauseLeft} busy={busy === 'ready'} onReady={() => void act('ready', () => okReady(roomId))} />
+        <HandEnd v={v} wide={land} left={pauseLeft} busy={busy === 'ready'} onReady={() => void act('ready', () => okReady(roomId))} />
       ) : null}
       {v.status === 'finished' ? (
         <GameEnd
           v={v}
+          wide={land}
           result={result}
           busy={busy === 'rematch'}
           onRematch={() => {
@@ -1014,19 +1015,132 @@ function OkeyTable({ roomId }: { roomId: string }) {
           onBack={goToGames}
         />
       ) : null}
-      {toast ? <Toast {...toast} /> : null}
+      {toast ? <Toast {...toast} top={land ? 8 : 70} /> : null}
       {sheets}
+    </>
+  );
+
+  // ---- Yatay düzen (oyun sırasında ekran yana döner) ----
+  if (land) {
+    const availW = width - insets.left - insets.right;
+    const availH = height - insets.top - insets.bottom;
+    const sideW = 76;
+    // Istaka: yükseklik ekranın yaklaşık üçte biri, genişlik iki yığının arası
+    const byW = Math.floor((availW - sideW * 2 - 28) / 15);
+    const byH = Math.floor((availH * 0.34 - 26) / (2 * 1.42));
+    const tw = Math.max(20, Math.min(46, byW, byH));
+    const lTile: TileSize = { w: Math.round(tw * 1.1), h: Math.round(tw * 1.1 * 1.42) };
+    const lSmall: TileSize = { w: Math.round(tw * 0.85), h: Math.round(tw * 0.85 * 1.42) };
+    return (
+      <Shell land>
+        <View style={styles.lTop}>
+          <Pressable onPress={() => void leaveGame()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Masadan çık" style={styles.hBtnS} testID="ok-leave">
+            <Ionicons name="close" size={18} color={OK.text} />
+          </Pressable>
+          <Text style={styles.lTitle} numberOfLines={1}>
+            {title}
+            {v.hand ? (is101 ? ` · El ${v.hand}/${v.opts.hands ?? 3}` : ` · El ${v.hand}`) : ''}
+            <Text style={styles.lSub}>
+              {'  '}
+              {v.remote ? 'Uzaktan · ' : 'Yan yana · '}
+              {optsLine(v.game, v.opts)}
+              {v.test ? ' · Deneme' : ''}
+            </Text>
+          </Text>
+          <Pressable onPress={() => setSheet('scores')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Puan tablosu" style={styles.hBtnS} testID="ok-scores">
+            <Ionicons name="podium-outline" size={17} color={OK.gold} />
+          </Pressable>
+          <Pressable onPress={() => setSheet('rules')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Kurallar" style={styles.hBtnS} testID="ok-rules">
+            <Ionicons name="help-circle-outline" size={19} color={OK.text} />
+          </Pressable>
+        </View>
+        <LinearGradient colors={OK.felt} style={styles.lFelt} onLayout={measureZones}>
+          <View style={styles.lCol}>
+            {topPile(lSmall)}
+            {chip(leftSeat)}
+          </View>
+          <View style={styles.lCenter}>
+            {chip(topSeat)}
+            <View style={styles.lDeckRow}>
+              {deckZone(lTile)}
+              {meldsBtn || feedText ? (
+                <View style={styles.lMidCol}>
+                  {meldsBtn}
+                  {feedText}
+                </View>
+              ) : null}
+            </View>
+          </View>
+          <View style={styles.lCol}>
+            {rightPile(lSmall)}
+            {chip(rightSeat)}
+          </View>
+        </LinearGradient>
+        <View style={styles.lBar}>
+          {turnBar(true)}
+          {actionsRow(true)}
+        </View>
+        <View style={styles.lBottom}>
+          <View style={styles.lSide}>{takePile(lTile)}</View>
+          <View style={styles.lRack}>
+            {rackView(tw * 15 + 12)}
+            {meLine}
+          </View>
+          <View style={styles.lSide}>{discardZone(lTile)}</View>
+        </View>
+        {overlays}
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell>
+      {header}
+      <LinearGradient colors={OK.felt} style={styles.table} onLayout={measureZones}>
+        {/* Üst sıra: karşıdaki oyuncu ve iki yığın */}
+        <View style={styles.tRow}>
+          {topPile(otherSize)}
+          <View style={styles.tCenter}>{chip(topSeat)}</View>
+          {rightPile(otherSize)}
+        </View>
+        {/* Orta: solda / sağda oyuncular, ortada deste ve gösterge */}
+        <View style={styles.tRowMid}>
+          <View style={styles.side}>{chip(leftSeat)}</View>
+          <View style={styles.middle}>{deckZone(pileSize)}</View>
+          <View style={styles.side}>{chip(rightSeat)}</View>
+        </View>
+        {/* Alt sıra: yandan al (soldaki oyuncunun attığı), ortayı gör, taş at */}
+        <View style={styles.tRow}>
+          {takePile(pileSize)}
+          <View style={styles.tCenter}>
+            {meldsBtn}
+            {feedText}
+          </View>
+          {discardZone(pileSize)}
+        </View>
+      </LinearGradient>
+      {turnBar(false)}
+      {actionsRow(false)}
+      {rack && v.phase === 'play' ? (
+        <View style={styles.rackWrap}>
+          {rackView(width - 12)}
+          {meLine}
+        </View>
+      ) : (
+        rackView(width - 12)
+      )}
+      {overlays}
     </Shell>
   );
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 
-function Shell({ children }: { children: ReactNode }) {
+function Shell({ children, land = false }: { children: ReactNode; land?: boolean }) {
   return (
     <LinearGradient colors={['#08262B', '#061A20', '#04121A']} style={styles.flex}>
-      <StatusBar style="light" />
-      <SafeAreaView style={styles.flex} edges={['top', 'bottom']}>
+      <StatusBar style="light" hidden={land} />
+      <SafeAreaView style={styles.flex} edges={['top', 'bottom', 'left', 'right']}>
         {children}
       </SafeAreaView>
     </LinearGradient>
@@ -1043,9 +1157,9 @@ function Center({ text, onBack }: { text: string; onBack: () => void }) {
   );
 }
 
-function Toast({ text, tone }: { text: string; tone: 'info' | 'danger' }) {
+function Toast({ text, tone, top = 70 }: { text: string; tone: 'info' | 'danger'; top?: number }) {
   return (
-    <View style={[styles.toast, tone === 'danger' && styles.toastDanger]} pointerEvents="none">
+    <View style={[styles.toast, { top }, tone === 'danger' && styles.toastDanger]} pointerEvents="none">
       <Ionicons name={tone === 'danger' ? 'alert-circle' : 'information-circle'} size={18} color="#FFFFFF" />
       <Text style={styles.toastText}>{text}</Text>
     </View>
@@ -1340,7 +1454,7 @@ function finText(v: OkeyView, nameOf: (s: number | null) => string): string {
 }
 
 /** El sonu tablosu */
-function HandEnd({ v, left, busy, onReady }: { v: OkeyView; left: number; busy: boolean; onReady: () => void }) {
+function HandEnd({ v, wide, left, busy, onReady }: { v: OkeyView; wide: boolean; left: number; busy: boolean; onReady: () => void }) {
   const is101 = v.game === 'okey101';
   const nameOf = (s: number | null) => v.players.find((p) => p.seat === s)?.name ?? '—';
   const h = (v.hist ?? [])[(v.hist ?? []).length - 1];
@@ -1350,7 +1464,7 @@ function HandEnd({ v, left, busy, onReady }: { v: OkeyView; left: number; busy: 
   const tiny: TileSize = { w: 18, h: 26 };
   return (
     <View style={styles.overlay}>
-      <ScrollView contentContainerStyle={styles.overlayCard}>
+      <ScrollView contentContainerStyle={[styles.overlayCard, wide && styles.overlayWide]}>
         <Text style={styles.ovTitle}>El {v.hand} bitti</Text>
         <Text style={styles.ovSub}>{finText(v, nameOf)}</Text>
         {v.fin?.groups && !is101 ? (
@@ -1364,6 +1478,7 @@ function HandEnd({ v, left, busy, onReady }: { v: OkeyView; left: number; busy: 
             ))}
           </View>
         ) : null}
+        <View style={wide ? styles.ovGrid : styles.ovList}>
         {[1, 2, 3, 4].map((s) => {
           const d = h?.d?.[String(s)] ?? 0;
           const ind = h?.ind?.[String(s)];
@@ -1371,7 +1486,7 @@ function HandEnd({ v, left, busy, onReady }: { v: OkeyView; left: number; busy: 
           const rem = !is101 && v.fin?.seat === s ? [] : v.reveal?.[String(s)] ?? [];
           const opened = v.opened?.[String(s)];
           return (
-            <View key={s} style={styles.ovRow}>
+            <View key={s} style={[styles.ovRow, wide && styles.ovRowWide]}>
               <View style={styles.ovRowHead}>
                 <Text style={styles.ovName} numberOfLines={1}>
                   {nameOf(s)}
@@ -1404,6 +1519,7 @@ function HandEnd({ v, left, busy, onReady }: { v: OkeyView; left: number; busy: 
             </View>
           );
         })}
+        </View>
         {v.opts.pairs && is101 ? <Text style={styles.ovNote}>Eşli: takımın cezası iki kişinin toplamıdır.</Text> : null}
         {v.me.is_player ? (
           <ActBtn label={ready ? `Diğerleri bekleniyor · ${left}` : `Devam · ${left}`} icon="play-forward" primary={!ready} busy={busy} disabled={ready} onPress={onReady} />
@@ -1416,6 +1532,7 @@ function HandEnd({ v, left, busy, onReady }: { v: OkeyView; left: number; busy: 
 /** Oyun sonu: sıralama, sonucum, yeni oyun */
 function GameEnd({
   v,
+  wide,
   result,
   busy,
   onRematch,
@@ -1424,6 +1541,7 @@ function GameEnd({
   onBack,
 }: {
   v: OkeyView;
+  wide: boolean;
   result: MyGameResult | null;
   busy: boolean;
   onRematch: () => void;
@@ -1456,12 +1574,13 @@ function GameEnd({
                 : 'Oyundan ayrıldığın için puan yok.';
   return (
     <View style={styles.overlay}>
-      <ScrollView contentContainerStyle={styles.overlayCard}>
-        <Ionicons name="trophy" size={40} color={OK.gold} style={styles.selfCenter} />
+      <ScrollView contentContainerStyle={[styles.overlayCard, wide && styles.overlayWide]}>
+        <Ionicons name="trophy" size={wide ? 30 : 40} color={OK.gold} style={styles.selfCenter} />
         <Text style={styles.ovTitle}>{won ? 'Kazandın!' : 'Oyun bitti'}</Text>
         {h ? <Text style={styles.ovSub}>Son el: {finText(v, (s) => (s === null ? '—' : nameOf(s)))}</Text> : null}
+        <View style={wide ? styles.ovGrid : styles.ovList}>
         {order.map((s, i) => (
-          <View key={s} style={[styles.ovRowHead, styles.endRow, (v.winner ?? []).includes(s) && styles.endWin]}>
+          <View key={s} style={[styles.ovRowHead, styles.endRow, wide && styles.ovRowWide, (v.winner ?? []).includes(s) && styles.endWin]}>
             <Text style={styles.endRank}>{i + 1}</Text>
             <Text style={styles.ovName} numberOfLines={1}>
               {nameOf(s)}
@@ -1471,8 +1590,9 @@ function GameEnd({
             </Text>
           </View>
         ))}
+        </View>
         {note ? <Text style={styles.ovNote}>{note}</Text> : null}
-        <View style={styles.endBtns}>
+        <View style={[styles.endBtns, wide && styles.endBtnsWide]}>
           {v.next_room && v.me.is_player ? (
             <ActBtn label="Yeni oyuna geç" icon="refresh" primary onPress={() => onNext(v.next_room as string)} />
           ) : !v.remote && v.me.is_player ? (
@@ -1534,6 +1654,31 @@ const styles = StyleSheet.create({
   midBtnText: { color: OK.text, fontFamily: fonts.extra, fontSize: 12.5 },
   feed: { color: OK.gold, fontFamily: fonts.semi, fontSize: 11.5, textAlign: 'center' },
   turnBar: { marginHorizontal: 10, marginTop: 6, gap: 3 },
+  // Yatay düzen
+  lTop: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 6, paddingVertical: 3 },
+  hBtnS: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)' },
+  lTitle: { flex: 1, color: OK.text, fontFamily: fonts.black, fontSize: 14 },
+  lSub: { color: OK.muted, fontFamily: fonts.semi, fontSize: 11 },
+  lFelt: {
+    flex: 1,
+    flexDirection: 'row',
+    marginHorizontal: 6,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: OK.feltEdge,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  lCol: { width: 128, alignItems: 'center', justifyContent: 'space-between' },
+  lCenter: { flex: 1, alignItems: 'center', justifyContent: 'space-around', gap: 2 },
+  lDeckRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  lMidCol: { width: 150, gap: 6, alignItems: 'flex-start' },
+  lBar: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 6, minHeight: 40 },
+  turnBarL: { width: 190, gap: 3 },
+  actionsScrollL: { flex: 1 },
+  lBottom: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', paddingHorizontal: 4, paddingBottom: 2 },
+  lSide: { width: 76, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 14 },
+  lRack: { alignItems: 'center', gap: 2 },
   turnTrack: { height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.12)', overflow: 'hidden' },
   turnFill: { height: 5, backgroundColor: OK.muted },
   turnFillMe: { backgroundColor: OK.glow },
@@ -1647,6 +1792,10 @@ const styles = StyleSheet.create({
   // El sonu / oyun sonu
   overlay: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(3,14,18,0.86)', zIndex: 40, elevation: 10 },
   overlayCard: { padding: 18, gap: 10, paddingTop: 60, paddingBottom: 40 },
+  overlayWide: { paddingTop: 14, paddingBottom: 16, gap: 8, width: '100%', maxWidth: 820, alignSelf: 'center' },
+  ovList: { gap: 10 },
+  ovGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 },
+  ovRowWide: { width: '49.3%' },
   ovTitle: { color: OK.text, fontFamily: fonts.black, fontSize: 24, textAlign: 'center' },
   ovSub: { color: OK.gold, fontFamily: fonts.extra, fontSize: 14, textAlign: 'center' },
   ovNote: { color: OK.muted, fontFamily: fonts.semi, fontSize: 12.5, textAlign: 'center' },
@@ -1664,5 +1813,6 @@ const styles = StyleSheet.create({
   endWin: { borderWidth: 1.5, borderColor: OK.gold },
   endRank: { color: OK.gold, fontFamily: fonts.black, fontSize: 16, width: 22 },
   endBtns: { gap: 8, alignItems: 'center', marginTop: 8 },
+  endBtnsWide: { flexDirection: 'row', justifyContent: 'center', marginTop: 4 },
 });
 

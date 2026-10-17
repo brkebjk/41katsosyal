@@ -4,7 +4,7 @@
     "slug": "peoplehere",
     "scheme": "peoplehere",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#EEF3F7",
@@ -39,6 +39,12 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-screen-orientation",
+        {
+          "initialOrientation": "PORTRAIT_UP"
+        }
+      ],
       [
         "expo-splash-screen",
         {

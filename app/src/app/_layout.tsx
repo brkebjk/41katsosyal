@@ -20,12 +20,15 @@ import { WebPreviewGate } from '@/components/WebPreviewGate';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { loadCity, resetCity, setCityAdmin, useCity } from '@/lib/city';
 import { installCrashReporting, reportError, setCrashScreen } from '@/lib/crash';
+import { lockPortrait } from '@/lib/orientation';
 import { usePermissionsDone } from '@/lib/onboarding';
 import { resumeOnStart } from '@/lib/presence';
 import { colors, isLight } from '@/theme';
 
 // Çökme takibi: yakalanmamış hatalar (yalnızca hatanın yeri) sunucuya bildirilir
 installCrashReporting();
+// Uygulama dikey çalışır (yalnızca Okey masası yatay açılır)
+lockPortrait();
 
 /** Bir ekran çizilirken hata olursa: uygulama kapanmaz, hata bildirilir ve tekrar denenebilir */
 export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
