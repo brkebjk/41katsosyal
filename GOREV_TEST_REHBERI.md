@@ -21,3 +21,9 @@
 2. Altta büyük **Yan yana** / **Uzaktan eşleş** düğmeleri ve Açık odalar. Sağ üstte Puanlar ve Rehber.
 3. Ekrandan sağa kaydırarak geri çık: arkadaki beyaz dalgalar ve yüzen köpekbalığı önceki ekranın üstüne taşmamalı.
 4. Vampir–Köylü giriş ekranı aynı düzende olmalı. Oyun içi ve lobi ekranları değişmedi.
+
+## D. Oyunlar sekmesi
+1. Ödül podyumu artık küçük bir şerit: ayın ilk 3'ü madalya, ad ve puanla tek blokta. Şeride dokununca sıralama ve
+   ödüller açılır.
+2. Davet ayarı ve çekiliş kutusu küçüldü; "Kurallar" ve "Puanlar" OYUNLAR başlığının yanında.
+3. Oyun kutuları ekranda daha yukarıdan başlar (açılışta 4 oyun görünür).

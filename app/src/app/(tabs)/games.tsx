@@ -14,7 +14,6 @@ import { InfoModal } from '@/components/InfoModal';
 import { Popup } from '@/components/Popup';
 import { Screen } from '@/components/Screen';
 import { SponsorCodeModal } from '@/components/SponsorCodeModal';
-import { VerifyPrizeNote } from '@/components/VerifyPrizeNote';
 import { useRoomActions } from '@/components/useRoomActions';
 import { TourTarget } from '@/components/TourTarget';
 import { useAuth } from '@/lib/auth';
@@ -311,53 +310,51 @@ function GamesScreen() {
         </FloatingActions>
       }
     >
-      {/* Aylık ödül podyumu: ayın ilk 3'ü; “Ödülleri gör” sıralama ekranını açar */}
-      <TourTarget tourId="games-podium"><LinearGradient
-        colors={['#145A66', '#0F2333', '#0A1D2B']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.podCard}
-      >
-        <View style={styles.podHead}>
-          <Ionicons name="trophy" size={22} color="#FFC93C" />
-          <Text style={styles.podTitle}>Aylık Ödül Podyumu</Text>
-        </View>
-        {top === null ? (
-          <Text style={styles.topEmpty}>Yükleniyor…</Text>
-        ) : top.length === 0 ? (
-          <Text style={styles.topEmpty}>Bu ay podyumda henüz kimse yok. İlk sen çık!</Text>
-        ) : (
-          <View style={styles.podRow}>
-            {[2, 1, 3].map((place) => {
-              const r = top[place - 1];
-              // Podyum alçak tutulur (ekranda az yer kaplasın)
-              const h = place === 1 ? 42 : place === 2 ? 32 : 24;
-              return (
-                <View key={place} style={styles.podCol}>
-                  <Text style={[styles.podName, r?.is_me && styles.topMe]} numberOfLines={1}>
-                    {r ? r.full_name : '—'}
-                  </Text>
-                  <Text style={styles.podPoints}>{r ? `${fmtPts(r.points)} puan` : ''}</Text>
-                  <View style={[styles.podBlock, { height: h, backgroundColor: TOP_MEDAL[place] }]}>
-                    <Text style={styles.podPlace}>{place}</Text>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        )}
-        <VerifyPrizeNote onDark />
+      {/* Aylık ödül podyumu (küçük şerit): ayın ilk 3'ü; dokununca sıralama ve ödüller açılır */}
+      <TourTarget tourId="games-podium">
         <Pressable
           onPress={() => router.push('/siralama')}
           accessibilityRole="button"
           accessibilityLabel="Ödülleri gör"
           testID="games-top3"
-          style={({ pressed }) => [styles.podBtn, pressed && styles.tilePressed]}
+          style={({ pressed }) => pressed && styles.tilePressed}
         >
-          <Ionicons name="gift" size={18} color="#1A1200" />
-          <Text style={styles.podBtnText}>Ödülleri gör</Text>
+          <LinearGradient
+            colors={['#145A66', '#0F2333', '#0A1D2B']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.podCard}
+          >
+            <View style={styles.podLeft}>
+              <Ionicons name="trophy" size={22} color="#FFC93C" />
+              <Text style={styles.podTitle}>Ödül Podyumu</Text>
+              <Text style={styles.podLink}>Ödüller ›</Text>
+            </View>
+            <View style={styles.podList}>
+              {top === null ? (
+                <Text style={styles.topEmpty}>Yükleniyor…</Text>
+              ) : top.length === 0 ? (
+                <Text style={styles.topEmpty}>Bu ay podyumda henüz kimse yok. İlk sen çık!</Text>
+              ) : (
+                [1, 2, 3].map((place) => {
+                  const r = top[place - 1];
+                  return (
+                    <View key={place} style={styles.podLine}>
+                      <View style={[styles.podMedal, { backgroundColor: TOP_MEDAL[place] }]}>
+                        <Text style={styles.podPlace}>{place}</Text>
+                      </View>
+                      <Text style={[styles.podName, r?.is_me && styles.topMe]} numberOfLines={1}>
+                        {r ? r.full_name : '—'}
+                      </Text>
+                      <Text style={styles.podPoints}>{r ? fmtPts(r.points) : ''}</Text>
+                    </View>
+                  );
+                })
+              )}
+            </View>
+          </LinearGradient>
         </Pressable>
-      </LinearGradient></TourTarget>
+      </TourTarget>
 
       {/* Ekranı yarı yarıya paylaşan iki kutu: oyun davetleri (varsayılan kapalı) ve çekiliş */}
       <View style={styles.halfRow}>
@@ -373,10 +370,8 @@ function GamesScreen() {
             />
           </View>
           <Text style={styles.inviteTitle}>Oyun davetlerini al</Text>
-          <Text style={styles.inviteSub} numberOfLines={3}>
-            {invites
-              ? 'Açık: arkadaşların ve yakınında oda kuranlar davet edebilir.'
-              : 'Kapalı: kimse davet gönderemez.'}
+          <Text style={styles.inviteSub} numberOfLines={2}>
+            {invites ? 'Açık: arkadaşların davet edebilir.' : 'Kapalı: kimse davet gönderemez.'}
           </Text>
         </View>
         <Pressable
@@ -404,36 +399,32 @@ function GamesScreen() {
         </Pressable>
       </View>
 
-      <View style={styles.infoBoxes}>
-        <Pressable
-          onPress={() => setInfo('rooms')}
-          accessibilityRole="button"
-          testID="info-rooms"
-          style={({ pressed }) => [styles.infoBox, pressed && styles.tilePressed]}
-        >
-          <Ionicons name="key-outline" size={16} color={colors.highlight} />
-          <Text style={styles.infoBoxText} numberOfLines={2}>
-            Oda kuralları
-          </Text>
-        </Pressable>
-        <Pressable
-          onPress={() => setInfo('points')}
-          accessibilityRole="button"
-          testID="info-points"
-          style={({ pressed }) => [styles.infoBox, pressed && styles.tilePressed]}
-        >
-          <Ionicons name="calculator-outline" size={16} color={colors.highlight} />
-          <Text style={styles.infoBoxText} numberOfLines={2}>
-            Oyun puanı nasıl hesaplanır?
-          </Text>
-        </Pressable>
-      </View>
-
       <View style={styles.gamesHead}>
         <Text style={styles.gamesTitle} accessibilityRole="header">
           OYUNLAR
         </Text>
-        <Text style={styles.gamesHint}>Bir oyuna dokun, o oyunun açık odalarını gör.</Text>
+        <View style={styles.infoBoxes}>
+          <Pressable
+            onPress={() => setInfo('rooms')}
+            accessibilityRole="button"
+            accessibilityLabel="Oda kuralları"
+            testID="info-rooms"
+            style={({ pressed }) => [styles.infoBox, pressed && styles.tilePressed]}
+          >
+            <Ionicons name="key-outline" size={14} color={colors.highlight} />
+            <Text style={styles.infoBoxText}>Kurallar</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setInfo('points')}
+            accessibilityRole="button"
+            accessibilityLabel="Oyun puanı nasıl hesaplanır?"
+            testID="info-points"
+            style={({ pressed }) => [styles.infoBox, pressed && styles.tilePressed]}
+          >
+            <Ionicons name="calculator-outline" size={14} color={colors.highlight} />
+            <Text style={styles.infoBoxText}>Puanlar</Text>
+          </Pressable>
+        </View>
       </View>
       <TourTarget tourId="games-tiles" style={styles.grid}>
         {rows.map((row, i) => (
@@ -635,77 +626,54 @@ function GameTile({
 
 const styles = StyleSheet.create({
   podCard: {
-    gap: spacing.sm,
-    padding: spacing.md,
-    paddingVertical: spacing.sm + 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: 'rgba(255, 201, 60, 0.45)',
   },
-  podHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    justifyContent: 'center',
-  },
+  podLeft: { width: 92, alignItems: 'center', gap: 1 },
   podTitle: {
     color: '#FFE7A0',
     fontFamily: fonts.extra,
-    fontSize: fontSizes.lg,
-  },
-  podRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
-  podCol: { flex: 1, alignItems: 'center', gap: 2 },
-  podName: {
-    color: '#FFFFFF',
-    fontFamily: fonts.semi,
     fontSize: fontSizes.sm,
     textAlign: 'center',
   },
-  podPoints: {
-    color: 'rgba(230,234,245,0.75)',
-    fontSize: fontSizes.xs,
-    marginBottom: 4,
+  podLink: { color: '#FFC93C', fontFamily: fonts.extra, fontSize: 11.5 },
+  podList: { flex: 1, gap: 3, justifyContent: 'center', minHeight: 66 },
+  podLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  podMedal: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  podName: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontFamily: fonts.semi,
+    fontSize: fontSizes.sm,
   },
-  podBlock: {
-    alignSelf: 'stretch',
-    borderTopLeftRadius: radii.md,
-    borderTopRightRadius: radii.md,
-    alignItems: 'center',
-    justifyContent: 'center',
+  podPoints: {
+    color: 'rgba(230,234,245,0.8)',
+    fontFamily: fonts.semi,
+    fontSize: fontSizes.xs,
   },
   podPlace: {
-    color: 'rgba(0,0,0,0.5)',
+    color: 'rgba(0,0,0,0.6)',
     fontFamily: fonts.black,
-    fontSize: fontSizes.lg,
-  },
-  podBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    minHeight: 38,
-    borderRadius: radii.pill,
-    backgroundColor: '#FFC93C',
-  },
-  podBtnText: {
-    color: '#1A1200',
-    fontFamily: fonts.extra,
-    fontSize: fontSizes.md,
+    fontSize: 11,
   },
   topEmpty: {
     color: 'rgba(230,234,245,0.8)',
     fontSize: fontSizes.sm,
-    textAlign: 'center',
   },
   topMe: { color: '#FFC93C' },
-  gamesHead: { gap: 2 },
+  gamesHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   gamesTitle: {
     color: colors.text,
     fontFamily: fonts.black,
     fontSize: fontSizes.xl,
     letterSpacing: 1.5,
   },
-  gamesHint: { color: colors.textMuted, fontSize: fontSizes.sm },
   badgeCol: {
     position: 'absolute',
     top: spacing.md,
@@ -742,11 +710,12 @@ const styles = StyleSheet.create({
   },
   minBadgeText: { color: '#FFFFFF', fontFamily: fonts.semi, fontSize: 11 },
   halfRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'stretch' },
-  half: { flex: 1, minHeight: 124 },
+  half: { flex: 1, minHeight: 84 },
   inviteHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   inviteRow: {
-    gap: 4,
-    padding: spacing.md,
+    gap: 2,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderRadius: radii.lg,
     backgroundColor: colors.surface,
   },
@@ -760,21 +729,19 @@ const styles = StyleSheet.create({
   fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   noTouch: { pointerEvents: 'none' },
   buttons: { flexDirection: 'row', gap: spacing.md },
-  infoBoxes: { flexDirection: 'row', gap: spacing.sm },
+  infoBoxes: { flexDirection: 'row', gap: 6 },
   infoBox: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    minHeight: 44,
+    gap: 4,
+    minHeight: 32,
     paddingHorizontal: spacing.sm + 2,
-    borderRadius: radii.md,
+    borderRadius: radii.pill,
     backgroundColor: 'rgba(255, 200, 61, 0.07)',
     borderWidth: 1,
     borderColor: 'rgba(255, 200, 61, 0.45)',
   },
   infoBoxText: {
-    flex: 1,
     color: colors.text,
     fontFamily: fonts.semi,
     fontSize: fontSizes.xs,
