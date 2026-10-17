@@ -106,6 +106,8 @@ export const GAME_KEYS = [
   'treasure_hunt',
   'shark_cage',
   'vampire_villager',
+  'okey',
+  'okey101',
   'taboo',
   'charades',
   'find_killer',
@@ -124,6 +126,9 @@ export const gameTileImages: Record<GameKey, ImageSourcePropType | null> = {
   treasure_hunt: null,
   // Köpekbalığı Kafesi görseli eklenene kadar renkli yer tutucu görünür
   shark_cage: null,
+  // Okey ve 101 Okey görselleri eklenene kadar renkli yer tutucu görünür (okey.png / okey101.png)
+  okey: null,
+  okey101: null,
 };
 
 // Oyunlar ekranındaki iki üst düğmenin (Katıl / Oda Oluştur) görselleri. İsteğe bağlıdır: `null` iken düğmeler kodla

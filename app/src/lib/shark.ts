@@ -310,7 +310,9 @@ export type MatchState = {
 
 /** Eşleşme sırasına gir (eşleşirse oda kimliği döner) */
 /** Eşleşmek için sıraya gir (iki oyunda: Köpekbalığı Kafesi ve Vampir–Köylü) */
-export async function matchJoin(game: 'shark_cage' | 'vampire_villager' = 'shark_cage'): Promise<{ data: MatchState | null; error: string | null }> {
+export async function matchJoin(
+  game: 'shark_cage' | 'vampire_villager' | 'okey' | 'okey101' = 'shark_cage',
+): Promise<{ data: MatchState | null; error: string | null }> {
   return callRpc<MatchState>('match_join', { p_game: game }, TEXT);
 }
 /** Arama sürerken birkaç saniyede bir: eşleştim mi, sırada kaç kişi var */
@@ -322,7 +324,7 @@ export const matchCancel = () => callRpcVoid('sk_match_cancel', {}, TEXT);
 /** Eşleştirme lobisinde "Hazırım" / vazgeç */
 export const lobbyReady = (roomId: string, on: boolean) => call('sk_lobby_ready', roomId, { p_on: on });
 /** GEÇİCİ: moderatör deneme oyuncularını eşleştirme sırasına koyar */
-export const queueTestBots = (count: number, game: 'shark_cage' | 'vampire_villager' = 'shark_cage') =>
+export const queueTestBots = (count: number, game: 'shark_cage' | 'vampire_villager' | 'okey' | 'okey101' = 'shark_cage') =>
   callRpcVoid('admin_queue_test_bots', { p_count: count, p_game: game }, TEXT);
 
 /** "Tartışmayı hızlı geç" işaretini koy / kaldır */

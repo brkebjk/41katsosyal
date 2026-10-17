@@ -412,7 +412,7 @@ export async function getPointRules(): Promise<PointRules> {
 // Aylık puan hedefleri (giriş ekranlarındaki hedef çubukları, Oyunlar'daki "Kalan hedef")
 // ---------------------------------------------------------------------------
 
-export type GoalGame = 'shark_cage' | 'vampire_villager';
+export type GoalGame = 'shark_cage' | 'vampire_villager' | 'okey' | 'okey101';
 
 export type GameGoals = {
   remote_cap: number;
@@ -438,7 +438,7 @@ export async function getMyGameGoals(): Promise<GameGoals | null> {
     venue_pct: n(data.venue_pct) || 100,
     party_min_players: n(data.party_min_players),
     quiz: { earned: n(data.quiz?.earned), cap: n(data.quiz?.cap) },
-    games: { shark_cage: g('shark_cage'), vampire_villager: g('vampire_villager') },
+    games: { shark_cage: g('shark_cage'), vampire_villager: g('vampire_villager'), okey: g('okey'), okey101: g('okey101') },
     events: n(data.events),
   };
 }

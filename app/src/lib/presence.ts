@@ -43,9 +43,11 @@ export function leaveLiveGames(): Promise<void> {
   return inflight;
 }
 
-const GAME_SCREEN: Record<string, '/vampir' | '/kopekbaligi'> = {
+const GAME_SCREEN: Record<string, '/vampir' | '/kopekbaligi' | '/okey'> = {
   vampire_villager: '/vampir',
   shark_cage: '/kopekbaligi',
+  okey: '/okey',
+  okey101: '/okey',
 };
 
 /**

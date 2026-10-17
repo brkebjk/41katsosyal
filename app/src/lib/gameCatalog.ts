@@ -26,6 +26,18 @@ export const GAMES: Record<GameKey, GameInfo> = {
     icon: 'moon',
     fallback: ['#4A2590', '#071622'],
   },
+  okey: {
+    title: 'Okey',
+    description: '4 kişi · tekli ya da eşli',
+    icon: 'grid',
+    fallback: ['#0E4A4A', '#071F26'],
+  },
+  okey101: {
+    title: '101 Okey',
+    description: '101 ile aç, işle, bitir',
+    icon: 'layers',
+    fallback: ['#7A4A22', '#071F26'],
+  },
   taboo: {
     title: 'Tabu',
     description: 'Yasaklı kelimelerle anlat',

@@ -22,6 +22,8 @@ export type IntroRole = {
   /** Gece / dalış eylemi (varsa); satıra dokununca görünür */
   night: string | null;
   nightLabel: string;
+  /** Rol resmi yerine simge (ör. Okey masa ayarları) */
+  icon?: React.ComponentProps<typeof Ionicons>['name'];
 };
 
 export type IntroPlay = {
@@ -32,6 +34,8 @@ export type IntroPlay = {
   colors: [string, string];
   textColor: string;
   badge?: string;
+  /** Emoji yerine simge */
+  icon?: React.ComponentProps<typeof Ionicons>['name'];
   onPress: () => void;
   testID: string;
 };
@@ -55,6 +59,9 @@ export function GameIntro({
   guide,
   hint,
   idPrefix,
+  boardTitle = 'ROLLER',
+  boardCount,
+  noEmoji = false,
 }: {
   backdrop: ReactNode;
   /** Tema rengi (çerçeveler, başlık parıltısı) */
@@ -72,6 +79,11 @@ export function GameIntro({
   /** Oda açma sonrası kısa bilgi */
   hint?: string | null;
   idPrefix: string;
+  /** Tabelanın başlığı ve sayaç yazısı (varsayılan: roller) */
+  boardTitle?: string;
+  boardCount?: string;
+  /** Emojisiz görünüm: başlık, puan düğmesi ve satırlar simgeyle */
+  noEmoji?: boolean;
 }) {
   const [open, setOpen] = useState<string | null>(null);
 
@@ -109,7 +121,8 @@ export function GameIntro({
             style={({ pressed }) => [styles.topPill, pressed && styles.pressed]}
             testID={`${idPrefix}-intro-points`}
           >
-            <Text style={styles.topPillText}>🏆 Puanlar</Text>
+            {noEmoji ? <Ionicons name="trophy" size={14} color="#FFC93C" /> : null}
+            <Text style={styles.topPillText}>{noEmoji ? 'Puanlar' : '🏆 Puanlar'}</Text>
           </Pressable>
           {guide ? (
             <Pressable
@@ -127,7 +140,7 @@ export function GameIntro({
 
         {/* Oyun başlığı */}
         <View style={styles.hero}>
-          <Text style={styles.heroEmoji}>{emoji}</Text>
+          {emoji ? <Text style={styles.heroEmoji}>{emoji}</Text> : null}
           <Text style={[styles.heroTitle, { textShadowColor: accent }]} numberOfLines={1} adjustsFontSizeToFit>
             {title}
           </Text>
@@ -144,8 +157,8 @@ export function GameIntro({
           {/* Rol tabelası */}
           <View style={[styles.board, { borderColor: accent }]}>
             <View style={styles.boardHead}>
-              <Text style={styles.boardTitle}>ROLLER</Text>
-              <Text style={styles.boardCount}>{`${roles.length} rol · dokun, ayrıntıyı gör`}</Text>
+              <Text style={styles.boardTitle}>{boardTitle}</Text>
+              <Text style={styles.boardCount}>{boardCount ?? `${roles.length} rol · dokun, ayrıntıyı gör`}</Text>
             </View>
             <ScrollView
               style={styles.flex}
@@ -157,7 +170,9 @@ export function GameIntro({
                 <View key={g.team.name} style={styles.group}>
                   <View style={styles.groupHead}>
                     <View style={[styles.groupLine, { backgroundColor: g.team.color }]} />
-                    <Text style={[styles.groupTitle, { color: g.team.color }]}>{`${g.team.emoji} ${g.team.name}`}</Text>
+                    <Text style={[styles.groupTitle, { color: g.team.color }]}>
+                      {g.team.emoji ? `${g.team.emoji} ${g.team.name}` : g.team.name}
+                    </Text>
                     <View style={[styles.groupLine, { backgroundColor: g.team.color }]} />
                   </View>
                   {g.list.map((r) => {
@@ -171,19 +186,25 @@ export function GameIntro({
                         style={({ pressed }) => [styles.row, { borderLeftColor: r.color }, pressed && styles.pressed]}
                         testID={`${idPrefix}-role-${r.key}`}
                       >
-                        <RoleIcon role={r.key} size={48} />
+                        {r.icon ? (
+                          <View style={[styles.rowIcon, { borderColor: r.color }]}>
+                            <Ionicons name={r.icon} size={24} color={r.color} />
+                          </View>
+                        ) : (
+                          <RoleIcon role={r.key} size={48} />
+                        )}
                         <View style={styles.flex}>
                           <Text style={[styles.roleName, { color: r.color }]} numberOfLines={1}>
                             {r.name}
                           </Text>
                           <Text style={[styles.roleClass, { color: r.team.color }]} numberOfLines={1}>
-                            {`${r.team.emoji} ${r.team.name}`}
+                            {r.team.emoji ? `${r.team.emoji} ${r.team.name}` : r.team.name}
                           </Text>
                           <Text style={styles.roleGoal} numberOfLines={isOpen ? undefined : 2}>
                             {r.goal}
                           </Text>
                           {isOpen && r.night ? (
-                            <Text style={styles.roleNight}>{`🌙 ${r.nightLabel}: ${r.night}`}</Text>
+                            <Text style={styles.roleNight}>{noEmoji ? `${r.nightLabel}: ${r.night}` : `🌙 ${r.nightLabel}: ${r.night}`}</Text>
                           ) : null}
                         </View>
                         <Ionicons
@@ -210,7 +231,11 @@ export function GameIntro({
                 testID={p.testID}
               >
                 <LinearGradient colors={p.colors} style={styles.play}>
-                  <Text style={styles.playEmoji}>{p.emoji}</Text>
+                  {p.icon ? (
+                    <Ionicons name={p.icon} size={26} color={p.textColor} />
+                  ) : (
+                    <Text style={styles.playEmoji}>{p.emoji}</Text>
+                  )}
                   <Text style={[styles.playTitle, { color: p.textColor }]} numberOfLines={1} adjustsFontSizeToFit>
                     {p.title}
                   </Text>
@@ -275,6 +300,15 @@ const styles = StyleSheet.create({
   topPillText: { color: '#FFFFFF', fontFamily: fonts.extra, fontSize: 12.5 },
   hero: { alignItems: 'center', paddingHorizontal: 16, marginTop: -6 },
   heroEmoji: { fontSize: 40, lineHeight: 48 },
+  rowIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(5,10,24,0.45)',
+  },
   heroTitle: {
     color: '#FFFFFF',
     fontFamily: fonts.black,

@@ -1,6 +1,18 @@
 -- PARÇA 2 / 4 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+-- Katılım puanı, etkinlikte doğrulanan kişi sayısına göre (kalabalık etkinlik daha çok puan getirir):
+-- 4–9 kişi pts_event_attend (30) · 10–19 pts_event_attend_10 (35) · 20–39 pts_event_attend_20 (40) · 40+ pts_event_attend_40 (50).
+-- PeopleHere Özel (moderatör) etkinliklerde her basamağa pts_event_attend_official_bonus (10) eklenir.
+create or replace function public._event_attend_pts(p_count int, p_official boolean)
+returns int language sql stable set search_path = public as $$
+  select (case when p_count >= 40 then public.setting_int('pts_event_attend_40', 50)
+               when p_count >= 20 then public.setting_int('pts_event_attend_20', 40)
+               when p_count >= 10 then public.setting_int('pts_event_attend_10', 35)
+               else public.setting_int('pts_event_attend', 30) end)
+         + (case when p_official then public.setting_int('pts_event_attend_official_bonus', 10) else 0 end);
+$$;
+
 -- Bir etkinlikte kodla ve konumla doğrulanan katılımcı sayısı eşiğe (pts_event_min_attendees, varsayılan 4) ulaşınca,
 -- bekleyen katılım puanları ve düzenleyen puanları açılır. Eşikten sonra gelenler anında alır. Etkinlik başına
 -- kişi sınırı, aynı kişiden 30 günde bir kuralı ve düzenleyenin aylık tavanı korunur; katılana aylık sınır YOKTUR.
@@ -6889,25 +6901,3 @@ create trigger user_game_stats_rewards after insert or update on public.user_gam
 drop trigger if exists user_vv_stats_rewards on public.user_vv_stats;
 create trigger user_vv_stats_rewards after insert or update on public.user_vv_stats
   for each row execute function public._rewards_trigger();
-
--- Başarımlar ekranı: oyun sayıları, Vampir görev sayaçları, bulunan hazine ve kazanılan ödüller (yalnızca kendin)
-create or replace function public.my_achievement_stats()
-returns jsonb language sql stable security definer set search_path = public as $$
-  select jsonb_build_object(
-    'plays', coalesce((select jsonb_object_agg(gs.game_type, gs.plays) from public.user_game_stats gs
-                        where gs.user_id = auth.uid()), '{}'::jsonb),
-    'vv', coalesce((select jsonb_build_object('nights', x.nights, 'protects', x.protects, 'finds', x.finds, 'hanged', x.hanged)
-                      from public.user_vv_stats x where x.user_id = auth.uid()), '{}'::jsonb),
-    'treasures', (select count(*)::int from public.treasures t where t.found_by = auth.uid()),
-    'rewards', coalesce((select jsonb_agg(w.reward order by w.granted_at) from public.user_rewards w
-                          where w.user_id = auth.uid()), '[]'::jsonb))
-  where public._is_active_user();
-$$;
-
--- Oyun sayacım (başarımlar bundan hesaplanır)
-create or replace function public.my_game_stats()
-returns table (game_type text, plays int)
-language sql stable security definer set search_path = public as $$
-  select s.game_type, s.plays from public.user_game_stats s
-   where s.user_id = auth.uid() and public._is_active_user();
-$$;

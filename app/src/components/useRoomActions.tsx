@@ -65,6 +65,8 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
       router.push({ pathname: '/vampir', params: { id: roomId } });
     } else if (gameType === 'shark_cage') {
       router.push({ pathname: '/kopekbaligi', params: { id: roomId } });
+    } else if (gameType === 'okey' || gameType === 'okey101') {
+      router.push({ pathname: '/okey', params: { id: roomId } });
     } else {
       setHint('Odaya katıldın. Bu oyunun ekranı çok yakında eklenecek.');
     }
@@ -256,6 +258,10 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
       }
       return;
     }
+    if (key === 'okey' || key === 'okey101') {
+      await createOkey(key, preset);
+      return;
+    }
     if (key !== 'vampire_villager' && key !== 'shark_cage') {
       setHint(`${gameTitle(key)} hazırlanıyor, çok yakında burada olacak.`);
       return;
@@ -322,6 +328,60 @@ export function useRoomActions({ isModerator, onChanged }: Options) {
           await notify('Odaya girilemedi', joined.error, { tone: 'danger', icon: 'alert-circle' });
         }
       }
+      onChanged?.();
+      openGameScreen(res.room.id, key);
+    } finally {
+      lock.current = false;
+    }
+  }
+
+  /**
+   * Okey / 101 Okey masası. Yan yana: bölge + adres tarifi → masa (ayarlar bekleme odasında seçilir; oda sahibi de
+   * oyuncudur). Uzaktan: masa açılmaz, eşleşme ekranına geçilir (4 kişi olunca masa kurulur).
+   */
+  async function createOkey(key: 'okey' | 'okey101', preset?: 'side' | 'remote') {
+    lock.current = true;
+    const leaving = leaveDone.current;
+    try {
+      const where =
+        preset ??
+        (await showDialog<'side' | 'remote' | null>({
+          title: 'Nasıl oynanacak?',
+          message:
+            'Yan yana. Aynı masada oturursunuz, konum doğrulanır. Herkes yalnızca kendi ıstakasını görür. Aylık hedef yüksektir (ayda en çok 1.750). Mekân koduyla mekânda oynarsan +%25.\n\nUzaktan eşleş. 4 kişi olunca masa kurulur, herkes kendi telefonundan oynar. Ayda en çok 250 puan.',
+          icon: 'grid',
+          buttons: [
+            { label: 'Yan yana · Büyük hedef', value: 'side', style: 'primary' },
+            { label: 'Uzaktan eşleş', value: 'remote', style: 'ghost' },
+            { label: 'Vazgeç', value: null, style: 'ghost' },
+          ],
+          cancelValue: null,
+        }));
+      if (!where) return;
+      if (where === 'remote') {
+        router.push({ pathname: '/okey-ara', params: { oyun: key } });
+        return;
+      }
+      const earlyP = prefetchGameLocation();
+      const maxP = getJoinMaxDistance();
+      const quick = await Promise.race([earlyP, wait(300)]);
+      const maxDistance = await Promise.race([maxP, wait(300).then(() => 1)]);
+      const place = await askPlace(GAMES[key].title, quick?.ok ? quick.cell : null, maxDistance);
+      if (!place) return;
+      const early = quick ?? (await earlyP);
+      const loc = early ?? (await requireGameLocation());
+      if (!loc.ok) {
+        await notify('Masa açılamadı', loc.message, { tone: 'danger', icon: 'location' });
+        return;
+      }
+      await leaving;
+      const res = await createRoom(key, undefined, loc.cell, place);
+      if (res.error || !res.room) {
+        await notify('Masa açılamadı', res.error ?? 'Biraz sonra tekrar dene.', { tone: 'danger', icon: 'alert-circle' });
+        return;
+      }
+      const joined = await joinRoomWithLocation(res.room.code, undefined, loc.cell);
+      if (joined.error) await notify('Masaya oturulamadı', joined.error, { tone: 'danger', icon: 'alert-circle' });
       onChanged?.();
       openGameScreen(res.room.id, key);
     } finally {

@@ -53,6 +53,8 @@ const STRAIGHT: Tilt = { deg: 0, dx: 0 };
 const TILTS: Record<GameKey, Tilt> = {
   shark_cage: STRAIGHT,
   vampire_villager: STRAIGHT,
+  okey: STRAIGHT,
+  okey101: STRAIGHT,
   taboo: STRAIGHT,
   charades: STRAIGHT,
   find_killer: STRAIGHT,
@@ -187,6 +189,11 @@ function GamesScreen() {
     // Vampir–Köylü de aynı düzende kendi giriş ekranından açılır
     if (key === 'vampire_villager') {
       router.push('/vampir-giris');
+      return;
+    }
+    // Okey ve 101 Okey ortak giriş ekranından açılır (yan yana masa / uzaktan eşleş / açık masalar)
+    if ((key === 'okey' || key === 'okey101') && enabled[key]) {
+      router.push({ pathname: '/okey-giris', params: { oyun: key } });
       return;
     }
     // Bilgi Yarışması kendi ekranında oynanır (Solo Maraton / Uzaktan); oyun odası yoktur
@@ -439,7 +446,7 @@ function GamesScreen() {
                 playing={playing[key] ?? 0}
                 treasures={key === 'treasure_hunt' ? treasureCount : null}
                 goal={
-                  goals && (key === 'shark_cage' || key === 'vampire_villager' || key === 'quiz')
+                  goals && (key === 'shark_cage' || key === 'vampire_villager' || key === 'okey' || key === 'okey101' || key === 'quiz')
                     ? goalOf(goals, key)
                     : null
                 }

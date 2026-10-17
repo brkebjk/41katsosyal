@@ -36,8 +36,8 @@ peoplehere.app.
 - Şehir: `profiles.city`, göç (`request_city_move`, ay başında geçerli), ziyaret modu (başka şehrin haritası). Moderatör
   (role admin) her şehirde her şeyi yapar. Haritaların dışından giren "bekleyen üye" (şehri yok, yalnızca ziyaret).
 - Rumuz sistemi (Lakap#numara), arkadaşlık, özel mesaj, akış (şehre özel), etkinlikler (kodla katılım doğrulama),
-  oyunlar: Köpekbalığı Kafesi, Vampir–Köylü (yan yana + uzaktan eşleştirme, bas-konuş ses), Bilgi Yarışması, çekiliş,
-  hazine avı. Aylık puan sınırları ve sıralamalar sunucuda.
+  oyunlar: Köpekbalığı Kafesi, Vampir–Köylü (yan yana + uzaktan eşleştirme, bas-konuş ses), Okey ve 101 Okey (4 kişi,
+  yan yana + uzaktan), Bilgi Yarışması, çekiliş, hazine avı. Aylık puan sınırları ve sıralamalar sunucuda.
 
 ## Bu oturumda eklenenler (özet)
 - Şehirler: İstanbul/İzmir haritaları, şehir seçimi konuma bağlı (sunucu doğrular), göç ekranı (/sehir), ziyaret modu,
@@ -56,6 +56,10 @@ peoplehere.app.
 - Panel Sistem > Görünüm: kampanya şeridi (`promo_banners`), özel gün teması (`look_theme`), şehir açılış görseli
   (`look_splash`, `app-look` kutusu), özellik aç/kapa (`feature_*` ayarları; sunucu `_require_feature` ile de engeller).
 - Supabase şeması GitHub Actions ile otomatik uygulanıyor.
+- Okey ve 101 Okey: motor `schema.sql` sonunda (`ok_*` fonksiyonları; deste ve ıstakalar kimsenin okuyamadığı
+  `okey_hidden`/`okey_racks` tablolarında, `game_rooms.state` yalnızca açık bilgi). Ekranlar `okey.tsx` (bekleme odası,
+  masa, el sonu), `okey-giris.tsx`, `okey-ara.tsx`, parçalar `OkeyParts.tsx`, istemci `lib/okey.ts`, kurallar
+  `gameInfo.ts` OKEY_RULES. Sıra 1→2→3→4 (soldan al, sağa at). Puan `room_players.score` → `_game_results` (4 koltuk).
 
 ## Bekleyen işler
 - Expo/EAS: Project ID `app.json`'da (slug `peoplehere`), GitHub secrets eklendi; `uygulama-guncelleme.yml` app/
@@ -67,6 +71,7 @@ peoplehere.app.
   iş akışı, iki WebPreviewGate dosyası, `_layout.tsx`'teki `<WebPreviewGate />` satırı ve expo.dev'deki Hosting yayını.
 - Supabase'te pg_net eklentisinin açık olduğu doğrulanmalı (telefona bildirim için).
 - Bazı oyun kutuları hâlâ "çok yakında"; İngilizce ve "uygulamayı değerlendir" yakında durumunda.
+- Okey 2. aşama: taş, ıstaka ve oyun kutusu görselleri (şimdilik kodla çiziliyor; `OkTile`, `OkRack`, `images.ts`).
 
 ## Teslimden önce kontroller
 - `cd app && NODE_OPTIONS=--max-old-space-size=6144 npx tsc --noEmit && npx eslint src`

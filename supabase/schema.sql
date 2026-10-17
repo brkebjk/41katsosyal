@@ -2720,6 +2720,32 @@ declare
 begin
   select * into r from public.game_rooms where id = p_room_id;
   if not found or r.game_type = 'raffle' then return; end if;
+  -- Okey ve 101: masadaki 4 koltuk sayılır (oyundan ayrılan en sona yazılır ve puan almaz; moderatör de sırada
+  -- yer alır ama puan almaz). Sıra room_players.score'a göre (Okey: kalan puan, 101: eksi ceza toplamı); eşler eşittir.
+  if r.game_type in ('okey', 'okey101') then
+    if coalesce(r.state->>'phase', '') <> 'ended' then return; end if;
+    return query
+    with p as (
+      select rp.user_id as uid, pr.role::text as prole, rp.left_at as lft,
+             case when rp.left_at is null then coalesce(rp.score, 0)::numeric else -1000000::numeric end as k1
+        from public.room_players rp
+        join public.profiles pr on pr.id = rp.user_id
+       where rp.room_id = p_room_id and rp.seat between 1 and 4
+    ), q as (
+      select p.uid, p.prole, p.lft,
+             rank() over (order by p.k1 desc)::int as rnk,
+             (count(*) over (partition by p.k1))::int as tied,
+             (count(*) over ())::int as n
+        from p
+    )
+    select q.uid, q.rnk, (q.rnk + (q.tied - 1) / 2.0)::numeric, q.n,
+           greatest(1, round(public._game_top_points(q.n, public.setting_int('pts_game_top_cap', 12))
+                             * (q.n - (q.rnk + (q.tied - 1) / 2.0) + 1) / q.n * 2) / 2.0)::numeric,
+           q.rnk = 1
+      from q
+     where q.prole = 'user' and q.lft is null;
+    return;
+  end if;
   v_winner := r.state->>'winner';
   if r.game_type in ('vampire_villager', 'shark_cage') and v_winner is null then return; end if;
   -- Köpekbalığı Kafesi anlatıcılı oyun (etkinlik eğlencesi): kimse puan almaz
@@ -5317,6 +5343,20 @@ begin
     select * into r from public.game_rooms where id = p_room_id;
   end if;
 
+  -- Okey ve 101: oyun başladıysa sahibi ayrılınca oda kapanmaz; sahiplik masadaki sıradaki gerçek oyuncuya geçer
+  -- (ayrılanın yerine sunucu oynar). Bekleme odasında sahibi ayrılırsa oda kapanır.
+  if r.host_id = p_user_id and r.game_type in ('okey', 'okey101') and r.status = 'playing'
+     and exists (select 1 from public.room_players rp join public.profiles bp on bp.id = rp.user_id
+                  where rp.room_id = p_room_id and rp.user_id <> p_user_id and rp.left_at is null and not bp.is_bot) then
+    update public.game_rooms
+       set host_id = (select rp.user_id from public.room_players rp join public.profiles bp on bp.id = rp.user_id
+                       where rp.room_id = p_room_id and rp.user_id <> p_user_id and rp.left_at is null and not bp.is_bot
+                       order by rp.seat limit 1),
+           host_seen_at = now()
+     where id = p_room_id;
+    select * into r from public.game_rooms where id = p_room_id;
+  end if;
+
   if r.host_id = p_user_id then
     perform public._room_close(p_room_id, p_reason);
     return 'closed';
@@ -5340,6 +5380,7 @@ begin
   if not found then return null; end if;
   if r.game_type = 'vampire_villager' then perform public._vv_after_leave(p_room_id, p_user_id); end if;
   if r.game_type = 'shark_cage' then perform public._sk_after_leave(p_room_id, p_user_id); end if;
+  if r.game_type in ('okey', 'okey101') then perform public._ok_after_leave(p_room_id, p_user_id); end if;
   return 'eliminated';
 end $$;
 
@@ -18842,7 +18883,7 @@ begin
   perform public._require_user();
   perform public._require_admin();
   select * into r from public.game_rooms where id = p_room_id for update;
-  if not found or r.game_type not in ('vampire_villager', 'shark_cage') or r.status <> 'lobby' then
+  if not found or r.game_type not in ('vampire_villager', 'shark_cage', 'okey', 'okey101') or r.status <> 'lobby' then
     raise exception 'room_not_found';
   end if;
   update public.game_rooms set config = config || jsonb_build_object('test', true) where id = p_room_id;
@@ -20925,7 +20966,7 @@ begin
                            join public.game_rooms gr on gr.id = pe.room_id
                           where pe.user_id = v.id and pe.source = 'game_play' and gr.game_type = g.key
                             and pe.created_at >= v_start))), '{}'::jsonb)
-                from (values ('shark_cage'), ('vampire_villager')) g(key)),
+                from (values ('shark_cage'), ('vampire_villager'), ('okey'), ('okey101')) g(key)),
     'events', (select coalesce(sum(amount), 0) from public.point_events
                 where user_id = v.id and source like 'event%' and created_at >= v_start));
 end $$;
@@ -21052,6 +21093,8 @@ begin
   end if;
   select q.game_type into v_game from public.sk_queue q where q.user_id = p_user;
   if v_game is null then return null; end if;
+  -- Okey ve 101: masa 4 kişi olunca kurulur ve hemen başlar (tek başına oda açılmaz)
+  if v_game in ('okey', 'okey101') then return public._ok_match_try(p_user, v_game); end if;
   select coalesce(gt.max_players, 16) into v_max from public.game_types gt where gt.key = v_game;
 
   -- 1) Yer olan açık eşleştirme lobisi (biten oyundan sonra açılan uzaktan bekleme odaları da)
@@ -21130,7 +21173,7 @@ begin
   perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
-  if p_game not in ('shark_cage', 'vampire_villager')
+  if p_game not in ('shark_cage', 'vampire_villager', 'okey', 'okey101')
      or not exists (select 1 from public.game_types where key = p_game and enabled) then
     raise exception 'game_not_available';
   end if;
@@ -21208,7 +21251,7 @@ declare
 begin
   perform public._require_user();
   perform public._require_admin();
-  if p_game not in ('shark_cage', 'vampire_villager') then raise exception 'game_not_available'; end if;
+  if p_game not in ('shark_cage', 'vampire_villager', 'okey', 'okey101') then raise exception 'game_not_available'; end if;
   insert into public.sk_queue (user_id, game_type)
   select p.id, p_game from public.profiles p
    where p.is_bot
@@ -23547,6 +23590,1694 @@ revoke execute on function public.my_tour_done() from public, anon;
 revoke execute on function public.mark_tour_done() from public, anon;
 grant execute on function public.my_tour_done() to authenticated;
 grant execute on function public.mark_tour_done() to authenticated;
+
+
+-- =====================================================================================================================
+-- OKEY ve 101 OKEY (4 kişi; yan yana oda ya da uzaktan eşleşme)
+--   Bütün kurallar sunucuda uygulanır; uygulama yalnızca gösterir ve oyuncunun hamlesini gönderir.
+--   Taşlar: 4 renk (0 sarı, 1 mavi, 2 siyah, 3 kırmızı) × 1–13 × 2 + 2 sahte okey = 106 taş.
+--   Taş kimliği 0–103: renk = id / 26, sayı = id % 26 % 13 + 1. 104 ve 105 sahte okeydir.
+--   Gösterge desteden açılır (sahte okey olamaz); okey, göstergenin aynı renkte bir üstüdür (13'ün üstü 1).
+--   İki okey taşı her taşın yerine geçer. Sahte okey, okeyin kendisi gibi (o renk ve sayı) kullanılır.
+--   Gizli bilgiler (deste sırası, ıstakalar) okey_hidden ve okey_racks tablolarındadır; kimse doğrudan okuyamaz.
+--   Oyuncu yalnızca kendi ıstakasını ok_view ile görür. game_rooms.state yalnızca herkese açık bilgileri tutar.
+--   Sıra: koltuk 1 → 2 → 3 → 4 (masada saatin tersi yönü). Taş soldaki oyuncunun attığından (yandan) ya da ortadan
+--   çekilir, sağa (bir sonraki oyuncunun önüne) atılır. Eşli oyunda 1–3 ve 2–4 eştir.
+--
+--   OKEY: başlayan 15, diğerleri 14 taş alır (ortada 48 taş). 14 taşı perlere (aynı renk ardışık en az 3 taş — 12-13-1
+--     olur, 13-1-2 olmaz — ya da aynı sayı farklı renk 3–4 taş) veya 7 çifte dizip 15. taşı ortaya atan biter.
+--     Herkes 20 (ya da kısa oyunda 10) puanla başlar. Biten dışındakiler normal bitişte 2, okey atarak bitişte 4,
+--     çiftten bitişte 4, çiftten okey atarak bitişte 8 puan kaybeder (eşlide yalnızca rakip takım). İlk turunda
+--     göstergenin eşini gösteren oyuncu diğerlerine 1 puan kaybettirir. Ortada taş biterse el berabere biter.
+--     Bir el sonunda biri 0'a (ya da altına) inmişse oyun biter; puanı en yüksek olan kazanır.
+--   101 OKEY: başlayan 22, diğerleri 21 taş alır (ortada 20 taş). Seriler 13'te biter (12-13-1 olmaz).
+--     El açmak için perlerin toplamı en az 101 ya da en az 5 çift olmalı. Katlamalı masada sonra açan, rakiplerin en
+--     yüksek açışını 1 geçmelidir (seri ve çift ayrı sayılır; eşin açışı barajı yükseltmez). Açan oyuncu yeni per açar,
+--     yerdeki perlere taş işler, yerdeki okeyi yerine geçtiği taşla alabilir. Seriyle açan çift, çiftle açan seri açamaz.
+--     Açmamış oyuncu yandan taş alırsa o taşla aynı turda açmalı; açamazsa taşı geri koyup ortadan çeker.
+--     Son taşını atan biter ve -101 yazar. Okey atarak bitiş, elden bitiş (aynı turda açıp bitirme) ve çiftten bitiş
+--     ayrı ayrı 2 kat sayılır (bitenin puanı da diğerlerinin cezası da katlanır). Diğerleri: hiç açmadıysa 202, açtıysa
+--     elinde kalan taşların toplamı (elde kalan okey 101 sayılır); çiftle açtıysa ayrıca 2 kat. Eşlide bitenin eşi
+--     ceza yazmaz, takımın cezası toplanır. Cezalı masada işlek taş atmak, okey atmak ve yandan alınan taşı geri koymak
+--     101 cezadır. Ortada taş biterse el biter ve herkes elindekini yazar. Seçilen el sayısı oynanır; en düşük toplam
+--     kazanır.
+--   Yardımlı masada uygulama okeyi, işlek taşları ve açış toplamını gösterir, ıstakayı dizer; yardımsızda göstermez.
+--   Süre dolarsa sunucu oyuncu yerine ortadan çeker ve çektiği taşı (ceza getirmeyen bir taşı) atar. Oyundan ayrılanın
+--   yerine sunucu oynar; ayrılan puan almaz. Puan: room_players.score (Okey: kalan puan, 101: eksi ceza toplamı) ile
+--   _game_results; masada 4 koltuk sayılır (aylık sınırlar diğer oyunlarla aynı).
+-- =====================================================================================================================
+insert into public.game_types (key, title, description, min_players, max_players, enabled, sort_order) values
+  ('okey', 'Okey', 'Klasik okey: 4 kişi, tekli ya da eşli', 4, 4, true, 7),
+  ('okey101', '101 Okey', 'El aç, işle, bitir: 4 kişi', 4, 4, true, 8)
+on conflict (key) do nothing;
+
+insert into public.app_settings (key, value, description) values
+  ('ok_turn_seconds_side', '45', 'Okey: yan yana oyunda hamle süresi (sn)'),
+  ('ok_turn_seconds_remote', '30', 'Okey: uzaktan oyunda hamle süresi (sn)'),
+  ('ok101_turn_seconds_side', '90', '101 Okey: yan yana oyunda hamle süresi (sn)'),
+  ('ok101_turn_seconds_remote', '45', '101 Okey: uzaktan oyunda hamle süresi (sn)'),
+  ('ok_hand_pause_seconds', '20', 'Okey ve 101: el sonu tablosu en çok kaç sn görünür (herkes devam derse hemen geçilir)')
+on conflict (key) do nothing;
+
+-- Deste ve son çekilen taşlar (kimse okuyamaz)
+create table if not exists public.okey_hidden (
+  room_id uuid primary key references public.game_rooms (id) on delete cascade,
+  deck int[] not null default '{}',
+  last_drawn int[] not null default '{null,null,null,null}'
+);
+alter table public.okey_hidden enable row level security;
+revoke all on public.okey_hidden from anon, authenticated;
+
+-- Istakalar: koltuk başına 30 yuva (2 sıra × 15); boş yuva null. Oyuncu kendi ıstakasını ok_view ile görür.
+create table if not exists public.okey_racks (
+  room_id uuid not null references public.game_rooms (id) on delete cascade,
+  seat int not null check (seat between 1 and 4),
+  slots int[] not null,
+  primary key (room_id, seat)
+);
+alter table public.okey_racks enable row level security;
+revoke all on public.okey_racks from anon, authenticated;
+
+-- ---- Taş yardımcıları -----------------------------------------------------------------------------------------------
+create or replace function public._ok_tc(p_t int, p_okc int)
+returns int language sql immutable as $$ select case when p_t >= 104 then p_okc else p_t / 26 end $$;
+
+create or replace function public._ok_tn(p_t int, p_okn int)
+returns int language sql immutable as $$ select case when p_t >= 104 then p_okn else p_t % 26 % 13 + 1 end $$;
+
+-- Okey (her taşın yerine geçen) mi?
+create or replace function public._ok_wild(p_t int, p_okc int, p_okn int)
+returns boolean language sql immutable as $$ select p_t < 104 and p_t / 26 = p_okc and p_t % 26 % 13 + 1 = p_okn $$;
+
+-- Per denetimi. Döner: {kind: run|set, tiles (seride küçükten büyüğe), reps: her taşın yerine geçtiği [renk, sayı],
+-- value: perin sayı toplamı} ya da geçersizse null. Önce taşların verilen sırası (artan ya da azalan) seri olarak
+-- denenir; olmazsa aynı sayı perine bakılır; p_strict değilse sırası karışık seri de aranır (okey boşluklara konur).
+-- p_wrap: 1, 13'ün üstüne de gelebilir (yalnızca Okey'de 12-13-1).
+create or replace function public._ok_meld(p_t int[], p_okc int, p_okn int, p_wrap boolean, p_strict boolean default false)
+returns jsonb language plpgsql immutable set search_path = public as $$
+declare
+  n int := coalesce(array_length(p_t, 1), 0);
+  i int;
+  k int;
+  w int := 0;
+  c int;
+  x int;
+  rc int;
+  sn int;
+  run_ok boolean := true;
+  set_ok boolean := true;
+  nums int[] := '{}';
+  cols int[] := '{}';
+  lim int := case when p_wrap then 14 else 13 end;
+  d int;
+  i0 int;
+  e int;
+  m int;
+  good boolean;
+  seq int[];
+  ord int[];
+  mp int[];
+  mn int;
+  mx int;
+  extra int;
+  bot int;
+  top int;
+  wl int[] := '{}';
+  ft int;
+begin
+  if n < 3 or n > 13 then return null; end if;
+  if (select count(distinct t) from unnest(p_t) t) <> n then return null; end if;
+  for i in 1..n loop
+    if p_t[i] is null or p_t[i] < 0 or p_t[i] > 105 then return null; end if;
+    if public._ok_wild(p_t[i], p_okc, p_okn) then
+      w := w + 1;
+      wl := wl || p_t[i];
+    else
+      c := public._ok_tc(p_t[i], p_okc);
+      x := public._ok_tn(p_t[i], p_okn);
+      if rc is null then rc := c; elsif rc <> c then run_ok := false; end if;
+      if sn is null then sn := x; elsif sn <> x then set_ok := false; end if;
+      if x = any(nums) then run_ok := false; end if;
+      if c = any(cols) then set_ok := false; end if;
+      nums := nums || x;
+      cols := cols || c;
+    end if;
+  end loop;
+  if w = n then return null; end if;
+
+  -- 1) Istakadaki sırasıyla seri (artan ya da azalan)
+  if run_ok then
+    foreach d in array array[1, -1] loop
+      i0 := null;
+      for i in 1..n loop
+        if not public._ok_wild(p_t[i], p_okc, p_okn) then i0 := i; exit; end if;
+      end loop;
+      x := public._ok_tn(p_t[i0], p_okn);
+      foreach m in array case when p_wrap and x = 1 then array[1, 14] else array[x] end loop
+        good := true;
+        seq := '{}';
+        for i in 1..n loop
+          e := m + d * (i - i0);
+          if e < 1 or e > lim then good := false; exit; end if;
+          if not public._ok_wild(p_t[i], p_okc, p_okn) then
+            k := public._ok_tn(p_t[i], p_okn);
+            if not (k = e or (p_wrap and k = 1 and e = 14)) then good := false; exit; end if;
+          end if;
+          seq := seq || e;
+        end loop;
+        if good then
+          if d = 1 then
+            ord := p_t;
+          else
+            ord := array(select p_t[j] from generate_series(n, 1, -1) j);
+            seq := array(select seq[j] from generate_series(n, 1, -1) j);
+          end if;
+          return jsonb_build_object('kind', 'run', 'tiles', to_jsonb(ord),
+            'reps', (select jsonb_agg(jsonb_build_array(rc, case when q = 14 then 1 else q end) order by o)
+                       from unnest(seq) with ordinality u(q, o)),
+            'value', (select sum(case when q = 14 then 1 else q end) from unnest(seq) q));
+        end if;
+      end loop;
+    end loop;
+  end if;
+
+  -- 2) Aynı sayı, farklı renk (3–4 taş)
+  if set_ok and n <= 4 then
+    return jsonb_build_object('kind', 'set', 'tiles', to_jsonb(p_t),
+      'reps', (select jsonb_agg(case when public._ok_wild(t, p_okc, p_okn) then jsonb_build_array(null, sn)
+                                     else jsonb_build_array(public._ok_tc(t, p_okc), sn) end order by o)
+                 from unnest(p_t) with ordinality u(t, o)),
+      'value', sn * n);
+  end if;
+
+  -- 3) Sırası karışık seri: okeyler aradaki boşluklara, artanı üste (olmazsa alta) konur
+  if run_ok and not p_strict then
+    foreach m in array case when p_wrap and 1 = any(nums) then array[0, 1] else array[0] end loop
+      mp := array(select case when m = 1 and q = 1 then 14 else q end from unnest(nums) q);
+      select min(q), max(q) into mn, mx from unnest(mp) q;
+      extra := w - ((mx - mn + 1) - (n - w));
+      continue when extra < 0;
+      top := mx;
+      bot := mn;
+      while extra > 0 and top < lim loop top := top + 1; extra := extra - 1; end loop;
+      while extra > 0 and bot > 1 loop bot := bot - 1; extra := extra - 1; end loop;
+      continue when extra > 0;
+      ord := '{}';
+      seq := '{}';
+      k := 0;
+      for e in bot..top loop
+        ft := null;
+        for i in 1..n loop
+          if not public._ok_wild(p_t[i], p_okc, p_okn)
+             and (case when m = 1 and public._ok_tn(p_t[i], p_okn) = 1 then 14 else public._ok_tn(p_t[i], p_okn) end) = e then
+            ft := p_t[i];
+            exit;
+          end if;
+        end loop;
+        if ft is null then
+          k := k + 1;
+          ft := wl[k];
+        end if;
+        ord := ord || ft;
+        seq := seq || e;
+      end loop;
+      return jsonb_build_object('kind', 'run', 'tiles', to_jsonb(ord),
+        'reps', (select jsonb_agg(jsonb_build_array(rc, case when q = 14 then 1 else q end) order by o)
+                   from unnest(seq) with ordinality u(q, o)),
+        'value', (select sum(case when q = 14 then 1 else q end) from unnest(seq) q));
+    end loop;
+  end if;
+  return null;
+end $$;
+
+-- Çift: iki aynı taş (biri ya da ikisi okey olabilir)
+create or replace function public._ok_pair(p_a int, p_b int, p_okc int, p_okn int)
+returns boolean language sql immutable as $$
+  select p_a is not null and p_b is not null and p_a <> p_b and p_a between 0 and 105 and p_b between 0 and 105
+     and (public._ok_wild(p_a, p_okc, p_okn) or public._ok_wild(p_b, p_okc, p_okn)
+          or (public._ok_tc(p_a, p_okc) = public._ok_tc(p_b, p_okc) and public._ok_tn(p_a, p_okn) = public._ok_tn(p_b, p_okn)));
+$$;
+
+-- Istakada yan yana duran bir taş grubunu perlere (ya da ardışık çiftlere) böler. Döner: per listesi ya da null.
+create or replace function public._ok_split(p_t int[], p_okc int, p_okn int, p_wrap boolean, p_pairs boolean)
+returns jsonb language plpgsql immutable set search_path = public as $$
+declare
+  n int := coalesce(array_length(p_t, 1), 0);
+  okp boolean[];
+  prv int[];
+  i int;
+  j int;
+  l int;
+  res jsonb := '[]'::jsonb;
+begin
+  if n = 0 then return '[]'::jsonb; end if;
+  if p_pairs then
+    if n % 2 <> 0 then return null; end if;
+    for i in 0..(n / 2 - 1) loop
+      if not public._ok_pair(p_t[2 * i + 1], p_t[2 * i + 2], p_okc, p_okn) then return null; end if;
+      res := res || jsonb_build_array(jsonb_build_object('kind', 'pair',
+                                                         'tiles', jsonb_build_array(p_t[2 * i + 1], p_t[2 * i + 2])));
+    end loop;
+    return res;
+  end if;
+  okp := array_fill(false, array[n + 1]);
+  prv := array_fill(0, array[n + 1]);
+  okp[1] := true;
+  for i in 3..n loop
+    for l in 3..least(13, i) loop
+      j := i - l;
+      if okp[j + 1] and public._ok_meld(p_t[j + 1:i], p_okc, p_okn, p_wrap, false) is not null then
+        okp[i + 1] := true;
+        prv[i + 1] := j;
+        exit;
+      end if;
+    end loop;
+  end loop;
+  if not okp[n + 1] then return null; end if;
+  i := n;
+  while i > 0 loop
+    j := prv[i + 1];
+    res := jsonb_build_array(public._ok_meld(p_t[j + 1:i], p_okc, p_okn, p_wrap, false)) || res;
+    i := j;
+  end loop;
+  return res;
+end $$;
+
+-- ---- Masa yardımcıları ----------------------------------------------------------------------------------------------
+-- Masa ayarları (oda sahibi bekleme odasında seçer)
+create or replace function public._ok_opts(r public.game_rooms)
+returns jsonb language sql stable as $$
+  select case when r.game_type = 'okey'
+              then jsonb_build_object('pairs', false, 'helper', true, 'target', 20)
+              else jsonb_build_object('pairs', false, 'helper', true, 'penalty', true, 'fold', false, 'hands', 3) end
+         || coalesce(r.config->'ok', '{}'::jsonb);
+$$;
+
+create or replace function public._ok_turn_secs(r public.game_rooms)
+returns int language sql stable set search_path = public as $$
+  select greatest(10, case when r.game_type = 'okey'
+                           then case when r.remote then public.setting_int('ok_turn_seconds_remote', 30)
+                                     else public.setting_int('ok_turn_seconds_side', 45) end
+                           else case when r.remote then public.setting_int('ok101_turn_seconds_remote', 45)
+                                     else public.setting_int('ok101_turn_seconds_side', 90) end end);
+$$;
+
+-- Takım (eşli): 1–3 → 1, 2–4 → 2
+create or replace function public._ok_team(p_seat int)
+returns int language sql immutable as $$ select (p_seat - 1) % 2 + 1 $$;
+
+create or replace function public._ok_seat(p_room uuid, p_user uuid)
+returns int language sql stable security definer set search_path = public as $$
+  select rp.seat from public.room_players rp where rp.room_id = p_room and rp.user_id = p_user and rp.left_at is null;
+$$;
+
+-- Koltuğun ıstakasındaki taşlar (yuva sırasıyla)
+create or replace function public._ok_hand(p_room uuid, p_seat int)
+returns int[] language sql stable security definer set search_path = public as $$
+  select coalesce((select array_agg(u.x order by u.o)
+                     from public.okey_racks k, unnest(k.slots) with ordinality u(x, o)
+                    where k.room_id = p_room and k.seat = p_seat and u.x is not null), '{}'::int[]);
+$$;
+
+-- Istakaya taş koyar: son taşın sağındaki ilk boş yuvaya (yer yoksa ilk boş yuvaya)
+create or replace function public._ok_give(p_room uuid, p_seat int, p_t int)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v int[];
+  i int;
+  v_last int := 0;
+begin
+  select slots into v from public.okey_racks where room_id = p_room and seat = p_seat for update;
+  for i in 1..coalesce(array_length(v, 1), 0) loop
+    if v[i] is not null then v_last := i; end if;
+  end loop;
+  i := null;
+  select min(g) into i from generate_series(v_last + 1, greatest(v_last + 1, 30)) g where g <= 30 and v[g] is null;
+  if i is null then select min(g) into i from generate_series(1, 30) g where v[g] is null; end if;
+  if i is null then v := v || p_t; else v[i] := p_t; end if;
+  update public.okey_racks set slots = v where room_id = p_room and seat = p_seat;
+end $$;
+
+create or replace function public._ok_drop(p_room uuid, p_seat int, p_t int)
+returns void language sql security definer set search_path = public as $$
+  update public.okey_racks set slots = array_replace(slots, p_t, null) where room_id = p_room and seat = p_seat;
+$$;
+
+-- Oyun akışı günlüğü (son 14 olay; herkese açık bilgiler) ve olay sayacı (uygulama yeni olayı buradan anlar)
+create or replace function public._ok_log(p_room uuid, p_ev jsonb)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  update public.game_rooms
+     set state = jsonb_set(state, '{log}', coalesce((
+           select jsonb_agg(y.e order by y.o) from (
+             select x.e, x.o
+               from jsonb_array_elements(coalesce(state->'log', '[]'::jsonb)
+                      || jsonb_build_array(p_ev || jsonb_build_object('i', coalesce((state->>'evn')::int, 0) + 1,
+                                                                      'at', now()))) with ordinality x(e, o)
+              order by x.o desc limit 14) y), '[]'::jsonb))
+         || jsonb_build_object('evn', coalesce((state->>'evn')::int, 0) + 1)
+   where id = p_room;
+end $$;
+
+-- Bu taş yerdeki bir pere işlenebilir mi (101)?
+create or replace function public._ok_isler(p_state jsonb, p_t int)
+returns boolean language plpgsql stable set search_path = public as $$
+declare
+  m jsonb;
+  t int[];
+  okc int := (p_state->>'okc')::int;
+  okn int := (p_state->>'okn')::int;
+begin
+  for m in select value from jsonb_array_elements(coalesce(p_state->'melds', '[]'::jsonb)) loop
+    t := array(select (q.v)::int from jsonb_array_elements_text(m->'tiles') with ordinality q(v, o) order by q.o);
+    if m->>'kind' = 'set' then
+      if public._ok_meld(t || p_t, okc, okn, false, true)->>'kind' = 'set' then return true; end if;
+    elsif m->>'kind' = 'run' then
+      if public._ok_meld(p_t || t, okc, okn, false, true)->>'kind' = 'run'
+         or public._ok_meld(t || p_t, okc, okn, false, true)->>'kind' = 'run' then
+        return true;
+      end if;
+    end if;
+  end loop;
+  return false;
+end $$;
+
+-- 101: el açmak için gereken (seri toplamı ya da çift sayısı). Katlamalıda rakiplerin en yüksek açışının 1 fazlası.
+create or replace function public._ok_need(r public.game_rooms, p_seat int, p_pairs boolean)
+returns int language plpgsql stable set search_path = public as $$
+declare
+  o jsonb := public._ok_opts(r);
+  mx int;
+begin
+  if not coalesce((o->>'fold')::boolean, false) then
+    return case when p_pairs then 5 else 101 end;
+  end if;
+  select max(case when p_pairs then (e.value->>'pairs')::int else (e.value->>'value')::int end) into mx
+    from jsonb_each(coalesce(r.state->'opened', '{}'::jsonb)) e
+   where e.value->>'kind' = case when p_pairs then 'pair' else 'run' end
+     and e.key::int <> p_seat
+     and not (coalesce((o->>'pairs')::boolean, false) and public._ok_team(e.key::int) = public._ok_team(p_seat));
+  return case when p_pairs then greatest(5, coalesce(mx + 1, 5)) else greatest(101, coalesce(mx + 1, 101)) end;
+end $$;
+
+-- Gelen per listesini (dizi dizisi) taş dizilerine çevirir; taşlar elde olmalı, aynı taş iki kez olmamalı
+create or replace function public._ok_chunks(p_groups jsonb, p_hand int[])
+returns jsonb language plpgsql stable set search_path = public as $$
+declare
+  g jsonb;
+  t int[];
+  all_t int[] := '{}';
+  res jsonb := '[]'::jsonb;
+begin
+  if p_groups is null or jsonb_typeof(p_groups) <> 'array' or jsonb_array_length(p_groups) = 0
+     or jsonb_array_length(p_groups) > 15 then
+    raise exception 'invalid_groups';
+  end if;
+  for g in select value from jsonb_array_elements(p_groups) loop
+    if jsonb_typeof(g) <> 'array' or jsonb_array_length(g) = 0 or jsonb_array_length(g) > 22 then
+      raise exception 'invalid_groups';
+    end if;
+    if exists (select 1 from jsonb_array_elements(g) x where jsonb_typeof(x) <> 'number') then
+      raise exception 'invalid_groups';
+    end if;
+    t := array(select (q.v)::int from jsonb_array_elements_text(g) with ordinality q(v, o) order by q.o);
+    all_t := all_t || t;
+    res := res || jsonb_build_array(to_jsonb(t));
+  end loop;
+  if (select count(distinct x) from unnest(all_t) x) <> coalesce(array_length(all_t, 1), 0) then
+    raise exception 'invalid_groups';
+  end if;
+  if exists (select 1 from unnest(all_t) x where not x = any(p_hand)) then raise exception 'tile_not_in_hand'; end if;
+  return res;
+end $$;
+
+-- ---- Oyun akışı -----------------------------------------------------------------------------------------------------
+-- El dağıtır (başlayan bir taş fazla alır), göstergeyi açar
+create or replace function public._ok_deal(p_room_id uuid, p_starter int)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  d int[];
+  v_ind int;
+  v_base int;
+  v_pos int := 1;
+  s int;
+  v_cnt int;
+begin
+  select * into r from public.game_rooms where id = p_room_id for update;
+  d := array(select g from generate_series(0, 105) g order by random());
+  select u.x into v_ind from unnest(d) with ordinality u(x, o) where u.x < 104 order by u.o limit 1;
+  d := array_remove(d, v_ind);
+  v_base := case when r.game_type = 'okey' then 14 else 21 end;
+  delete from public.okey_racks where room_id = p_room_id;
+  for s in 1..4 loop
+    v_cnt := v_base + case when s = p_starter then 1 else 0 end;
+    insert into public.okey_racks (room_id, seat, slots)
+    values (p_room_id, s, d[v_pos:v_pos + v_cnt - 1] || array_fill(null::int, array[30 - v_cnt]));
+    v_pos := v_pos + v_cnt;
+  end loop;
+  d := d[v_pos:];
+  insert into public.okey_hidden (room_id, deck, last_drawn) values (p_room_id, d, '{null,null,null,null}')
+  on conflict (room_id) do update set deck = excluded.deck, last_drawn = excluded.last_drawn;
+  update public.game_rooms
+     set state = state || jsonb_build_object(
+           'phase', 'play', 'hand', coalesce((state->>'hand')::int, 0) + 1, 'starter', p_starter, 'turn', p_starter,
+           'tn', 1, 'turn_at', now(), 'drew', true, 'side', null,
+           'ind', v_ind, 'okc', v_ind / 26, 'okn', (v_ind % 26 % 13 + 1) % 13 + 1,
+           'deck_n', coalesce(array_length(d, 1), 0),
+           'disc', jsonb_build_object('1', '[]'::jsonb, '2', '[]'::jsonb, '3', '[]'::jsonb, '4', '[]'::jsonb),
+           'melds', '[]'::jsonb, 'mid', 1, 'opened', '{}'::jsonb, 'first', '[]'::jsonb, 'shown', '[]'::jsonb,
+           'pen', '{}'::jsonb, 'ready', '[]'::jsonb, 'end_at', null, 'fin', null, 'reveal', null)
+   where id = p_room_id;
+  perform public._ok_log(p_room_id, jsonb_build_object('k', 'deal', 's', p_starter,
+                                                       'hand', (select (state->>'hand')::int from public.game_rooms where id = p_room_id)));
+end $$;
+
+-- Bekleme odasından oyuna (4 oyuncu)
+create or replace function public._ok_begin(p_room_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  o jsonb;
+  v_n int;
+  v_start int := 0;
+begin
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if r.status <> 'lobby' then raise exception 'invalid_transition'; end if;
+  select count(*)::int into v_n from public.room_players where room_id = p_room_id and left_at is null;
+  if v_n < 4 then raise exception 'not_enough_players'; end if;
+  if v_n > 4 then raise exception 'room_full'; end if;
+  if (select array_agg(seat order by seat) from public.room_players where room_id = p_room_id and left_at is null)
+     is distinct from array[1, 2, 3, 4] then
+    perform public._rp_compact_seats(p_room_id);
+  end if;
+  o := public._ok_opts(r);
+  if r.game_type = 'okey' then v_start := coalesce((o->>'target')::int, 20); end if;
+  delete from public.okey_racks where room_id = p_room_id;
+  delete from public.okey_hidden where room_id = p_room_id;
+  update public.room_players set is_alive = true, score = 0, out_at = null where room_id = p_room_id;
+  update public.game_rooms
+     set status = 'playing', started_at = now(),
+         state = jsonb_build_object('phase', 'play', 'hand', 0, 'hist', '[]'::jsonb, 'auto', '[]'::jsonb,
+                                    'log', '[]'::jsonb, 'evn', 0,
+                                    'scores', jsonb_build_object('1', v_start, '2', v_start, '3', v_start, '4', v_start))
+   where id = p_room_id;
+  perform public._ok_deal(p_room_id, 1 + floor(random() * 4)::int);
+end $$;
+
+-- Oyun biter: sıralama için puanlar yazılır, sonra oda "bitti" olur (puanlar tetikleyiciyle yazılır)
+create or replace function public._ok_game_end(p_room_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  sc jsonb;
+  v_best int;
+begin
+  select * into r from public.game_rooms where id = p_room_id for update;
+  sc := r.state->'scores';
+  update public.room_players rp
+     set score = case when r.game_type = 'okey' then (sc->>(rp.seat::text))::int else -(sc->>(rp.seat::text))::int end
+   where rp.room_id = p_room_id and rp.seat between 1 and 4;
+  if r.game_type = 'okey' then
+    select max((value)::int) into v_best from jsonb_each_text(sc);
+  else
+    select min((value)::int) into v_best from jsonb_each_text(sc);
+  end if;
+  update public.game_rooms
+     set state = state || jsonb_build_object(
+           'phase', 'ended', 'end_at', now(),
+           'winner', (select coalesce(jsonb_agg(key::int order by key::int), '[]'::jsonb) from jsonb_each_text(sc) where value::int = v_best))
+   where id = p_room_id;
+  perform public._ok_log(p_room_id, jsonb_build_object('k', 'end'));
+  update public.game_rooms set status = 'finished', finished_at = now() where id = p_room_id;
+  delete from public.okey_hidden where room_id = p_room_id;
+  delete from public.okey_racks where room_id = p_room_id;
+end $$;
+
+-- El biter: puanlar hesaplanır. p_fin: biten koltuk (ortada taş bittiyse null). p_flags: {okey, elden, pairs, groups}
+create or replace function public._ok_hand_end(p_room_id uuid, p_fin int, p_flags jsonb)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  o jsonb;
+  st jsonb;
+  esli boolean;
+  s int;
+  x int;
+  mult int := 1;
+  d jsonb := '{}'::jsonb;
+  ind jsonb := '{}'::jsonb;
+  rem jsonb := '{}'::jsonb;
+  sc jsonb;
+  op jsonb;
+  v_sum int;
+  v_hand int[];
+  v_over boolean;
+  v_okc int;
+  v_okn int;
+begin
+  select * into r from public.game_rooms where id = p_room_id for update;
+  o := public._ok_opts(r);
+  st := r.state;
+  esli := coalesce((o->>'pairs')::boolean, false);
+  sc := st->'scores';
+  v_okc := (st->>'okc')::int;
+  v_okn := (st->>'okn')::int;
+  if r.game_type = 'okey' then
+    if p_fin is not null then
+      x := case when coalesce((p_flags->>'pairs')::boolean, false) then 4 else 2 end
+           * case when coalesce((p_flags->>'okey')::boolean, false) then 2 else 1 end;
+    end if;
+    for s in 1..4 loop
+      d := d || jsonb_build_object(s::text,
+             case when p_fin is null or s = p_fin or (esli and public._ok_team(s) = public._ok_team(p_fin)) then 0 else -x end);
+    end loop;
+    v_over := false;
+    for s in 1..4 loop
+      sc := sc || jsonb_build_object(s::text, (sc->>(s::text))::int + (d->>(s::text))::int);
+      if (sc->>(s::text))::int <= 0 then v_over := true; end if;
+    end loop;
+  else
+    if p_fin is not null then
+      if coalesce((p_flags->>'okey')::boolean, false) then mult := mult * 2; end if;
+      if coalesce((p_flags->>'elden')::boolean, false) then mult := mult * 2; end if;
+      if coalesce((p_flags->>'pairs')::boolean, false) then mult := mult * 2; end if;
+    end if;
+    for s in 1..4 loop
+      op := st->'opened'->(s::text);
+      v_hand := public._ok_hand(p_room_id, s);
+      v_sum := coalesce((select sum(case when public._ok_wild(t, v_okc, v_okn) then 101 else public._ok_tn(t, v_okn) end)
+                           from unnest(v_hand) t), 0)::int;
+      rem := rem || jsonb_build_object(s::text, v_sum);
+      if p_fin is not null and s = p_fin then
+        x := -101 * mult;
+      elsif p_fin is not null and esli and public._ok_team(s) = public._ok_team(p_fin) then
+        x := 0;
+      elsif op is null then
+        x := 202 * mult;
+      else
+        x := v_sum * mult * case when op->>'kind' = 'pair' then 2 else 1 end;
+      end if;
+      ind := ind || jsonb_build_object(s::text, x + coalesce((st->'pen'->>(s::text))::int, 0));
+    end loop;
+    for s in 1..4 loop
+      d := d || jsonb_build_object(s::text,
+             case when esli then (ind->>(s::text))::int + (ind->>(((s + 1) % 4 + 1)::text))::int
+                  else (ind->>(s::text))::int end);
+      sc := sc || jsonb_build_object(s::text, (sc->>(s::text))::int + (d->>(s::text))::int);
+    end loop;
+    v_over := (st->>'hand')::int >= coalesce((o->>'hands')::int, 3);
+  end if;
+
+  update public.game_rooms
+     set state = state || jsonb_build_object(
+           'scores', sc, 'phase', 'hand_end', 'end_at', now(), 'drew', false, 'side', null,
+           'fin', jsonb_build_object('seat', p_fin, 'okey', coalesce((p_flags->>'okey')::boolean, false),
+                                     'elden', coalesce((p_flags->>'elden')::boolean, false),
+                                     'pairs', coalesce((p_flags->>'pairs')::boolean, false),
+                                     'groups', p_flags->'groups', 'tile', p_flags->'tile', 'mult', mult),
+           -- El sonu herkesin eli açılır (taş sayıları ve toplamları)
+           'reveal', (select jsonb_object_agg(k.seat::text, to_jsonb(public._ok_hand(p_room_id, k.seat)))
+                        from public.okey_racks k where k.room_id = p_room_id),
+           'ready', coalesce((select jsonb_agg(rp.seat) from public.room_players rp join public.profiles p on p.id = rp.user_id
+                               where rp.room_id = p_room_id and (p.is_bot or rp.left_at is not null)), '[]'::jsonb),
+           'hist', coalesce(state->'hist', '[]'::jsonb) || jsonb_build_array(jsonb_build_object(
+                     'hand', st->'hand', 'fin', p_fin, 'mult', mult,
+                     'okey', coalesce((p_flags->>'okey')::boolean, false),
+                     'elden', coalesce((p_flags->>'elden')::boolean, false),
+                     'pairs', coalesce((p_flags->>'pairs')::boolean, false),
+                     'd', d, 'ind', case when r.game_type = 'okey101' then ind end,
+                     'rem', case when r.game_type = 'okey101' then rem end,
+                     'pen', case when r.game_type = 'okey101' then st->'pen' end)))
+   where id = p_room_id;
+  perform public._ok_log(p_room_id, jsonb_build_object('k', 'hand_end', 's', p_fin));
+  if v_over then perform public._ok_game_end(p_room_id); end if;
+end $$;
+
+-- Sıradaki oyuncuya geçer (ortada taş kalmadıysa el biter)
+create or replace function public._ok_advance(p_room_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+begin
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if coalesce((r.state->>'deck_n')::int, 0) <= 0 then
+    perform public._ok_hand_end(p_room_id, null, '{}'::jsonb);
+    return;
+  end if;
+  update public.game_rooms
+     set state = state || jsonb_build_object('turn', (r.state->>'turn')::int % 4 + 1,
+                                             'tn', (r.state->>'tn')::int + 1, 'turn_at', now(),
+                                             'drew', false, 'side', null)
+   where id = p_room_id;
+end $$;
+
+create or replace function public._ok_do_draw(p_room_id uuid, p_seat int)
+returns int language plpgsql security definer set search_path = public as $$
+declare
+  d int[];
+  t int;
+begin
+  select deck into d from public.okey_hidden where room_id = p_room_id for update;
+  if coalesce(array_length(d, 1), 0) = 0 then raise exception 'deck_empty'; end if;
+  t := d[1];
+  update public.okey_hidden set deck = d[2:], last_drawn[p_seat] = t where room_id = p_room_id;
+  perform public._ok_give(p_room_id, p_seat, t);
+  update public.game_rooms
+     set state = state || jsonb_build_object('drew', true, 'deck_n', coalesce(array_length(d, 1), 1) - 1)
+   where id = p_room_id;
+  perform public._ok_log(p_room_id, jsonb_build_object('k', 'draw', 's', p_seat));
+  return t;
+end $$;
+
+create or replace function public._ok_do_take(p_room_id uuid, p_seat int)
+returns int language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  v_prev int := (p_seat + 2) % 4 + 1;
+  pile jsonb;
+  t int;
+begin
+  select * into r from public.game_rooms where id = p_room_id for update;
+  pile := coalesce(r.state->'disc'->(v_prev::text), '[]'::jsonb);
+  if jsonb_array_length(pile) = 0 then raise exception 'pile_empty'; end if;
+  t := (pile->>(jsonb_array_length(pile) - 1))::int;
+  update public.okey_hidden set last_drawn[p_seat] = t where room_id = p_room_id;
+  perform public._ok_give(p_room_id, p_seat, t);
+  update public.game_rooms
+     set state = jsonb_set(state, array['disc', v_prev::text], pile - (jsonb_array_length(pile) - 1))
+                 || jsonb_build_object('drew', true,
+                                       'side', case when r.game_type = 'okey101' and not (r.state->'opened' ? p_seat::text)
+                                                    then to_jsonb(t) end)
+   where id = p_room_id;
+  perform public._ok_log(p_room_id, jsonb_build_object('k', 'take', 's', p_seat, 't', t));
+  return t;
+end $$;
+
+-- 101: yandan alınan taşla açılamadı; taş geri konur (cezalıda 101), ortadan çekilir
+create or replace function public._ok_do_return(p_room_id uuid, p_seat int)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  v_prev int := (p_seat + 2) % 4 + 1;
+  t int;
+  v_pen int := 0;
+begin
+  select * into r from public.game_rooms where id = p_room_id for update;
+  t := (r.state->>'side')::int;
+  if t is null then raise exception 'nothing_to_return'; end if;
+  perform public._ok_drop(p_room_id, p_seat, t);
+  if coalesce((public._ok_opts(r)->>'penalty')::boolean, false) then v_pen := 101; end if;
+  update public.game_rooms
+     set state = jsonb_set(state, array['disc', v_prev::text],
+                           coalesce(state->'disc'->(v_prev::text), '[]'::jsonb) || to_jsonb(t))
+                 || jsonb_build_object('side', null, 'drew', false,
+                                       'pen', coalesce(state->'pen', '{}'::jsonb)
+                                              || jsonb_build_object(p_seat::text,
+                                                   coalesce((state->'pen'->>(p_seat::text))::int, 0) + v_pen))
+   where id = p_room_id;
+  perform public._ok_log(p_room_id, jsonb_build_object('k', 'return', 's', p_seat, 't', t, 'pen', v_pen));
+  perform public._ok_do_draw(p_room_id, p_seat);
+end $$;
+
+-- Taş atar (101'de son taşı atan biter); cezalı 101'de okey ve işlek taş atmak 101 ceza
+create or replace function public._ok_do_discard(p_room_id uuid, p_seat int, p_t int)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  st jsonb;
+  v_hand int[];
+  v_left int;
+  v_pen int := 0;
+  v_why text;
+  v_okc int;
+  v_okn int;
+  op jsonb;
+begin
+  select * into r from public.game_rooms where id = p_room_id for update;
+  st := r.state;
+  v_okc := (st->>'okc')::int;
+  v_okn := (st->>'okn')::int;
+  if not coalesce((st->>'drew')::boolean, false) then raise exception 'draw_first'; end if;
+  if r.game_type = 'okey101' and st->>'side' is not null then raise exception 'side_must_open'; end if;
+  v_hand := public._ok_hand(p_room_id, p_seat);
+  if p_t is null or not p_t = any(v_hand) then raise exception 'tile_not_in_hand'; end if;
+  v_left := array_length(v_hand, 1) - 1;
+  if r.game_type = 'okey' and v_left <> 14 then raise exception 'wrong_tile_count'; end if;
+  if r.game_type = 'okey101' and v_left > 0 and coalesce((public._ok_opts(r)->>'penalty')::boolean, false) then
+    if public._ok_wild(p_t, v_okc, v_okn) then
+      v_pen := 101;
+      v_why := 'okey';
+    elsif public._ok_isler(st, p_t) then
+      v_pen := 101;
+      v_why := 'isler';
+    end if;
+  end if;
+  perform public._ok_drop(p_room_id, p_seat, p_t);
+  update public.game_rooms
+     set state = jsonb_set(state, array['disc', p_seat::text],
+                           coalesce(state->'disc'->(p_seat::text), '[]'::jsonb) || to_jsonb(p_t))
+                 || jsonb_build_object(
+                      'first', case when coalesce(state->'first', '[]'::jsonb) @> to_jsonb(p_seat) then state->'first'
+                                    else coalesce(state->'first', '[]'::jsonb) || to_jsonb(p_seat) end,
+                      'pen', coalesce(state->'pen', '{}'::jsonb)
+                             || jsonb_build_object(p_seat::text, coalesce((state->'pen'->>(p_seat::text))::int, 0) + v_pen))
+   where id = p_room_id;
+  perform public._ok_log(p_room_id, jsonb_build_object('k', 'discard', 's', p_seat, 't', p_t, 'pen', v_pen, 'why', v_why));
+  if r.game_type = 'okey101' and v_left = 0 then
+    op := st->'opened'->(p_seat::text);
+    perform public._ok_hand_end(p_room_id, p_seat, jsonb_build_object(
+      'okey', public._ok_wild(p_t, v_okc, v_okn),
+      'elden', (op->>'tn')::int = (st->>'tn')::int,
+      'pairs', op->>'kind' = 'pair',
+      'tile', p_t));
+  else
+    perform public._ok_advance(p_room_id);
+  end if;
+end $$;
+
+-- Yerdeki perlere ekler (101). p_kind: 'run' (seri / aynı sayı) ya da 'pair'
+create or replace function public._ok_add_melds(p_room_id uuid, p_seat int, p_melds jsonb)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  m jsonb;
+  t int;
+  v_mid int;
+  v_add jsonb := '[]'::jsonb;
+begin
+  select coalesce((state->>'mid')::int, 1) into v_mid from public.game_rooms where id = p_room_id;
+  for m in select value from jsonb_array_elements(p_melds) loop
+    for t in select (value)::int from jsonb_array_elements_text(m->'tiles') loop
+      perform public._ok_drop(p_room_id, p_seat, t);
+    end loop;
+    v_add := v_add || jsonb_build_array(m || jsonb_build_object('id', v_mid, 'seat', p_seat));
+    v_mid := v_mid + 1;
+  end loop;
+  update public.game_rooms
+     set state = state || jsonb_build_object('melds', coalesce(state->'melds', '[]'::jsonb) || v_add, 'mid', v_mid)
+   where id = p_room_id;
+end $$;
+
+-- Taş sayısı kontrolü: perlerden sonra elde en az bir taş kalmalı (atacak taş)
+create or replace function public._ok_keep_one(p_room_id uuid, p_seat int, p_used int)
+returns void language plpgsql stable security definer set search_path = public as $$
+begin
+  if coalesce(array_length(public._ok_hand(p_room_id, p_seat), 1), 0) - p_used < 1 then
+    raise exception 'keep_one';
+  end if;
+end $$;
+
+-- 101 açılışı (iç kullanım): parçaları perlere ya da çiftlere böler, barajı ve yandan alınan taşı denetler
+create or replace function public._ok_do_open(p_room_id uuid, p_seat int, p_groups jsonb, p_pairs boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  st jsonb;
+  v_hand int[];
+  ch jsonb;
+  g jsonb;
+  sp jsonb;
+  melds jsonb := '[]'::jsonb;
+  t int[];
+  v_used int := 0;
+  v_val int := 0;
+  v_need int;
+  v_okc int;
+  v_okn int;
+begin
+  select * into r from public.game_rooms where id = p_room_id for update;
+  st := r.state;
+  if r.game_type <> 'okey101' then raise exception 'wrong_game'; end if;
+  if st->'opened' ? p_seat::text then raise exception 'already_opened'; end if;
+  if not coalesce((st->>'drew')::boolean, false) then raise exception 'draw_first'; end if;
+  v_okc := (st->>'okc')::int;
+  v_okn := (st->>'okn')::int;
+  v_hand := public._ok_hand(p_room_id, p_seat);
+  ch := public._ok_chunks(p_groups, v_hand);
+  for g in select value from jsonb_array_elements(ch) loop
+    t := array(select (q.v)::int from jsonb_array_elements_text(g) with ordinality q(v, o) order by q.o);
+    sp := public._ok_split(t, v_okc, v_okn, false, coalesce(p_pairs, false));
+    if sp is null then raise exception 'invalid_meld'; end if;
+    melds := melds || sp;
+    v_used := v_used + array_length(t, 1);
+  end loop;
+  if coalesce(p_pairs, false) then
+    v_need := public._ok_need(r, p_seat, true);
+    if jsonb_array_length(melds) < v_need then raise exception 'need_more_pairs'; end if;
+  else
+    select coalesce(sum((value->>'value')::int), 0)::int into v_val from jsonb_array_elements(melds);
+    v_need := public._ok_need(r, p_seat, false);
+    if v_val < v_need then raise exception 'need_more_points'; end if;
+  end if;
+  if st->>'side' is not null
+     and not exists (select 1 from jsonb_array_elements(melds) m, jsonb_array_elements_text(m->'tiles') x
+                      where x::int = (st->>'side')::int) then
+    raise exception 'side_not_used';
+  end if;
+  perform public._ok_keep_one(p_room_id, p_seat, v_used);
+  perform public._ok_add_melds(p_room_id, p_seat, melds);
+  update public.game_rooms
+     set state = state || jsonb_build_object(
+           'side', null,
+           'opened', coalesce(state->'opened', '{}'::jsonb) || jsonb_build_object(p_seat::text, jsonb_build_object(
+             'kind', case when coalesce(p_pairs, false) then 'pair' else 'run' end,
+             'value', v_val, 'pairs', case when coalesce(p_pairs, false) then jsonb_array_length(melds) else 0 end,
+             'tn', (st->>'tn')::int)))
+   where id = p_room_id;
+  perform public._ok_log(p_room_id, jsonb_build_object('k', 'open', 's', p_seat,
+                                                       'kind', case when coalesce(p_pairs, false) then 'pair' else 'run' end,
+                                                       'v', case when coalesce(p_pairs, false) then jsonb_array_length(melds) else v_val end));
+end $$;
+
+-- Deneme oyuncusu (bot) 101'de açabiliyorsa açar: okeysiz seriler ve aynı sayı perleri (açgözlü)
+create or replace function public._ok_bot_open(p_room_id uuid, p_seat int)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  v_hand int[];
+  v_okc int;
+  v_okn int;
+  used int[] := '{}';
+  groups jsonb := '[]'::jsonb;
+  c int;
+  n int;
+  e int;
+  t int;
+  run int[];
+  v_val int := 0;
+  pick int[];
+begin
+  select * into r from public.game_rooms where id = p_room_id;
+  v_okc := (r.state->>'okc')::int;
+  v_okn := (r.state->>'okn')::int;
+  v_hand := public._ok_hand(p_room_id, p_seat);
+  for c in 0..3 loop
+    n := 1;
+    while n <= 13 loop
+      run := '{}';
+      e := n;
+      loop
+        select x into t from unnest(v_hand) x
+         where not public._ok_wild(x, v_okc, v_okn) and public._ok_tc(x, v_okc) = c and public._ok_tn(x, v_okn) = e
+           and not x = any(used) limit 1;
+        exit when t is null or e > 13;
+        run := run || t;
+        e := e + 1;
+      end loop;
+      if coalesce(array_length(run, 1), 0) >= 3 then
+        groups := groups || jsonb_build_array(to_jsonb(run));
+        used := used || run;
+        v_val := v_val + (select sum(public._ok_tn(x, v_okn)) from unnest(run) x)::int;
+        n := e;
+      else
+        n := n + 1;
+      end if;
+    end loop;
+  end loop;
+  for n in 1..13 loop
+    pick := array(select min(x) from unnest(v_hand) x
+                   where not public._ok_wild(x, v_okc, v_okn) and public._ok_tn(x, v_okn) = n and not x = any(used)
+                   group by public._ok_tc(x, v_okc));
+    if coalesce(array_length(pick, 1), 0) >= 3 then
+      groups := groups || jsonb_build_array(to_jsonb(pick));
+      used := used || pick;
+      v_val := v_val + n * array_length(pick, 1);
+    end if;
+  end loop;
+  if v_val >= public._ok_need(r, p_seat, false) and array_length(v_hand, 1) - coalesce(array_length(used, 1), 0) >= 1 then
+    begin
+      perform public._ok_do_open(p_room_id, p_seat, groups, false);
+    exception when others then
+      null; -- açamadıysa normal oynar
+    end;
+  end if;
+end $$;
+
+-- Oyuncunun yerine bir tur oynar: (yandan alınan taşı geri koyar) ortadan çeker ve ceza getirmeyen bir taş atar
+create or replace function public._ok_auto(p_room_id uuid, p_seat int, p_bot boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  v_hand int[];
+  v_last int;
+  v_t int;
+  x int;
+  v_okc int;
+  v_okn int;
+  v_safe boolean;
+begin
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if r.state->>'side' is not null then
+    perform public._ok_do_return(p_room_id, p_seat);
+  elsif not coalesce((r.state->>'drew')::boolean, false) then
+    perform public._ok_do_draw(p_room_id, p_seat);
+  end if;
+  select * into r from public.game_rooms where id = p_room_id;
+  if p_bot and r.game_type = 'okey101' and not (r.state->'opened' ? p_seat::text) then
+    perform public._ok_bot_open(p_room_id, p_seat);
+    select * into r from public.game_rooms where id = p_room_id;
+  end if;
+  v_okc := (r.state->>'okc')::int;
+  v_okn := (r.state->>'okn')::int;
+  v_hand := public._ok_hand(p_room_id, p_seat);
+  select last_drawn[p_seat] into v_last from public.okey_hidden where room_id = p_room_id;
+  -- Önce son çekilen taş, olmazsa ıstakanın sağından ilk "güvenli" taş (okey ve işlek taş atılmaz)
+  foreach x in array (case when v_last = any(v_hand) then array[v_last] else '{}'::int[] end)
+                     || array(select v_hand[i] from generate_series(array_length(v_hand, 1), 1, -1) i) loop
+    v_safe := not public._ok_wild(x, v_okc, v_okn) and (r.game_type = 'okey' or not public._ok_isler(r.state, x));
+    if v_safe then v_t := x; exit; end if;
+  end loop;
+  v_t := coalesce(v_t, case when v_last = any(v_hand) then v_last end, v_hand[array_length(v_hand, 1)]);
+  perform public._ok_do_discard(p_room_id, p_seat, v_t);
+end $$;
+
+-- Saat: süresi dolan oyuncu, bot ve ayrılanın yerine oynar; el sonu tablosundan sonraki ele geçer.
+-- (Oyun ekranı her yenilemede çağırır; aynı anda tek çağrı ilerletir.)
+create or replace function public._ok_tick(p_room_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  s int;
+  v_age numeric;
+  v_bot boolean;
+  v_auto boolean;
+  v_humans int;
+begin
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found or r.status <> 'playing' then return; end if;
+  if r.state->>'phase' = 'play' then
+    s := (r.state->>'turn')::int;
+    v_age := extract(epoch from now() - (r.state->>'turn_at')::timestamptz);
+    select p.is_bot into v_bot from public.room_players rp join public.profiles p on p.id = rp.user_id
+     where rp.room_id = p_room_id and rp.seat = s and rp.left_at is null;
+    v_bot := coalesce(v_bot, false);
+    v_auto := coalesce(r.state->'auto', '[]'::jsonb) @> to_jsonb(s)
+              or not exists (select 1 from public.room_players rp where rp.room_id = p_room_id and rp.seat = s and rp.left_at is null);
+    if ((v_bot or v_auto) and v_age >= 1.2) or v_age >= public._ok_turn_secs(r) + 1 then
+      perform public._ok_auto(p_room_id, s, v_bot);
+    end if;
+  elsif r.state->>'phase' = 'hand_end' then
+    select count(*)::int into v_humans from public.room_players rp join public.profiles p on p.id = rp.user_id
+     where rp.room_id = p_room_id and rp.left_at is null and not p.is_bot
+       and not (coalesce(r.state->'ready', '[]'::jsonb) @> to_jsonb(rp.seat));
+    if v_humans = 0
+       or extract(epoch from now() - (r.state->>'end_at')::timestamptz) >= greatest(5, public.setting_int('ok_hand_pause_seconds', 20)) then
+      perform public._ok_deal(p_room_id, (r.state->>'starter')::int % 4 + 1);
+    end if;
+  end if;
+end $$;
+
+-- Oyundan ayrılanın yerine sunucu oynar; masada gerçek oyuncu kalmazsa oyun kapanır
+create or replace function public._ok_after_leave(p_room_id uuid, p_user_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  s int;
+begin
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found or r.status <> 'playing' then return; end if;
+  select seat into s from public.room_players where room_id = p_room_id and user_id = p_user_id;
+  if s is not null and not (coalesce(r.state->'auto', '[]'::jsonb) @> to_jsonb(s)) then
+    update public.game_rooms set state = state || jsonb_build_object('auto', coalesce(state->'auto', '[]'::jsonb) || to_jsonb(s))
+     where id = p_room_id;
+    perform public._ok_log(p_room_id, jsonb_build_object('k', 'left', 's', s));
+  end if;
+  if not exists (select 1 from public.room_players rp join public.profiles p on p.id = rp.user_id
+                  where rp.room_id = p_room_id and rp.left_at is null and not p.is_bot) then
+    perform public._room_close(p_room_id, 'empty');
+  end if;
+end $$;
+
+-- Oyun bitince / kapanınca gizli taşlar silinir
+create or replace function public._ok_cleanup()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  delete from public.okey_hidden where room_id = new.id;
+  delete from public.okey_racks where room_id = new.id;
+  return null;
+end $$;
+drop trigger if exists on_ok_closed on public.game_rooms;
+create trigger on_ok_closed
+  after update of status on public.game_rooms
+  for each row
+  when (new.status in ('finished', 'cancelled') and old.status is distinct from new.status
+        and new.game_type in ('okey', 'okey101'))
+  execute function public._ok_cleanup();
+
+-- ---- Ekran ve hamleler ----------------------------------------------------------------------------------------------
+-- Oyuncuya özel görünüm: masa (herkese açık) + kendi ıstakası. Saat de buradan ilerler.
+create or replace function public.ok_view(p_room_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+  s int;
+  v_left timestamptz;
+  v_member boolean;
+  st jsonb;
+  v_rack int[];
+begin
+  v := public._require_user();
+  select * into r from public.game_rooms where id = p_room_id;
+  if not found or r.game_type not in ('okey', 'okey101') then raise exception 'room_not_found'; end if;
+  if r.status in ('lobby', 'playing') then
+    perform public._room_sweep(p_room_id);
+    perform public._room_touch(p_room_id, v.id);
+    if pg_try_advisory_xact_lock(hashtext('room_tick'), hashtext(p_room_id::text)) then
+      perform public._ok_tick(p_room_id);
+    end if;
+    select * into r from public.game_rooms where id = p_room_id;
+  end if;
+  select rp.seat, rp.left_at into s, v_left from public.room_players rp where rp.room_id = p_room_id and rp.user_id = v.id;
+  v_member := found;
+  if not (v_member or r.host_id = v.id or v.role = 'admin') then raise exception 'forbidden'; end if;
+  if v_left is not null then s := null; end if;
+  st := r.state;
+  if s is not null and r.status = 'playing' then
+    select k.slots into v_rack from public.okey_racks k where k.room_id = p_room_id and k.seat = s;
+  end if;
+  return jsonb_build_object(
+    'game', r.game_type,
+    'status', r.status,
+    'phase', case when r.status = 'lobby' then 'lobby' when r.status = 'cancelled' then 'cancelled'
+                  else coalesce(st->>'phase', r.status) end,
+    'remote', r.remote,
+    'match', coalesce((r.config->>'match')::boolean, false),
+    'test', coalesce((r.config->>'test')::boolean, false),
+    'event', r.event_id is not null,
+    'close_reason', st->>'close_reason',
+    'code', case when r.host_id = v.id and r.status = 'lobby' then (select c.code from public.room_codes c where c.room_id = r.id) end,
+    'opts', public._ok_opts(r),
+    'host', jsonb_build_object('id', r.host_id, 'is_me', r.host_id = v.id,
+                               'name', coalesce((select rp.display_name from public.room_players rp
+                                                  where rp.room_id = r.id and rp.user_id = r.host_id), 'Oda sahibi')),
+    'me', jsonb_build_object('id', v.id, 'seat', s, 'is_player', s is not null, 'left', v_left is not null,
+                             'is_host', r.host_id = v.id, 'is_admin', v.role = 'admin'),
+    'players', (select coalesce(jsonb_agg(jsonb_build_object(
+                  'seat', rp.seat, 'id', rp.user_id, 'name', rp.display_name, 'avatar', p.avatar_index,
+                  'is_me', rp.user_id = v.id, 'bot', p.is_bot, 'left', rp.left_at is not null,
+                  'tiles', (select count(*)::int from public.okey_racks k, unnest(k.slots) x
+                             where k.room_id = rp.room_id and k.seat = rp.seat and x is not null)) order by rp.seat), '[]'::jsonb)
+                  from public.room_players rp join public.profiles p on p.id = rp.user_id
+                 where rp.room_id = p_room_id and (r.status <> 'lobby' or rp.left_at is null)),
+    'hand', st->'hand', 'starter', st->'starter', 'turn', st->'turn', 'tn', st->'tn',
+    'turn_secs', public._ok_turn_secs(r),
+    'turn_age', case when st ? 'turn_at' then round(extract(epoch from now() - (st->>'turn_at')::timestamptz), 2) end,
+    'drew', st->'drew', 'side', st->'side', 'ind', st->'ind', 'okc', st->'okc', 'okn', st->'okn', 'deck_n', st->'deck_n',
+    'disc', st->'disc', 'melds', st->'melds', 'opened', st->'opened', 'first', st->'first', 'shown', st->'shown',
+    'pen', st->'pen', 'scores', st->'scores', 'hist', st->'hist', 'auto', st->'auto', 'log', st->'log', 'evn', st->'evn',
+    'ready', st->'ready', 'fin', st->'fin', 'reveal', case when st->>'phase' in ('hand_end', 'ended') then st->'reveal' end,
+    'end_age', case when st->>'end_at' is not null then round(extract(epoch from now() - (st->>'end_at')::timestamptz), 2) end,
+    'pause_secs', greatest(5, public.setting_int('ok_hand_pause_seconds', 20)),
+    'winner', st->'winner', 'next_room', st->'next_room',
+    'need', case when s is not null and r.game_type = 'okey101' and r.status = 'playing'
+                 then jsonb_build_object('run', public._ok_need(r, s, false), 'pair', public._ok_need(r, s, true)) end,
+    'rack', case when v_rack is not null then to_jsonb(v_rack) end);
+end $$;
+
+-- Hamle denetimi: oda kilitlenir, sıra sende olmalı. Döner: koltuk numaran.
+create or replace function public._ok_turn(p_room_id uuid, p_user uuid)
+returns int language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  s int;
+begin
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found or r.game_type not in ('okey', 'okey101') then raise exception 'room_not_found'; end if;
+  if r.status <> 'playing' or coalesce(r.state->>'phase', '') <> 'play' then raise exception 'wrong_phase'; end if;
+  s := public._ok_seat(p_room_id, p_user);
+  if s is null then raise exception 'not_in_room'; end if;
+  if (r.state->>'turn')::int <> s then raise exception 'not_your_turn'; end if;
+  perform public._room_touch(p_room_id, p_user);
+  return s;
+end $$;
+
+-- Bekleme odasında masa ayarları (oda sahibi)
+create or replace function public.ok_set_options(p_room_id uuid, p_opts jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+  o jsonb;
+  k text;
+  val jsonb;
+begin
+  v := public._require_user();
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found or r.game_type not in ('okey', 'okey101') then raise exception 'room_not_found'; end if;
+  if r.status <> 'lobby' then raise exception 'wrong_phase'; end if;
+  if r.host_id <> v.id and v.role <> 'admin' then raise exception 'forbidden'; end if;
+  if coalesce((r.config->>'match')::boolean, false) then raise exception 'match_room'; end if;
+  if p_opts is null or jsonb_typeof(p_opts) <> 'object' then raise exception 'invalid_options'; end if;
+  o := public._ok_opts(r);
+  for k, val in select key, value from jsonb_each(p_opts) loop
+    if k in ('pairs', 'helper') or (r.game_type = 'okey101' and k in ('penalty', 'fold')) then
+      if jsonb_typeof(val) <> 'boolean' then raise exception 'invalid_options'; end if;
+      o := o || jsonb_build_object(k, val);
+    elsif r.game_type = 'okey' and k = 'target' then
+      if val not in ('10'::jsonb, '20'::jsonb) then raise exception 'invalid_options'; end if;
+      o := o || jsonb_build_object(k, val);
+    elsif r.game_type = 'okey101' and k = 'hands' then
+      if val not in ('1'::jsonb, '3'::jsonb, '5'::jsonb, '7'::jsonb) then raise exception 'invalid_options'; end if;
+      o := o || jsonb_build_object(k, val);
+    else
+      raise exception 'invalid_options';
+    end if;
+  end loop;
+  update public.game_rooms set config = config || jsonb_build_object('ok', o) where id = p_room_id;
+  return public.ok_view(p_room_id);
+end $$;
+
+-- Bekleme odasında koltuk seç (doluysa yer değiştirilir). Herkes masadaki gerçek oturuş sırasına göre yerleşir.
+create or replace function public.ok_sit(p_room_id uuid, p_seat int)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+  v_mine int;
+begin
+  v := public._require_user();
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found or r.game_type not in ('okey', 'okey101') then raise exception 'room_not_found'; end if;
+  if r.status <> 'lobby' then raise exception 'wrong_phase'; end if;
+  if p_seat is null or p_seat not between 1 and 4 then raise exception 'invalid_seat'; end if;
+  perform pg_advisory_xact_lock(hashtext('rp_seat:' || p_room_id::text));
+  select seat into v_mine from public.room_players where room_id = p_room_id and user_id = v.id and left_at is null;
+  if v_mine is null then raise exception 'not_in_room'; end if;
+  if v_mine <> p_seat then
+    update public.room_players set seat = v_mine where room_id = p_room_id and seat = p_seat and user_id <> v.id;
+    update public.room_players set seat = p_seat where room_id = p_room_id and user_id = v.id;
+  end if;
+  return public.ok_view(p_room_id);
+end $$;
+
+-- Oyunu başlat (oda sahibi ya da moderatör; masada 4 kişi)
+create or replace function public.ok_start(p_room_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+begin
+  v := public._require_user();
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found or r.game_type not in ('okey', 'okey101') then raise exception 'room_not_found'; end if;
+  if r.host_id <> v.id and v.role <> 'admin' then raise exception 'forbidden'; end if;
+  if r.status <> 'lobby' then raise exception 'invalid_transition'; end if;
+  perform public._room_sweep(p_room_id);
+  perform public._ok_begin(p_room_id);
+  return public.ok_view(p_room_id);
+end $$;
+
+create or replace function public.ok_draw(p_room_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  s int;
+begin
+  perform public._require_user();
+  s := public._ok_turn(p_room_id, auth.uid());
+  if (select coalesce((state->>'drew')::boolean, false) from public.game_rooms where id = p_room_id) then
+    raise exception 'already_drew';
+  end if;
+  perform public._ok_do_draw(p_room_id, s);
+  return public.ok_view(p_room_id);
+end $$;
+
+-- Yandan al (soldaki oyuncunun son attığı taş)
+create or replace function public.ok_take(p_room_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  s int;
+begin
+  perform public._require_user();
+  s := public._ok_turn(p_room_id, auth.uid());
+  if (select coalesce((state->>'drew')::boolean, false) from public.game_rooms where id = p_room_id) then
+    raise exception 'already_drew';
+  end if;
+  perform public._ok_do_take(p_room_id, s);
+  return public.ok_view(p_room_id);
+end $$;
+
+-- 101: yandan alınan taşı geri koy ve ortadan çek
+create or replace function public.ok_return(p_room_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  s int;
+begin
+  perform public._require_user();
+  s := public._ok_turn(p_room_id, auth.uid());
+  perform public._ok_do_return(p_room_id, s);
+  return public.ok_view(p_room_id);
+end $$;
+
+create or replace function public.ok_discard(p_room_id uuid, p_tile int)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  s int;
+begin
+  perform public._require_user();
+  s := public._ok_turn(p_room_id, auth.uid());
+  perform public._ok_do_discard(p_room_id, s, p_tile);
+  return public.ok_view(p_room_id);
+end $$;
+
+-- Okey: bitir. p_groups: ıstakada yan yana duran taş grupları (bitiş taşı hariç 14 taş), p_tile: ortaya atılan taş
+create or replace function public.ok_finish(p_room_id uuid, p_groups jsonb, p_tile int)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  s int;
+  v_hand int[];
+  ch jsonb;
+  g jsonb;
+  t int[];
+  sets jsonb := '[]'::jsonb;
+  prs jsonb := '[]'::jsonb;
+  sp jsonb;
+  sets_ok boolean := true;
+  pairs_ok boolean := true;
+  v_n int := 0;
+  v_okc int;
+  v_okn int;
+begin
+  perform public._require_user();
+  s := public._ok_turn(p_room_id, auth.uid());
+  select * into r from public.game_rooms where id = p_room_id;
+  if r.game_type <> 'okey' then raise exception 'wrong_game'; end if;
+  if not coalesce((r.state->>'drew')::boolean, false) then raise exception 'draw_first'; end if;
+  v_okc := (r.state->>'okc')::int;
+  v_okn := (r.state->>'okn')::int;
+  v_hand := public._ok_hand(p_room_id, s);
+  if array_length(v_hand, 1) <> 15 then raise exception 'wrong_tile_count'; end if;
+  if p_tile is null or not p_tile = any(v_hand) then raise exception 'tile_not_in_hand'; end if;
+  ch := public._ok_chunks(p_groups, array_remove(v_hand, p_tile));
+  for g in select value from jsonb_array_elements(ch) loop
+    t := array(select (q.v)::int from jsonb_array_elements_text(g) with ordinality q(v, o) order by q.o);
+    v_n := v_n + array_length(t, 1);
+    sp := public._ok_split(t, v_okc, v_okn, true, false);
+    if sp is null then sets_ok := false; else sets := sets || sp; end if;
+    sp := public._ok_split(t, v_okc, v_okn, true, true);
+    if sp is null then pairs_ok := false; else prs := prs || sp; end if;
+  end loop;
+  if v_n <> 14 then raise exception 'wrong_tile_count'; end if;
+  if not sets_ok and not (pairs_ok and jsonb_array_length(prs) = 7) then raise exception 'invalid_finish'; end if;
+  perform public._ok_drop(p_room_id, s, p_tile);
+  perform public._ok_log(p_room_id, jsonb_build_object('k', 'finish', 's', s, 't', p_tile));
+  perform public._ok_hand_end(p_room_id, s, jsonb_build_object(
+    'okey', public._ok_wild(p_tile, v_okc, v_okn),
+    'pairs', not sets_ok,
+    'groups', case when sets_ok then sets else prs end,
+    'tile', p_tile));
+  return public.ok_view(p_room_id);
+end $$;
+
+-- Okey: ilk turunda göstergenin eşini göster (diğerleri / rakip takım 1 puan kaybeder)
+create or replace function public.ok_show(p_room_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  s int;
+  v_ind int;
+  esli boolean;
+  sc jsonb;
+  i int;
+begin
+  perform public._require_user();
+  s := public._ok_turn(p_room_id, auth.uid());
+  select * into r from public.game_rooms where id = p_room_id;
+  if r.game_type <> 'okey' then raise exception 'wrong_game'; end if;
+  if coalesce(r.state->'first', '[]'::jsonb) @> to_jsonb(s) then raise exception 'not_first_turn'; end if;
+  if coalesce(r.state->'shown', '[]'::jsonb) @> to_jsonb(s) then raise exception 'already_shown'; end if;
+  v_ind := (r.state->>'ind')::int;
+  if not exists (select 1 from unnest(public._ok_hand(p_room_id, s)) x
+                  where x < 104 and x <> v_ind and x / 26 = v_ind / 26 and x % 26 % 13 = v_ind % 26 % 13) then
+    raise exception 'no_indicator';
+  end if;
+  esli := coalesce((public._ok_opts(r)->>'pairs')::boolean, false);
+  sc := r.state->'scores';
+  for i in 1..4 loop
+    if i <> s and not (esli and public._ok_team(i) = public._ok_team(s)) then
+      sc := sc || jsonb_build_object(i::text, (sc->>(i::text))::int - 1);
+    end if;
+  end loop;
+  update public.game_rooms
+     set state = state || jsonb_build_object('scores', sc, 'shown', coalesce(state->'shown', '[]'::jsonb) || to_jsonb(s))
+   where id = p_room_id;
+  perform public._ok_log(p_room_id, jsonb_build_object('k', 'show', 's', s, 't', v_ind));
+  return public.ok_view(p_room_id);
+end $$;
+
+-- 101: el aç. p_groups: ıstakada yan yana duran gruplar; p_pairs: çift açılış
+create or replace function public.ok_open(p_room_id uuid, p_groups jsonb, p_pairs boolean default false)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  s int;
+begin
+  perform public._require_user();
+  s := public._ok_turn(p_room_id, auth.uid());
+  perform public._ok_do_open(p_room_id, s, p_groups, coalesce(p_pairs, false));
+  return public.ok_view(p_room_id);
+end $$;
+
+-- 101: açtıktan sonra yeni per (seriyle açan seri / aynı sayı, çiftle açan çift) indir
+create or replace function public.ok_lay(p_room_id uuid, p_groups jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  s int;
+  op jsonb;
+  ch jsonb;
+  g jsonb;
+  t int[];
+  sp jsonb;
+  melds jsonb := '[]'::jsonb;
+  v_used int := 0;
+begin
+  perform public._require_user();
+  s := public._ok_turn(p_room_id, auth.uid());
+  select * into r from public.game_rooms where id = p_room_id;
+  if r.game_type <> 'okey101' then raise exception 'wrong_game'; end if;
+  op := r.state->'opened'->(s::text);
+  if op is null then raise exception 'not_opened'; end if;
+  if not coalesce((r.state->>'drew')::boolean, false) then raise exception 'draw_first'; end if;
+  ch := public._ok_chunks(p_groups, public._ok_hand(p_room_id, s));
+  for g in select value from jsonb_array_elements(ch) loop
+    t := array(select (q.v)::int from jsonb_array_elements_text(g) with ordinality q(v, o) order by q.o);
+    sp := public._ok_split(t, (r.state->>'okc')::int, (r.state->>'okn')::int, false, op->>'kind' = 'pair');
+    if sp is null then raise exception 'invalid_meld'; end if;
+    melds := melds || sp;
+    v_used := v_used + array_length(t, 1);
+  end loop;
+  perform public._ok_keep_one(p_room_id, s, v_used);
+  perform public._ok_add_melds(p_room_id, s, melds);
+  perform public._ok_log(p_room_id, jsonb_build_object('k', 'lay', 's', s, 'n', jsonb_array_length(melds)));
+  return public.ok_view(p_room_id);
+end $$;
+
+-- 101: yerdeki bir pere taş işle. p_side: 'start' | 'end' (seride iki uca da uyuyorsa; boşsa uyan uç)
+create or replace function public.ok_add(p_room_id uuid, p_meld int, p_tile int, p_side text default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  s int;
+  m jsonb;
+  v_idx int;
+  t int[];
+  res jsonb;
+  v_okc int;
+  v_okn int;
+begin
+  perform public._require_user();
+  s := public._ok_turn(p_room_id, auth.uid());
+  select * into r from public.game_rooms where id = p_room_id;
+  if r.game_type <> 'okey101' then raise exception 'wrong_game'; end if;
+  if not (r.state->'opened' ? s::text) then raise exception 'not_opened'; end if;
+  if not coalesce((r.state->>'drew')::boolean, false) then raise exception 'draw_first'; end if;
+  if p_tile is null or not p_tile = any(public._ok_hand(p_room_id, s)) then raise exception 'tile_not_in_hand'; end if;
+  v_okc := (r.state->>'okc')::int;
+  v_okn := (r.state->>'okn')::int;
+  select x.value, (x.o - 1)::int into m, v_idx
+    from jsonb_array_elements(coalesce(r.state->'melds', '[]'::jsonb)) with ordinality x(value, o)
+   where (x.value->>'id')::int = p_meld;
+  if m is null or m->>'kind' not in ('run', 'set') then raise exception 'meld_not_found'; end if;
+  perform public._ok_keep_one(p_room_id, s, 1);
+  t := array(select (q.v)::int from jsonb_array_elements_text(m->'tiles') with ordinality q(v, o) order by q.o);
+  if m->>'kind' = 'set' then
+    res := public._ok_meld(t || p_tile, v_okc, v_okn, false, true);
+    if res->>'kind' is distinct from 'set' then res := null; end if;
+  else
+    if coalesce(p_side, 'end') = 'end' then
+      res := public._ok_meld(t || p_tile, v_okc, v_okn, false, true);
+      if res->>'kind' is distinct from 'run' then res := null; end if;
+    end if;
+    if res is null and coalesce(p_side, 'start') = 'start' then
+      res := public._ok_meld(p_tile || t, v_okc, v_okn, false, true);
+      if res->>'kind' is distinct from 'run' then res := null; end if;
+    end if;
+  end if;
+  if res is null then raise exception 'cannot_add'; end if;
+  perform public._ok_drop(p_room_id, s, p_tile);
+  update public.game_rooms
+     set state = jsonb_set(state, array['melds', v_idx::text], m || jsonb_build_object('tiles', res->'tiles', 'reps', res->'reps', 'value', res->'value'))
+   where id = p_room_id;
+  perform public._ok_log(p_room_id, jsonb_build_object('k', 'add', 's', s, 't', p_tile, 'm', p_meld));
+  return public.ok_view(p_room_id);
+end $$;
+
+-- 101: yerdeki okeyi, yerine geçtiği taşı koyarak al
+create or replace function public.ok_swap(p_room_id uuid, p_meld int, p_tile int)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  s int;
+  m jsonb;
+  v_idx int;
+  t int[];
+  t2 int[];
+  res jsonb;
+  v_okc int;
+  v_okn int;
+  i int;
+  v_joker int;
+begin
+  perform public._require_user();
+  s := public._ok_turn(p_room_id, auth.uid());
+  select * into r from public.game_rooms where id = p_room_id;
+  if r.game_type <> 'okey101' then raise exception 'wrong_game'; end if;
+  if not (r.state->'opened' ? s::text) then raise exception 'not_opened'; end if;
+  if not coalesce((r.state->>'drew')::boolean, false) then raise exception 'draw_first'; end if;
+  if p_tile is null or not p_tile = any(public._ok_hand(p_room_id, s)) then raise exception 'tile_not_in_hand'; end if;
+  v_okc := (r.state->>'okc')::int;
+  v_okn := (r.state->>'okn')::int;
+  if public._ok_wild(p_tile, v_okc, v_okn) then raise exception 'cannot_swap'; end if;
+  select x.value, (x.o - 1)::int into m, v_idx
+    from jsonb_array_elements(coalesce(r.state->'melds', '[]'::jsonb)) with ordinality x(value, o)
+   where (x.value->>'id')::int = p_meld;
+  if m is null or m->>'kind' not in ('run', 'set') then raise exception 'meld_not_found'; end if;
+  t := array(select (q.v)::int from jsonb_array_elements_text(m->'tiles') with ordinality q(v, o) order by q.o);
+  for i in 1..array_length(t, 1) loop
+    if public._ok_wild(t[i], v_okc, v_okn) then
+      t2 := t;
+      t2[i] := p_tile;
+      res := public._ok_meld(t2, v_okc, v_okn, false, true);
+      if res->>'kind' = m->>'kind' then
+        v_joker := t[i];
+        exit;
+      end if;
+      res := null;
+    end if;
+  end loop;
+  if res is null then raise exception 'cannot_swap'; end if;
+  perform public._ok_drop(p_room_id, s, p_tile);
+  perform public._ok_give(p_room_id, s, v_joker);
+  update public.game_rooms
+     set state = jsonb_set(state, array['melds', v_idx::text], m || jsonb_build_object('tiles', res->'tiles', 'reps', res->'reps', 'value', res->'value'))
+   where id = p_room_id;
+  perform public._ok_log(p_room_id, jsonb_build_object('k', 'swap', 's', s, 't', p_tile, 'm', p_meld));
+  return public.ok_view(p_room_id);
+end $$;
+
+-- Istakayı diz (yuvalar). Elde olmayan taşlar yok sayılır; listede olmayan taşlar boş yuvalara konur.
+create or replace function public.ok_arrange(p_room_id uuid, p_slots jsonb)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  s int;
+  v_old int[];
+  v_hand int[];
+  v_new int[] := array_fill(null::int, array[30]);
+  i int;
+  x int;
+begin
+  perform public._require_user();
+  s := public._ok_seat(p_room_id, auth.uid());
+  if s is null then raise exception 'not_in_room'; end if;
+  if p_slots is null or jsonb_typeof(p_slots) <> 'array' or jsonb_array_length(p_slots) > 30 then
+    raise exception 'invalid_slots';
+  end if;
+  select slots into v_old from public.okey_racks where room_id = p_room_id and seat = s for update;
+  if v_old is null then return; end if;
+  v_hand := array(select u from unnest(v_old) u where u is not null);
+  for i in 1..jsonb_array_length(p_slots) loop
+    if jsonb_typeof(p_slots->(i - 1)) = 'number' then
+      x := (p_slots->>(i - 1))::int;
+      if x = any(v_hand) and array_position(v_new, x) is null then v_new[i] := x; end if;
+    end if;
+  end loop;
+  foreach x in array v_hand loop
+    if array_position(v_new, x) is null then
+      select min(g) into i from generate_series(1, 30) g where v_new[g] is null;
+      v_new[i] := x;
+    end if;
+  end loop;
+  update public.okey_racks set slots = v_new where room_id = p_room_id and seat = s;
+end $$;
+
+-- El sonu tablosunda "Devam" (herkes derse sonraki ele geçilir)
+create or replace function public.ok_ready(p_room_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  r public.game_rooms;
+  s int;
+begin
+  perform public._require_user();
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found or r.game_type not in ('okey', 'okey101') then raise exception 'room_not_found'; end if;
+  if r.status <> 'playing' or r.state->>'phase' <> 'hand_end' then raise exception 'wrong_phase'; end if;
+  s := public._ok_seat(p_room_id, auth.uid());
+  if s is null then raise exception 'not_in_room'; end if;
+  if not (coalesce(r.state->'ready', '[]'::jsonb) @> to_jsonb(s)) then
+    update public.game_rooms set state = state || jsonb_build_object('ready', coalesce(state->'ready', '[]'::jsonb) || to_jsonb(s))
+     where id = p_room_id;
+  end if;
+  perform public._ok_tick(p_room_id);
+  return public.ok_view(p_room_id);
+end $$;
+
+-- Yan yana oyun bitince: aynı masayla yeni oyun (bekleme odası; herkes aynı koltukta). Döner: yeni odanın kimliği.
+create or replace function public.ok_rematch(p_room_id uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+  v_new uuid;
+  v_code text;
+  v_try int := 0;
+  v_host uuid;
+begin
+  v := public._require_user();
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found or r.game_type not in ('okey', 'okey101') or r.status <> 'finished' then raise exception 'room_not_found'; end if;
+  if r.remote then raise exception 'remote_match_only'; end if;
+  if r.state->>'next_room' is not null then return (r.state->>'next_room')::uuid; end if;
+  if not exists (select 1 from public.room_players where room_id = p_room_id and user_id = v.id and left_at is null) then
+    raise exception 'not_in_room';
+  end if;
+  v_host := case when exists (select 1 from public.room_players where room_id = p_room_id and user_id = r.host_id and left_at is null)
+                 then r.host_id else v.id end;
+  insert into public.game_rooms (game_type, event_id, host_id, config, place_q, place_r, place_note, remote)
+  values (r.game_type, r.event_id, v_host, r.config || jsonb_build_object('rematch_of', p_room_id),
+          r.place_q, r.place_r, r.place_note, false)
+  returning id into v_new;
+  loop
+    v_code := public._random_code(5);
+    begin
+      insert into public.room_codes (room_id, code) values (v_new, v_code);
+      exit;
+    exception when unique_violation then
+      v_try := v_try + 1;
+      if v_try > 20 then raise exception 'code_generation_failed'; end if;
+    end;
+  end loop;
+  insert into public.room_players (room_id, user_id, display_name, seat)
+  select v_new, rp.user_id, rp.display_name, rp.seat
+    from public.room_players rp where rp.room_id = p_room_id and rp.left_at is null;
+  update public.game_rooms set state = state || jsonb_build_object('next_room', v_new) where id = p_room_id;
+  return v_new;
+end $$;
+
+-- Uzaktan eşleşme: sırada 4 kişi olunca masa kurulur ve oyun hemen başlar (herkes rumuzuyla, koltuklar rastgele)
+create or replace function public._ok_match_try(p_user uuid, p_game text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v_room uuid;
+  v_code text;
+  v_try int := 0;
+  v_ids uuid[];
+begin
+  v_ids := array(select q.user_id from public.sk_queue q where q.game_type = p_game order by q.joined_at limit 4);
+  if coalesce(array_length(v_ids, 1), 0) < 4 then return null; end if;
+  insert into public.game_rooms (game_type, host_id, config, remote, state)
+  values (p_game, v_ids[1],
+          jsonb_build_object('match', true, 'ok', case when p_game = 'okey'
+                                                        then jsonb_build_object('pairs', false, 'helper', true, 'target', 10)
+                                                        else jsonb_build_object('pairs', false, 'helper', true, 'penalty', true,
+                                                                                'fold', false, 'hands', 3) end),
+          true, '{}'::jsonb)
+  returning id into v_room;
+  loop
+    v_code := public._random_code(5);
+    begin
+      insert into public.room_codes (room_id, code) values (v_room, v_code);
+      exit;
+    exception when unique_violation then
+      v_try := v_try + 1;
+      if v_try > 20 then raise exception 'code_generation_failed'; end if;
+    end;
+  end loop;
+  insert into public.room_players (room_id, user_id, display_name, seat)
+  select v_room, x.uid, p.alias, x.rn
+    from (select u as uid, row_number() over (order by random())::int as rn from unnest(v_ids) u) x
+    join public.profiles p on p.id = x.uid;
+  if exists (select 1 from public.profiles p where p.id = any(v_ids) and p.is_bot) then
+    update public.game_rooms set config = config || '{"test": true}'::jsonb where id = v_room;
+  end if;
+  delete from public.sk_queue where user_id = any(v_ids);
+  perform public._ok_begin(v_room);
+  return case when p_user = any(v_ids) then v_room end;
+end $$;
+
+revoke execute on function public._ok_meld(int[], int, int, boolean, boolean) from public, anon, authenticated;
+revoke execute on function public._ok_split(int[], int, int, boolean, boolean) from public, anon, authenticated;
+revoke execute on function public._ok_hand(uuid, int) from public, anon, authenticated;
+revoke execute on function public._ok_give(uuid, int, int) from public, anon, authenticated;
+revoke execute on function public._ok_drop(uuid, int, int) from public, anon, authenticated;
+revoke execute on function public._ok_log(uuid, jsonb) from public, anon, authenticated;
+revoke execute on function public._ok_isler(jsonb, int) from public, anon, authenticated;
+revoke execute on function public._ok_need(public.game_rooms, int, boolean) from public, anon, authenticated;
+revoke execute on function public._ok_chunks(jsonb, int[]) from public, anon, authenticated;
+revoke execute on function public._ok_deal(uuid, int) from public, anon, authenticated;
+revoke execute on function public._ok_begin(uuid) from public, anon, authenticated;
+revoke execute on function public._ok_game_end(uuid) from public, anon, authenticated;
+revoke execute on function public._ok_hand_end(uuid, int, jsonb) from public, anon, authenticated;
+revoke execute on function public._ok_advance(uuid) from public, anon, authenticated;
+revoke execute on function public._ok_do_draw(uuid, int) from public, anon, authenticated;
+revoke execute on function public._ok_do_take(uuid, int) from public, anon, authenticated;
+revoke execute on function public._ok_do_return(uuid, int) from public, anon, authenticated;
+revoke execute on function public._ok_do_discard(uuid, int, int) from public, anon, authenticated;
+revoke execute on function public._ok_add_melds(uuid, int, jsonb) from public, anon, authenticated;
+revoke execute on function public._ok_keep_one(uuid, int, int) from public, anon, authenticated;
+revoke execute on function public._ok_do_open(uuid, int, jsonb, boolean) from public, anon, authenticated;
+revoke execute on function public._ok_bot_open(uuid, int) from public, anon, authenticated;
+revoke execute on function public._ok_auto(uuid, int, boolean) from public, anon, authenticated;
+revoke execute on function public._ok_tick(uuid) from public, anon, authenticated;
+revoke execute on function public._ok_after_leave(uuid, uuid) from public, anon, authenticated;
+revoke execute on function public._ok_turn(uuid, uuid) from public, anon, authenticated;
+revoke execute on function public._ok_seat(uuid, uuid) from public, anon, authenticated;
+revoke execute on function public._ok_match_try(uuid, text) from public, anon, authenticated;
+revoke execute on function public._ok_cleanup() from public, anon, authenticated;
+revoke execute on function public.ok_view(uuid) from public, anon;
+revoke execute on function public.ok_set_options(uuid, jsonb) from public, anon;
+revoke execute on function public.ok_sit(uuid, int) from public, anon;
+revoke execute on function public.ok_start(uuid) from public, anon;
+revoke execute on function public.ok_draw(uuid) from public, anon;
+revoke execute on function public.ok_take(uuid) from public, anon;
+revoke execute on function public.ok_return(uuid) from public, anon;
+revoke execute on function public.ok_discard(uuid, int) from public, anon;
+revoke execute on function public.ok_finish(uuid, jsonb, int) from public, anon;
+revoke execute on function public.ok_show(uuid) from public, anon;
+revoke execute on function public.ok_open(uuid, jsonb, boolean) from public, anon;
+revoke execute on function public.ok_lay(uuid, jsonb) from public, anon;
+revoke execute on function public.ok_add(uuid, int, int, text) from public, anon;
+revoke execute on function public.ok_swap(uuid, int, int) from public, anon;
+revoke execute on function public.ok_arrange(uuid, jsonb) from public, anon;
+revoke execute on function public.ok_ready(uuid) from public, anon;
+revoke execute on function public.ok_rematch(uuid) from public, anon;
+grant execute on function public.ok_view(uuid) to authenticated;
+grant execute on function public.ok_set_options(uuid, jsonb) to authenticated;
+grant execute on function public.ok_sit(uuid, int) to authenticated;
+grant execute on function public.ok_start(uuid) to authenticated;
+grant execute on function public.ok_draw(uuid) to authenticated;
+grant execute on function public.ok_take(uuid) to authenticated;
+grant execute on function public.ok_return(uuid) to authenticated;
+grant execute on function public.ok_discard(uuid, int) to authenticated;
+grant execute on function public.ok_finish(uuid, jsonb, int) to authenticated;
+grant execute on function public.ok_show(uuid) to authenticated;
+grant execute on function public.ok_open(uuid, jsonb, boolean) to authenticated;
+grant execute on function public.ok_lay(uuid, jsonb) to authenticated;
+grant execute on function public.ok_add(uuid, int, int, text) to authenticated;
+grant execute on function public.ok_swap(uuid, int, int) to authenticated;
+grant execute on function public.ok_arrange(uuid, jsonb) to authenticated;
+grant execute on function public.ok_ready(uuid) to authenticated;
+grant execute on function public.ok_rematch(uuid) to authenticated;
 
 
 notify pgrst, 'reload schema';

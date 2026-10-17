@@ -116,6 +116,12 @@ export const SHARK_RANK_ITEM: InfoItem = {
   text: 'Kazanan takım (ya da tek başına kazanan tarafsız) üstte yer alır. Diğerleri oyunda ne kadar uzun kaldıysa o kadar önde; aynı anda elenenler eşit sayılır. Anlatıcılı oyunda puan yoktur.',
 };
 
+export const OKEY_RANK_ITEM: InfoItem = {
+  icon: 'grid',
+  lead: 'Okey ve 101’de sıra.',
+  text: 'Okey’de oyun sonunda kalan puanı en yüksek, 101’de toplam cezası en düşük olan 1. sıradadır. Masada 4 koltuk sayılır; eşlide eşler aynı sırayı paylaşır. Masadan ayrılan son sıraya düşer ve puan almaz.',
+};
+
 /** Bilgi Yarışması hakkında kısa bilgi (oyun kutusuna dokununca). */
 export function quizInfo(rules: PointRules, enabled: boolean): InfoContent {
   return {
@@ -368,6 +374,14 @@ export const HOW_TO_PLAY: Record<string, InfoItem[]> = {
       text: 'Kolay, orta, zor ve imkânsız hazinelerin puanı farklıdır; ayda en çok 3 hazine bulabilirsin.',
     },
   ],
+  okey: [
+    { icon: 'grid', lead: '4 kişi.', text: 'Tekli ya da eşli. Herkes kendi ıstakasını görür; ortadan ya da yandan taş alıp sağa atarsın.' },
+    { icon: 'trophy', lead: 'Bitir.', text: '14 taşı perlere ya da 7 çifte dizip 15. taşı ortaya atan eli bitirir; diğerleri puan kaybeder.' },
+  ],
+  okey101: [
+    { icon: 'layers', lead: '101 ile aç.', text: 'Perlerinin toplamı 101’i (ya da 5 çift) bulunca elini açar, sonra perlere işlersin.' },
+    { icon: 'calculator', lead: 'Az ceza kazanır.', text: 'Son taşını atan -101 yazar; elinde kalan taşlar ceza olur. Seçilen el sayısı sonunda en az ceza kazanır.' },
+  ],
   raffle: [
     { icon: 'gift', lead: 'Çekiliş.', text: 'Etkinlikte moderatör açar; kodla katılan herkes çekilişe girer.' },
     { icon: 'trophy', lead: 'Kazanan.', text: 'Kazanan rastgele seçilir ve ekranda gösterilir.' },
@@ -376,6 +390,8 @@ export const HOW_TO_PLAY: Record<string, InfoItem[]> = {
 
 /** Oyunun başlaması için gereken en az kişi (sunucu ayarı gelene kadar varsayılan). */
 export const DEFAULT_MIN_PLAYERS: Record<string, number> = {
+  okey: 4,
+  okey101: 4,
   shark_cage: 6,
   vampire_villager: 5,
   find_killer: 5,
@@ -413,3 +429,119 @@ export function venueInfo(rules: PointRules): InfoContent {
 }
 
 const fmtNum = (n: number) => Math.round(n).toLocaleString('tr-TR');
+
+type RuleLine = { icon: React.ComponentProps<typeof Ionicons>['name']; lead: string; text: string };
+
+const OKEY_TILES: RuleLine[] = [
+  {
+    icon: 'grid',
+    lead: 'Taşlar.',
+    text: '4 renk (sarı, mavi, siyah, kırmızı), 1’den 13’e ikişer taş ve 2 sahte okey: 106 taş.',
+  },
+  {
+    icon: 'star',
+    lead: 'Gösterge ve okey.',
+    text: 'Ortadan bir taş gösterge olarak açılır. Okey, göstergenin aynı renkte bir üstüdür (göstergesi 13 olanın okeyi 1). İki okey her taşın yerine geçer; sahte okey, okeyin yerine geçtiği taş (o renk ve sayı) olarak kullanılır.',
+  },
+  {
+    icon: 'swap-horizontal',
+    lead: 'Sıra.',
+    text: 'Sıra sağa döner. Sırası gelen ortadan çeker ya da solundakinin attığı son taşı (yandan) alır, sonra sağına bir taş atar.',
+  },
+];
+
+/** Oyun ekranındaki kurallar penceresi (sunucunun uyguladığı kuralların aynısı) */
+export const OKEY_RULES: Record<'okey' | 'okey101', RuleLine[]> = {
+  okey: [
+    ...OKEY_TILES,
+    { icon: 'hand-left', lead: 'Dağıtım.', text: 'Başlayan 15, diğerleri 14 taş alır.' },
+    {
+      icon: 'albums',
+      lead: 'Per.',
+      text: 'Aynı renk ardışık en az 3 taş (12-13-1 olur, 13-1-2 olmaz) ya da aynı sayı, farklı renk 3–4 taş.',
+    },
+    {
+      icon: 'trophy',
+      lead: 'Bitirmek.',
+      text: '14 taşı perlere ya da 7 çifte dizip 15. taşı ortaya atan biter. Taşı desteye sürükle ya da seçip “Bitir”e bas. Gruplar arasında boşluk bırak.',
+    },
+    {
+      icon: 'remove-circle',
+      lead: 'Puan.',
+      text: 'Herkes 20 (kısa oyunda 10) puanla başlar. Biten dışındakiler normal bitişte 2, okey atarak bitişte 4, çiftten bitişte 4, çiftten okey atarak bitişte 8 puan kaybeder.',
+    },
+    { icon: 'eye', lead: 'Gösterge.', text: 'İlk turunda göstergenin eşini gösteren, diğerlerine 1 puan kaybettirir.' },
+    { icon: 'hourglass', lead: 'Ortada taş biterse.', text: 'El berabere biter, kimsenin puanı değişmez.' },
+    { icon: 'flag', lead: 'Oyun sonu.', text: 'Bir el sonunda biri 0’a (ya da altına) inince oyun biter; puanı en yüksek olan kazanır.' },
+    { icon: 'people', lead: 'Eşli.', text: '1–3 ve 2–4 eştir; puan takımındır. Biri bitince rakip takım kaybeder.' },
+    {
+      icon: 'bulb',
+      lead: 'Yardımlı.',
+      text: 'Okey yıldızla işaretlenir, perler yeşil görünür, “Seri diz” ve “Çift diz” ıstakayı dizer. Yardımsız masada bunlar yoktur.',
+    },
+    { icon: 'timer', lead: 'Süre.', text: 'Hamle süren dolarsa senin yerine ortadan çekilir ve çekilen taş atılır.' },
+    {
+      icon: 'podium',
+      lead: 'PeopleHere puanı.',
+      text: 'Masadaki sıraya göre 1. 4, 2. 3, 3. 2, 4. 1 puan (eşitler paylaşır). Aylık hedef diğer oyunlar gibi; hedef dolsa da oynamaya devam edersin, yalnızca puan yazılmaz. Masadan ayrılan puan almaz.',
+    },
+  ],
+  okey101: [
+    ...OKEY_TILES,
+    { icon: 'hand-left', lead: 'Dağıtım.', text: 'Başlayan 22, diğerleri 21 taş alır; ortada 20 taş kalır.' },
+    {
+      icon: 'albums',
+      lead: 'Per.',
+      text: 'Aynı renk ardışık en az 3 taş (seriler 13’te biter: 12-13-1 olmaz) ya da aynı sayı, farklı renk 3–4 taş. Okey, yerine geçtiği taşın sayısını sayar.',
+    },
+    {
+      icon: 'layers',
+      lead: 'El açmak.',
+      text: 'Perlerinin toplamı en az 101 olmalı ya da en az 5 çift açılır. Perleri ıstakada yan yana diz, aralarında boşluk bırak, “Seri aç” ya da “Çift aç”a bas.',
+    },
+    {
+      icon: 'trending-up',
+      lead: 'Katlamalı.',
+      text: 'Sonra açan, rakiplerin en yüksek açışını en az 1 geçmeli (seri ve çift ayrı sayılır; eşinin açışı barajı yükseltmez). Katlamasız masada herkes 101 ya da 5 çiftle açar.',
+    },
+    {
+      icon: 'git-merge',
+      lead: 'Açtıktan sonra.',
+      text: 'Yeni per indirirsin (seriyle açan seri, çiftle açan çift), yerdeki perlere taş işlersin (taşı seç, “İşle” ya da “Ortayı gör”, pere dokun) ve yerdeki okeyi yerine geçtiği taşı koyarak alabilirsin.',
+    },
+    {
+      icon: 'arrow-undo',
+      lead: 'Yandan almak.',
+      text: 'Elini açmadıysan yandan aldığın taşla aynı turda açmalısın; açamazsan “Geri koy”a basarsın, ortadan çekilir.',
+    },
+    {
+      icon: 'trophy',
+      lead: 'Bitirmek.',
+      text: 'Son taşını atan biter ve -101 yazar. Okey atarak, elden (aynı turda açıp bitirerek) ya da çiftten bitişte her biri ayrıca 2 kat sayılır.',
+    },
+    {
+      icon: 'calculator',
+      lead: 'Ceza.',
+      text: 'Hiç açmayan 202; açan, elinde kalan taşların toplamını (elde kalan okey 101) yazar. Çiftle açan 2 kat yazar. Bitişin katı herkese eklenir.',
+    },
+    {
+      icon: 'warning',
+      lead: 'Cezalı masa.',
+      text: 'İşlek taş (yerdeki bir pere işlenebilen taş) atmak, okey atmak ve yandan aldığın taşı geri koymak 101 cezadır. Cezasız masada ceza yazılmaz.',
+    },
+    { icon: 'hourglass', lead: 'Ortada taş biterse.', text: 'El biter, herkes elinde kalanı yazar.' },
+    { icon: 'flag', lead: 'Oyun sonu.', text: 'Seçilen el sayısı (1, 3, 5 ya da 7) oynanır; toplam cezası en düşük olan kazanır.' },
+    { icon: 'people', lead: 'Eşli.', text: '1–3 ve 2–4 eştir. Biri bitince eşi ceza yazmaz; takımın cezası iki kişinin toplamıdır.' },
+    {
+      icon: 'bulb',
+      lead: 'Yardımlı.',
+      text: 'Okey, işlek taşlar (turuncu), perler (yeşil), açış toplamı ve işlenebilecek perler gösterilir; “Seri diz”, “Çift diz” ıstakayı dizer. Yardımsız masada gösterilmez.',
+    },
+    { icon: 'timer', lead: 'Süre.', text: 'Hamle süren dolarsa senin yerine ortadan çekilir ve ceza getirmeyen bir taş atılır.' },
+    {
+      icon: 'podium',
+      lead: 'PeopleHere puanı.',
+      text: 'Masadaki sıraya göre 1. 4, 2. 3, 3. 2, 4. 1 puan (eşitler paylaşır). Aylık hedef diğer oyunlar gibi; hedef dolsa da oynamaya devam edersin, yalnızca puan yazılmaz. Masadan ayrılan puan almaz.',
+    },
+  ],
+};

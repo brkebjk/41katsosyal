@@ -1,6 +1,28 @@
 -- PARÇA 3 / 4 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+-- Başarımlar ekranı: oyun sayıları, Vampir görev sayaçları, bulunan hazine ve kazanılan ödüller (yalnızca kendin)
+create or replace function public.my_achievement_stats()
+returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'plays', coalesce((select jsonb_object_agg(gs.game_type, gs.plays) from public.user_game_stats gs
+                        where gs.user_id = auth.uid()), '{}'::jsonb),
+    'vv', coalesce((select jsonb_build_object('nights', x.nights, 'protects', x.protects, 'finds', x.finds, 'hanged', x.hanged)
+                      from public.user_vv_stats x where x.user_id = auth.uid()), '{}'::jsonb),
+    'treasures', (select count(*)::int from public.treasures t where t.found_by = auth.uid()),
+    'rewards', coalesce((select jsonb_agg(w.reward order by w.granted_at) from public.user_rewards w
+                          where w.user_id = auth.uid()), '[]'::jsonb))
+  where public._is_active_user();
+$$;
+
+-- Oyun sayacım (başarımlar bundan hesaplanır)
+create or replace function public.my_game_stats()
+returns table (game_type text, plays int)
+language sql stable security definer set search_path = public as $$
+  select s.game_type, s.plays from public.user_game_stats s
+   where s.user_id = auth.uid() and public._is_active_user();
+$$;
+
 create or replace function public.admin_award_points(p_user_id uuid, p_amount int, p_reason text, p_room_id uuid default null)
 returns void language plpgsql security definer set search_path = public as $$
 begin
@@ -5204,7 +5226,7 @@ begin
   perform public._require_user();
   perform public._require_admin();
   select * into r from public.game_rooms where id = p_room_id for update;
-  if not found or r.game_type not in ('vampire_villager', 'shark_cage') or r.status <> 'lobby' then
+  if not found or r.game_type not in ('vampire_villager', 'shark_cage', 'okey', 'okey101') or r.status <> 'lobby' then
     raise exception 'room_not_found';
   end if;
   update public.game_rooms set config = config || jsonb_build_object('test', true) where id = p_room_id;
@@ -7287,7 +7309,7 @@ begin
                            join public.game_rooms gr on gr.id = pe.room_id
                           where pe.user_id = v.id and pe.source = 'game_play' and gr.game_type = g.key
                             and pe.created_at >= v_start))), '{}'::jsonb)
-                from (values ('shark_cage'), ('vampire_villager')) g(key)),
+                from (values ('shark_cage'), ('vampire_villager'), ('okey'), ('okey101')) g(key)),
     'events', (select coalesce(sum(amount), 0) from public.point_events
                 where user_id = v.id and source like 'event%' and created_at >= v_start));
 end $$;
@@ -7414,6 +7436,8 @@ begin
   end if;
   select q.game_type into v_game from public.sk_queue q where q.user_id = p_user;
   if v_game is null then return null; end if;
+  -- Okey ve 101: masa 4 kişi olunca kurulur ve hemen başlar (tek başına oda açılmaz)
+  if v_game in ('okey', 'okey101') then return public._ok_match_try(p_user, v_game); end if;
   select coalesce(gt.max_players, 16) into v_max from public.game_types gt where gt.key = v_game;
 
   -- 1) Yer olan açık eşleştirme lobisi (biten oyundan sonra açılan uzaktan bekleme odaları da)
@@ -7492,7 +7516,7 @@ begin
   perform public._require_city();
   v := public._require_user();
   if v.role::text = 'sponsor' then raise exception 'sponsor_not_allowed'; end if;
-  if p_game not in ('shark_cage', 'vampire_villager')
+  if p_game not in ('shark_cage', 'vampire_villager', 'okey', 'okey101')
      or not exists (select 1 from public.game_types where key = p_game and enabled) then
     raise exception 'game_not_available';
   end if;
@@ -7570,7 +7594,7 @@ declare
 begin
   perform public._require_user();
   perform public._require_admin();
-  if p_game not in ('shark_cage', 'vampire_villager') then raise exception 'game_not_available'; end if;
+  if p_game not in ('shark_cage', 'vampire_villager', 'okey', 'okey101') then raise exception 'game_not_available'; end if;
   insert into public.sk_queue (user_id, game_type)
   select p.id, p_game from public.profiles p
    where p.is_bot
@@ -8117,25 +8141,3 @@ insert into public.app_settings (key, value, description) values
   ('kick_poll_seconds', '30', 'Oyuncu atma oylamasının süresi (sn)'),
   ('kick_poll_per_player', '2', 'Bir oyuncu bir odada en çok kaç atma oylaması başlatabilir')
 on conflict (key) do nothing;
-
--- ---- Oyuncu atma oylaması (iki oyunda, yan yana ve uzaktan) ----------------------------------------------------------
--- Yalnızca bekleme odasında ve tartışmada (Köpekbalığı plajı, Vampir–Köylü sabahı) başlatılır. Aynı anda tek oylama
--- açık olur; kişi başı odada en çok 2 oylama. 30 sn içinde oy verebilecek oyuncuların (yaşayan, odada olan, atılmak
--- istenen hariç) yarısından fazlası "At" derse oyuncu atılır: oyundaysa elenmiş sayılır (rolü açıklanır, puan almaz),
--- bekleme odasındaysa çıkarılır; o odaya geri giremez. Moderatör ve (sahipliği devredilemeyen odada) oda sahibi atılamaz.
-create table if not exists public.room_kick_polls (
-  room_id uuid primary key references public.game_rooms (id) on delete cascade,
-  target_id uuid not null references public.profiles (id) on delete cascade,
-  starter_id uuid not null references public.profiles (id) on delete cascade,
-  phase_key text not null,
-  ends_at timestamptz not null,
-  created_at timestamptz not null default now()
-);
-alter table public.room_kick_polls enable row level security;
-create table if not exists public.room_kick_poll_log (
-  room_id uuid not null references public.game_rooms (id) on delete cascade,
-  starter_id uuid not null references public.profiles (id) on delete cascade,
-  created_at timestamptz not null default now()
-);
-create index if not exists room_kick_poll_log_idx on public.room_kick_poll_log (room_id, starter_id);
-alter table public.room_kick_poll_log enable row level security;

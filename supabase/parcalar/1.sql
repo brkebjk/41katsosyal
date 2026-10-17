@@ -2723,6 +2723,32 @@ declare
 begin
   select * into r from public.game_rooms where id = p_room_id;
   if not found or r.game_type = 'raffle' then return; end if;
+  -- Okey ve 101: masadaki 4 koltuk sayılır (oyundan ayrılan en sona yazılır ve puan almaz; moderatör de sırada
+  -- yer alır ama puan almaz). Sıra room_players.score'a göre (Okey: kalan puan, 101: eksi ceza toplamı); eşler eşittir.
+  if r.game_type in ('okey', 'okey101') then
+    if coalesce(r.state->>'phase', '') <> 'ended' then return; end if;
+    return query
+    with p as (
+      select rp.user_id as uid, pr.role::text as prole, rp.left_at as lft,
+             case when rp.left_at is null then coalesce(rp.score, 0)::numeric else -1000000::numeric end as k1
+        from public.room_players rp
+        join public.profiles pr on pr.id = rp.user_id
+       where rp.room_id = p_room_id and rp.seat between 1 and 4
+    ), q as (
+      select p.uid, p.prole, p.lft,
+             rank() over (order by p.k1 desc)::int as rnk,
+             (count(*) over (partition by p.k1))::int as tied,
+             (count(*) over ())::int as n
+        from p
+    )
+    select q.uid, q.rnk, (q.rnk + (q.tied - 1) / 2.0)::numeric, q.n,
+           greatest(1, round(public._game_top_points(q.n, public.setting_int('pts_game_top_cap', 12))
+                             * (q.n - (q.rnk + (q.tied - 1) / 2.0) + 1) / q.n * 2) / 2.0)::numeric,
+           q.rnk = 1
+      from q
+     where q.prole = 'user' and q.lft is null;
+    return;
+  end if;
   v_winner := r.state->>'winner';
   if r.game_type in ('vampire_villager', 'shark_cage') and v_winner is null then return; end if;
   -- Köpekbalığı Kafesi anlatıcılı oyun (etkinlik eğlencesi): kimse puan almaz
@@ -5320,6 +5346,20 @@ begin
     select * into r from public.game_rooms where id = p_room_id;
   end if;
 
+  -- Okey ve 101: oyun başladıysa sahibi ayrılınca oda kapanmaz; sahiplik masadaki sıradaki gerçek oyuncuya geçer
+  -- (ayrılanın yerine sunucu oynar). Bekleme odasında sahibi ayrılırsa oda kapanır.
+  if r.host_id = p_user_id and r.game_type in ('okey', 'okey101') and r.status = 'playing'
+     and exists (select 1 from public.room_players rp join public.profiles bp on bp.id = rp.user_id
+                  where rp.room_id = p_room_id and rp.user_id <> p_user_id and rp.left_at is null and not bp.is_bot) then
+    update public.game_rooms
+       set host_id = (select rp.user_id from public.room_players rp join public.profiles bp on bp.id = rp.user_id
+                       where rp.room_id = p_room_id and rp.user_id <> p_user_id and rp.left_at is null and not bp.is_bot
+                       order by rp.seat limit 1),
+           host_seen_at = now()
+     where id = p_room_id;
+    select * into r from public.game_rooms where id = p_room_id;
+  end if;
+
   if r.host_id = p_user_id then
     perform public._room_close(p_room_id, p_reason);
     return 'closed';
@@ -5343,6 +5383,7 @@ begin
   if not found then return null; end if;
   if r.game_type = 'vampire_villager' then perform public._vv_after_leave(p_room_id, p_user_id); end if;
   if r.game_type = 'shark_cage' then perform public._sk_after_leave(p_room_id, p_user_id); end if;
+  if r.game_type in ('okey', 'okey101') then perform public._ok_after_leave(p_room_id, p_user_id); end if;
   return 'eliminated';
 end $$;
 
@@ -6718,15 +6759,3 @@ begin
   delete from public.event_code_failures where event_id = p_event_id;
   return v_code;
 end $$;
-
--- Katılım puanı, etkinlikte doğrulanan kişi sayısına göre (kalabalık etkinlik daha çok puan getirir):
--- 4–9 kişi pts_event_attend (30) · 10–19 pts_event_attend_10 (35) · 20–39 pts_event_attend_20 (40) · 40+ pts_event_attend_40 (50).
--- PeopleHere Özel (moderatör) etkinliklerde her basamağa pts_event_attend_official_bonus (10) eklenir.
-create or replace function public._event_attend_pts(p_count int, p_official boolean)
-returns int language sql stable set search_path = public as $$
-  select (case when p_count >= 40 then public.setting_int('pts_event_attend_40', 50)
-               when p_count >= 20 then public.setting_int('pts_event_attend_20', 40)
-               when p_count >= 10 then public.setting_int('pts_event_attend_10', 35)
-               else public.setting_int('pts_event_attend', 30) end)
-         + (case when p_official then public.setting_int('pts_event_attend_official_bonus', 10) else 0 end);
-$$;
