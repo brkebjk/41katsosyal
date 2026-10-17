@@ -3789,6 +3789,15 @@ begin
                       = (v_ev.starts_at at time zone 'Europe/Istanbul')::date) then
       raise exception 'daily_category_limit';
     end if;
+    -- Saat çakışması: aynı gün, başlangıçları event_overlap_minutes (120) dakikadan yakın iki etkinliğe birden katılınamaz
+    if exists (select 1 from public.event_registrations er join public.events e2 on e2.id = er.event_id
+                where er.user_id = v.id and not e2.is_cancelled and e2.id <> v_ev.id
+                  and (e2.starts_at at time zone 'Europe/Istanbul')::date
+                      = (v_ev.starts_at at time zone 'Europe/Istanbul')::date
+                  and abs(extract(epoch from e2.starts_at - v_ev.starts_at))
+                      < greatest(0, public.setting_int('event_overlap_minutes', 120)) * 60) then
+      raise exception 'event_time_clash';
+    end if;
   end if;
 
   v_waived := public._event_fee_waived(v_ev.created_by, v_ev.fee_amount, v.premium_until);
@@ -13915,6 +13924,7 @@ insert into public.app_settings (key, value, description) values
   ('team_max_size', '8', 'Etkinlik ekibi en çok kaç kişi olabilir?'),
   ('event_share_minutes_before', '60', 'Etkinlik akışta, başlamasına en çok kaç dakika kala paylaşılabilir? (yalnızca bu son süre içinde)'),
   ('event_daily_join_limit', '2', 'Bir üye aynı gün en çok kaç etkinliğe katılabilir? (aynı kategoriden her gün en çok 1)'),
+  ('event_overlap_minutes', '120', 'Saat çakışması: başlangıçları kaç dakikadan yakın olan iki etkinliğe aynı gün birden katılınamaz? (0 = kapalı)'),
   ('cell_feed_max_distance', '1', 'Petek akışını okumak ve yazmak için peteğe en çok kaç petek uzaklıkta olunmalı?'),
   ('treasure_pts_kolay', '25', 'Hazine Avı: kolay hazinenin puanı'),
   ('treasure_pts_orta', '60', 'Hazine Avı: orta hazinenin puanı'),

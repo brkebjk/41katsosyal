@@ -282,6 +282,7 @@ insert into public.app_settings (key, value, description) values
   ('team_max_size', '8', 'Etkinlik ekibi en çok kaç kişi olabilir?'),
   ('event_share_minutes_before', '60', 'Etkinlik akışta, başlamasına en çok kaç dakika kala paylaşılabilir? (yalnızca bu son süre içinde)'),
   ('event_daily_join_limit', '2', 'Bir üye aynı gün en çok kaç etkinliğe katılabilir? (aynı kategoriden her gün en çok 1)'),
+  ('event_overlap_minutes', '120', 'Saat çakışması: başlangıçları kaç dakikadan yakın olan iki etkinliğe aynı gün birden katılınamaz? (0 = kapalı)'),
   ('cell_feed_max_distance', '1', 'Petek akışını okumak ve yazmak için peteğe en çok kaç petek uzaklıkta olunmalı?'),
   ('treasure_pts_kolay', '25', 'Hazine Avı: kolay hazinenin puanı'),
   ('treasure_pts_orta', '60', 'Hazine Avı: orta hazinenin puanı'),

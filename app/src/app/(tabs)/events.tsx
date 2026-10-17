@@ -20,6 +20,7 @@ import { GameActionButton } from '@/components/GameActionButton';
 import { HexGauge } from '@/components/HexGauge';
 import { LeaderApplySheet } from '@/components/LeaderApplySheet';
 import { LinearGradient } from 'expo-linear-gradient';
+import { JoinedEventsChip } from '@/components/JoinedEventsChip';
 import { MyEventsSheet } from '@/components/MyEventsSheet';
 import { AttendedEventsSheet } from '@/components/AttendedEventsSheet';
 import { CheckinListPopup } from '@/components/CheckinListPopup';
@@ -169,6 +170,8 @@ function EventsScreen() {
   const [teamFor, setTeamFor] = useState<EventItem | null>(null);
   const [safetyFor, setSafetyFor] = useState<string | null>(null);
   const [joinListOpen, setJoinListOpen] = useState(false);
+  /** Sekmenin açıldığı an (başlıktaki kartta bitmiş etkinlikleri ayırmak için) */
+  const [screenOpenedAt] = useState(() => Date.now());
   const safety = useSafetyMenu(safetyFor ? { type: 'event', id: safetyFor } : null);
   // Puanların açılması için gereken en az kişi (sunucu ayarından; kartlardaki “bekliyor” notunda kullanılır)
   const [minAttendees, setMinAttendees] = useState(DEFAULT_RULES.eventMinAttendees);
@@ -400,6 +403,10 @@ function EventsScreen() {
         ? events.filter((e) => e.category === category)
         : events;
   const myEvents = events.filter((e) => e.is_mine);
+  // Katıldığım (düzenlemediğim) ve henüz bitmemiş etkinlikler: başlıktaki küçük kart
+  const joinedEvents = events.filter(
+    (e) => e.is_registered && !e.is_mine && Date.parse(e.starts_at) > screenOpenedAt - 2 * 3600_000,
+  );
   const officialEvents = visibleEvents.filter((e) => e.is_official);
   const memberEvents = visibleEvents.filter((e) => !e.is_official);
   const countOf = (key: EventCategory) => events.filter((e) => e.category === key).length;
@@ -467,7 +474,10 @@ function EventsScreen() {
       onRefresh={onRefresh}
       refreshing={refreshing}
       headerRight={
-        quota ? (
+        <View style={styles.headRight}>
+          {/* Katıldığın etkinliklerden başlamasına en az süre kalanın küçük kartı (dokununca hepsi) */}
+          <JoinedEventsChip events={joinedEvents} onOpen={(id) => setFocusId(id)} />
+          {quota ? (
           <TourTarget tourId="events-gauge"><HexGauge
             remaining={
               quota.is_moderator || quota.is_sponsor || quota.events_limit === null
@@ -485,7 +495,8 @@ function EventsScreen() {
             }}
             testID="events-gauge"
           /></TourTarget>
-        ) : undefined
+          ) : null}
+        </View>
       }
       floatingFooter
       // Oluştur (solda) / Katılım Doğrula (sağda): Oyunlar ekranındaki gibi içeriğin üstünde yüzer (arkasında zemin yok)
@@ -1472,6 +1483,7 @@ function Meta({
 }
 
 const styles = StyleSheet.create({
+  headRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   discoverRow: { flexDirection: 'row', gap: spacing.sm },
   concertNote: {
     color: colors.textMuted,

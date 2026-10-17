@@ -163,6 +163,7 @@ const EVENT_TEXT: Record<string, string> = {
   daily_event_limit:
     'Aynı gün en fazla 2 etkinliğe katılabilirsin. O günkü başka bir katılımını iptal edip tekrar dene.',
   daily_category_limit: 'Aynı gün aynı kategoriden yalnızca 1 etkinliğe katılabilirsin.',
+  event_time_clash: 'Bu saatlere yakın katıldığın başka bir etkinlik var. Aynı gün aynı saat aralığındaki iki etkinliğe birden katılamazsın.',
   own_event: 'Kendi etkinliğine zaten katılımcı olarak sayılıyorsun.',
   event_pending: 'Bu etkinlik moderatör onayı bekliyor; onaylanınca paylaşabilirsin.',
   invalid_image: 'Görsel yüklenemedi. Tekrar dene.',

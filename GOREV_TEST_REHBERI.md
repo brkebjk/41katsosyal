@@ -34,3 +34,12 @@
    ya da **Devam** ile ilerle; sağ üstte **Geç** var. 7 kısa adım, sonda hoş geldin ekranı.
 3. Eğitim bir kez çıkar; ikinci kez başlamamalı. Sekmelerde ayrıca ipucu kartı çıkmaz.
 4. Aynı hesapla başka telefondan (ya da uygulamayı silip yükleyip) gir: eğitim ve hoş geldin bir daha çıkmamalı.
+
+## F. Etkinlikler
+1. Bir etkinliğe **Katıl** de: başlıkta hak göstergesinin solunda o etkinliğin küçük kartı çıkar (resmi, adı, altında
+   başlamasına kalan süre).
+2. Birden çok etkinliğe katıldıysan kartta sayısı yazar ve kart, başlamasına en az süre kalan etkinliği gösterir.
+   Karta dokununca katıldığın bütün etkinlikler listelenir; birine dokununca o etkinlik açılır.
+3. Saat çakışması: aynı gün, başlangıçları 2 saatten yakın ikinci bir etkinliğe katılmaya çalışınca hata yazar
+   ("Bu saatlere yakın katıldığın başka bir etkinlik var…"). 2 saat, web panel > Sistem > Ayarlar >
+   `event_overlap_minutes` ile değiştirilebilir (0 = kapalı).
