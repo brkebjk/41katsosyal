@@ -44,7 +44,7 @@ import {
 import { SharkChat, type ChatTab, type ChatTabInfo } from '@/components/SharkChat';
 import { PushToTalk, useClipQueue, useListeningToMe } from '@/components/SharkVoice';
 import { SoundToggle } from '@/components/SoundToggle';
-import { InfoCard, useElapsedSeconds } from '@/components/VampireParts';
+import { InfoCard, useElapsedSeconds, usePhaseStart } from '@/components/VampireParts';
 import { G, GameButton, Glass, NextRoomButton, Pill, SkipRound, ToolButton } from '@/components/VampireStage';
 import { confirmAction, notify, showDialog } from '@/lib/dialog';
 import { FRIEND_CONSEQUENCE, FRIEND_WARNING, sendRequestInRoom } from '@/lib/friends';
@@ -197,16 +197,16 @@ function Game({ roomId }: { roomId: string }) {
   const [result, setResult] = useState<{ data: MyGameResult | null; rules: PointRules } | null>(null);
   const safety = useSafetyMenu({ type: 'room', id: roomId }, { emergency: view?.remote !== true });
   const lock = useRef(false);
-  const loadSeq = useRef(0);
+  const inFlight = useRef<Promise<void> | null>(null);
+  const again = useRef(false);
   const hasView = useRef(false);
   const leaving = useRef(false);
   const lastKey = useRef<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (!isBackendReady || leaving.current) return;
-    const my = ++loadSeq.current;
+  const loadOnce = useCallback(async () => {
+    const sentAt = Date.now();
     const res = await getVampireView(roomId);
-    if (my !== loadSeq.current || leaving.current) return;
+    if (leaving.current) return;
     if (res.error || !res.view) {
       if (hasView.current && (res.error === VV_NOT_IN_ROOM || res.error === VV_ROOM_GONE)) setGone(true);
       else if (hasView.current) setConnError(true);
@@ -221,24 +221,56 @@ function Game({ roomId }: { roomId: string }) {
     if (lastKey.current !== null && lastKey.current !== key) Vibration.vibrate(150);
     lastKey.current = key;
     setView(res.view);
-    setViewAt(Date.now());
+    // Sunucunun cevabı hazırladığı an: isteğin gidiş-dönüşünün ortası (sayaç buna göre akar)
+    setViewAt(sentAt + (Date.now() - sentAt) / 2);
     setLoaded(true);
   }, [roomId]);
 
+  // Aynı anda tek istek: sunucu yavaş cevap verse de cevap çöpe atılmaz (eskiden yeni yoklama başlayınca eski cevap yok
+  // sayılıyordu ve kalabalık odada ekran hiç güncellenmiyordu). İstek sürerken gelen istek beklenir ve ardından bir kez
+  // daha okunur.
+  const load = useCallback(async () => {
+    if (!isBackendReady || leaving.current) return;
+    if (inFlight.current) {
+      again.current = true;
+      return inFlight.current;
+    }
+    const run = (async () => {
+      do {
+        again.current = false;
+        await loadOnce();
+      } while (again.current && !leaving.current);
+    })();
+    inFlight.current = run;
+    try {
+      await run;
+    } finally {
+      inFlight.current = null;
+    }
+  }, [loadOnce]);
+
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- veri yükleme: durum sunucudan gelen cevapla güncellenir
     void load();
   }, [load]);
 
   const live = !gone && (view === null || (view.phase !== 'ended' && view.phase !== 'cancelled' && !view.me.left));
   useEffect(() => {
     if (!live) return;
-    const t = setInterval(() => void load(), POLL_MS);
+    // Bir sonraki yoklama, öncekinin cevabı gelince (en geç POLL_MS'de bir) yapılır; istekler üst üste binmez
+    let stopped = false;
+    let t: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      const started = Date.now();
+      await load();
+      if (!stopped) t = setTimeout(() => void tick(), Math.max(250, POLL_MS - (Date.now() - started)));
+    };
+    t = setTimeout(() => void tick(), POLL_MS);
     const sub = AppState.addEventListener('change', (s) => {
       if (s === 'active') void load();
     });
     return () => {
-      clearInterval(t);
+      stopped = true;
+      clearTimeout(t);
       sub.remove();
     };
   }, [live, load]);
@@ -265,9 +297,16 @@ function Game({ roomId }: { roomId: string }) {
     };
   }, [stayAwake]);
 
+  // Aşamanın başladığı an: sayaç her yoklamada sıfırlanmaz, atlamadan saniye saniye akar
+  const phaseStart = usePhaseStart(
+    view && view.status === 'playing' && view.phase_limit !== null ? `${view.phase}:${view.round}` : null,
+    viewAt,
+    view?.phase_age ?? null,
+  );
   const elapsed = useElapsedSeconds(
     viewAt,
     live && view !== null && (view.status === 'playing' || (view.rematch_left ?? null) !== null || (view.match_left ?? null) !== null || !!view.kick?.poll),
+    phaseStart,
   );
 
   // ---- Bas-konuş (uzaktan oda) ------------------------------------------------------------------
@@ -300,9 +339,16 @@ function Game({ roomId }: { roomId: string }) {
   }, [soundKey, view]);
   const remain =
     view && view.status === 'playing' && view.phase_limit !== null
-      ? Math.max(0, view.phase_limit - view.phase_age - elapsed)
+      ? Math.max(0, view.phase_limit - (viewAt + elapsed * 1000 - (phaseStart ?? viewAt - view.phase_age * 1000)) / 1000)
       : -1;
   const remainSec = Math.ceil(remain);
+  // Süre bitince sıradaki aşama bir sonraki yoklama beklenmeden okunur
+  const dueKey = remain === 0 && view ? `${view.phase}:${view.round}` : null;
+  useEffect(() => {
+    if (!dueKey) return;
+    const t = setTimeout(() => void load(), 400);
+    return () => clearTimeout(t);
+  }, [dueKey, load]);
   const lastClock = useRef(-1);
   useEffect(() => {
     if (remainSec < 1 || remainSec > 5 || lastClock.current === remainSec) return;

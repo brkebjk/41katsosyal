@@ -12,7 +12,7 @@ import {
 } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Easing, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/AppText';
 import { notify, showDialog } from '@/lib/dialog';
@@ -68,14 +68,24 @@ function base64ToBytes(b64: string): Uint8Array {
   return out.subarray(0, o);
 }
 
+/** Mikrofon açılırken ve açıkken ses modu "yalnızca çalma"ya çevrilmez: iPhone'da kaydı anında keser */
+let micBusy = false;
+/** Şu anki ses modu (aynı modu tekrar tekrar kurmamak için; boş = bilinmiyor) */
+let modeRec: boolean | null = null;
+
 /** Çalma sırasında ses telefon sessizdeyken de hoparlörden duyulsun (kayıt açıkken de) */
-function playbackMode(recording: boolean) {
+function playbackMode(recording: boolean, force = false): Promise<void> {
+  if (!recording && micBusy) return Promise.resolve();
+  if (!force && modeRec === recording) return Promise.resolve();
+  modeRec = recording;
   return setAudioModeAsync({
     playsInSilentMode: true,
     interruptionMode: 'mixWithOthers',
     allowsRecording: recording,
     shouldRouteThroughEarpiece: false,
-  }).catch(() => {});
+  }).catch(() => {
+    modeRec = null;
+  });
 }
 
 /**
@@ -100,8 +110,9 @@ export function useClipQueue(clips: SkClip[] | undefined, myId: string | null, e
   // Uzaktan oyunda ses mesajları telefon sessizdeyken de duyulsun
   useEffect(() => {
     if (!enabled) return;
-    void playbackMode(false);
+    void playbackMode(false, true);
     return () => {
+      modeRec = null;
       void setAudioModeAsync({ playsInSilentMode: false, allowsRecording: false }).catch(() => {});
     };
   }, [enabled]);
@@ -334,14 +345,25 @@ export function PushToTalk({
     try {
       await recorder.stop();
     } catch {
-      // kayıt zaten bitmiş olabilir
+      // kayıt zaten bitmiş olabilir (süre dolunca kendiliğinden durur)
     }
+    micBusy = false;
     setRec(false);
     onRecording(false);
     setSoundMuted(false);
     void playbackMode(false);
-    const uri = recorder.uri;
-    if (!uri) return;
+    let uri = recorder.uri;
+    if (!uri) {
+      try {
+        uri = recorder.getStatus().url;
+      } catch {
+        uri = null;
+      }
+    }
+    if (!uri) {
+      await notify('Ses gönderilemedi', 'Kayıt alınamadı. Tekrar basılı tutup konuş.', { icon: null });
+      return;
+    }
     const file = new File(uri);
     try {
       if (ms < 400) {
@@ -409,19 +431,27 @@ export function PushToTalk({
     }
     if (!holding.current) return; // izin sorulurken parmak kalktı
     cap.current = Math.max(300, Math.min(MAX_MS, leftMs));
+    // Bu andan sonra gelen ses mesajları ses modunu değiştiremez (kayıt kesilmesin)
+    micBusy = true;
+    // Çalan ses mesajı ve oyun sesleri mikrofon açılmadan ÖNCE susar: hoparlörden mikrofona girip yansıma yapmasın.
+    // Kayıt bitince ses mesajı kaldığı yerden devam eder.
+    onRecording(true);
+    setSoundMuted(true);
     try {
-      await playbackMode(true);
+      await playbackMode(true, true);
       await recorder.prepareToRecordAsync();
       recorder.record({ forDuration: cap.current / 1000 });
     } catch {
+      micBusy = false;
+      onRecording(false);
+      setSoundMuted(false);
+      void playbackMode(false);
       await notify('Mikrofon açılamadı', 'Tekrar dene.', { icon: null });
       return;
     }
     active.current = true;
     startedAt.current = Date.now();
     setRec(true);
-    onRecording(true);
-    setSoundMuted(true);
     progress.setValue(0);
     Animated.timing(progress, { toValue: 1, duration: cap.current, easing: Easing.linear, useNativeDriver: false }).start();
     timer.current = setTimeout(() => void stop(), cap.current + 50);
@@ -438,6 +468,7 @@ export function PushToTalk({
       if (timer.current) clearTimeout(timer.current);
       if (active.current) {
         active.current = false;
+        micBusy = false;
         setSoundMuted(false);
         void recorder.stop().catch(() => {});
       }
@@ -454,10 +485,13 @@ export function PushToTalk({
         </Text>
       </View>
       <View style={styles.pttRow}>
-        <Pressable
-          onPressIn={() => void start()}
-          onPressOut={release}
-          disabled={!canTalk && !rec}
+        {/* Basılı tutma: parmak düğmede biraz kaysa ya da üstteki bir alan dokunuşu istese de kayıt kesilmez */}
+        <View
+          onStartShouldSetResponder={() => canTalk || rec}
+          onResponderTerminationRequest={() => false}
+          onResponderGrant={() => void start()}
+          onResponderRelease={release}
+          onResponderTerminate={release}
           accessibilityRole="button"
           accessibilityLabel={canTalk ? 'Basılı tut ve konuş' : closedText}
           testID="sk-ptt"
@@ -479,7 +513,7 @@ export function PushToTalk({
             </Text>
             {canTalk && !rec ? <Text style={styles.pttSub}>{channelText}</Text> : null}
           </View>
-        </Pressable>
+        </View>
         {side}
       </View>
     </View>

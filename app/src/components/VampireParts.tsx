@@ -44,14 +44,42 @@ const toneColor = {
  * Verilen andan (`since`, ms) beri geçen saniyeyi sayar; `active` iken saniyede bir güncellenir.
  * Sunucu "aşama kaç sn önce başladı" der, ekran da cevabı aldığı andan beri sayarak süreyi akıtır.
  */
-export function useElapsedSeconds(since: number, active: boolean): number {
+export function useElapsedSeconds(since: number, active: boolean, align?: number | null): number {
   const [now, setNow] = useState(since);
+  // Tik, saniye sınırına hizalanır (`align` verilirse ona göre): ekrandaki sayaç her tikte tam bir azalır, atlamaz
+  const base = align ?? since;
   useEffect(() => {
     if (!active) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [active]);
-  return Math.max(0, now - since) / 1000;
+    let t: ReturnType<typeof setTimeout>;
+    const next = () => {
+      const delay = 1000 - (((Date.now() - base) % 1000) + 1000) % 1000 + 15;
+      t = setTimeout(() => {
+        setNow(Date.now());
+        next();
+      }, delay);
+    };
+    next();
+    return () => clearTimeout(t);
+  }, [active, base]);
+  return Math.max(0, Math.max(now, since) - since) / 1000;
+}
+
+/**
+ * Aşamanın başladığı an (telefon saatiyle, ms). Her yoklamada sunucunun söylediği yaş ile yeniden hesaplanır; ağdan
+ * gelen küçük farklar (1,5 sn'den az) yok sayılır ki sayaç ileri geri atlamasın. Aşama değişince sıfırdan alınır.
+ */
+export function usePhaseStart(key: string | null, viewAt: number, age: number | null): number | null {
+  const [anchor, setAnchor] = useState<{ key: string; at: number } | null>(null);
+  if (key === null || age === null) {
+    if (anchor !== null) setAnchor(null);
+    return null;
+  }
+  const est = viewAt - age * 1000;
+  if (anchor === null || anchor.key !== key || Math.abs(est - anchor.at) > 1500) {
+    setAnchor({ key, at: est });
+    return est;
+  }
+  return anchor.at;
 }
 
 /** "0:42" biçiminde süre. */

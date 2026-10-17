@@ -1,6 +1,37 @@
 -- PARÇA 4 / 4 — supabase/schema.sql dosyasından otomatik üretildi, elle değiştirme.
 -- Supabase > SQL Editor > New query > bu dosyanın tamamını yapıştır > Run. Parçaları 1'den başlayarak SIRAYLA çalıştır.
 
+-- "Hazırım" / vazgeç: eşleştirme lobisinde ve yeni el bekleme odasında. Oda alt sınırı kadar kişi olmadan basılamaz
+-- (yeni el geri sayımında basılabilir: süre dolunca yeterli hazır yoksa oda normal bekleme odası olur).
+create or replace function public.room_lobby_ready(p_room_id uuid, p_on boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v public.profiles;
+  r public.game_rooms;
+  v_min int;
+begin
+  v := public._require_user();
+  select * into r from public.game_rooms where id = p_room_id for update;
+  if not found or r.game_type not in ('vampire_villager', 'shark_cage') then raise exception 'room_not_found'; end if;
+  if r.status <> 'lobby' or not (coalesce((r.config->>'match')::boolean, false) or r.config ? 'rematch_of') then
+    raise exception 'wrong_phase';
+  end if;
+  if not exists (select 1 from public.room_players where room_id = p_room_id and user_id = v.id and left_at is null) then
+    raise exception 'not_in_room';
+  end if;
+  select coalesce(gt.min_players, 6) into v_min from public.game_types gt where gt.key = r.game_type;
+  if coalesce(p_on, false) and not r.state ? 'rematch_until'
+     and (select count(*) from public.room_players where room_id = p_room_id and left_at is null) < v_min then
+    raise exception 'not_enough_players';
+  end if;
+  update public.game_rooms
+     set state = jsonb_set(state, '{ready}',
+           (coalesce(state->'ready', '[]'::jsonb) - v.id::text)
+           || (case when coalesce(p_on, false) then jsonb_build_array(v.id::text) else '[]'::jsonb end))
+   where id = p_room_id;
+  perform public._room_lobby_tick(p_room_id);
+end $$;
+
 insert into public.app_settings (key, value, description) values
   ('rematch_seconds', '45', 'Oyun bitince açılan yeni el bekleme odasında "Hazırım" geri sayımı, saniye'),
   ('match_solo_room_seconds', '45', 'Uzaktan eşleşme: açık oda bulunamazsa kaç saniye sonra oda açılır (kişi orada tek başına bekleyebilir)')

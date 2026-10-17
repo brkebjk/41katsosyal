@@ -6863,10 +6863,13 @@ begin
   if r.status in ('lobby', 'playing') then
     perform public._room_sweep(p_room_id);
     perform public._room_touch(p_room_id, v.id);
-    perform public._sk_bots_act(p_room_id);
-    if r.status = 'playing' then perform public._sk_auto_tick(p_room_id); end if;
-    if r.status = 'lobby' then perform public._room_lobby_tick(p_room_id); end if;
-    perform public._kick_tick(p_room_id);
+    -- Oyunu ilerletme aynı anda yalnızca bir çağrıda yapılır; öteki oyuncuların çağrıları kilidi beklemeden okur
+    if pg_try_advisory_xact_lock(hashtext('room_tick'), hashtext(p_room_id::text)) then
+      perform public._sk_bots_act(p_room_id);
+      if r.status = 'playing' then perform public._sk_auto_tick(p_room_id); end if;
+      if r.status = 'lobby' then perform public._room_lobby_tick(p_room_id); end if;
+      perform public._kick_tick(p_room_id);
+    end if;
     select * into r from public.game_rooms where id = p_room_id;
   end if;
 
@@ -6997,7 +7000,7 @@ begin
                      where s.room_id = p_room_id and coalesce((s.data->>'ready')::boolean, false)),
     'phase_limit', case when v_mode = 'auto' and r.status = 'playing'
                         then (r.state->'timers'->>(case v_phase when 'vote_result' then 'result' else v_phase end))::int end,
-    'phase_age', greatest(0, extract(epoch from now() - public._vv_phase_started(r))::int),
+    'phase_age', greatest(0, round(extract(epoch from now() - public._vv_phase_started(r)), 2)),
     'force_after', public.setting_int('sk_force_end_seconds', 45),
     'min_players', 6,
     'max_players', 16,
@@ -8346,35 +8349,4 @@ begin
       if r.game_type = 'shark_cage' then perform public._sk_begin(p_room_id); else perform public._vv_begin(p_room_id); end if;
     end if;
   end if;
-end $$;
-
--- "Hazırım" / vazgeç: eşleştirme lobisinde ve yeni el bekleme odasında. Oda alt sınırı kadar kişi olmadan basılamaz
--- (yeni el geri sayımında basılabilir: süre dolunca yeterli hazır yoksa oda normal bekleme odası olur).
-create or replace function public.room_lobby_ready(p_room_id uuid, p_on boolean)
-returns void language plpgsql security definer set search_path = public as $$
-declare
-  v public.profiles;
-  r public.game_rooms;
-  v_min int;
-begin
-  v := public._require_user();
-  select * into r from public.game_rooms where id = p_room_id for update;
-  if not found or r.game_type not in ('vampire_villager', 'shark_cage') then raise exception 'room_not_found'; end if;
-  if r.status <> 'lobby' or not (coalesce((r.config->>'match')::boolean, false) or r.config ? 'rematch_of') then
-    raise exception 'wrong_phase';
-  end if;
-  if not exists (select 1 from public.room_players where room_id = p_room_id and user_id = v.id and left_at is null) then
-    raise exception 'not_in_room';
-  end if;
-  select coalesce(gt.min_players, 6) into v_min from public.game_types gt where gt.key = r.game_type;
-  if coalesce(p_on, false) and not r.state ? 'rematch_until'
-     and (select count(*) from public.room_players where room_id = p_room_id and left_at is null) < v_min then
-    raise exception 'not_enough_players';
-  end if;
-  update public.game_rooms
-     set state = jsonb_set(state, '{ready}',
-           (coalesce(state->'ready', '[]'::jsonb) - v.id::text)
-           || (case when coalesce(p_on, false) then jsonb_build_array(v.id::text) else '[]'::jsonb end))
-   where id = p_room_id;
-  perform public._room_lobby_tick(p_room_id);
 end $$;

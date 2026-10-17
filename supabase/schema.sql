@@ -6348,16 +6348,18 @@ begin
     perform public._room_sweep(p_room_id);
     select * into r from public.game_rooms where id = p_room_id;
     perform public._room_touch(p_room_id, v.id);
-    perform public._vv_bots_act(p_room_id); -- GEÇİCİ: deneme odasında botların hamleleri
-    if r.status = 'playing' then
-      perform public._vv_auto_tick(p_room_id);
-      if r.remote then perform public._voice_kick_tick(p_room_id); end if;
-      select * into r from public.game_rooms where id = p_room_id;
-    elsif r.status = 'lobby' then
-      perform public._room_lobby_tick(p_room_id);
-      select * into r from public.game_rooms where id = p_room_id;
+    -- Oyunu ilerletme (süre, botlar, oylamalar) aynı anda yalnızca bir çağrıda yapılır: o sırada gelen öteki oyuncuların
+    -- çağrıları odanın kilidini beklemeden yalnızca okur (kalabalık odada ekranlar geride kalmasın)
+    if pg_try_advisory_xact_lock(hashtext('room_tick'), hashtext(p_room_id::text)) then
+      perform public._vv_bots_act(p_room_id); -- GEÇİCİ: deneme odasında botların hamleleri
+      if r.status = 'playing' then
+        perform public._vv_auto_tick(p_room_id);
+        if r.remote then perform public._voice_kick_tick(p_room_id); end if;
+      elsif r.status = 'lobby' then
+        perform public._room_lobby_tick(p_room_id);
+      end if;
+      perform public._kick_tick(p_room_id);
     end if;
-    perform public._kick_tick(p_room_id);
     select * into r from public.game_rooms where id = p_room_id;
   end if;
 
@@ -6511,7 +6513,7 @@ begin
                                                      when 'dawn' then 'discuss' when 'vote' then 'vote'
                                                      when 'vote_result' then 'result' else 'none' end))::int
                          else null end),
-    'phase_age', greatest(0, extract(epoch from now() - public._vv_phase_started(r))::int),
+    'phase_age', greatest(0, round(extract(epoch from now() - public._vv_phase_started(r)), 2)),
     'force_after', public.setting_int('vv_force_end_seconds', 60),
     'me', v_me,
     'pending', v_pending,
@@ -20494,10 +20496,13 @@ begin
   if r.status in ('lobby', 'playing') then
     perform public._room_sweep(p_room_id);
     perform public._room_touch(p_room_id, v.id);
-    perform public._sk_bots_act(p_room_id);
-    if r.status = 'playing' then perform public._sk_auto_tick(p_room_id); end if;
-    if r.status = 'lobby' then perform public._room_lobby_tick(p_room_id); end if;
-    perform public._kick_tick(p_room_id);
+    -- Oyunu ilerletme aynı anda yalnızca bir çağrıda yapılır; öteki oyuncuların çağrıları kilidi beklemeden okur
+    if pg_try_advisory_xact_lock(hashtext('room_tick'), hashtext(p_room_id::text)) then
+      perform public._sk_bots_act(p_room_id);
+      if r.status = 'playing' then perform public._sk_auto_tick(p_room_id); end if;
+      if r.status = 'lobby' then perform public._room_lobby_tick(p_room_id); end if;
+      perform public._kick_tick(p_room_id);
+    end if;
     select * into r from public.game_rooms where id = p_room_id;
   end if;
 
@@ -20628,7 +20633,7 @@ begin
                      where s.room_id = p_room_id and coalesce((s.data->>'ready')::boolean, false)),
     'phase_limit', case when v_mode = 'auto' and r.status = 'playing'
                         then (r.state->'timers'->>(case v_phase when 'vote_result' then 'result' else v_phase end))::int end,
-    'phase_age', greatest(0, extract(epoch from now() - public._vv_phase_started(r))::int),
+    'phase_age', greatest(0, round(extract(epoch from now() - public._vv_phase_started(r)), 2)),
     'force_after', public.setting_int('sk_force_end_seconds', 45),
     'min_players', 6,
     'max_players', 16,

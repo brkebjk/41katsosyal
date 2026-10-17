@@ -1,19 +1,16 @@
-# Görev Test Rehberi – Web önizleme (yalnızca geliştirme)
+# Görev Test Rehberi – Büyük düzeltme paketi (parça parça gelir)
 
-Uygulama her güncellendiğinde web hâli de kendiliğinden yayınlanır. Telefondaki uygulamada hiçbir değişiklik yok.
+## A. Güncelle
+1. `git pull origin claude/kind-goodall-dy5z7y`
+2. `cd app`, sonra `npx expo start -c --tunnel`
+3. SQL kendiliğinden uygulanır (GitHub > Actions > "Supabase şemasını uygula" yeşil olunca, ~3 dk).
 
-## A. Web önizlemeyi aç
-1. Adres: aşağıdaki sohbet mesajında (GitHub > Actions > "Web önizlemeyi yayınla" > son çalıştırmanın özetinde de yazar).
-2. **Yalnızca moderatör hesabıyla** giriş yapılır. Başka bir hesapla girilirse "Web sürümü yalnızca geliştirme içindir"
-   yazar ve oturum kapanır.
-3. Dikkat: bir hesap aynı anda tek cihazda açık kalır. Web'de moderatör hesabınla girince telefondaki oturumun kapanır.
-   Telefonda başka (üye) hesabıyla test ediyorsan sorun yok.
-4. Web'de kayıt kapalı: "Kayıt ol"a basınca "Web sürümünde kayıt kapalıdır" yazar.
-5. Web'de çalışmayanlar: sesli sohbet, satın alma, konumla şehir seçimi, rehberden davet, kamera. Bunlar telefonda denenir.
-
-## B. Telefonda kontrol
-1. `git pull origin claude/kind-goodall-dy5z7y`, sonra `cd app` ve `npx expo start -c --tunnel`
-2. Uygulama her zamanki gibi açılıyor ve çalışıyor (web kuralları telefonu etkilemez).
-
-## C. Markete çıkarken
-Bana "web önizlemeyi kaldır" yazman yeterli; web'e ait her şey silinir ve yayın kaldırılır.
+## B. Köpekbalığı Kafesi ve Vampir–Köylü: süre, gecikme, bas-konuş
+1. Uzaktan oyunda (mümkünse kalabalık, deneme botlarıyla 16 kişi) süre sayacı saniye saniye akmalı; 2 sn atlamamalı,
+   ileri geri oynamamalı.
+2. Süre bitince sıradaki aşama 1–2 sn içinde gelmeli. Seçim yaparken altta kırmızı "Oyun bu aşamadan çoktan geçmiş"
+   uyarısı çıkmamalı.
+3. Bas-konuş: düğmeye basılı tut, konuş, bırak. Parmağın düğmede biraz kaysa da kayıt kesilmemeli; bırakınca gitmeli.
+4. Biri konuşurken (ses mesajı çalarken) sen basılı tutunca onun sesi hemen susmalı, sen bırakınca kaldığı yerden
+   devam etmeli (yansıma olmamalı).
+5. Bir hata olursa (ör. "10 saniyelik hakkın doldu") ne olduğu yazmalı.
