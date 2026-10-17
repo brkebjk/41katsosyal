@@ -1042,7 +1042,6 @@ insert into public.map_district_reset (district, name, reset_dow, city) values
   (53, 'Bayındır', 5, 'izmir'),
   (54, 'Bayraklı', 6, 'izmir'),
   (55, 'Bergama', 7, 'izmir'),
-  (56, 'Beydağ', 1, 'izmir'),
   (57, 'Bornova', 2, 'izmir'),
   (58, 'Buca', 3, 'izmir'),
   (59, 'Çeşme', 4, 'izmir'),
@@ -1052,22 +1051,19 @@ insert into public.map_district_reset (district, name, reset_dow, city) values
   (63, 'Gaziemir', 1, 'izmir'),
   (64, 'Güzelbahçe', 2, 'izmir'),
   (65, 'Karabağlar', 3, 'izmir'),
-  (66, 'Karaburun', 4, 'izmir'),
   (67, 'Karşıyaka', 5, 'izmir'),
   (68, 'Kemalpaşa', 6, 'izmir'),
-  (69, 'Kınık', 7, 'izmir'),
-  (70, 'Kiraz', 1, 'izmir'),
   (71, 'Konak', 2, 'izmir'),
   (72, 'Menderes', 3, 'izmir'),
   (73, 'Menemen', 4, 'izmir'),
   (74, 'Narlıdere', 5, 'izmir'),
-  (75, 'Ödemiş', 6, 'izmir'),
   (76, 'Seferihisar', 7, 'izmir'),
-  (77, 'Selçuk', 1, 'izmir'),
-  (78, 'Tire', 2, 'izmir'),
   (79, 'Torbalı', 3, 'izmir'),
   (80, 'Urla', 4, 'izmir')
 on conflict (district) do update set name = excluded.name, city = excluded.city;
+-- İzmir'den çıkarılan ilçeler (Tire, Ödemiş, Selçuk, Kınık, Karaburun, Beydağ, Kiraz): haritada yoklar. Kimlikleri
+-- boş kalır; kalan ilçelerin kimlikleri değişmez.
+delete from public.map_district_reset where district in (56, 66, 69, 70, 75, 77, 78);
 
 -- Konum bildirimi ('checkin': üye haritada "Buradayım" der) ve etkinlik katılımı ('event') da yoğunluğa sayılır.
 -- 'quiz': Bilgi Yarışması (Solo / Uzaktan) oynayanın peteği. Yalnızca yoğunluğa sayılır; “Burada kim var?” sayısına

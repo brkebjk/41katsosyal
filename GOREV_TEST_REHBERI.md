@@ -43,3 +43,11 @@
 3. Saat çakışması: aynı gün, başlangıçları 2 saatten yakın ikinci bir etkinliğe katılmaya çalışınca hata yazar
    ("Bu saatlere yakın katıldığın başka bir etkinlik var…"). 2 saat, web panel > Sistem > Ayarlar >
    `event_overlap_minutes` ile değiştirilebilir (0 = kapalı).
+
+## G. Harita
+1. Üç şehirde de en çok uzaklaştığında sağ alttaki ölçek çubuğu **10 km**'yi geçmemeli. "Tüm şehir" düğmesi de bu
+   uzaklıkta şehrin ortasını gösterir.
+2. Arama çubuğunun altındaki şehir düğmesine dokun: menü düğmenin **sağına** açılmalı, soldaki sarı soru işaretinin
+   üstüne binmemeli.
+3. İzmir haritasında **Tire, Ödemiş, Selçuk, Kınık, Karaburun, Beydağ, Kiraz** yok: petekleri, sınırları, adları ve
+   yolları kalktı; aramada bu ilçelerin mekânları çıkmaz. Diğer İzmir ilçeleri, İstanbul ve Kocaeli aynen duruyor.

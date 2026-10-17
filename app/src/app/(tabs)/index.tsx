@@ -673,7 +673,9 @@ function MapScreen({ resetKey }: { resetKey: number }) {
             <>
               {/* Sol üst: bilgi düğmesi ve harita durumu */}
               <TourTarget tourId="map-city" style={styles.topBar} pointerEvents="box-none">
-                {/* Şehir: kendi şehrim ya da ziyaret ettiğim şehir; dokununca şehirler (ziyaret modu) */}
+                {/* Şehir: kendi şehrim ya da ziyaret ettiğim şehir; dokununca şehirler (ziyaret modu). Menü düğmenin sağına
+                    açılır (alttaki düğmelerin üstüne binmesin) */}
+                <View style={styles.cityLine} pointerEvents="box-none">
                 <Pressable
                   onPress={() => setCityMenu((o) => !o)}
                   accessibilityRole="button"
@@ -710,6 +712,7 @@ function MapScreen({ resetKey }: { resetKey: number }) {
                     })}
                   </View>
                 ) : null}
+                </View>
                 {city.readOnly ? (
                   <View style={[styles.chip, styles.chipVisit]} pointerEvents="none" testID="map-visit-chip">
                     <Text style={styles.chipText}>Ziyaretçisin, yalnızca bakabilirsin</Text>
@@ -1858,6 +1861,7 @@ const styles = StyleSheet.create({
   },
   chipWarn: { borderColor: 'rgba(124, 140, 255, 0.6)' },
   chipVisit: { borderColor: colors.primary },
+  cityLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, zIndex: 5 },
   cityMenu: {
     alignSelf: 'flex-start',
     gap: 2,

@@ -64,6 +64,10 @@ LABEL_CELL = {'kocaeli': {'Başiskele': (99, -17), 'İzmit': (92, -1)}}
 GULF = {'kocaeli': {'line': [(29.60, 40.735), (29.72, 40.722), (29.82, 40.728), (29.90, 40.745), (29.94, 40.758)],
                     'districts': ['Başiskele', 'İzmit', 'Derince', 'Gölcük', 'Körfez'], 'inland': 1300.0}}
 
+# Haritadan çıkarılan ilçeler: petekleri, sınırları, adları, mahalleleri ve yolları çizilmez. İlçe listesinde
+# kalırlar ki kalan ilçelerin numaraları (sunucudaki ilçe kimlikleri) değişmesin.
+EXCLUDE = {'izmir': ['Tire', 'Ödemiş', 'Selçuk', 'Kınık', 'Karaburun', 'Beydağ', 'Kiraz']}
+
 # Kocaeli'nin eski haritasıyla aynı başlangıç noktası: kayıtlı peteklerin numarası değişmez
 CITIES = [
     {'key': 'kocaeli', 'name': 'Kocaeli', 'region': 'TR-41', 'lon0': 29.0, 'lat0': 40.8, 'rOff': 0,
@@ -195,6 +199,9 @@ def build_city(c, da, places_tb, out_places, roads):
             h['poly'] = h['poly'].difference(acc).buffer(0)
         acc = h['poly'] if acc is None else unary_union([acc, h['poly']])
     hoods = [h for h in hoods if not h['poly'].is_empty and h['poly'].area >= 1]
+    excl = set(EXCLUDE.get(c['key'], []))
+    if excl:
+        hoods = [h for h in hoods if names[h['d']] not in excl]
     land = unary_union([h['poly'] for h in hoods]).buffer(0)
     print(c['key'], 'ilçe', len(names), 'mahalle', len(hoods), 'kara km2', round(land.area / 1e6, 1))
     htree = STRtree([h['poly'] for h in hoods])
@@ -373,6 +380,8 @@ def build_city(c, da, places_tb, out_places, roads):
     road_lines = []
     if roads is not None:
         area = land.buffer(2500)  # köprüler (Boğaz, Osmangazi) suyun üstünden geçer
+        if excl:
+            area = area.difference(unary_union([cpoly[n] for n in excl]).buffer(0))
         shapely.prepare(area)
         parts = []
         for geo in roads:
@@ -404,6 +413,8 @@ def build_city(c, da, places_tb, out_places, roads):
     gulf = GULF.get(c['key'])
     gulf_line = LineString([g.proj(lo, la) for lo, la in gulf['line']]) if gulf else None
     for di, n in enumerate(names):
+        if n in excl:
+            continue
         u = unary_union([h['poly'] for h in hoods if h['d'] == di])
         rp = u.representative_point() if not u.is_empty else cpoly[n].representative_point()
         if gulf and n in gulf['districts'] and not u.is_empty:

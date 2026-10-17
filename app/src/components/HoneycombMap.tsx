@@ -86,6 +86,8 @@ const SCALE_BAR_MS = 1600;
 /** Kaydırma / yakınlaştırma bitince yolların yeniden çizilmesi için beklenen süre */
 const ROADS_BACK_MS = 1000;
 const NICE_M = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000];
+/** En uzak görünüm (px / metre): ölçek çubuğu en çok 10 km gösterir (20 km'lik çubuk ekrana sığmaz). Üç şehirde aynı. */
+const MIN_SCALE = (130 / 20000) * 1.02;
 const SQ3 = Math.sqrt(3);
 
 type View2 = { scale: number; tx: number; ty: number };
@@ -124,6 +126,16 @@ function fitView(g: CityGeo, w: number, h: number): View2 {
   return { scale, tx: w / 2 - cx * scale, ty: h / 2 - cy * scale };
 }
 
+/** En uzak görünüm: şehrin ortası, en çok 10 km ölçekten (şehir ekrana sığıyorsa bütün şehir) */
+function farView(g: CityGeo, w: number, h: number): View2 {
+  const f = fitView(g, w, h);
+  if (f.scale >= MIN_SCALE) return f;
+  const B = g.bounds;
+  const cx = (B.minX + B.maxX) / 2;
+  const cy = -(B.minY + B.maxY) / 2;
+  return { scale: MIN_SCALE, tx: w / 2 - cx * MIN_SCALE, ty: h / 2 - cy * MIN_SCALE };
+}
+
 /**
  * Açılış (ve ziyaret) görünümü: şehrin orta ilçesi (Derince, Kadıköy, Balçova) ortada, çevre ilçeler de görünür.
  * `top` ve `bottom`, haritanın üstüne/altına binen katmanların (başlık, renk açıklaması) yüksekliğidir.
@@ -134,7 +146,7 @@ function homeView(g: CityGeo, w: number, h: number, top: number, bottom: number)
   const availH = Math.max(h - top - bottom, 80);
   const base = fitView(g, w, h).scale;
   const fit = Math.min(availW / Math.max(b.maxX - b.minX, 1000), availH / Math.max(b.maxY - b.minY, 1000));
-  const scale = Math.min(Math.max(fit, base), base * zoomMax(g));
+  const scale = Math.min(Math.max(fit, base, MIN_SCALE), base * zoomMax(g));
   const cx = (b.minX + b.maxX) / 2;
   const cy = (b.minY + b.maxY) / 2;
   return { scale, tx: w / 2 - cx * scale, ty: top + availH / 2 + cy * scale };
@@ -156,8 +168,8 @@ function focusView(
   // farPx verilirse petek ekranda bu genişlikte görünür (biraz uzaktan, çevresi de görünsün diye)
   const want = (farPx ?? 70) / (HEX_SIZE * SQ3);
   const scale = farPx
-    ? Math.min(base * zoomMax(g), Math.max(base, want))
-    : Math.min(base * zoomMax(g), Math.max(current?.scale ?? base, want));
+    ? Math.min(base * zoomMax(g), Math.max(base, MIN_SCALE, want))
+    : Math.min(base * zoomMax(g), Math.max(current?.scale ?? base, MIN_SCALE, want));
   const cy = top + (h - top - bottom) / 2;
   return clampView(g, { scale, tx: w / 2 - c.x * scale, ty: cy + c.y * scale }, w, h);
 }
@@ -188,6 +200,7 @@ function cellsView(
   const base = fitView(g, w, h).scale;
   const scale = Math.max(
     base,
+    MIN_SCALE,
     Math.min(availW / Math.max(maxX - minX, 1), availH / Math.max(maxY - minY, 1), 46 / (HEX_SIZE * SQ3)),
   );
   const cx = (minX + maxX) / 2;
@@ -606,7 +619,7 @@ export function HoneycombMap({
     const { w, h } = live;
     if (!v) return;
     const base = fitView(g, w, h).scale;
-    const scale = Math.min(base * zoomMax(g), Math.max(base * 0.9, v.scale * factor));
+    const scale = Math.min(base * zoomMax(g), Math.max(base * 0.9, MIN_SCALE, v.scale * factor));
     const k = scale / v.scale;
     // ekranın ortası sabit kalsın
     const next = { scale, tx: w / 2 - (w / 2 - v.tx) * k, ty: h / 2 - (h / 2 - v.ty) * k };
@@ -676,7 +689,7 @@ export function HoneycombMap({
           const m0 = { x: (startPts[0].x + startPts[1].x) / 2, y: (startPts[0].y + startPts[1].y) / 2 };
           const m1 = { x: (now[0].x + now[1].x) / 2, y: (now[0].y + now[1].y) / 2 };
           const base = fitView(g, w, h).scale;
-          const scale = Math.min(base * zoomMax(g), Math.max(base * 0.9, startView.scale * (d1 / d0)));
+          const scale = Math.min(base * zoomMax(g), Math.max(base * 0.9, MIN_SCALE, startView.scale * (d1 / d0)));
           const mx = (m0.x - startView.tx) / startView.scale;
           const my = (m0.y - startView.ty) / startView.scale;
           moved = 99;
@@ -1122,11 +1135,11 @@ export function HoneycombMap({
             label={`Tüm ${g.name}`}
             onPress={() => {
               const { w, h } = live;
-              setView(fitView(g, w, h));
+              setView(clampView(g, farView(g, w, h), w, h));
               live.onSelect?.(null);
             }}
             testID="map-fit"
-            disabled={!view || view.scale <= fitScale * 1.02}
+            disabled={!view || view.scale <= Math.max(fitScale, MIN_SCALE) * 1.02}
           />
           {extraControls}
         </TourTarget>
